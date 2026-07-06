@@ -1,0 +1,390 @@
+---
+import type { HomeSiderType } from '@constants/enum';
+import type { BlogPost } from 'types/blog';
+
+interface Props {
+  title: string;
+  description?: string;
+  siderType?: HomeSiderType;
+  post?: BlogPost;
+  /** Override canonical URL (e.g., for fallback pages pointing to default-locale version) */
+  canonical?: string;
+  keywords?: string[];
+}
+
+import { ClientRouter } from 'astro:transitions';
+import AnnouncementProvider from '@components/announcement/AnnouncementProvider.astro';
+import GlobalBGMPlayer from '@components/bgm/GlobalBGMPlayer';
+import ChristmasEffects from '@components/christmas/ChristmasEffects.astro';
+import FloatingGroup from '@components/layout/FloatingGroup';
+import Header from '@components/layout/Header.astro';
+import MobileDrawer from '@components/layout/MobileDrawer.astro';
+import SearchDialog from '@components/layout/SearchDialog';
+import SearchPortal from '@components/layout/SearchPortal.astro';
+import CodeBlockFullscreen from '@components/markdown/CodeBlockFullscreen';
+import DiagramFullscreen from '@components/markdown/DiagramFullscreen';
+import ImageLightbox from '@components/markdown/ImageLightbox';
+import { Toaster } from '@components/ui/sonner';
+import { bgmConfig, christmasConfig, seoConfig, siteConfig } from '@constants/site-config';
+import { getOgImageUrl } from '@lib/seo/og-image';
+import LoadingIndicator from 'astro-loading-indicator/component';
+import { SEO } from 'astro-seo';
+import { Tooltips } from 'astro-tooltips';
+import {
+  defaultLocale,
+  getAlternateUrl,
+  getHtmlLang,
+  getLocaleFromUrl,
+  isI18nEnabled,
+  localeList,
+  localizedPath,
+  stripLocaleFromPath,
+} from '@/i18n';
+
+import '@styles/index.css';
+
+const {
+  title = seoConfig.title,
+  description = seoConfig.description,
+  siderType,
+  post,
+  canonical: canonicalOverride,
+  keywords: keywordsOverride,
+} = Astro.props;
+
+// TODO: siderType should be custom in router file, not in layout
+
+// i18n: derive locale from URL and compute BCP 47 lang tag
+const locale = getLocaleFromUrl(Astro.url.pathname);
+const htmlLang = getHtmlLang(locale);
+
+// Detect if current page is a post page for mobile header (locale-prefix safe)
+const isPostPage = stripLocaleFromPath(Astro.url.pathname).startsWith('/post/');
+
+// OGP image: use post cover if available, otherwise use default from config, fallback to avatar
+const ogImage = getOgImageUrl(post?.data.cover, Astro.site);
+
+// Pre-compute i18n URLs for <head> links
+const rssHref = new URL(localizedPath('/rss.xml', locale), Astro.site).href;
+const hreflangLinks = localeList.map((loc) => ({
+  lang: getHtmlLang(loc),
+  href: new URL(getAlternateUrl(Astro.url.pathname, loc), Astro.site).href,
+}));
+const xDefaultHref = new URL(getAlternateUrl(Astro.url.pathname, defaultLocale), Astro.site).href;
+const canonicalHref = canonicalOverride ?? Astro.url.href;
+
+const keywords = keywordsOverride || siteConfig.keywords || [siteConfig.title];
+---
+
+<!doctype html>
+<html transition:name="root" lang={htmlLang} class="vertical-scrollbar">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.ico" />
+    <meta name="generator" content={Astro.generator} />
+    {/* Async load rounded fonts — Japanese pages use Gen Jyuu Gothic P, others use ChillRoundF (fix #113) */}
+    {locale === 'ja' ? (
+      <>
+        <link rel="stylesheet" href="/fonts/GenJyuuGothic-P-Regular/result.css" media="print" onload="this.setAttribute('media','all')" />
+        <link rel="stylesheet" href="/fonts/GenJyuuGothic-P-Bold/result.css" media="print" onload="this.setAttribute('media','all')" />
+      </>
+    ) : (
+      <>
+        <link rel="stylesheet" href="/fonts/ChillRoundFRegular/result.css" media="print" onload="this.setAttribute('media','all')" />
+        <link rel="stylesheet" href="/fonts/ChillRoundFBold/result.css" media="print" onload="this.setAttribute('media','all')" />
+      </>
+    )}
+
+    <ClientRouter />
+    <LoadingIndicator color="#e9536a" />
+    <Tooltips />
+
+    <!-- SEO 元数据由 astro-seo 管理 -->
+    <SEO
+      title={title}
+      description={description}
+      canonical={canonicalHref}
+      openGraph={{
+        basic: {
+          title: title,
+          type: 'website',
+          image: ogImage || '',
+          url: Astro.url.href,
+        },
+        optional: {
+          siteName: siteConfig.name,
+          description: description,
+        },
+      }}
+      twitter={{
+        card: ogImage ? 'summary_large_image' : 'summary',
+        title: title,
+        description: description,
+        ...(ogImage && { image: ogImage }),
+      }}
+      extend={{
+        meta: [{ name: 'author', content: siteConfig.author || '' }],
+      }}
+    />
+    {/* astro-seo 暂不支持管理 keywords */}
+    <meta name="keywords" content={keywords.join(', ')} />
+
+    <link rel="alternate" type="application/rss+xml" title={siteConfig.title} href={rssHref} />
+    {/* hreflang alternate links for SEO — only output when multiple locales are configured */}
+    {isI18nEnabled && hreflangLinks.map(({ lang, href }) => (
+      <link rel="alternate" hreflang={lang} href={href} />
+    ))}
+    {isI18nEnabled && <link rel="alternate" hreflang="x-default" href={xDefaultHref} />}
+
+    <script is:inline>
+      // 主题系统 - 立即执行以防止 FOUC（无样式内容闪烁）
+      // 优先级：1. 用户手动选择 > 2. 系统偏好
+      (function() {
+        function getTheme() {
+          // 用户明确选择了主题
+          if (localStorage.theme === 'dark') return 'dark';
+          if (localStorage.theme === 'light') return 'light';
+          // 未设置，跟随系统偏好
+          return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+
+        function applyTheme(theme) {
+          var root = document.documentElement;
+          root.classList.toggle('dark', theme === 'dark');
+          root.dataset.theme = theme; // For astro-mermaid autoTheme
+        }
+
+        // 立即应用主题
+        applyTheme(getTheme());
+
+        // 监听系统主题偏好变化
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function() {
+          // 仅当用户未明确选择主题时自动切换
+          if (!('theme' in localStorage)) {
+            applyTheme(getTheme());
+          }
+        });
+
+        // View Transition 切换页面后重新应用主题（在 DOM 渲染前）
+        document.addEventListener('astro:after-swap', function() {
+          applyTheme(getTheme());
+        });
+      })();
+    </script>
+    <script is:inline define:vars={{ christmasFeatureEnabled: christmasConfig.enabled }}>
+      // 立即执行圣诞状态检查 否则彩灯等会闪烁
+      (function () {
+        // 如果构建时配置关闭，则始终不启用
+        if (!christmasFeatureEnabled) {
+          document.documentElement.classList.remove('christmas');
+          return;
+        }
+        // 否则使用用户偏好
+        var stored = localStorage.getItem('christmas-enabled');
+        var enabled = stored !== 'false'; // 默认启用
+        document.documentElement.classList.toggle('christmas', enabled);
+      })();
+    </script>
+
+    <!-- 子页面可通过 slot="head" 注入额外的 head 内容（如 JSON-LD） -->
+    <slot name="head" />
+
+    <script>
+      // CodePen embed initialization for Astro page transitions
+      // https://blog.codepen.io/documentation/embedded-pens/
+
+      declare global {
+        interface Window {
+          __CPEmbed?: () => void;
+        }
+      }
+
+      let codepenScriptLoaded = false;
+
+      function loadCodePenScript() {
+        return new Promise<void>((resolve, reject) => {
+          // Check if already loaded
+          if (codepenScriptLoaded || window.__CPEmbed) {
+            resolve();
+            return;
+          }
+
+          const script = document.createElement('script');
+          script.src = 'https://cpwebassets.codepen.io/assets/embed/ei.js';
+          script.async = true;
+          script.onload = () => {
+            codepenScriptLoaded = true;
+            resolve();
+          };
+          script.onerror = reject;
+          document.head.appendChild(script);
+        });
+      }
+
+      async function initializeCodePenEmbeds() {
+        // Check if there are any CodePen embeds on the page
+        const codepenElements = document.querySelectorAll('.codepen');
+        if (codepenElements.length === 0) {
+          return;
+        }
+
+        try {
+          // Load the CodePen script if not already loaded
+          await loadCodePenScript();
+
+          // Initialize all CodePen embeds
+          if (window.__CPEmbed) {
+            window.__CPEmbed();
+          }
+        } catch (error) {
+          console.error('[CodePen Embed] Failed to load CodePen embed script:', error);
+        }
+      }
+
+      // Initialize on initial page load
+      if (document.readyState !== 'loading') {
+        initializeCodePenEmbeds();
+      }
+
+      // Re-initialize on Astro page transitions
+      document.addEventListener('astro:page-load', initializeCodePenEmbeds);
+    </script>
+    <script>
+      /**
+       * Mermaid Navigation Fix
+       * 修复从无 mermaid 页面导航到有 mermaid 页面时的渲染问题
+       *
+       * 问题根源：astro-mermaid 的 astro:after-swap 监听器被注册在 import().then() 内部
+       * 当首页没有 mermaid 图表时，监听器不会被注册，导致客户端导航时无法渲染
+       */
+      let mermaidModule: typeof import('mermaid').default | null = null;
+      let themeObserverSetup = false;
+
+      function hasUnprocessedDiagrams() {
+        return document.querySelectorAll('pre.mermaid:not([data-processed])').length > 0;
+      }
+
+      function getCurrentTheme(): 'default' | 'dark' | 'forest' | 'neutral' | 'base' | 'null' | undefined {
+        const dataTheme = document.documentElement.getAttribute('data-theme') || document.body?.getAttribute('data-theme');
+        // Explicitly restrict mapping to supported values
+        switch (dataTheme) {
+          case 'default':
+          case 'dark':
+          case 'forest':
+          case 'neutral':
+          case 'base':
+          case 'null':
+            return dataTheme;
+          case 'light':
+            // Map any explicit "light" to "default"
+            return 'default';
+          default:
+            return 'default';
+        }
+      }
+
+      async function initMermaidDiagrams() {
+        const diagrams = document.querySelectorAll('pre.mermaid:not([data-processed])');
+        if (diagrams.length === 0) return;
+
+        if (!mermaidModule) {
+          const { default: mermaid } = await import('mermaid');
+          mermaidModule = mermaid;
+        }
+
+        mermaidModule.initialize({
+          startOnLoad: false,
+          theme: getCurrentTheme(),
+          gitGraph: { mainBranchName: 'main', showCommitLabel: true, showBranches: true, rotateCommitLabel: true },
+        });
+
+        for (const diagram of diagrams) {
+          const pre = diagram as HTMLElement;
+          if (!pre.hasAttribute('data-diagram')) {
+            pre.setAttribute('data-diagram', pre.textContent || '');
+          }
+          const definition = pre.getAttribute('data-diagram') || '';
+          const id = 'mermaid-' + Math.random().toString(36).slice(2, 11);
+
+          try {
+            const { svg } = await mermaidModule.render(id, definition);
+            pre.innerHTML = svg;
+            pre.setAttribute('data-processed', 'true');
+          } catch (error) {
+            console.error('[mermaid-nav-fix] Error:', error);
+            pre.setAttribute('data-processed', 'true');
+          }
+        }
+
+        window.dispatchEvent(new CustomEvent('mermaid:rendered'));
+
+        if (!themeObserverSetup && mermaidModule) {
+          const observer = new MutationObserver(() => {
+            document.querySelectorAll('pre.mermaid[data-processed]').forEach((d) => d.removeAttribute('data-processed'));
+            initMermaidDiagrams();
+          });
+          observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+          themeObserverSetup = true;
+        }
+      }
+
+      // 关键：始终注册监听器，不依赖当前页面内容
+      // 只处理客户端导航场景，直接访问时由 astro-mermaid 处理
+      document.addEventListener('astro:after-swap', () => {
+        requestAnimationFrame(() => {
+          if (hasUnprocessedDiagrams()) {
+            initMermaidDiagrams();
+          }
+        });
+      });
+    </script>
+  </head>
+  <body>
+    <ChristmasEffects transition:persist="christmas-snowfall" />
+    <div class="flex min-h-screen flex-col text-black dark:text-white">
+      <Header isPostPage={isPostPage} tocNumbering={post?.data.tocNumbering ?? true} />
+      <main class="relative flex grow flex-col gap-4">
+        {(<slot />)}
+      </main>
+      {bgmConfig.enabled && bgmConfig.audio.length > 0 && (
+        <div transition:persist="global-bgm">
+          <GlobalBGMPlayer client:only="react" audioGroups={bgmConfig.audio} metingApi={bgmConfig.metingApi} />
+        </div>
+      )}
+      <FloatingGroup client:only="react" />
+      <MobileDrawer type={siderType} post={post} />
+      <SearchDialog client:idle />
+      <SearchPortal />
+      <CodeBlockFullscreen client:idle />
+      <DiagramFullscreen client:idle />
+      <ImageLightbox client:idle />
+      <Toaster client:idle />
+      <AnnouncementProvider />
+    </div>
+  </body>
+</html>
+
+<style is:global>
+  /* Progressive enhancement: scroll-state is experimental, browsers that don't support it will just not show the feather mask */
+  @supports (container-type: scroll-state) {
+    .scroll-feather-mask {
+      container-type: scroll-state;
+    }
+
+  @container scroll-state(scrollable: bottom) {
+      .scroll-feather-mask::after {
+        content: '';
+        background: linear-gradient(to bottom, transparent 0%, var(--gradient-bg-start) var(--mask-end-percent, 50%), var(--gradient-bg-start) var(--mask-start-percent, 100%));
+        position: absolute;
+        top: var(--mask-top, auto);
+        left: var(--mask-left, 0);
+        right: var(--mask-right, 0);
+        bottom: var(--mask-bottom, 0);
+        z-index: 10;
+        display: block;
+        height: var(--mask-height, 5rem);
+      }
+    }
+  }
+</style>
