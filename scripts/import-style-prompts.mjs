@@ -32,6 +32,13 @@ function safePromptSummary(prompt) {
   return prompt.replace(/\s+/g, ' ').trim().slice(0, 140);
 }
 
+function sanitizeOriginalPrompt(prompt) {
+  return prompt
+    .replace(/\[\$([^\]\s]+)\]\((?:file:\/\/)?(?:~|\/Users|\/home)[^)]*\/SKILL\.md\)/g, '/$1')
+    .replace(/(?:file:\/\/)?(?:~|\/Users|\/home)\/[^\s)]+\/([^/\s)]+)\/SKILL\.md/g, '/$1')
+    .trim();
+}
+
 function itemHashFromImageHashes(imageHashes) {
   if (imageHashes.length === 1) return imageHashes[0];
   return crypto.createHash('sha256').update(imageHashes.join('\n')).digest('hex');
@@ -137,7 +144,7 @@ function extractItems(records) {
         const message = typeof payload.message === 'string' ? payload.message : '';
         pendingInput = {
           images,
-          originalPrompt: message.trim(),
+          originalPrompt: sanitizeOriginalPrompt(message),
           timestamp: record.timestamp,
           sourceLine: index,
         };
