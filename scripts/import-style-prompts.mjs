@@ -17,7 +17,26 @@ const HF_S3_PREFIX = (process.env.STYLE_GALLERY_BUCKET_PREFIX ?? 'image-style-pr
 const HF_BUCKET_URI = `hf://buckets/${[HF_BUCKET_NAMESPACE, HF_S3_BUCKET, HF_S3_PREFIX].filter(Boolean).join('/')}`;
 
 function usage() {
-  console.error('Usage: node scripts/import-style-prompts.mjs <codex-session.jsonl>');
+  console.error('Usage: node scripts/import-style-prompts.mjs <codex-session.jsonl> [--metadata-only]');
+  console.error('       node scripts/import-style-prompts.mjs <codex-session.jsonl> [--update-metadata-only]');
+}
+
+function parseArgs(argv) {
+  const flags = new Set();
+  let sessionPath = null;
+
+  for (const arg of argv) {
+    if (arg === '-h' || arg.startsWith('--')) {
+      flags.add(arg);
+    } else if (!sessionPath) {
+      sessionPath = arg;
+    }
+  }
+
+  if (flags.has('--help') || flags.has('-h')) return { help: true, sessionPath, metadataOnly: false };
+
+  const metadataOnly = flags.has('--metadata-only') || flags.has('--update-metadata-only');
+  return { help: false, sessionPath, metadataOnly };
 }
 
 function parseDataUri(uri) {
@@ -54,6 +73,12 @@ function s3Uri(kind, fileName = '') {
 
 function apiImagePath(kind, fileName) {
   return `/api/style-gallery/image/${kind}/${fileName}`;
+}
+
+function importCommandComment(absoluteSessionPath, metadataOnly) {
+  const sessionName = path.basename(absoluteSessionPath);
+  const metadataFlag = metadataOnly ? ' --metadata-only' : '';
+  return `// npm run import:style-prompts -- /path/to/${sessionName}${metadataFlag}`;
 }
 
 function s5cmdArgs(...args) {
@@ -111,9 +136,22 @@ function frontmatter(data) {
       } else {
         lines.push(`${key}: ${JSON.stringify(value)}`);
       }
+    } else if (value instanceof Date) {
+      lines.push(`${key}: ${JSON.stringify(value.toISOString())}`);
     }
   }
   return `${lines.join('\n')}\n`;
+}
+
+function itemBody(data, importComment) {
+  return [
+    '---',
+    frontmatter(data).trimEnd(),
+    '---',
+    '',
+    'Imported from a Codex session history by `scripts/import-style-prompts.mjs`.',
+    importComment,
+  ].join('\n');
 }
 
 async function readRecords(sessionPath) {
@@ -168,13 +206,13 @@ function extractItems(records) {
   return items;
 }
 
-async function getExistingItemKeys(contentDir) {
-  const itemKeys = new Set();
+async function getExistingItems(contentDir) {
+  const items = new Map();
   let files = [];
   try {
     files = await fs.readdir(contentDir);
   } catch (error) {
-    if (error.code === 'ENOENT') return itemKeys;
+    if (error.code === 'ENOENT') return items;
     throw error;
   }
 
@@ -182,36 +220,54 @@ async function getExistingItemKeys(contentDir) {
     files
       .filter((file) => /\.(md|mdx)$/.test(file))
       .map(async (file) => {
-        const parsed = matter(await fs.readFile(path.join(contentDir, file), 'utf8'));
+        const filePath = path.join(contentDir, file);
+        const parsed = matter(await fs.readFile(filePath, 'utf8'));
         const imageHashes = Array.isArray(parsed.data.images)
           ? parsed.data.images.map((image) => image?.imageHash).filter(Boolean)
           : [parsed.data.imageHash].filter(Boolean);
-        if (imageHashes.length > 0) itemKeys.add(itemHashFromImageHashes(imageHashes));
+        if (imageHashes.length > 0) {
+          items.set(itemHashFromImageHashes(imageHashes), { filePath, data: parsed.data });
+        }
       }),
   );
 
-  return itemKeys;
+  return items;
+}
+
+async function updateExistingItemMetadata(existingItem, metadata, importComment) {
+  const data = {
+    ...existingItem.data,
+    originalPrompt: metadata.originalPrompt || existingItem.data.originalPrompt,
+    sourceSession: metadata.sourceSession,
+    sourceLine: metadata.sourceLine,
+  };
+
+  await fs.writeFile(existingItem.filePath, `${itemBody(data, importComment)}\n`, 'utf8');
 }
 
 async function main() {
-  const sessionPath = process.argv[2];
-  if (!sessionPath) {
+  const { help, sessionPath, metadataOnly } = parseArgs(process.argv.slice(2));
+  if (help || !sessionPath) {
     usage();
-    process.exit(1);
+    process.exit(help ? 0 : 1);
   }
 
   const root = process.cwd();
   const absoluteSessionPath = path.resolve(sessionPath);
+  const importComment = importCommandComment(absoluteSessionPath, metadataOnly);
   const contentDir = path.join(root, 'src/content/styleGallery');
   await fs.mkdir(contentDir, { recursive: true });
 
   const records = await readRecords(absoluteSessionPath);
   const items = extractItems(records);
-  const seenRemoteSourceFiles = listRemoteSourceFiles();
+  const seenRemoteSourceFiles = metadataOnly ? new Set() : listRemoteSourceFiles();
   const seenSourceFiles = new Set(seenRemoteSourceFiles);
-  const existingItemKeys = await getExistingItemKeys(contentDir);
+  const existingItems = await getExistingItems(contentDir);
   const duplicateHashes = new Set();
   let written = 0;
+  let existingMatched = 0;
+  let metadataUpdated = 0;
+  let metadataMissing = 0;
   let skippedDuplicate = 0;
   let uploadedFiles = 0;
 
@@ -234,10 +290,29 @@ async function main() {
     const imageHashes = assets.map((asset) => asset.hash);
     const itemHash = itemHashFromImageHashes(imageHashes);
     const itemShortHash = itemHash.slice(0, 12);
+    const existingItem = existingItems.get(itemHash);
 
-    if (existingItemKeys.has(itemHash)) {
+    if (existingItem) {
       duplicateHashes.add(itemHash);
+      existingMatched += 1;
+      if (metadataOnly) {
+        await updateExistingItemMetadata(
+          existingItem,
+          {
+            originalPrompt: item.originalPrompt,
+            sourceSession: path.basename(absoluteSessionPath),
+            sourceLine: item.sourceLine,
+          },
+          importComment,
+        );
+        metadataUpdated += 1;
+      }
       skippedDuplicate += 1;
+      continue;
+    }
+
+    if (metadataOnly) {
+      metadataMissing += 1;
       continue;
     }
 
@@ -284,27 +359,24 @@ async function main() {
       examples: [],
     };
 
-    const body = [
-      '---',
-      frontmatter(data).trimEnd(),
-      '---',
-      '',
-      'Imported from a Codex session history by `scripts/import-style-prompts.mjs`.',
-      '',
-    ].join('\n');
-
-    await fs.writeFile(path.join(contentDir, `${slug}.md`), body, 'utf8');
-    existingItemKeys.add(itemHash);
+    await fs.writeFile(path.join(contentDir, `${slug}.md`), `${itemBody(data, importComment)}\n`, 'utf8');
+    existingItems.set(itemHash, { filePath: path.join(contentDir, `${slug}.md`), data });
     written += 1;
   }
 
   console.log(`Found ${items.length} image/prompt items.`);
   console.log(`Wrote ${written} unique gallery items.`);
-  console.log(`Uploaded ${uploadedFiles} files to ${HF_BUCKET_URI}.`);
-  if (skippedDuplicate > 0) {
-    console.log(
-      `Skipped ${skippedDuplicate} duplicate image/prompt records (${duplicateHashes.size} unique image groups already in the gallery).`,
-    );
+  if (metadataOnly) {
+    console.log(`Matched ${existingMatched} existing gallery items.`);
+    console.log(`Updated metadata for ${metadataUpdated} existing gallery items.`);
+    console.log(`Skipped ${metadataMissing} new image/prompt records because --metadata-only was set.`);
+  } else {
+    console.log(`Uploaded ${uploadedFiles} files to ${HF_BUCKET_URI}.`);
+    if (skippedDuplicate > 0) {
+      console.log(
+        `Skipped ${skippedDuplicate} duplicate image/prompt records (${duplicateHashes.size} unique image groups already in the gallery).`,
+      );
+    }
   }
 }
 
