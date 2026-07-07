@@ -9,6 +9,15 @@ export interface StyleGalleryImageRef {
   imageHash: string;
 }
 
+export interface StyleGalleryExample {
+  src: string;
+  alt?: string;
+  model?: string;
+  note?: string;
+  uploadedAt?: string;
+  imageHash?: string;
+}
+
 export interface StyleGalleryCardData {
   slug: string;
   title: string;

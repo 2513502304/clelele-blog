@@ -4,9 +4,9 @@ import type { APIRoute } from 'astro';
 export const prerender = false;
 
 function isAllowedImageKey(key: string): boolean {
-  if (!key.startsWith('source/') && !key.startsWith('thumb/')) return false;
   if (key.includes('..') || key.includes('\\')) return false;
-  return /^\/?(source|thumb)\/[a-f0-9]{12}\.(jpg|jpeg|png|webp)$/i.test(key);
+  if (/^\/?(source|thumb)\/[a-f0-9]{12}\.(jpg|jpeg|png|webp)$/i.test(key)) return true;
+  return /^\/?examples\/[a-z0-9-]+\/[a-z0-9-]+\/[a-f0-9]{12}\.(jpg|jpeg|png|webp)$/i.test(key);
 }
 
 export const GET: APIRoute = ({ params }) => {

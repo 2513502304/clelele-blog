@@ -8,7 +8,7 @@ import matter from 'gray-matter';
 import sharp from 'sharp';
 
 const PLACEHOLDER = '[在此处替换为您想要生成的主体内容]';
-const DEFAULT_TARGETS = ['GPT-Image2', 'Nano Banana', 'Midjourney', 'Flux'];
+const DEFAULT_TARGETS = ['GPT-Image2', 'Nano Banana', 'PixAI', 'Midjourney', 'Flux'];
 const HF_S3_PROFILE = process.env.STYLE_GALLERY_S3_PROFILE ?? 'hf';
 const HF_S3_ENDPOINT = process.env.HF_S3_ENDPOINT ?? 'https://s3.hf.co/clelele0722';
 const HF_BUCKET_NAMESPACE = new URL(HF_S3_ENDPOINT).pathname.replace(/^\/+|\/+$/g, '');
@@ -84,6 +84,39 @@ function importCommandComment(absoluteSessionPath, metadataOnly) {
   ].join('\n');
 }
 
+function isPlainYamlScalar(value) {
+  return (
+    value.length > 0 &&
+    value.length <= 120 &&
+    !/^[\s"'[\]{}#&*!|>@`%-]/.test(value) &&
+    !/[:\n\r]/.test(value) &&
+    !/\s#/.test(value)
+  );
+}
+
+function scalarYaml(value) {
+  if (value.includes('\n')) {
+    return ['|-', ...value.split('\n').map((line) => `  ${line}`)].join('\n');
+  }
+  if (value.length > 120) return [`>-`, `  ${value}`].join('\n');
+  if (isPlainYamlScalar(value)) return value;
+  return JSON.stringify(value);
+}
+
+function serializeFrontmatterField(key, value) {
+  if (typeof value === 'string') return `${key}: ${scalarYaml(value)}`;
+  if (typeof value === 'number' || typeof value === 'boolean') return `${key}: ${value}`;
+  if (Array.isArray(value)) {
+    if (value.length === 0) return `${key}: []`;
+    if (value.every((item) => typeof item === 'string')) {
+      return [`${key}:`, ...value.map((item) => `  - ${scalarYaml(item).replace(/\n/g, '\n    ')}`)].join('\n');
+    }
+    return `${key}: ${JSON.stringify(value)}`;
+  }
+  if (value instanceof Date) return `${key}: ${JSON.stringify(value.toISOString())}`;
+  return null;
+}
+
 function s5cmdArgs(...args) {
   return ['--profile', HF_S3_PROFILE, '--endpoint-url', HF_S3_ENDPOINT, ...args];
 }
@@ -122,26 +155,8 @@ function uploadToBucket(localPath, kind, fileName) {
 function frontmatter(data) {
   const lines = [];
   for (const [key, value] of Object.entries(data)) {
-    if (typeof value === 'string') {
-      if (value.includes('\n')) {
-        lines.push(`${key}: |-`);
-        lines.push(...value.split('\n').map((line) => `  ${line}`));
-      } else {
-        lines.push(`${key}: ${JSON.stringify(value)}`);
-      }
-    } else if (typeof value === 'number' || typeof value === 'boolean') {
-      lines.push(`${key}: ${value}`);
-    } else if (Array.isArray(value)) {
-      if (value.length === 0) {
-        lines.push(`${key}: []`);
-      } else if (value.every((item) => typeof item === 'string')) {
-        lines.push(`${key}: [${value.map((item) => JSON.stringify(item)).join(', ')}]`);
-      } else {
-        lines.push(`${key}: ${JSON.stringify(value)}`);
-      }
-    } else if (value instanceof Date) {
-      lines.push(`${key}: ${JSON.stringify(value.toISOString())}`);
-    }
+    const serialized = serializeFrontmatterField(key, value);
+    if (serialized) lines.push(serialized);
   }
   return `${lines.join('\n')}\n`;
 }
@@ -238,14 +253,82 @@ async function getExistingItems(contentDir) {
 }
 
 async function updateExistingItemMetadata(existingItem, metadata, importComment) {
-  const data = {
-    ...existingItem.data,
-    originalPrompt: metadata.originalPrompt || existingItem.data.originalPrompt,
-    sourceSession: metadata.sourceSession,
-    sourceLine: metadata.sourceLine,
-  };
+  const raw = await fs.readFile(existingItem.filePath, 'utf8');
+  const fields = {};
+  const originalPrompt = metadata.originalPrompt || existingItem.data.originalPrompt;
+  if (originalPrompt && originalPrompt !== existingItem.data.originalPrompt) fields.originalPrompt = originalPrompt;
+  if (metadata.sourceSession && metadata.sourceSession !== existingItem.data.sourceSession) {
+    fields.sourceSession = metadata.sourceSession;
+  }
+  if (metadata.sourceLine !== undefined && metadata.sourceLine !== existingItem.data.sourceLine) {
+    fields.sourceLine = metadata.sourceLine;
+  }
+  const updatedFrontmatter = updateFrontmatterFields(raw, fields);
+  const updatedContent = updateImportCommandComment(updatedFrontmatter, importComment);
+  if (updatedContent !== raw) {
+    await fs.writeFile(existingItem.filePath, updatedContent.endsWith('\n') ? updatedContent : `${updatedContent}\n`, 'utf8');
+  }
+}
 
-  await fs.writeFile(existingItem.filePath, `${itemBody(data, importComment)}\n`, 'utf8');
+function splitFrontmatter(raw) {
+  const lines = raw.split(/\r?\n/);
+  if (lines[0] !== '---') return null;
+  const endIndex = lines.findIndex((line, index) => index > 0 && line === '---');
+  if (endIndex < 0) return null;
+  return {
+    lines,
+    startIndex: 1,
+    endIndex,
+  };
+}
+
+function findFieldRange(lines, startIndex, endIndex, key) {
+  const fieldPattern = new RegExp(`^${key}:`);
+  const topLevelFieldPattern = /^[A-Za-z_][A-Za-z0-9_-]*:/;
+  const start = lines.findIndex((line, index) => index >= startIndex && index < endIndex && fieldPattern.test(line));
+  if (start < 0) return null;
+  let end = start + 1;
+  while (end < endIndex && !topLevelFieldPattern.test(lines[end])) end += 1;
+  return { start, end };
+}
+
+function updateFrontmatterFields(raw, fields) {
+  const frontmatterParts = splitFrontmatter(raw);
+  if (!frontmatterParts) return raw;
+  const { lines } = frontmatterParts;
+  let endIndex = frontmatterParts.endIndex;
+
+  for (const [key, value] of Object.entries(fields)) {
+    if (value === undefined || value === null || value === '') continue;
+    const serialized = serializeFrontmatterField(key, value);
+    if (!serialized) continue;
+    const replacement = serialized.split('\n');
+    const range = findFieldRange(lines, frontmatterParts.startIndex, endIndex, key);
+    if (range) {
+      lines.splice(range.start, range.end - range.start, ...replacement);
+      endIndex += replacement.length - (range.end - range.start);
+    } else {
+      lines.splice(endIndex, 0, ...replacement);
+      endIndex += replacement.length;
+    }
+  }
+
+  return lines.join('\n');
+}
+
+function updateImportCommandComment(raw, importComment) {
+  const marker = 'Imported from a Codex session history by `scripts/import-style-prompts.mjs`.';
+  const commentLines = importComment.split('\n');
+  const lines = raw.split(/\r?\n/);
+  const markerIndex = lines.findIndex((line) => line.trim() === marker);
+  if (markerIndex < 0) return raw;
+
+  let insertEnd = markerIndex + 1;
+  while (insertEnd < lines.length && /^\/\/ (script|npm): /.test(lines[insertEnd])) {
+    insertEnd += 1;
+  }
+  lines.splice(markerIndex + 1, insertEnd - markerIndex - 1, ...commentLines);
+  return lines.join('\n');
 }
 
 async function main() {
@@ -387,3 +470,6 @@ main().catch((error) => {
   console.error(error);
   process.exit(1);
 });
+
+// Direct script: node scripts/import-style-prompts.mjs /path/to/codex-session.jsonl
+// npm script: npm run import:style-prompts -- /path/to/codex-session.jsonl

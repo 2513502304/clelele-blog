@@ -1,5 +1,6 @@
 ---
 import HomeSider from '@components/layout/HomeSider.astro';
+import StyleGalleryExamples from '@components/style-gallery/StyleGalleryExamples';
 import StylePromptCopy from '@components/style-gallery/StylePromptCopy';
 import Cover from '@components/ui/cover/Cover.astro';
 import { CONTENT_PADDING } from '@constants/layout';
@@ -127,34 +128,7 @@ const referenceImages = data.images?.length
             ) : null}
           </div>
 
-          <section class="rounded-lg border border-rose-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-950">
-            <div class="mb-4 flex items-center justify-between gap-3">
-              <div>
-                <p class="text-sm font-bold text-rose-500">{t(locale, 'gallery.examples')}</p>
-                <h2 class="font-black text-2xl text-gray-950 dark:text-white">{t(locale, 'gallery.subGallery')}</h2>
-              </div>
-              <span class="rounded-full bg-rose-50 px-3 py-1 text-xs font-bold text-rose-500 dark:bg-rose-950/40 dark:text-rose-200">
-                {examples.length}
-              </span>
-            </div>
-            {examples.length ? (
-              <div class="grid grid-cols-3 gap-3 md:grid-cols-2">
-                {examples.map((example) => (
-                  <figure class="overflow-hidden rounded-lg border border-gray-100 bg-gray-50 dark:border-gray-800 dark:bg-gray-900">
-                    <img src={example.src} alt={example.alt ?? example.model ?? 'Generated example'} loading="lazy" class="aspect-square w-full object-cover" />
-                    <figcaption class="space-y-1 p-3 text-xs text-gray-500 dark:text-gray-300">
-                      {example.model && <p class="font-bold text-gray-800 dark:text-white">{example.model}</p>}
-                      {example.note && <p>{example.note}</p>}
-                    </figcaption>
-                  </figure>
-                ))}
-              </div>
-            ) : (
-              <div class="rounded-lg border border-dashed border-rose-200 bg-rose-50/60 p-6 text-sm text-gray-500 dark:border-gray-800 dark:bg-gray-900/60 dark:text-gray-300">
-                {t(locale, 'gallery.noExamples')}
-              </div>
-            )}
-          </section>
+          <StyleGalleryExamples client:load slug={getStyleGallerySlug(item)} title={data.title} initialExamples={examples} />
 
         </section>
       </article>
