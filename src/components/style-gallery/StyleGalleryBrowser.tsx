@@ -4,7 +4,7 @@ import { useMemo, useRef, useState } from 'react';
 export interface StyleGalleryBrowserItem {
   slug: string;
   title: string;
-  description?: string;
+  prompt: string;
   date: string;
   sourceImage: string;
   thumbnailImage?: string;
@@ -47,7 +47,7 @@ export default function StyleGalleryBrowser({ items, tags, galleryBasePath }: St
     const q = normalize(query);
     const filtered = items.filter((item) => {
       const matchesTag = activeTag === 'all' || item.tags.includes(activeTag);
-      const searchable = [item.title, item.description, ...item.tags, ...item.modelTargets].filter(Boolean).join(' ');
+      const searchable = [item.title, item.prompt, ...item.tags, ...item.modelTargets].filter(Boolean).join(' ');
       const matchesQuery = !q || normalize(searchable).includes(q);
       return matchesTag && matchesQuery;
     });
@@ -169,7 +169,7 @@ export default function StyleGalleryBrowser({ items, tags, galleryBasePath }: St
                 </div>
               </div>
               <p className="line-clamp-4 min-h-22 text-pretty text-gray-600 text-sm leading-6 dark:text-gray-300">
-                {item.description}
+                {item.prompt}
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {item.modelTargets.slice(0, 4).map((target) => (

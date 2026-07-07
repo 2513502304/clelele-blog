@@ -31,7 +31,7 @@ export function toStyleGalleryCardData(item: StyleGalleryItem): StyleGalleryCard
   return {
     slug: getStyleGallerySlug(item),
     title: item.data.title,
-    description: item.data.description,
+    prompt: item.data.prompt,
     date: item.data.date,
     sourceImage: item.data.sourceImage,
     thumbnailImage: item.data.thumbnailImage,
