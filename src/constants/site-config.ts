@@ -317,18 +317,24 @@ export const bgmConfig: { enabled: boolean; metingApi?: string; audio: BgmAudioG
 // Bangumi media tracking config — null when disabled (section commented out in YAML)
 export const bangumiConfig: BangumiConfig | null = yamlConfig.bangumi ?? null;
 
-// Navigation routers with auto-injected bangumi entry
-export const routers: RouterItem[] = bangumiConfig
-  ? [
-      ...baseRouters,
-      {
-        name: bangumiConfig.label,
-        nameKey: bangumiConfig.label ? undefined : 'nav.bangumi',
-        path: '/bangumi',
-        icon: bangumiConfig.icon ?? 'ri:bilibili-fill',
-      },
-    ]
-  : baseRouters;
+const styleGalleryRouter = baseRouters.find((router) => router.path === '/image-style-prompt-gallery');
+const routersWithoutStyleGallery = baseRouters.filter((router) => router.path !== '/image-style-prompt-gallery');
+
+// Navigation routers with auto-injected bangumi entry. Keep the style prompt gallery after bangumi.
+export const routers: RouterItem[] = [
+  ...routersWithoutStyleGallery,
+  ...(bangumiConfig
+    ? [
+        {
+          name: bangumiConfig.label,
+          nameKey: bangumiConfig.label ? undefined : 'nav.bangumi',
+          path: '/bangumi',
+          icon: bangumiConfig.icon ?? 'ri:bilibili-fill',
+        },
+      ]
+    : []),
+  ...(styleGalleryRouter ? [styleGalleryRouter] : []),
+];
 
 // Map YAML dev tools config with defaults (dev only)
 export const devConfig: DevConfig = {
