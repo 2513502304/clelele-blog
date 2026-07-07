@@ -47,10 +47,6 @@ function parseDataUri(uri) {
   return { mime, data, ext };
 }
 
-function safePromptSummary(prompt) {
-  return prompt.replace(/\s+/g, ' ').trim().slice(0, 140);
-}
-
 function sanitizeOriginalPrompt(prompt) {
   return prompt
     .replace(/\[\$([^\]\s]+)\]\((?:file:\/\/)?(?:~|\/Users|\/home)[^)]*\/SKILL\.md\)/g, '/$1')
@@ -429,7 +425,6 @@ async function main() {
     }));
     const data = {
       title,
-      description: safePromptSummary(item.prompt),
       date: date.toISOString(),
       sourceImage: imageRefs[0].sourceImage,
       thumbnailImage: imageRefs[0].thumbnailImage,

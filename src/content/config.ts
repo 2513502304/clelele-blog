@@ -65,7 +65,6 @@ const styleGalleryImageSchema = z.object({
 const styleGalleryCollection = defineCollection({
   schema: z.object({
     title: z.string(),
-    description: z.string().optional(),
     date: dateInSiteTimezone,
     updated: dateInSiteTimezone.optional(),
     sourceImage: z.string(),
