@@ -1,0 +1,137 @@
+---
+import HomeSider from '@components/layout/HomeSider.astro';
+import StyleGalleryExamples from '@components/style-gallery/StyleGalleryExamples';
+import StylePromptCopy from '@components/style-gallery/StylePromptCopy';
+import Cover from '@components/ui/cover/Cover.astro';
+import { CONTENT_PADDING } from '@constants/layout';
+import { siteConfig } from '@constants/site-config';
+import Layout from '@layouts/Layout.astro';
+import TwoColumnLayout from '@layouts/TwoColumnLayout.astro';
+import { displayDate } from '@lib/date';
+import {
+  getStyleGalleryItemById,
+  getStyleGalleryItemBySlug,
+  getStyleGalleryItems,
+  getStyleGallerySlug,
+} from '@lib/style-gallery';
+import { Icon } from 'astro-icon/components';
+import { getLocaleFromUrl, localizedPath, t } from '@/i18n';
+
+export async function getStaticPaths() {
+  const items = await getStyleGalleryItems();
+  return items.map((item) => ({
+    params: { slug: getStyleGallerySlug(item) },
+    props: { itemId: item.id },
+  }));
+}
+
+interface Props {
+  itemId?: string;
+}
+
+const { itemId } = Astro.props as Props;
+const { slug } = Astro.params;
+const locale = getLocaleFromUrl(Astro.url.pathname);
+const item = itemId ? await getStyleGalleryItemById(itemId) : slug ? await getStyleGalleryItemBySlug(slug) : undefined;
+if (!item) throw new Error(`Style gallery item not found: ${itemId ?? slug}`);
+
+const data = item.data;
+const title = `${data.title} | ${t(locale, 'gallery.title')} | ${siteConfig.title}`;
+const description = data.description ?? data.prompt.slice(0, 140);
+const galleryPath = localizedPath('/image-style-prompt-gallery', locale);
+const examples = data.examples ?? [];
+const referenceImages = data.images?.length
+  ? data.images
+  : [
+      {
+        sourceImage: data.sourceImage,
+        thumbnailImage: data.thumbnailImage,
+        sourceImageAlt: data.sourceImageAlt,
+        imageHash: data.imageHash,
+      },
+    ];
+---
+
+<Layout title={title} description={description}>
+  <TwoColumnLayout>
+    <Cover slot="cover" title={data.title} />
+    <HomeSider slot="sider" />
+    <div class={`bg-gradient-start shadow-box tablet:shadow-none flex flex-col gap-6 overflow-hidden ${CONTENT_PADDING.standard}`}>
+      <nav class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+        <Icon name="fa6-solid:house-chimney" class="size-4" />
+        <a href={localizedPath('/', locale)} class="hover:text-rose-500">{t(locale, 'breadcrumb.home')}</a>
+        <Icon name="ri:arrow-right-s-line" class="size-4 opacity-60" />
+        <a href={galleryPath} data-astro-prefetch="false" class="hover:text-rose-500">{t(locale, 'gallery.title')}</a>
+        <Icon name="ri:arrow-right-s-line" class="size-4 opacity-60" />
+        <span class="line-clamp-1 text-gray-900 dark:text-white">{data.title}</span>
+      </nav>
+
+      <article class="grid grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] gap-6 lg:grid-cols-1" data-pagefind-body>
+        <section class="space-y-4">
+          <div class="rounded-lg border border-rose-100 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-gray-950">
+            <div class:list={['grid gap-3', referenceImages.length > 1 ? 'grid-cols-2 md:grid-cols-1' : 'grid-cols-1']}>
+              {referenceImages.map((image, index) => (
+                <figure class="overflow-hidden rounded-md bg-rose-50 dark:bg-gray-900">
+                  <img
+                    src={image.sourceImage}
+                    alt={image.sourceImageAlt ?? `${data.title} reference image ${index + 1}`}
+                    class="max-h-[72vh] w-full object-contain"
+                  />
+                  {referenceImages.length > 1 && (
+                    <figcaption class="flex items-center justify-between gap-2 px-3 py-2 text-xs text-gray-500 dark:text-gray-300">
+                      <span class="font-bold">Reference {index + 1}</span>
+                      <span class="truncate font-mono" title={image.imageHash}>{image.imageHash.slice(0, 12)}</span>
+                    </figcaption>
+                  )}
+                </figure>
+              ))}
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-3 md:grid-cols-1">
+            <div class="rounded-lg border border-rose-100 bg-white p-4 dark:border-gray-800 dark:bg-gray-950">
+              <p class="text-xs font-bold uppercase tracking-wider text-gray-400">{t(locale, 'gallery.importedAt')}</p>
+              <p class="mt-1 font-bold text-gray-900 dark:text-white">{displayDate.date(data.date)}</p>
+            </div>
+            <div class="rounded-lg border border-rose-100 bg-white p-4 dark:border-gray-800 dark:bg-gray-950">
+              <p class="text-xs font-bold uppercase tracking-wider text-gray-400">{referenceImages.length > 1 ? 'GROUP SHA-256' : 'SHA-256'}</p>
+              <p class="mt-1 truncate font-mono text-xs text-gray-700 dark:text-gray-300" title={data.imageHash}>{data.imageHash}</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="space-y-5">
+          <div class="rounded-lg border border-rose-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-950">
+            <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p class="text-sm font-bold text-rose-500">{t(locale, 'gallery.prompt')}</p>
+                <h1 class="mt-1 text-balance font-black text-3xl text-gray-950 dark:text-white">{data.title}</h1>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                {(data.modelTargets ?? []).map((target) => (
+                  <span class="rounded-full bg-sky-50 px-3 py-1 text-xs font-bold text-sky-600 dark:bg-sky-950/50 dark:text-sky-200">{target}</span>
+                ))}
+              </div>
+            </div>
+            <StylePromptCopy client:load prompt={data.prompt} />
+            {data.originalPrompt && (
+              <div class="mt-4 rounded-lg border border-sky-100 bg-sky-50/70 p-4 dark:border-sky-950/60 dark:bg-sky-950/30">
+                <p class="text-xs font-bold uppercase tracking-wider text-sky-500 dark:text-sky-200">Original user prompt</p>
+                <p class="mt-2 whitespace-pre-wrap text-sm leading-7 text-gray-700 dark:text-gray-200">{data.originalPrompt}</p>
+              </div>
+            )}
+            {data.tags?.length ? (
+              <div class="mt-4 flex flex-wrap gap-2">
+                {data.tags.map((tag) => (
+                  <span class="rounded-full border border-rose-100 px-3 py-1 text-xs font-bold text-gray-500 dark:border-gray-800 dark:text-gray-300">#{tag}</span>
+                ))}
+              </div>
+            ) : null}
+          </div>
+
+          <StyleGalleryExamples client:load slug={getStyleGallerySlug(item)} title={data.title} initialExamples={examples} />
+
+        </section>
+      </article>
+    </div>
+  </TwoColumnLayout>
+</Layout>

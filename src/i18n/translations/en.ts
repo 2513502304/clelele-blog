@@ -18,6 +18,7 @@ export const uiStrings: UIStrings = {
   'nav.music': 'Music',
   'nav.weekly': 'Weekly',
   'nav.bangumi': 'Bangumi',
+  'nav.styleGallery': 'Style Gallery',
 
   // ── Common ──────────────────────────────────────────────────
   'common.search': 'Search',
@@ -114,6 +115,18 @@ export const uiStrings: UIStrings = {
   'friends.copyConfig': 'Copy Config',
   'friends.copiedConfig': 'Copied!',
   'friends.hint': 'Tip: Copy the code above and paste it in the comment section below.',
+
+  // ── Image Style Prompt Gallery ──────────────────────────────
+  'gallery.title': 'Image Style Prompt Gallery',
+  'gallery.kicker': 'Reference image to reusable prompt',
+  'gallery.description':
+    'A personal archive of reusable Chinese image-style prompts reverse-engineered from reference images for GPT-Image, Nano Banana, Midjourney, and Flux.',
+  'gallery.items': 'style prompts',
+  'gallery.prompt': 'Prompt',
+  'gallery.examples': 'Generated examples',
+  'gallery.subGallery': 'Sub-gallery',
+  'gallery.noExamples': 'Generated examples created from this prompt will appear here after they are added manually.',
+  'gallery.importedAt': 'Imported',
 
   // ── Code Block ──────────────────────────────────────────────
   'code.copy': 'Copy code',

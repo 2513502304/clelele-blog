@@ -11,23 +11,26 @@
 # Site Basic Information
 # =============================================================================
 site:
-  title: 余弦の博客 # 网站名称
-  alternate: cosine # 网站英文名称 用于页脚、Logo、@ handle 等
-  subtitle: WA 的一声就哭了 # 网站副标题
-  name: cos # 作者名称 - 请修改为你的名字
-  description: 一个基于 Astro 的现代化博客主题 # 网站描述
+  title: clelele 的博客 # 网站名称
+  alternate: clelele # 网站英文名称 用于页脚、Logo、@ handle 等
+  subtitle: Even if you don't reincarnate into another world, you must show your true abilities! # 网站副标题
+  name: clelele # 作者名称 - 请修改为你的名字
+  description: 记录技术、AIGC、ACG 与一些日常想法 # 网站描述
   avatar: /img/avatar.webp # 网站头像
   showLogo: true # 是否显示 Logo
-  author: Author # 作者名称 - 请修改为你的名字
-  url: https://koharu.cosine.ren # 站点 URL 用于 RSS 和 SEO
+  author: clelele # 作者名称 - 请修改为你的名字
+  url: https://clelele-blog.vercel.app # 站点 URL 用于 RSS 和 SEO
   defaultOgImage: /img/avatar.webp # 默认 Open Graph 图片
-  startYear: 2024 # 建站年份
+  startYear: 2026 # 建站年份
   timezone: Asia/Shanghai # 时区配置 (IANA 格式)，用于日期显示和处理
   keywords: # SEO 关键词 (全局)
-    - 博客
-    - Astro
     - 技术
-    - 前端
+    - Codex
+    - Claude Code
+    - AIGC
+    - AI 绘画
+    - 手办
+    - ACG
     # 请根据你的网站内容添加关键词
   # breadcrumbHome: 首页  # 面包屑导航中首页的显示名称（默认: '首页'）
   # icp:                         # ICP 备案号（可自定义链接）
@@ -127,14 +130,12 @@ featuredSeries:
     label: 我的周刊 # 简短名称
     fullName: 我的技术周刊 # 完整名称
     description: | # 支持多行 Markdown
-      这是周刊/系列文章功能的示例配置。
-      你可以用它来发布定期更新的系列内容，如技术周刊、读书笔记系列等。
-      设置 enabled: false 可以关闭此功能。
+      记录最近读到、折腾到、想明白或还没想明白的技术与 AIGC 内容。
     cover: /img/weekly_header.webp # 系列页面头图
     enabled: true # 启用此系列
     icon: ri:newspaper-line # 导航图标
     links: # 相关链接（可选）
-      github: https://github.com/your-username/your-repo # (可选) GitHub 仓库
+      github: https://github.com/2513502304/clelele-blog # (可选) GitHub 仓库
       rss: /rss.xml # (可选) RSS 订阅链接
       # chrome: https://chromewebstore.google.com/detail/your-extension-id # (可选) 浏览器插件
       # docs: https://your-docs-url # (可选) 文档链接
@@ -162,13 +163,21 @@ featuredSeries:
 # -----------------------------------------------------------------------------
 social:
   github:
-    url: https://github.com/your-username # 替换为你的 GitHub 链接
+    url: https://github.com/2513502304 # 替换为你的 GitHub 链接
     icon: ri:github-fill # Remix Icon 的 GitHub 图标
     color: '#191717' # (可选) 图标颜色
+  twitter:
+    url: https://x.com/ChijiangZhai
+    icon: ri:twitter-fill
+    color: '#4b9ae4'
   email:
-    url: mailto:your@email.com # 替换为你的邮箱，需加 mailto: 前缀
+    url: mailto:chijiangzhai@gmail.com
     icon: ri:mail-line
-    color: '#55acd5'
+    color: '#d93025'
+  qqMail:
+    url: mailto:2513502304@qq.com
+    icon: ri:mail-line
+    color: '#12b7f5'
   rss:
     url: /rss.xml # 站内 RSS 订阅地址
     icon: ri:rss-line
@@ -224,31 +233,7 @@ friends:
         desc: 站点简介 # 站点简介
         image: https://your-blog.com/avatar.jpg # 头像链接
         color: "#ffc0cb" # 主题色（可选）
-  data: # 友链列表
-    - site: 余弦の博客
-      url: https://blog.cosine.ren
-      owner: cos
-      desc: FE / ACG / 手工 / 深色模式强迫症 / INFP / 兴趣广泛养两只猫的老宅女 / remote
-      image: https://blog.cosine.ren/img/avatar.webp
-      color: '#ed788b'
-    - site: 示例博客 A
-      url: https://example-a.com
-      owner: Alice
-      desc: 一个热爱技术的开发者
-      image: https://api.dicebear.com/7.x/avataaars/svg?seed=Alice
-      color: '#BEDCFF'
-    - site: 示例博客 B
-      url: https://example-b.com
-      owner: Bob
-      desc: 分享生活与技术的小站
-      image: https://api.dicebear.com/7.x/avataaars/svg?seed=Bob
-      color: '#FBC1CC'
-    - site: 示例博客 C
-      url: https://example-c.com
-      owner: Carol
-      desc: 记录学习与成长的地方
-      image: https://api.dicebear.com/7.x/avataaars/svg?seed=Carol
-      color: '#ABDCFF'
+  data: [] # 友链列表
 
 # =============================================================================
 # Announcements
@@ -379,6 +364,10 @@ navigation:
     nameKey: nav.weekly
     path: /weekly
     icon: ri:newspaper-line
+  - name: Image Style Prompt Gallery
+    nameKey: nav.styleGallery
+    path: /image-style-prompt-gallery
+    icon: ri:gallery-view-2
   - name: 文章 # 有子菜单时，path 可省略
     nameKey: nav.posts
     icon: ri:quill-pen-ai-fill
@@ -564,10 +553,10 @@ comment:
 analytics:
   umami:
     enabled: true
-    id: your-umami-id
-    endpoint: https://stats.example.com
+    id: 6b28e47a-1ae8-4253-916a-1ce8b8142617
+    endpoint: https://cloud.umami.is
     # statistics_display:
-    #   token: your-umami-share-token
+    #   token: ''
     #   article_page_views: true
     #   footer_site_stats: true
 
@@ -632,7 +621,7 @@ christmas:
 #   icon: 导航图标，Iconify 格式（可选，默认：ri:bilibili-fill）
 # -----------------------------------------------------------------------------
 bangumi:
-  userId: cosine
+  userId: 1262349
   # label: 追番
   # icon: ri:bilibili-fill
 
@@ -651,7 +640,7 @@ bangumi:
 #     - urlTemplate: URL 模板，支持占位符 {path}（文件绝对路径）
 # -----------------------------------------------------------------------------
 dev:
-  localProjectPath: '/Users/yourname/path/to/astro-koharu' # 请修改为你的项目绝对路径
+  localProjectPath: '' # 本地使用编辑按钮时再填项目绝对路径，不建议提交个人 home 路径
   contentRelativePath: 'src/content/blog'
   editors:
     - id: vscode

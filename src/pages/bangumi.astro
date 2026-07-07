@@ -9,22 +9,28 @@ import TwoColumnLayout from '@layouts/TwoColumnLayout.astro';
 import { Comment } from '@/components/comment';
 import { getLocaleFromUrl, t } from '@/i18n';
 
-if (!bangumiConfig) return Astro.redirect('/404');
-
 const locale = getLocaleFromUrl(Astro.url.pathname);
 const title = `${t(locale, 'bangumi.title')} | ${siteConfig.title}`;
 const description = t(locale, 'bangumi.description');
+
+if (!bangumiConfig) {
+  Astro.response.status = 404;
+}
 ---
 
-<Layout title={title} description={description}>
-  <TwoColumnLayout>
-    <Cover slot="cover" title={t(locale, 'bangumi.title')} />
-    <HomeSider slot="sider" />
-    <div
-      class={`bg-gradient-start shadow-box tablet:shadow-none flex flex-col overflow-hidden ${CONTENT_PADDING.standard}`}
-    >
-      <BangumiCollection client:load userId={bangumiConfig.userId} />
-      <Comment />
-    </div>
-  </TwoColumnLayout>
-</Layout>
+{
+  bangumiConfig && (
+    <Layout title={title} description={description}>
+      <TwoColumnLayout>
+        <Cover slot="cover" title={t(locale, 'bangumi.title')} />
+        <HomeSider slot="sider" />
+        <div
+          class={`bg-gradient-start shadow-box tablet:shadow-none flex flex-col overflow-hidden ${CONTENT_PADDING.standard}`}
+        >
+          <BangumiCollection client:load userId={bangumiConfig.userId} />
+          <Comment />
+        </div>
+      </TwoColumnLayout>
+    </Layout>
+  )
+}

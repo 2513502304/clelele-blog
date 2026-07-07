@@ -18,6 +18,7 @@ export const uiStrings: UIStrings = {
   'nav.music': '音楽',
   'nav.weekly': '週刊',
   'nav.bangumi': 'オタ活の記録',
+  'nav.styleGallery': 'スタイルギャラリー',
 
   // ── 一般 ──────────────────────────────────────────────────
   'common.search': '検索',
@@ -114,6 +115,17 @@ export const uiStrings: UIStrings = {
   'friends.copyConfig': '構成をコピー',
   'friends.copiedConfig': 'コピーしました!',
   'friends.hint': '説明: 上記のコードをコピーして、下のコメントセクションに貼り付けてください。',
+
+  // ── Image Style Prompt Gallery ──────────────────────────────
+  'gallery.title': 'Image Style Prompt Gallery',
+  'gallery.kicker': 'Reference image to reusable prompt',
+  'gallery.description': '参考画像から抽出した、中国語の再利用可能な画像スタイル prompt を集めた個人アーカイブです。',
+  'gallery.items': 'style prompts',
+  'gallery.prompt': 'Prompt',
+  'gallery.examples': 'Generated examples',
+  'gallery.subGallery': 'Sub-gallery',
+  'gallery.noExamples': 'この prompt で生成したサンプル画像は、手動で追加したあとここに表示されます。',
+  'gallery.importedAt': 'Imported',
 
   // ── コードブロック ──────────────────────────────────────────────
   'code.copy': 'コードをコピー',

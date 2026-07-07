@@ -1,0 +1,20 @@
+---
+import { getStyleGalleryItems, getStyleGallerySlug } from '@lib/style-gallery';
+import { defaultLocale, localeList } from '@/i18n/config';
+import GalleryItemPage from '../../image-style-prompt-gallery/[slug].astro';
+
+export async function getStaticPaths() {
+  const nonDefaultLocales = localeList.filter((l) => l !== defaultLocale);
+  const items = await getStyleGalleryItems();
+  return nonDefaultLocales.flatMap((lang) =>
+    items.map((item) => ({
+      params: { lang, slug: getStyleGallerySlug(item) },
+      props: { itemId: item.id },
+    })),
+  );
+}
+
+const { itemId } = Astro.props;
+---
+
+<GalleryItemPage itemId={itemId} />
