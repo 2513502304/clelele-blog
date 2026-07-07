@@ -17,6 +17,7 @@ export const uiStrings = {
   'nav.music': '歌单',
   'nav.weekly': '周刊',
   'nav.bangumi': '追番',
+  'nav.styleGallery': '风格提示词',
 
   // ── Common ──────────────────────────────────────────────────
   'common.search': '搜索',
@@ -113,6 +114,18 @@ export const uiStrings = {
   'friends.copyConfig': '复制配置',
   'friends.copiedConfig': '已复制!',
   'friends.hint': '提示: 复制上方代码并在下方评论区粘贴发送即可，我会收到的～',
+
+  // ── Image Style Prompt Gallery ──────────────────────────────
+  'gallery.title': 'Image Style Prompt Gallery',
+  'gallery.kicker': 'Reference image to reusable prompt',
+  'gallery.description':
+    '收藏从参考图反推出的中文风格提示词，每张图都对应一段可直接复制到 GPT-Image、Nano Banana、Midjourney 或 Flux 的 prompt。',
+  'gallery.items': 'style prompts',
+  'gallery.prompt': 'Prompt',
+  'gallery.examples': 'Generated examples',
+  'gallery.subGallery': 'Sub-gallery',
+  'gallery.noExamples': '这里会展示用该 prompt 生成的示例图；目前还没有手工添加示例。',
+  'gallery.importedAt': 'Imported',
 
   // ── Code Block ──────────────────────────────────────────────
   'code.copy': '复制代码',
