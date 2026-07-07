@@ -379,6 +379,10 @@ navigation:
     nameKey: nav.weekly
     path: /weekly
     icon: ri:newspaper-line
+  - name: Image Style Prompt Gallery
+    nameKey: nav.styleGallery
+    path: /image-style-prompt-gallery
+    icon: ri:gallery-view-2
   - name: 文章 # 有子菜单时，path 可省略
     nameKey: nav.posts
     icon: ri:quill-pen-ai-fill
