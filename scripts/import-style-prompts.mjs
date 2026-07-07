@@ -78,7 +78,10 @@ function apiImagePath(kind, fileName) {
 function importCommandComment(absoluteSessionPath, metadataOnly) {
   const sessionName = path.basename(absoluteSessionPath);
   const metadataFlag = metadataOnly ? ' --metadata-only' : '';
-  return `// npm run import:style-prompts -- /path/to/${sessionName}${metadataFlag}`;
+  return [
+    `// script: node scripts/import-style-prompts.mjs /path/to/${sessionName}${metadataFlag}`,
+    `// npm run import:style-prompts -- /path/to/${sessionName}${metadataFlag}`,
+  ].join('\n');
 }
 
 function s5cmdArgs(...args) {
