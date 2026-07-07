@@ -1,7 +1,5 @@
 ---
 title: Style Prompt ccfedaecead7
-description: >-
-  [在此处替换为您想要生成的主体内容]，置于粉彩公告海报式画面中，采用竖幅居中构图，主体坐在或倚靠在画面下半部，姿态轻松可爱，手中可持有纸张、信件、菜单或小道具，脸部表情明亮亲切；背景为浅蓝色整底，中间叠放一块淡黄色矩形色面作为主视觉区域，上方留出大面积空间用于手写感标题、告知文字
 date: '2026-07-03T19:42:25.471Z'
 sourceImage: "/api/style-gallery/image/source/ccfedaecead7.jpg"
 sourceImageAlt: Style Prompt ccfedaecead7 reference image

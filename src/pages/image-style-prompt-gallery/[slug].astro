@@ -37,7 +37,7 @@ if (!item) throw new Error(`Style gallery item not found: ${itemId ?? slug}`);
 
 const data = item.data;
 const title = `${data.title} | ${t(locale, 'gallery.title')} | ${siteConfig.title}`;
-const description = data.description ?? data.prompt.slice(0, 140);
+const description = data.prompt.slice(0, 140);
 const galleryPath = localizedPath('/image-style-prompt-gallery', locale);
 const examples = data.examples ?? [];
 const referenceImages = data.images?.length

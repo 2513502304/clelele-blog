@@ -21,7 +21,7 @@ export interface StyleGalleryExample {
 export interface StyleGalleryCardData {
   slug: string;
   title: string;
-  description?: string;
+  prompt: string;
   date: Date;
   sourceImage: string;
   thumbnailImage?: string;

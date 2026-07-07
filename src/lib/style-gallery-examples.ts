@@ -25,12 +25,20 @@ export function normalizeStyleGalleryExamplesManifest(slug: string, value: unkno
 }
 
 export function mergeStyleGalleryExamples(examples: StyleGalleryExample[]): StyleGalleryExample[] {
-  const bySrc = new Map<string, StyleGalleryExample>();
+  const byIdentity = new Map<string, StyleGalleryExample>();
   for (const example of examples) {
     if (!example.src) continue;
-    bySrc.set(example.src, { ...bySrc.get(example.src), ...example });
+    const identity = getStyleGalleryExampleIdentity(example);
+    byIdentity.set(identity, { ...byIdentity.get(identity), ...example });
   }
-  return [...bySrc.values()];
+  return [...byIdentity.values()];
+}
+
+export function getStyleGalleryExampleIdentity(example: StyleGalleryExample): string {
+  if (example.imageHash && example.model) {
+    return `${example.model.trim().toLowerCase()}::${example.imageHash}`;
+  }
+  return example.src;
 }
 
 function isStyleGalleryExample(value: unknown): value is StyleGalleryExample {

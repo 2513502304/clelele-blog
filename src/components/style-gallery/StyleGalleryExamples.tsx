@@ -1,6 +1,7 @@
 import { Icon } from '@iconify/react';
 import { mergeStyleGalleryExamples } from '@lib/style-gallery-examples';
 import { compareStyleGalleryPlatform, STYLE_GALLERY_PLATFORMS } from '@lib/style-gallery-platforms';
+import { openModal } from '@store/modal';
 import { useEffect, useMemo, useState } from 'react';
 import type { StyleGalleryExample } from '@/types/style-gallery';
 
@@ -13,9 +14,21 @@ interface StyleGalleryExamplesProps {
 interface ExamplesResponse {
   examples?: StyleGalleryExample[];
   uploadsEnabled?: boolean;
+  uploaded?: number;
+  skippedDuplicates?: number;
 }
 
 const TOKEN_STORAGE_KEY = 'style-gallery-upload-token';
+const UPLOAD_CONCURRENCY = 5;
+const MAX_UPLOAD_ATTEMPTS = 3;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function shouldRetryUpload(status: number): boolean {
+  return status === 429 || status >= 500;
+}
 
 export default function StyleGalleryExamples({ slug, title, initialExamples }: StyleGalleryExamplesProps) {
   const [examples, setExamples] = useState<StyleGalleryExample[]>(initialExamples);
@@ -62,31 +75,150 @@ export default function StyleGalleryExamples({ slug, title, initialExamples }: S
     [examples],
   );
 
+  const lightboxImages = useMemo(
+    () =>
+      examples.map((example) => ({
+        src: example.src,
+        alt: example.alt ?? example.model ?? 'Generated example',
+      })),
+    [examples],
+  );
+
+  function openExampleLightbox(example: StyleGalleryExample) {
+    const currentIndex = Math.max(
+      0,
+      lightboxImages.findIndex((image) => image.src === example.src),
+    );
+    openModal('imageLightbox', {
+      src: example.src,
+      alt: example.alt ?? example.model ?? 'Generated example',
+      images: lightboxImages,
+      currentIndex,
+    });
+  }
+
+  async function cleanupUploadedExamples(uploadedExamples: StyleGalleryExample[]) {
+    if (!uploadedExamples.length) return;
+    await fetch(`/api/style-gallery/examples/${slug}`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ action: 'cleanup', examples: uploadedExamples }),
+    });
+  }
+
   async function handleUpload(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!files.length || uploading) return;
 
     setUploading(true);
     setStatus(null);
-    const formData = new FormData();
-    formData.set('platform', platform);
-    if (note.trim()) formData.set('note', note.trim());
-    for (const file of files) formData.append('images', file);
+    const form = event.currentTarget;
 
     try {
-      const response = await fetch(`/api/style-gallery/examples/${slug}`, {
-        method: 'POST',
-        headers: token ? { authorization: `Bearer ${token}` } : undefined,
-        body: formData,
-      });
-      if (!response.ok) throw new Error(await response.text());
-      const data = (await response.json()) as ExamplesResponse;
-      setExamples(mergeStyleGalleryExamples([...initialExamples, ...(data.examples ?? [])]));
+      const selectedFiles = [...files];
+      let uploaded = 0;
+      let skippedDuplicates = 0;
+      let completed = 0;
+      let nextFileIndex = 0;
+      const uploadedExamples: StyleGalleryExample[] = [];
+      const failures: string[] = [];
+
+      async function uploadFile(file: File): Promise<ExamplesResponse> {
+        let lastError = '';
+        for (let attempt = 1; attempt <= MAX_UPLOAD_ATTEMPTS; attempt += 1) {
+          try {
+            const formData = new FormData();
+            formData.set('platform', platform);
+            formData.set('commit', 'false');
+            if (note.trim()) formData.set('note', note.trim());
+            formData.append('images', file);
+
+            const response = await fetch(`/api/style-gallery/examples/${slug}`, {
+              method: 'POST',
+              headers: token ? { authorization: `Bearer ${token}` } : undefined,
+              body: formData,
+            });
+            if (response.ok) return (await response.json()) as ExamplesResponse;
+
+            lastError = await response.text();
+            if (!shouldRetryUpload(response.status) || attempt === MAX_UPLOAD_ATTEMPTS) {
+              throw new Error(lastError || `Upload failed with ${response.status}`);
+            }
+          } catch (error) {
+            lastError = error instanceof Error ? error.message : 'Upload failed';
+            if (attempt === MAX_UPLOAD_ATTEMPTS) throw new Error(lastError);
+          }
+          await sleep(500 * attempt);
+        }
+        throw new Error(lastError || 'Upload failed');
+      }
+
+      async function worker() {
+        while (nextFileIndex < selectedFiles.length) {
+          const fileIndex = nextFileIndex;
+          nextFileIndex += 1;
+          const file = selectedFiles[fileIndex];
+          setStatus(`Uploading ${completed}/${selectedFiles.length}`);
+
+          try {
+            const data = await uploadFile(file);
+            uploaded += data.uploaded ?? 0;
+            skippedDuplicates += data.skippedDuplicates ?? 0;
+            uploadedExamples.push(...(data.examples ?? []));
+          } catch (error) {
+            failures.push(`${file.name}: ${error instanceof Error ? error.message : 'Upload failed'}`);
+          } finally {
+            completed += 1;
+            setStatus(`Uploading ${completed}/${selectedFiles.length}`);
+          }
+        }
+      }
+
+      await Promise.all(Array.from({ length: Math.min(UPLOAD_CONCURRENCY, selectedFiles.length) }, () => worker()));
+
+      if (uploadedExamples.length) {
+        setStatus('Saving gallery');
+        let mergeResponse: Response;
+        try {
+          mergeResponse = await fetch(`/api/style-gallery/examples/${slug}`, {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              ...(token ? { authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({ examples: uploadedExamples }),
+          });
+        } catch (error) {
+          await cleanupUploadedExamples(uploadedExamples);
+          throw error;
+        }
+        if (!mergeResponse.ok) {
+          const message = await mergeResponse.text();
+          await cleanupUploadedExamples(uploadedExamples);
+          throw new Error(message);
+        }
+
+        const mergeData = (await mergeResponse.json()) as ExamplesResponse;
+        skippedDuplicates += mergeData.skippedDuplicates ?? 0;
+        setExamples(mergeStyleGalleryExamples([...initialExamples, ...(mergeData.examples ?? [])]));
+      }
+
       localStorage.setItem(TOKEN_STORAGE_KEY, token);
       setFiles([]);
       setNote('');
-      event.currentTarget.reset();
-      setStatus('Uploaded');
+      form.reset();
+      setStatus(
+        [
+          `Uploaded ${uploaded}`,
+          skippedDuplicates ? `skipped ${skippedDuplicates} duplicate${skippedDuplicates > 1 ? 's' : ''}` : '',
+          failures.length ? `${failures.length} failed` : '',
+        ]
+          .filter(Boolean)
+          .join('; '),
+      );
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Upload failed');
     } finally {
@@ -184,12 +316,19 @@ export default function StyleGalleryExamples({ slug, title, initialExamples }: S
                     key={example.src}
                     className="overflow-hidden rounded-lg border border-gray-100 bg-gray-50 dark:border-gray-800 dark:bg-gray-900"
                   >
-                    <img
-                      src={example.src}
-                      alt={example.alt ?? example.model ?? 'Generated example'}
-                      loading="lazy"
-                      className="aspect-square w-full object-cover"
-                    />
+                    <button
+                      type="button"
+                      onClick={() => openExampleLightbox(example)}
+                      className="group block w-full cursor-zoom-in overflow-hidden text-left"
+                      aria-label={`Open ${example.alt ?? example.model ?? 'generated example'} preview`}
+                    >
+                      <img
+                        src={example.src}
+                        alt={example.alt ?? example.model ?? 'Generated example'}
+                        loading="lazy"
+                        className="aspect-square w-full object-cover transition duration-200 group-hover:scale-105"
+                      />
+                    </button>
                     {(example.note || example.alt) && (
                       <figcaption className="space-y-1 p-3 text-gray-500 text-xs dark:text-gray-300">
                         {example.note && <p>{example.note}</p>}
