@@ -114,7 +114,7 @@ export function createStyleGallerySignedImageUrl(key: string, now = new Date()):
 }
 
 function createSignedHeaders(
-  method: 'GET' | 'PUT',
+  method: 'DELETE' | 'GET' | 'HEAD' | 'PUT',
   key: string,
   body: Uint8Array,
   contentType = 'application/octet-stream',
@@ -163,6 +163,31 @@ export async function putStyleGalleryObject(key: string, body: Uint8Array, conte
   });
   if (!response.ok) {
     throw new Error(`Failed to upload HF S3 object "${key}": ${response.status} ${await response.text()}`);
+  }
+}
+
+export async function headStyleGalleryObject(key: string): Promise<boolean> {
+  const signed = createSignedHeaders('HEAD', key, new Uint8Array());
+  const response = await fetch(signed.url, {
+    method: 'HEAD',
+    headers: signed.headers,
+    cache: 'no-store',
+  });
+  if (response.status === 404 || response.status === 403) return false;
+  if (!response.ok) {
+    throw new Error(`Failed to check HF S3 object "${key}": ${response.status} ${await response.text()}`);
+  }
+  return true;
+}
+
+export async function deleteStyleGalleryObject(key: string): Promise<void> {
+  const signed = createSignedHeaders('DELETE', key, new Uint8Array());
+  const response = await fetch(signed.url, {
+    method: 'DELETE',
+    headers: signed.headers,
+  });
+  if (!response.ok && response.status !== 404) {
+    throw new Error(`Failed to delete HF S3 object "${key}": ${response.status} ${await response.text()}`);
   }
 }
 
