@@ -11,11 +11,11 @@
 # Site Basic Information
 # =============================================================================
 site:
-  title: clelele 的博客 # 网站名称
+  title: clelele的博客 # 网站名称
   alternate: clelele # 网站英文名称 用于页脚、Logo、@ handle 等
-  subtitle: Even if you don't reincarnate into another world, you must show your true abilities! # 网站副标题
+  subtitle: 本物が欲しい # 网站副标题
   name: clelele # 作者名称 - 请修改为你的名字
-  description: 记录技术、AIGC、ACG 与一些日常想法 # 网站描述
+  description: 记录技术、AIGC、ACG 与一些个人的兴趣爱好 # 网站描述
   avatar: /img/avatar.webp # 网站头像
   showLogo: true # 是否显示 Logo
   author: clelele # 作者名称 - 请修改为你的名字
@@ -28,9 +28,8 @@ site:
     - Codex
     - Claude Code
     - AIGC
-    - AI 绘画
-    - 手办
     - ACG
+    - 手办
     # 请根据你的网站内容添加关键词
   # breadcrumbHome: 首页  # 面包屑导航中首页的显示名称（默认: '首页'）
   # icp:                         # ICP 备案号（可自定义链接）
@@ -166,6 +165,14 @@ social:
     url: https://github.com/2513502304 # 替换为你的 GitHub 链接
     icon: ri:github-fill # Remix Icon 的 GitHub 图标
     color: '#191717' # (可选) 图标颜色
+  bilibili:
+    url: https://space.bilibili.com/86137069
+    icon: ri:bilibili-fill
+    color: '#da708a'
+  youtube:
+    url: https://www.youtube.com/@clelele
+    icon: ri:youtube-fill
+    color: '#ff0000'
   twitter:
     url: https://x.com/ChijiangZhai
     icon: ri:twitter-fill
@@ -174,10 +181,6 @@ social:
     url: mailto:chijiangzhai@gmail.com
     icon: ri:mail-line
     color: '#d93025'
-  qqMail:
-    url: mailto:2513502304@qq.com
-    icon: ri:mail-line
-    color: '#12b7f5'
   rss:
     url: /rss.xml # 站内 RSS 订阅地址
     icon: ri:rss-line
@@ -587,12 +590,9 @@ bgm:
   enabled: true  # (有 audio 时自动启用，显式 false 可禁用)
   # metingApi: https://163.hyc.moe/  # Meting API 地址，默认为 https://163.hyc.moe/，推荐自部署
   audio:
-    - title: 最爱山山
+    - title: 最近在听
       list:
-        - https://music.163.com/playlist?id=8676645748
-    - title: Love Vocaloid
-      list:
-        - https://music.163.com/playlist?id=8882890045
+        - https://music.163.com/playlist?id=18137747188
 
 christmas:
   enabled: false # 总开关

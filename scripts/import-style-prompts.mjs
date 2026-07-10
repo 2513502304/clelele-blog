@@ -1,12 +1,14 @@
 #!/usr/bin/env node
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { promisify } from 'node:util';
 import matter from 'gray-matter';
 import sharp from 'sharp';
 
+const execFileAsync = promisify(execFile);
 const PLACEHOLDER = '[在此处替换为您想要生成的主体内容]';
 const DEFAULT_TARGETS = ['GPT-Image2', 'Nano Banana', 'PixAI', 'Midjourney', 'Flux'];
 const HF_S3_PROFILE = process.env.STYLE_GALLERY_S3_PROFILE ?? 'hf';
@@ -15,6 +17,8 @@ const HF_BUCKET_NAMESPACE = new URL(HF_S3_ENDPOINT).pathname.replace(/^\/+|\/+$/
 const HF_S3_BUCKET = process.env.HF_S3_BUCKET ?? 'raw-datasets';
 const HF_S3_PREFIX = (process.env.STYLE_GALLERY_BUCKET_PREFIX ?? 'image-style-prompt-gallery').replace(/^\/+|\/+$/g, '');
 const HF_BUCKET_URI = `hf://buckets/${[HF_BUCKET_NAMESPACE, HF_S3_BUCKET, HF_S3_PREFIX].filter(Boolean).join('/')}`;
+const IMPORT_UPLOAD_CONCURRENCY = positiveInteger(process.env.STYLE_GALLERY_IMPORT_UPLOAD_CONCURRENCY, 5);
+const IMPORT_UPLOAD_ATTEMPTS = positiveInteger(process.env.STYLE_GALLERY_IMPORT_UPLOAD_ATTEMPTS, 3);
 
 function usage() {
   console.error('Usage: node scripts/import-style-prompts.mjs <codex-session.jsonl> [--metadata-only]');
@@ -37,6 +41,11 @@ function parseArgs(argv) {
 
   const metadataOnly = flags.has('--metadata-only') || flags.has('--update-metadata-only');
   return { help: false, sessionPath, metadataOnly };
+}
+
+function positiveInteger(value, fallback) {
+  const parsed = Number.parseInt(value ?? '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 function parseDataUri(uri) {
@@ -92,7 +101,7 @@ function isPlainYamlScalar(value) {
 
 function scalarYaml(value) {
   if (value.includes('\n')) {
-    return ['|-', ...value.split('\n').map((line) => `  ${line}`)].join('\n');
+    return ['|-', ...value.split('\n').map((line) => (line ? `  ${line}` : ''))].join('\n');
   }
   if (value.length > 120) return [`>-`, `  ${value}`].join('\n');
   if (isPlainYamlScalar(value)) return value;
@@ -117,9 +126,9 @@ function s5cmdArgs(...args) {
   return ['--profile', HF_S3_PROFILE, '--endpoint-url', HF_S3_ENDPOINT, ...args];
 }
 
-function listRemoteSourceFiles() {
+function listRemoteFiles(kind) {
   try {
-    const output = execFileSync('s5cmd', s5cmdArgs('ls', s3Uri('source')), { encoding: 'utf8' });
+    const output = execFileSync('s5cmd', s5cmdArgs('ls', s3Uri(kind)), { encoding: 'utf8' });
     return new Set(
       output
         .split(/\r?\n/)
@@ -136,15 +145,89 @@ function listRemoteSourceFiles() {
   }
 }
 
-function uploadToBucket(localPath, kind, fileName) {
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function commandErrorMessage(command, error) {
+  const output = [error.stdout, error.stderr]
+    .filter(Boolean)
+    .map((value) => String(value).trim())
+    .filter(Boolean)
+    .join('\n');
+  return output || `${command} failed${error.code ? ` with exit code ${error.code}` : ''}`;
+}
+
+async function runCommand(command, args) {
+  try {
+    await execFileAsync(command, args, { maxBuffer: 1024 * 1024 });
+  } catch (error) {
+    throw new Error(commandErrorMessage(command, error));
+  }
+}
+
+async function uploadToBucketOnce(localPath, kind, fileName) {
   const target = s3Uri(kind, fileName);
   try {
-    execFileSync('s5cmd', s5cmdArgs('cp', localPath, target), { stdio: 'inherit' });
+    await runCommand('s5cmd', s5cmdArgs('cp', localPath, target));
   } catch (error) {
     if (kind !== 'source') throw error;
-    execFileSync('aws', ['--profile', HF_S3_PROFILE, '--endpoint-url', HF_S3_ENDPOINT, 's3', 'cp', localPath, target], {
-      stdio: 'inherit',
-    });
+    await runCommand('aws', ['--profile', HF_S3_PROFILE, '--endpoint-url', HF_S3_ENDPOINT, 's3', 'cp', localPath, target]);
+  }
+}
+
+async function uploadToBucket(localPath, kind, fileName) {
+  let lastError;
+  for (let attempt = 1; attempt <= IMPORT_UPLOAD_ATTEMPTS; attempt += 1) {
+    try {
+      await uploadToBucketOnce(localPath, kind, fileName);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt < IMPORT_UPLOAD_ATTEMPTS) await sleep(500 * attempt);
+    }
+  }
+  throw lastError;
+}
+
+async function mapWithConcurrency(items, concurrency, worker) {
+  const results = [];
+  let nextIndex = 0;
+
+  async function runWorker() {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      results[currentIndex] = await worker(items[currentIndex], currentIndex);
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, runWorker));
+  return results;
+}
+
+async function uploadAsset(asset) {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'style-gallery-import-'));
+  try {
+    const imagePath = path.join(tempDir, asset.imageName);
+    const thumbnailPath = path.join(tempDir, asset.thumbnailName);
+    await fs.writeFile(imagePath, asset.bytes);
+
+    let uploadedSourceImages = 0;
+    let uploadedThumbnails = 0;
+    if (asset.uploadSource) {
+      await uploadToBucket(imagePath, 'source', asset.imageName);
+      uploadedSourceImages += 1;
+    }
+    if (asset.uploadThumbnail) {
+      await writeThumbnail(asset.bytes, thumbnailPath);
+      await uploadToBucket(thumbnailPath, 'thumb', asset.thumbnailName);
+      uploadedThumbnails += 1;
+    }
+
+    return { uploadedSourceImages, uploadedThumbnails };
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
   }
 }
 
@@ -342,8 +425,10 @@ async function main() {
 
   const records = await readRecords(absoluteSessionPath);
   const items = extractItems(records);
-  const seenRemoteSourceFiles = metadataOnly ? new Set() : listRemoteSourceFiles();
+  const seenRemoteSourceFiles = metadataOnly ? new Set() : listRemoteFiles('source');
+  const seenRemoteThumbnailFiles = metadataOnly ? new Set() : listRemoteFiles('thumb');
   const seenSourceFiles = new Set(seenRemoteSourceFiles);
+  const seenThumbnailFiles = new Set(seenRemoteThumbnailFiles);
   const existingItems = await getExistingItems(contentDir);
   const duplicateHashes = new Set();
   let written = 0;
@@ -351,7 +436,26 @@ async function main() {
   let metadataUpdated = 0;
   let metadataMissing = 0;
   let skippedDuplicate = 0;
-  let uploadedFiles = 0;
+  let uploadedSourceImages = 0;
+  let uploadedThumbnails = 0;
+  let skippedExistingSourceImages = 0;
+  let skippedExistingThumbnails = 0;
+  const uploadAssets = [];
+  const pendingWrites = [];
+
+  function queueMissingAssets(assets) {
+    for (const asset of assets) {
+      const uploadSource = !seenSourceFiles.has(asset.imageName);
+      const uploadThumbnail = !seenThumbnailFiles.has(asset.thumbnailName);
+      if (!uploadSource) skippedExistingSourceImages += 1;
+      if (!uploadThumbnail) skippedExistingThumbnails += 1;
+      if (!uploadSource && !uploadThumbnail) continue;
+
+      uploadAssets.push({ ...asset, uploadSource, uploadThumbnail });
+      seenSourceFiles.add(asset.imageName);
+      seenThumbnailFiles.add(asset.thumbnailName);
+    }
+  }
 
   for (const item of items) {
     const assets = [];
@@ -388,6 +492,8 @@ async function main() {
           importComment,
         );
         metadataUpdated += 1;
+      } else {
+        queueMissingAssets(assets);
       }
       skippedDuplicate += 1;
       continue;
@@ -398,20 +504,7 @@ async function main() {
       continue;
     }
 
-    for (const asset of assets) {
-      if (seenSourceFiles.has(asset.imageName)) continue;
-
-      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'style-gallery-import-'));
-      const imagePath = path.join(tempDir, asset.imageName);
-      const thumbnailPath = path.join(tempDir, asset.thumbnailName);
-      await fs.writeFile(imagePath, asset.bytes);
-      await writeThumbnail(asset.bytes, thumbnailPath);
-      uploadToBucket(imagePath, 'source', asset.imageName);
-      uploadToBucket(thumbnailPath, 'thumb', asset.thumbnailName);
-      uploadedFiles += 2;
-      seenSourceFiles.add(asset.imageName);
-      await fs.rm(tempDir, { recursive: true, force: true });
-    }
+    queueMissingAssets(assets);
 
     const date = item.timestamp ? new Date(item.timestamp) : new Date();
     const datePrefix = date.toISOString().slice(0, 10);
@@ -440,8 +533,22 @@ async function main() {
       examples: [],
     };
 
-    await fs.writeFile(path.join(contentDir, `${slug}.md`), `${itemBody(data, importComment)}\n`, 'utf8');
-    existingItems.set(itemHash, { filePath: path.join(contentDir, `${slug}.md`), data });
+    const filePath = path.join(contentDir, `${slug}.md`);
+    pendingWrites.push({ filePath, data });
+    existingItems.set(itemHash, { filePath, data });
+  }
+
+  if (uploadAssets.length > 0) {
+    console.log(`Uploading ${uploadAssets.length} image assets with concurrency ${IMPORT_UPLOAD_CONCURRENCY}.`);
+    const uploadResults = await mapWithConcurrency(uploadAssets, IMPORT_UPLOAD_CONCURRENCY, uploadAsset);
+    for (const result of uploadResults) {
+      uploadedSourceImages += result.uploadedSourceImages;
+      uploadedThumbnails += result.uploadedThumbnails;
+    }
+  }
+
+  for (const pendingWrite of pendingWrites) {
+    await fs.writeFile(pendingWrite.filePath, `${itemBody(pendingWrite.data, importComment)}\n`, 'utf8');
     written += 1;
   }
 
@@ -452,7 +559,13 @@ async function main() {
     console.log(`Updated metadata for ${metadataUpdated} existing gallery items.`);
     console.log(`Skipped ${metadataMissing} new image/prompt records because --metadata-only was set.`);
   } else {
-    console.log(`Uploaded ${uploadedFiles} files to ${HF_BUCKET_URI}.`);
+    const uploadedFiles = uploadedSourceImages + uploadedThumbnails;
+    console.log(
+      `Uploaded ${uploadedSourceImages} source images and ${uploadedThumbnails} thumbnails (${uploadedFiles} files) to ${HF_BUCKET_URI}.`,
+    );
+    console.log(
+      `Skipped ${skippedExistingSourceImages} existing source images and ${skippedExistingThumbnails} existing thumbnails already in ${HF_BUCKET_URI}.`,
+    );
     if (skippedDuplicate > 0) {
       console.log(
         `Skipped ${skippedDuplicate} duplicate image/prompt records (${duplicateHashes.size} unique image groups already in the gallery).`,
