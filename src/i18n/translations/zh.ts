@@ -17,6 +17,7 @@ export const uiStrings = {
   'nav.music': '歌单',
   'nav.weekly': '周刊',
   'nav.bangumi': '追番',
+  'nav.hpoi': '手办收藏',
   'nav.styleGallery': '风格提示词',
 
   // ── Common ──────────────────────────────────────────────────
@@ -351,4 +352,27 @@ export const uiStrings = {
   'bangumi.noItems': '暂无收藏',
   'bangumi.error': '加载失败，请稍后重试',
   'bangumi.retry': '重试',
+
+  // ── Hpoi ─────────────────────────────────────────────────
+  'hpoi.title': '手办收藏',
+  'hpoi.description': '我的手办收藏与预定记录',
+  'hpoi.all': '全部',
+  'hpoi.care': '关注',
+  'hpoi.want': '想买',
+  'hpoi.preorder': '预定',
+  'hpoi.buy': '已入',
+  'hpoi.resell': '有过',
+  'hpoi.owned': '已入手',
+  'hpoi.totalSpent': '历史消费',
+  'hpoi.amazonChange': '日亚涨跌',
+  'hpoi.wanted': '想买',
+  'hpoi.preordered': '预定',
+  'hpoi.pendingPayment': '待补款',
+  'hpoi.noImage': '暂无图片',
+  'hpoi.noItems': '这个分类暂时没有收藏',
+  'hpoi.error': 'Hpoi 收藏加载失败，请稍后重试',
+  'hpoi.retry': '重新加载',
+  'hpoi.partialWarning': '部分分类暂时加载失败，当前显示其余可用数据。',
+  'hpoi.source': '数据来自 Hpoi',
+  'hpoi.updatedAt': '更新于 {time}',
 } as const;
