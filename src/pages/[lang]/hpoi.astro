@@ -1,0 +1,9 @@
+---
+import { hpoiConfig } from '@constants/site-config';
+import { getLocaleStaticPaths } from '../_shared/utils';
+import HpoiPage from '../hpoi.astro';
+
+export const getStaticPaths = hpoiConfig ? getLocaleStaticPaths : () => [];
+---
+
+<HpoiPage />

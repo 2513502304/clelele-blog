@@ -18,6 +18,7 @@ export const uiStrings: UIStrings = {
   'nav.music': 'Music',
   'nav.weekly': 'Weekly',
   'nav.bangumi': 'Bangumi',
+  'nav.hpoi': 'Figure Collection',
   'nav.styleGallery': 'Style Gallery',
 
   // ── Common ──────────────────────────────────────────────────
@@ -352,4 +353,27 @@ export const uiStrings: UIStrings = {
   'bangumi.noItems': 'No collections',
   'bangumi.error': 'Failed to load, please try again',
   'bangumi.retry': 'Retry',
+
+  // ── Hpoi ─────────────────────────────────────────────────
+  'hpoi.title': 'Figure Collection',
+  'hpoi.description': 'My figure collection and pre-orders',
+  'hpoi.all': 'All',
+  'hpoi.care': 'Following',
+  'hpoi.want': 'Wishlist',
+  'hpoi.preorder': 'Pre-ordered',
+  'hpoi.buy': 'Owned',
+  'hpoi.resell': 'Previously Owned',
+  'hpoi.owned': 'Owned',
+  'hpoi.totalSpent': 'Total Spent',
+  'hpoi.amazonChange': 'Amazon JP Change',
+  'hpoi.wanted': 'Wishlist',
+  'hpoi.preordered': 'Pre-ordered',
+  'hpoi.pendingPayment': 'Pending Payment',
+  'hpoi.noImage': 'No image',
+  'hpoi.noItems': 'No figures in this collection',
+  'hpoi.error': 'Failed to load Hpoi collection. Please try again.',
+  'hpoi.retry': 'Reload',
+  'hpoi.partialWarning': 'Some collections are temporarily unavailable. Available data is shown.',
+  'hpoi.source': 'Data from Hpoi',
+  'hpoi.updatedAt': 'Updated {time}',
 };
