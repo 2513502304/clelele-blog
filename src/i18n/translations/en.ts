@@ -120,7 +120,7 @@ export const uiStrings: UIStrings = {
   'gallery.title': 'Image Style Prompt Gallery',
   'gallery.kicker': 'Reference image to reusable prompt',
   'gallery.description':
-    'A personal archive of reusable Chinese image-style prompts reverse-engineered from reference images for GPT-Image, Nano Banana, Midjourney, and Flux.',
+    'A personal archive of reusable Chinese image-style prompts reverse-engineered from reference images for GPT-Image2, Nano Banana, PixAI, Midjourney, and Flux.',
   'gallery.items': 'style prompts',
   'gallery.prompt': 'Prompt',
   'gallery.examples': 'Generated examples',
