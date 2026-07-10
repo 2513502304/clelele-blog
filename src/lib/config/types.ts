@@ -562,6 +562,19 @@ export interface BangumiConfig {
 }
 
 // =============================================================================
+// Hpoi (Figure Collection) Configuration
+// =============================================================================
+
+export interface HpoiConfig {
+  /** Public Hpoi numeric user ID */
+  userId: string;
+  /** Navigation display name, defaults to i18n key 'nav.hpoi' */
+  label?: string;
+  /** Navigation icon (Iconify format), defaults to 'ri:archive-stack-fill' */
+  icon?: string;
+}
+
+// =============================================================================
 // i18n Configuration
 // =============================================================================
 
@@ -605,6 +618,8 @@ export interface SiteYamlConfig {
   bgm?: BgmConfig;
   /** Bangumi media tracking page — comment out to disable */
   bangumi?: BangumiConfig;
+  /** Hpoi figure collection page — comment out to disable */
+  hpoi?: HpoiConfig;
   christmas?: ChristmasConfig;
   /** Development tools configuration (dev only) */
   dev?: DevConfig;

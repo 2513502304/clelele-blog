@@ -18,6 +18,7 @@ export const uiStrings: UIStrings = {
   'nav.music': '音楽',
   'nav.weekly': '週刊',
   'nav.bangumi': 'オタ活の記録',
+  'nav.hpoi': 'フィギュア収集',
   'nav.styleGallery': 'スタイルギャラリー',
 
   // ── 一般 ──────────────────────────────────────────────────
@@ -352,4 +353,27 @@ export const uiStrings: UIStrings = {
   'bangumi.noItems': 'コレクションがありません',
   'bangumi.error': '読み込みに失敗しました。もう一度お試しください。',
   'bangumi.retry': '再試行',
+
+  // ── Hpoi ─────────────────────────────────────────────────
+  'hpoi.title': 'フィギュア収集',
+  'hpoi.description': 'フィギュアの所持品と予約記録',
+  'hpoi.all': 'すべて',
+  'hpoi.care': 'フォロー中',
+  'hpoi.want': 'ほしい',
+  'hpoi.preorder': '予約済み',
+  'hpoi.buy': '所持',
+  'hpoi.resell': '所持していた',
+  'hpoi.owned': '所持数',
+  'hpoi.totalSpent': '累計支出',
+  'hpoi.amazonChange': 'Amazon JP 騰落',
+  'hpoi.wanted': 'ほしい',
+  'hpoi.preordered': '予約済み',
+  'hpoi.pendingPayment': '支払い待ち',
+  'hpoi.noImage': '画像がありません',
+  'hpoi.noItems': 'この分類にはまだコレクションがありません',
+  'hpoi.error': 'Hpoiのコレクションを読み込めませんでした。もう一度お試しください。',
+  'hpoi.retry': '再読み込み',
+  'hpoi.partialWarning': '一部の分類を読み込めませんでした。取得できたデータを表示しています。',
+  'hpoi.source': 'Hpoiのデータ',
+  'hpoi.updatedAt': '更新: {time}',
 };
