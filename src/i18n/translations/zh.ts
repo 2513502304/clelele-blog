@@ -119,7 +119,7 @@ export const uiStrings = {
   'gallery.title': 'Image Style Prompt Gallery',
   'gallery.kicker': 'Reference image to reusable prompt',
   'gallery.description':
-    '收藏从参考图反推出的中文风格提示词，每张图都对应一段可直接复制到 GPT-Image、Nano Banana、Midjourney 或 Flux 的 prompt。',
+    '收藏从参考图反推出的中文风格提示词，每张图都对应一段可直接复制到 GPT-Image2、Nano Banana、PixAI、Midjourney 或 Flux 的 prompt。',
   'gallery.items': 'style prompts',
   'gallery.prompt': 'Prompt',
   'gallery.examples': 'Generated examples',

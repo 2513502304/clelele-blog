@@ -119,7 +119,8 @@ export const uiStrings: UIStrings = {
   // ── Image Style Prompt Gallery ──────────────────────────────
   'gallery.title': 'Image Style Prompt Gallery',
   'gallery.kicker': 'Reference image to reusable prompt',
-  'gallery.description': '参考画像から抽出した、中国語の再利用可能な画像スタイル prompt を集めた個人アーカイブです。',
+  'gallery.description':
+    '参考画像から抽出した、GPT-Image2、Nano Banana、PixAI、Midjourney、Flux 向けの再利用可能な中国語画像スタイル prompt を集めた個人アーカイブです。',
   'gallery.items': 'style prompts',
   'gallery.prompt': 'Prompt',
   'gallery.examples': 'Generated examples',
