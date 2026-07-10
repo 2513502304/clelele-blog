@@ -1,0 +1,1 @@
+export { HpoiCollection } from './HpoiCollection';

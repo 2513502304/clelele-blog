@@ -145,6 +145,8 @@ pages/ → components/ → hooks/ → lib/ → constants/
 
 **Bangumi Page**: Optional media tracking page integrating [Bangumi API](https://api.bgm.tv). Configured via `bangumi` section in `config/site.yaml` — comment out to disable (page + navigation auto-hidden). Data fetched client-side in React (`BangumiCollection` component with `client:load`). Types in `src/types/bangumi.ts`, API client in `src/lib/bangumi/`, data hook in `src/hooks/useBangumiData.ts`. Navigation item auto-injected via `routers` in `src/constants/site-config.ts`.
 
+**Hpoi Page**: Optional figure collection page configured via the `hpoi` section in `config/site.yaml`. The client loads `/api/hpoi`, which fetches the public profile and collection pages concurrently, parses their HTML in `src/lib/hpoi/`, and returns cacheable structured data. Hpoi CDN images use the allowlisted `/api/hpoi/image` proxy because direct hotlinking is unreliable. Comment out the config section to hide the page and navigation entry.
+
 **Theme System**: Dark/light toggle with localStorage, inline check in `<head>` prevents FOUC.
 
 **i18n System**: Two-layer translation architecture with locale-aware routing.

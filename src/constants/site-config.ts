@@ -8,6 +8,7 @@ import type {
   DevConfig,
   FeaturedCategory,
   FeaturedSeriesItem,
+  HpoiConfig,
   I18nConfig,
   RouterItem,
   SiteBasicConfig,
@@ -317,10 +318,15 @@ export const bgmConfig: { enabled: boolean; metingApi?: string; audio: BgmAudioG
 // Bangumi media tracking config — null when disabled (section commented out in YAML)
 export const bangumiConfig: BangumiConfig | null = yamlConfig.bangumi ?? null;
 
+// Hpoi figure collection config — null when disabled (section commented out in YAML)
+export const hpoiConfig: HpoiConfig | null = yamlConfig.hpoi
+  ? { ...yamlConfig.hpoi, userId: String(yamlConfig.hpoi.userId) }
+  : null;
+
 const styleGalleryRouter = baseRouters.find((router) => router.path === '/image-style-prompt-gallery');
 const routersWithoutStyleGallery = baseRouters.filter((router) => router.path !== '/image-style-prompt-gallery');
 
-// Navigation routers with auto-injected bangumi entry. Keep the style prompt gallery after bangumi.
+// Keep personal collection pages together and place the style prompt gallery last.
 export const routers: RouterItem[] = [
   ...routersWithoutStyleGallery,
   ...(bangumiConfig
@@ -330,6 +336,16 @@ export const routers: RouterItem[] = [
           nameKey: bangumiConfig.label ? undefined : 'nav.bangumi',
           path: '/bangumi',
           icon: bangumiConfig.icon ?? 'ri:bilibili-fill',
+        },
+      ]
+    : []),
+  ...(hpoiConfig
+    ? [
+        {
+          name: hpoiConfig.label,
+          nameKey: hpoiConfig.label ? undefined : 'nav.hpoi',
+          path: '/hpoi',
+          icon: hpoiConfig.icon ?? 'ri:archive-stack-fill',
         },
       ]
     : []),
