@@ -199,6 +199,11 @@ export const uiStrings: UIStrings = {
   'pagination.page': 'ページ: {page}',
   'pagination.currentPage': '現在は{page}ページです',
   'pagination.of': '{total}ページの内、',
+  'pagination.mode': '表示方法',
+  'pagination.paginated': 'ページ表示',
+  'pagination.showAll': 'すべて表示',
+  'pagination.perPage': '件ずつ',
+  'pagination.navigation': 'ページナビゲーション',
 
   // ── パンくず ──────────────────────────────────────────────
   'breadcrumb.home': 'ホーム',

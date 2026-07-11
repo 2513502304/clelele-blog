@@ -1,13 +1,15 @@
 import { useBangumiData } from '@hooks/useBangumiData';
+import { useCollectionPagination } from '@hooks/useCollectionPagination';
 import { useTranslation } from '@hooks/useTranslation';
 import { Icon } from '@iconify/react';
 import { cn } from '@lib/utils';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useMemo, useState } from 'react';
 import type { TranslationKey } from '@/i18n/types';
-import { ITEMS_PER_PAGE, SUBJECT_TYPE_KEYS, type SubjectTypeKey } from '@/lib/bangumi/constants';
+import { SUBJECT_TYPE_KEYS, type SubjectTypeKey } from '@/lib/bangumi/constants';
 import { sortBangumiCollectionItems } from '@/lib/bangumi/sort';
 import type { BangumiCollectionType, BangumiSortDirection, BangumiSortKey } from '@/types/bangumi';
+import { CollectionPaginationSettings, CollectionPaginator } from '../collection/CollectionPagination';
 import { BangumiCard } from './BangumiCard';
 
 const TAB_LABEL_KEYS: Record<SubjectTypeKey, TranslationKey> = {
@@ -45,7 +47,6 @@ export function BangumiCollection({ userId }: BangumiCollectionProps) {
 
   const [activeTab, setActiveTab] = useState<SubjectTypeKey>('anime');
   const [activeFilter, setActiveFilter] = useState<BangumiCollectionType | 'all'>('all');
-  const [currentPage, setCurrentPage] = useState(1);
   const [sortKey, setSortKey] = useState<BangumiSortKey>('default');
   const [sortDirection, setSortDirection] = useState<BangumiSortDirection>('asc');
   const shouldReduceMotion = useReducedMotion();
@@ -79,9 +80,8 @@ export function BangumiCollection({ userId }: BangumiCollectionProps) {
     () => sortBangumiCollectionItems(filteredItems, sortKey, sortDirection),
     [filteredItems, sortDirection, sortKey],
   );
-
-  const totalPages = Math.ceil(sortedItems.length / ITEMS_PER_PAGE);
-  const pageItems = sortedItems.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+  const { currentPage, isPaginated, pageSize, setCurrentPage, setIsPaginated, setPageSize, totalPages, visibleItems } =
+    useCollectionPagination(sortedItems, 'bangumi-pagination-settings');
 
   function handleTabChange(key: SubjectTypeKey) {
     setActiveTab(key);
@@ -204,53 +204,61 @@ export function BangumiCollection({ userId }: BangumiCollectionProps) {
         )}
       </div>
 
-      <div className="flex justify-end gap-2">
-        <label htmlFor="bangumi-sort" className="sr-only">
-          {t('bangumi.sortBy')}
-        </label>
-        <div className="relative">
-          <Icon
-            icon="ri:sort-alphabet-asc"
-            className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
-          />
-          <select
-            id="bangumi-sort"
-            value={sortKey}
-            onChange={(event) => handleSortChange(event.target.value as BangumiSortKey)}
-            className="h-9 appearance-none rounded-md border border-border bg-background pr-8 pl-8 text-sm outline-none transition-colors hover:border-primary/40 focus:border-primary"
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <CollectionPaginationSettings
+          isPaginated={isPaginated}
+          pageSize={pageSize}
+          onModeChange={setIsPaginated}
+          onPageSizeChange={setPageSize}
+        />
+        <div className="flex gap-2">
+          <label htmlFor="bangumi-sort" className="sr-only">
+            {t('bangumi.sortBy')}
+          </label>
+          <div className="relative">
+            <Icon
+              icon="ri:sort-alphabet-asc"
+              className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+            />
+            <select
+              id="bangumi-sort"
+              value={sortKey}
+              onChange={(event) => handleSortChange(event.target.value as BangumiSortKey)}
+              className="h-9 appearance-none rounded-md border border-border bg-background pr-8 pl-8 text-sm outline-none transition-colors hover:border-primary/40 focus:border-primary"
+            >
+              {SORT_OPTIONS.map((option) => (
+                <option key={option.key} value={option.key}>
+                  {t(option.labelKey)}
+                </option>
+              ))}
+            </select>
+            <Icon
+              icon="ri:arrow-down-s-line"
+              className="pointer-events-none absolute top-1/2 right-2 size-4 -translate-y-1/2 text-muted-foreground"
+            />
+          </div>
+          <button
+            type="button"
+            title={sortDirection === 'asc' ? t('bangumi.sortAscending') : t('bangumi.sortDescending')}
+            aria-label={sortDirection === 'asc' ? t('bangumi.sortAscending') : t('bangumi.sortDescending')}
+            onClick={toggleSortDirection}
+            className="flex size-9 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
           >
-            {SORT_OPTIONS.map((option) => (
-              <option key={option.key} value={option.key}>
-                {t(option.labelKey)}
-              </option>
-            ))}
-          </select>
-          <Icon
-            icon="ri:arrow-down-s-line"
-            className="pointer-events-none absolute top-1/2 right-2 size-4 -translate-y-1/2 text-muted-foreground"
-          />
+            <Icon icon={sortDirection === 'asc' ? 'ri:sort-asc' : 'ri:sort-desc'} className="size-4" />
+          </button>
         </div>
-        <button
-          type="button"
-          title={sortDirection === 'asc' ? t('bangumi.sortAscending') : t('bangumi.sortDescending')}
-          aria-label={sortDirection === 'asc' ? t('bangumi.sortAscending') : t('bangumi.sortDescending')}
-          onClick={toggleSortDirection}
-          className="flex size-9 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
-        >
-          <Icon icon={sortDirection === 'asc' ? 'ri:sort-asc' : 'ri:sort-desc'} className="size-4" />
-        </button>
       </div>
 
       <AnimatePresence mode="popLayout">
         <motion.div
-          key={`${activeTab}-${activeFilter}-${sortKey}-${sortDirection}-${currentPage}`}
+          key={`${activeTab}-${activeFilter}-${sortKey}-${sortDirection}-${isPaginated}-${currentPage}`}
           className="grid desktop:grid-cols-4 grid-cols-3 gap-3 md:grid-cols-2"
           initial={shouldReduceMotion ? false : { opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -8 }}
           transition={{ duration: 0.2 }}
         >
-          {pageItems.map((item) => (
+          {visibleItems.map((item) => (
             <BangumiCard key={item.subject_id} item={item} />
           ))}
         </motion.div>
@@ -262,58 +270,7 @@ export function BangumiCollection({ userId }: BangumiCollectionProps) {
         </div>
       )}
 
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2 pt-4">
-          <button
-            type="button"
-            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-            disabled={currentPage === 1}
-            aria-label={t('pagination.prev')}
-            className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
-          >
-            <Icon icon="ri:arrow-left-s-line" className="size-4" />
-          </button>
-          <div className="flex gap-1">
-            {Array.from({ length: totalPages }, (_, i) => i + 1)
-              .filter((page) => {
-                if (totalPages <= 7) return true;
-                if (page === 1 || page === totalPages) return true;
-                return Math.abs(page - currentPage) <= 2;
-              })
-              .map((page, idx, arr) => {
-                const prev = arr[idx - 1];
-                const showEllipsis = prev !== undefined && page - prev > 1;
-                return (
-                  <span key={page} className="flex items-center">
-                    {showEllipsis && <span className="px-1 text-muted-foreground">…</span>}
-                    <button
-                      type="button"
-                      onClick={() => setCurrentPage(page)}
-                      aria-current={currentPage === page ? 'page' : undefined}
-                      className={cn(
-                        'min-w-[2rem] rounded-md px-2 py-1.5 text-sm transition-colors',
-                        currentPage === page
-                          ? 'bg-primary text-primary-foreground'
-                          : 'bg-muted text-muted-foreground hover:bg-muted/80',
-                      )}
-                    >
-                      {page}
-                    </button>
-                  </span>
-                );
-              })}
-          </div>
-          <button
-            type="button"
-            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-            disabled={currentPage === totalPages}
-            aria-label={t('pagination.next')}
-            className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
-          >
-            <Icon icon="ri:arrow-right-s-line" className="size-4" />
-          </button>
-        </div>
-      )}
+      {isPaginated && <CollectionPaginator currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />}
 
       <footer className="flex justify-end border-border border-t pt-3">
         <a
