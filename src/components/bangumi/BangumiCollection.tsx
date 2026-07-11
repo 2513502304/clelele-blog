@@ -6,7 +6,8 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useMemo, useState } from 'react';
 import type { TranslationKey } from '@/i18n/types';
 import { ITEMS_PER_PAGE, SUBJECT_TYPE_KEYS, type SubjectTypeKey } from '@/lib/bangumi/constants';
-import type { BangumiCollectionType } from '@/types/bangumi';
+import { sortBangumiCollectionItems } from '@/lib/bangumi/sort';
+import type { BangumiCollectionType, BangumiSortDirection, BangumiSortKey } from '@/types/bangumi';
 import { BangumiCard } from './BangumiCard';
 
 const TAB_LABEL_KEYS: Record<SubjectTypeKey, TranslationKey> = {
@@ -26,6 +27,14 @@ const FILTER_OPTIONS: Array<{ key: BangumiCollectionType | 'all'; labelKey: Tran
   { key: 5, labelKey: 'bangumi.dropped' },
 ];
 
+const SORT_OPTIONS: Array<{ key: BangumiSortKey; labelKey: TranslationKey }> = [
+  { key: 'default', labelKey: 'bangumi.sortDefault' },
+  { key: 'title', labelKey: 'bangumi.sortTitle' },
+  { key: 'personalScore', labelKey: 'bangumi.sortPersonalScore' },
+  { key: 'averageScore', labelKey: 'bangumi.sortAverageScore' },
+  { key: 'date', labelKey: 'bangumi.sortDate' },
+];
+
 interface BangumiCollectionProps {
   userId: string;
 }
@@ -37,6 +46,8 @@ export function BangumiCollection({ userId }: BangumiCollectionProps) {
   const [activeTab, setActiveTab] = useState<SubjectTypeKey>('anime');
   const [activeFilter, setActiveFilter] = useState<BangumiCollectionType | 'all'>('all');
   const [currentPage, setCurrentPage] = useState(1);
+  const [sortKey, setSortKey] = useState<BangumiSortKey>('default');
+  const [sortDirection, setSortDirection] = useState<BangumiSortDirection>('asc');
   const shouldReduceMotion = useReducedMotion();
 
   const springTransition = shouldReduceMotion ? { duration: 0 } : { type: 'spring' as const, stiffness: 400, damping: 30 };
@@ -64,8 +75,13 @@ export function BangumiCollection({ userId }: BangumiCollectionProps) {
     return tabItems.filter((item) => item.type === activeFilter);
   }, [tabItems, activeFilter]);
 
-  const totalPages = Math.ceil(filteredItems.length / ITEMS_PER_PAGE);
-  const pageItems = filteredItems.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+  const sortedItems = useMemo(
+    () => sortBangumiCollectionItems(filteredItems, sortKey, sortDirection),
+    [filteredItems, sortDirection, sortKey],
+  );
+
+  const totalPages = Math.ceil(sortedItems.length / ITEMS_PER_PAGE);
+  const pageItems = sortedItems.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
 
   function handleTabChange(key: SubjectTypeKey) {
     setActiveTab(key);
@@ -75,6 +91,16 @@ export function BangumiCollection({ userId }: BangumiCollectionProps) {
 
   function handleFilterChange(key: BangumiCollectionType | 'all') {
     setActiveFilter(key);
+    setCurrentPage(1);
+  }
+
+  function handleSortChange(key: BangumiSortKey) {
+    setSortKey(key);
+    setCurrentPage(1);
+  }
+
+  function toggleSortDirection() {
+    setSortDirection((direction) => (direction === 'asc' ? 'desc' : 'asc'));
     setCurrentPage(1);
   }
 
@@ -178,9 +204,46 @@ export function BangumiCollection({ userId }: BangumiCollectionProps) {
         )}
       </div>
 
+      <div className="flex justify-end gap-2">
+        <label htmlFor="bangumi-sort" className="sr-only">
+          {t('bangumi.sortBy')}
+        </label>
+        <div className="relative">
+          <Icon
+            icon="ri:sort-alphabet-asc"
+            className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+          />
+          <select
+            id="bangumi-sort"
+            value={sortKey}
+            onChange={(event) => handleSortChange(event.target.value as BangumiSortKey)}
+            className="h-9 appearance-none rounded-md border border-border bg-background pr-8 pl-8 text-sm outline-none transition-colors hover:border-primary/40 focus:border-primary"
+          >
+            {SORT_OPTIONS.map((option) => (
+              <option key={option.key} value={option.key}>
+                {t(option.labelKey)}
+              </option>
+            ))}
+          </select>
+          <Icon
+            icon="ri:arrow-down-s-line"
+            className="pointer-events-none absolute top-1/2 right-2 size-4 -translate-y-1/2 text-muted-foreground"
+          />
+        </div>
+        <button
+          type="button"
+          title={sortDirection === 'asc' ? t('bangumi.sortAscending') : t('bangumi.sortDescending')}
+          aria-label={sortDirection === 'asc' ? t('bangumi.sortAscending') : t('bangumi.sortDescending')}
+          onClick={toggleSortDirection}
+          className="flex size-9 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+        >
+          <Icon icon={sortDirection === 'asc' ? 'ri:sort-asc' : 'ri:sort-desc'} className="size-4" />
+        </button>
+      </div>
+
       <AnimatePresence mode="popLayout">
         <motion.div
-          key={`${activeTab}-${activeFilter}-${currentPage}`}
+          key={`${activeTab}-${activeFilter}-${sortKey}-${sortDirection}-${currentPage}`}
           className="grid desktop:grid-cols-4 grid-cols-3 gap-3 md:grid-cols-2"
           initial={shouldReduceMotion ? false : { opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
@@ -251,6 +314,18 @@ export function BangumiCollection({ userId }: BangumiCollectionProps) {
           </button>
         </div>
       )}
+
+      <footer className="flex justify-end border-border border-t pt-3">
+        <a
+          href={`https://bgm.tv/user/${encodeURIComponent(userId)}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 text-muted-foreground text-xs transition-colors hover:text-primary"
+        >
+          {t('bangumi.source')}
+          <Icon icon="ri:external-link-line" className="size-3" />
+        </a>
+      </footer>
     </div>
   );
 }

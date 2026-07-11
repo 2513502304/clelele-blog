@@ -66,6 +66,7 @@ describe('parseHpoiCollection', () => {
         imageUrl: 'https://rfx.hpoi.net/cover.jpg',
         detailUrl: 'https://www.hpoi.net/hobby/82123',
         releaseText: null,
+        releaseDate: null,
         score: null,
       },
     ]);
@@ -91,6 +92,7 @@ describe('parseHpoiCollection', () => {
 
     const [item] = parseHpoiCollection(html);
     assert.equal(item.releaseText, '出荷：2022年7月26日');
+    assert.equal(item.releaseDate, '2022-07-26');
     assert.equal(item.score, '4.7');
     assert.equal(item.imageUrl, 'https://rfx.hpoi.net/gk/cover/n/2021/04/example.jpeg');
     assert.equal(isHpoiCollectionPage('<div class="hpoi-collect-container"><p>还没有内容</p></div>'), true);

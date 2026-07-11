@@ -484,20 +484,22 @@ navigation:
     # path: # 用于区分不同文章的自定义 js 路径，如果您的文章路径不是 location.pathname，需传此参数
     # lang: # 语言 (默认: 'zh-CN')
 comment:
-  provider: none  # 'remark42' | 'giscus' | 'waline' | 'twikoo' | 'none'
+  provider: giscus  # 'remark42' | 'giscus' | 'waline' | 'twikoo' | 'none'
+
   # remark42:
   #   host: https://comment.example.com/
   #   siteId: your-site-id
-  # giscus:
-  #   repo: username/repo              # GitHub 仓库名 (owner/repo 格式)
-  #   repoId: R_kgDOxxxxxx             # 仓库 ID (从 giscus.app 获取)
-  #   category: Announcements          # Discussion 分类名称
-  #   categoryId: DIC_kwDOxxxxxx       # 分类 ID (从 giscus.app 获取)
-  #   mapping: pathname                # 映射方式
-  #   reactionsEnabled: '1'            # 启用 reactions ('0' | '1')
-  #   emitMetadata: '0'                # 发送元数据 ('0' | '1')
-  #   inputPosition: top               # 输入框位置 ('top' | 'bottom')
-  #   lang: zh-CN                      # 语言
+
+  giscus:
+    repo: 2513502304/clelele-blog              # GitHub 仓库名 (owner/repo 格式)
+    repoId: R_kgDOTPj3HA             # 仓库 ID (从 giscus.app 获取)
+    category: Announcements          # Discussion 分类名称
+    categoryId: DIC_kwDOTPj3HM4DA8_3       # 分类 ID (从 giscus.app 获取)
+    mapping: pathname                # 映射方式
+    reactionsEnabled: '1'            # 启用 reactions ('0' | '1')
+    emitMetadata: '0'                # 发送元数据 ('0' | '1')
+    inputPosition: top               # 输入框位置 ('top' | 'bottom')
+    lang: zh-CN                      # 语言
 
   # waline:
   #   serverURL: https://your-waline.vercel.app  # Waline 服务端地址 (必填)
@@ -536,6 +538,7 @@ comment:
   #   # turnstileKey: ''               # Cloudflare Turnstile Key (可选)
   #   # locale:                        # 自定义语言显示 (可选)
   #   #   placeholder: '请留言...'      # 自定义输入框占位文本
+
   twikoo:
     envId: https://your-twikoo.vercel.app  # Twikoo 环境 ID (腾讯云) 或 Vercel 环境地址 (必填)
     # region: ap-shanghai              # 环境地域，默认为 ap-shanghai

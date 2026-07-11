@@ -2,12 +2,19 @@ export const HPOI_COLLECTION_STATES = ['all', 'care', 'want', 'preorder', 'buy',
 
 export type HpoiCollectionState = (typeof HPOI_COLLECTION_STATES)[number];
 
+export const HPOI_SORT_KEYS = ['default', 'id', 'title', 'score', 'releaseDate'] as const;
+
+export type HpoiSortKey = (typeof HPOI_SORT_KEYS)[number];
+export type HpoiSortDirection = 'asc' | 'desc';
+
 export interface HpoiCollectionItem {
   id: string;
   title: string;
   imageUrl: string | null;
   detailUrl: string;
   releaseText: string | null;
+  /** ISO date used for stable sorting; releaseText preserves Hpoi's display text. */
+  releaseDate: string | null;
   score: string | null;
 }
 
