@@ -7,6 +7,11 @@ export type BangumiSubjectType = 1 | 2 | 3 | 4 | 6;
 /** 1=Wish, 2=Collected, 3=Watching, 4=OnHold, 5=Dropped */
 export type BangumiCollectionType = 1 | 2 | 3 | 4 | 5;
 
+export const BANGUMI_SORT_KEYS = ['default', 'title', 'personalScore', 'averageScore', 'date'] as const;
+
+export type BangumiSortKey = (typeof BANGUMI_SORT_KEYS)[number];
+export type BangumiSortDirection = 'asc' | 'desc';
+
 export interface BangumiSubjectImages {
   large: string;
   common: string;
@@ -29,6 +34,10 @@ export interface BangumiSlimSubject {
   images?: BangumiSubjectImages | null;
   score: number;
   tags?: BangumiSubjectTag[];
+  eps?: number;
+  volumes?: number;
+  collection_total?: number;
+  rank?: number;
 }
 
 export interface BangumiUserCollection {
