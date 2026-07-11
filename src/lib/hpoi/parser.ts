@@ -107,6 +107,21 @@ export function parseHpoiCollection(html: string): HpoiCollectionItem[] {
   return [...items.values()];
 }
 
+/** Read the lazy-load page count embedded in Hpoi's collection bootstrap script. */
+export function parseHpoiCollectionPageCount(html: string): number {
+  const $ = load(html);
+  for (const script of $('script').toArray()) {
+    const match = $(script)
+      .text()
+      .match(/pageCount\s*:\s*['"](\d+)['"]/);
+    if (!match) continue;
+
+    const pageCount = Number.parseInt(match[1], 10);
+    if (pageCount > 0) return pageCount;
+  }
+  return 1;
+}
+
 /** Distinguish a valid empty collection from an unrelated block/error page. */
 export function isHpoiCollectionPage(html: string): boolean {
   const $ = load(html);
