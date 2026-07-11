@@ -9,10 +9,10 @@ interface HpoiCollectionFilter {
 }
 
 export const HPOI_COLLECTION_FILTERS: Record<HpoiCollectionState, HpoiCollectionFilter> = {
-  all: { order: 'rating', view: '1' },
-  care: { order: 'rating', view: '1', favState: 'care' },
-  want: { order: 'rating', view: '1', favState: 'want' },
-  preorder: { order: 'release', view: '1', favState: 'preorder' },
+  all: { order: 'rating', view: '2' },
+  care: { order: 'rating', view: '2', favState: 'care' },
+  want: { order: 'rating', view: '2', favState: 'want' },
+  preorder: { order: 'release', view: '2', favState: 'preorder' },
   buy: { order: 'rating', view: '2', favState: 'buy' },
   resell: { order: 'rating', view: '2', favState: 'resell' },
 };

@@ -46,6 +46,13 @@ function toHighResolutionCoverUrl(value: string | undefined): string | null {
   return url.toString();
 }
 
+function parseReleaseDate(value: string | null): string | null {
+  const match = value?.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+  if (!match) return null;
+  const [, year, month, day] = match;
+  return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+}
+
 /** Parse the public profile header and collection statistics from an Hpoi profile page. */
 export function parseHpoiProfile(html: string, userId: string): HpoiProfile {
   const $ = load(html);
@@ -85,12 +92,14 @@ export function parseHpoiCollection(html: string): HpoiCollectionItem[] {
     const title =
       cleanText(nameLink.attr('title')) ?? cleanText(nameLink.text()) ?? cleanText(image.attr('alt')) ?? `Hpoi #${id}`;
 
+    const releaseText = cleanText(item.find('.pay').first().text());
     items.set(id, {
       id,
       title,
       imageUrl: toHighResolutionCoverUrl(image.attr('src')),
       detailUrl: `${HPOI_ORIGIN}/hobby/${id}`,
-      releaseText: cleanText(item.find('.pay').first().text()),
+      releaseText,
+      releaseDate: parseReleaseDate(releaseText),
       score: cleanText(item.find('.score small').first().text()),
     });
   });
