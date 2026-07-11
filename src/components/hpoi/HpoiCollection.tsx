@@ -1,3 +1,4 @@
+import { useCollectionPagination } from '@hooks/useCollectionPagination';
 import { useTranslation } from '@hooks/useTranslation';
 import { Icon } from '@iconify/react';
 import { createHpoiImageProxyUrl } from '@lib/hpoi/image';
@@ -13,6 +14,7 @@ import type {
   HpoiSortKey,
 } from '@/types/hpoi';
 import { HPOI_COLLECTION_STATES } from '@/types/hpoi';
+import { CollectionPaginationSettings, CollectionPaginator } from '../collection/CollectionPagination';
 import { HpoiCard } from './HpoiCard';
 
 const STATE_LABELS: Record<HpoiCollectionState, TranslationKey> = {
@@ -73,6 +75,23 @@ export function HpoiCollection() {
     () => (data ? sortHpoiCollectionItems(data.collections[activeState], sortKey, sortDirection) : []),
     [activeState, data, sortDirection, sortKey],
   );
+  const { currentPage, isPaginated, pageSize, setCurrentPage, setIsPaginated, setPageSize, totalPages, visibleItems } =
+    useCollectionPagination(activeItems, 'hpoi-pagination-settings');
+
+  function handleStateChange(state: HpoiCollectionState) {
+    setActiveState(state);
+    setCurrentPage(1);
+  }
+
+  function handleSortChange(key: HpoiSortKey) {
+    setSortKey(key);
+    setCurrentPage(1);
+  }
+
+  function toggleSortDirection() {
+    setSortDirection((direction) => (direction === 'asc' ? 'desc' : 'asc'));
+    setCurrentPage(1);
+  }
 
   if (!data && !error) return <HpoiCollectionSkeleton />;
 
@@ -162,7 +181,7 @@ export function HpoiCollection() {
               type="button"
               role="tab"
               aria-selected={activeState === state}
-              onClick={() => setActiveState(state)}
+              onClick={() => handleStateChange(state)}
               className={cn(
                 'relative flex items-center gap-1.5 pb-2.5 font-medium text-sm transition-colors',
                 activeState === state ? 'text-primary' : 'text-muted-foreground hover:text-foreground',
@@ -176,46 +195,54 @@ export function HpoiCollection() {
         </div>
       </div>
 
-      <div className="flex justify-end gap-2">
-        <label htmlFor="hpoi-sort" className="sr-only">
-          {t('hpoi.sortBy')}
-        </label>
-        <div className="relative">
-          <Icon
-            icon="ri:sort-alphabet-asc"
-            className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
-          />
-          <select
-            id="hpoi-sort"
-            value={sortKey}
-            onChange={(event) => setSortKey(event.target.value as HpoiSortKey)}
-            className="h-9 appearance-none rounded-md border border-border bg-background pr-8 pl-8 text-sm outline-none transition-colors hover:border-primary/40 focus:border-primary"
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <CollectionPaginationSettings
+          isPaginated={isPaginated}
+          pageSize={pageSize}
+          onModeChange={setIsPaginated}
+          onPageSizeChange={setPageSize}
+        />
+        <div className="flex gap-2">
+          <label htmlFor="hpoi-sort" className="sr-only">
+            {t('hpoi.sortBy')}
+          </label>
+          <div className="relative">
+            <Icon
+              icon="ri:sort-alphabet-asc"
+              className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+            />
+            <select
+              id="hpoi-sort"
+              value={sortKey}
+              onChange={(event) => handleSortChange(event.target.value as HpoiSortKey)}
+              className="h-9 appearance-none rounded-md border border-border bg-background pr-8 pl-8 text-sm outline-none transition-colors hover:border-primary/40 focus:border-primary"
+            >
+              {SORT_OPTIONS.map((option) => (
+                <option key={option.key} value={option.key}>
+                  {t(option.label)}
+                </option>
+              ))}
+            </select>
+            <Icon
+              icon="ri:arrow-down-s-line"
+              className="pointer-events-none absolute top-1/2 right-2 size-4 -translate-y-1/2 text-muted-foreground"
+            />
+          </div>
+          <button
+            type="button"
+            title={sortDirection === 'asc' ? t('hpoi.sortAscending') : t('hpoi.sortDescending')}
+            aria-label={sortDirection === 'asc' ? t('hpoi.sortAscending') : t('hpoi.sortDescending')}
+            onClick={toggleSortDirection}
+            className="flex size-9 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
           >
-            {SORT_OPTIONS.map((option) => (
-              <option key={option.key} value={option.key}>
-                {t(option.label)}
-              </option>
-            ))}
-          </select>
-          <Icon
-            icon="ri:arrow-down-s-line"
-            className="pointer-events-none absolute top-1/2 right-2 size-4 -translate-y-1/2 text-muted-foreground"
-          />
+            <Icon icon={sortDirection === 'asc' ? 'ri:sort-asc' : 'ri:sort-desc'} className="size-4" />
+          </button>
         </div>
-        <button
-          type="button"
-          title={sortDirection === 'asc' ? t('hpoi.sortAscending') : t('hpoi.sortDescending')}
-          aria-label={sortDirection === 'asc' ? t('hpoi.sortAscending') : t('hpoi.sortDescending')}
-          onClick={() => setSortDirection((direction) => (direction === 'asc' ? 'desc' : 'asc'))}
-          className="flex size-9 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
-        >
-          <Icon icon={sortDirection === 'asc' ? 'ri:sort-asc' : 'ri:sort-desc'} className="size-4" />
-        </button>
       </div>
 
       {activeItems.length > 0 ? (
         <div className="grid desktop:grid-cols-4 grid-cols-3 gap-3 md:grid-cols-2">
-          {activeItems.map((item) => (
+          {visibleItems.map((item) => (
             <HpoiCard key={item.id} item={item} state={activeState} />
           ))}
         </div>
@@ -225,6 +252,8 @@ export function HpoiCollection() {
           <p className="text-sm">{t('hpoi.noItems')}</p>
         </div>
       )}
+
+      {isPaginated && <CollectionPaginator currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />}
 
       <footer className="flex justify-end border-border border-t pt-3">
         <a
