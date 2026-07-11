@@ -6,3 +6,4 @@ export {
   SUBJECT_TYPE_MAP,
   type SubjectTypeKey,
 } from './constants';
+export { sortBangumiCollectionItems } from './sort';

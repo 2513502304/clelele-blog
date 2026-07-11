@@ -48,19 +48,26 @@ export function HpoiCard({ item, state }: HpoiCardProps) {
             {t(STATE_LABELS[state])}
           </span>
         )}
-        {item.score && (
-          <span className="absolute top-2 right-2 flex items-center gap-1 rounded bg-black/70 px-2 py-1 font-medium text-amber-300 text-xs backdrop-blur-sm">
-            <Icon icon="ri:star-fill" className="size-3" />
-            {item.score}
-          </span>
-        )}
+        <span className="absolute top-2 right-2 flex items-center gap-1 rounded bg-black/70 px-2 py-1 font-medium text-amber-300 text-xs backdrop-blur-sm">
+          <Icon icon="ri:star-fill" className="size-3" />
+          {item.score ?? '—'}
+        </span>
       </div>
 
-      <div className="flex min-h-20 flex-1 flex-col justify-between gap-2 p-3">
+      <div className="flex min-h-24 flex-1 flex-col justify-between gap-2 p-3">
         <h2 className="line-clamp-2 font-medium text-sm leading-5 transition-colors group-hover:text-primary">{item.title}</h2>
-        <div className="flex items-center justify-between gap-2 text-muted-foreground text-xs">
-          <span className="line-clamp-1">{item.releaseText ?? `Hpoi #${item.id}`}</span>
-          <Icon icon="ri:external-link-line" className="size-3.5 shrink-0 opacity-60" />
+        <div className="space-y-1 text-muted-foreground text-xs">
+          <span className="flex items-center gap-1.5">
+            <Icon icon="ri:calendar-event-line" className="size-3.5 shrink-0" />
+            <span className="line-clamp-1">{item.releaseText ?? '—'}</span>
+          </span>
+          <span className="flex items-center justify-between gap-2">
+            <span className="flex min-w-0 items-center gap-1.5">
+              <Icon icon="ri:hashtag" className="size-3.5 shrink-0" />
+              <span className="truncate">Hpoi {item.id}</span>
+            </span>
+            <Icon icon="ri:external-link-line" className="size-3.5 shrink-0 opacity-60" />
+          </span>
         </div>
       </div>
     </a>

@@ -1,10 +1,17 @@
 import { useTranslation } from '@hooks/useTranslation';
 import { Icon } from '@iconify/react';
 import { createHpoiImageProxyUrl } from '@lib/hpoi/image';
+import { sortHpoiCollectionItems } from '@lib/hpoi/sort';
 import { cn } from '@lib/utils';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { TranslationKey } from '@/i18n/types';
-import type { HpoiCollectionResponse, HpoiCollectionState, HpoiProfileStats } from '@/types/hpoi';
+import type {
+  HpoiCollectionResponse,
+  HpoiCollectionState,
+  HpoiProfileStats,
+  HpoiSortDirection,
+  HpoiSortKey,
+} from '@/types/hpoi';
 import { HPOI_COLLECTION_STATES } from '@/types/hpoi';
 import { HpoiCard } from './HpoiCard';
 
@@ -26,12 +33,22 @@ const PROFILE_STATS: Array<{ field: keyof HpoiProfileStats; label: TranslationKe
   { field: 'pendingPayment', label: 'hpoi.pendingPayment', icon: 'ri:bank-card-line' },
 ];
 
+const SORT_OPTIONS: Array<{ key: HpoiSortKey; label: TranslationKey }> = [
+  { key: 'default', label: 'hpoi.sortDefault' },
+  { key: 'id', label: 'hpoi.sortId' },
+  { key: 'title', label: 'hpoi.sortTitle' },
+  { key: 'score', label: 'hpoi.sortScore' },
+  { key: 'releaseDate', label: 'hpoi.sortReleaseDate' },
+];
+
 export function HpoiCollection() {
   const { t, locale } = useTranslation();
   const [data, setData] = useState<HpoiCollectionResponse | null>(null);
   const [error, setError] = useState(false);
   const [requestVersion, setRequestVersion] = useState(0);
   const [activeState, setActiveState] = useState<HpoiCollectionState>('all');
+  const [sortKey, setSortKey] = useState<HpoiSortKey>('default');
+  const [sortDirection, setSortDirection] = useState<HpoiSortDirection>('asc');
 
   useEffect(() => {
     const controller = new AbortController();
@@ -51,6 +68,11 @@ export function HpoiCollection() {
 
     return () => controller.abort();
   }, [requestVersion]);
+
+  const activeItems = useMemo(
+    () => (data ? sortHpoiCollectionItems(data.collections[activeState], sortKey, sortDirection) : []),
+    [activeState, data, sortDirection, sortKey],
+  );
 
   if (!data && !error) return <HpoiCollectionSkeleton />;
 
@@ -73,7 +95,6 @@ export function HpoiCollection() {
 
   if (!data) return null;
 
-  const activeItems = data.collections[activeState];
   const updatedAt = new Intl.DateTimeFormat(locale, {
     month: 'short',
     day: 'numeric',
@@ -153,6 +174,43 @@ export function HpoiCollection() {
             </button>
           ))}
         </div>
+      </div>
+
+      <div className="flex justify-end gap-2">
+        <label htmlFor="hpoi-sort" className="sr-only">
+          {t('hpoi.sortBy')}
+        </label>
+        <div className="relative">
+          <Icon
+            icon="ri:sort-alphabet-asc"
+            className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+          />
+          <select
+            id="hpoi-sort"
+            value={sortKey}
+            onChange={(event) => setSortKey(event.target.value as HpoiSortKey)}
+            className="h-9 appearance-none rounded-md border border-border bg-background pr-8 pl-8 text-sm outline-none transition-colors hover:border-primary/40 focus:border-primary"
+          >
+            {SORT_OPTIONS.map((option) => (
+              <option key={option.key} value={option.key}>
+                {t(option.label)}
+              </option>
+            ))}
+          </select>
+          <Icon
+            icon="ri:arrow-down-s-line"
+            className="pointer-events-none absolute top-1/2 right-2 size-4 -translate-y-1/2 text-muted-foreground"
+          />
+        </div>
+        <button
+          type="button"
+          title={sortDirection === 'asc' ? t('hpoi.sortAscending') : t('hpoi.sortDescending')}
+          aria-label={sortDirection === 'asc' ? t('hpoi.sortAscending') : t('hpoi.sortDescending')}
+          onClick={() => setSortDirection((direction) => (direction === 'asc' ? 'desc' : 'asc'))}
+          className="flex size-9 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+        >
+          <Icon icon={sortDirection === 'asc' ? 'ri:sort-asc' : 'ri:sort-desc'} className="size-4" />
+        </button>
       </div>
 
       {activeItems.length > 0 ? (
