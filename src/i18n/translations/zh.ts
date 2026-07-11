@@ -357,7 +357,7 @@ export const uiStrings = {
   'bangumi.sortTitle': '番剧名称',
   'bangumi.sortPersonalScore': '番剧评分（个人）',
   'bangumi.sortAverageScore': '番剧评分（平均）',
-  'bangumi.sortDate': '番剧时间',
+  'bangumi.sortDate': '放送日期',
   'bangumi.sortAscending': '正序',
   'bangumi.sortDescending': '逆序',
   'bangumi.personalScore': '个人评分',
