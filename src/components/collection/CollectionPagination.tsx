@@ -1,8 +1,8 @@
 import { useTranslation } from '@hooks/useTranslation';
 import { Icon } from '@iconify/react';
 import { cn } from '@lib/utils';
-
-export const DEFAULT_COLLECTION_PAGE_SIZE = 20;
+import { useEffect, useState } from 'react';
+import { MAX_COLLECTION_PAGE_SIZE, MIN_COLLECTION_PAGE_SIZE } from '@/constants/pagination';
 
 interface CollectionPaginationSettingsProps {
   isPaginated: boolean;
@@ -18,6 +18,31 @@ export function CollectionPaginationSettings({
   onPageSizeChange,
 }: CollectionPaginationSettingsProps) {
   const { t } = useTranslation();
+  const [pageSizeInput, setPageSizeInput] = useState(String(pageSize));
+
+  useEffect(() => {
+    setPageSizeInput(String(pageSize));
+  }, [pageSize]);
+
+  function handlePageSizeInput(value: string) {
+    setPageSizeInput(value);
+    const parsedValue = Number.parseInt(value, 10);
+    if (Number.isInteger(parsedValue) && parsedValue >= MIN_COLLECTION_PAGE_SIZE && parsedValue <= MAX_COLLECTION_PAGE_SIZE) {
+      onPageSizeChange(parsedValue);
+    }
+  }
+
+  function commitPageSizeInput() {
+    const parsedValue = Number.parseInt(pageSizeInput, 10);
+    if (!Number.isInteger(parsedValue)) {
+      setPageSizeInput(String(pageSize));
+      return;
+    }
+
+    const clampedValue = Math.min(MAX_COLLECTION_PAGE_SIZE, Math.max(MIN_COLLECTION_PAGE_SIZE, parsedValue));
+    setPageSizeInput(String(clampedValue));
+    if (clampedValue !== pageSize) onPageSizeChange(clampedValue);
+  }
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -54,14 +79,15 @@ export function CollectionPaginationSettings({
           <span>{t('pagination.perPage')}</span>
           <input
             type="number"
-            min="1"
-            max="200"
+            min={MIN_COLLECTION_PAGE_SIZE}
+            max={MAX_COLLECTION_PAGE_SIZE}
             step="1"
             inputMode="numeric"
-            value={pageSize}
-            onChange={(event) => {
-              const value = Number.parseInt(event.target.value, 10);
-              if (Number.isFinite(value) && value >= 1 && value <= 200) onPageSizeChange(value);
+            value={pageSizeInput}
+            onChange={(event) => handlePageSizeInput(event.target.value)}
+            onBlur={commitPageSizeInput}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') event.currentTarget.blur();
             }}
             aria-label={t('pagination.perPage')}
             className="w-12 bg-transparent text-right text-foreground tabular-nums outline-none"

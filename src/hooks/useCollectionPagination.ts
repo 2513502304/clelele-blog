@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { DEFAULT_COLLECTION_PAGE_SIZE } from '@/components/collection/CollectionPagination';
+import { DEFAULT_COLLECTION_PAGE_SIZE, MAX_COLLECTION_PAGE_SIZE, MIN_COLLECTION_PAGE_SIZE } from '@/constants/pagination';
 
 interface StoredPaginationSettings {
   isPaginated: boolean;
@@ -22,8 +22,8 @@ export function useCollectionPagination<T>(items: T[], storageKey: string) {
         if (
           typeof storedPageSize === 'number' &&
           Number.isInteger(storedPageSize) &&
-          storedPageSize >= 1 &&
-          storedPageSize <= 200
+          storedPageSize >= MIN_COLLECTION_PAGE_SIZE &&
+          storedPageSize <= MAX_COLLECTION_PAGE_SIZE
         ) {
           setPageSize(storedPageSize);
         }
