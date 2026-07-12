@@ -199,6 +199,11 @@ export const uiStrings: UIStrings = {
   'pagination.page': 'Page {page}',
   'pagination.currentPage': 'Page {page}, current page',
   'pagination.of': 'of {total}',
+  'pagination.mode': 'Display mode',
+  'pagination.paginated': 'Pages',
+  'pagination.showAll': 'Show all',
+  'pagination.perPage': 'Per page',
+  'pagination.navigation': 'Pagination',
 
   // ── Breadcrumb ──────────────────────────────────────────────
   'breadcrumb.home': 'Home',

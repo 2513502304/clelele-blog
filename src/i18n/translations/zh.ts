@@ -198,6 +198,11 @@ export const uiStrings = {
   'pagination.page': '第 {page} 页',
   'pagination.currentPage': '第 {page} 页，当前页',
   'pagination.of': '共 {total} 页',
+  'pagination.mode': '显示方式',
+  'pagination.paginated': '分页显示',
+  'pagination.showAll': '全部显示',
+  'pagination.perPage': '每页',
+  'pagination.navigation': '分页导航',
 
   // ── Breadcrumb ──────────────────────────────────────────────
   'breadcrumb.home': '首页',
