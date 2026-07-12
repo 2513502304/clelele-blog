@@ -1,7 +1,7 @@
 import { useTranslation } from '@hooks/useTranslation';
 import { Icon } from '@iconify/react';
 import { cn } from '@lib/utils';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { MAX_COLLECTION_PAGE_SIZE, MIN_COLLECTION_PAGE_SIZE } from '@/constants/pagination';
 
 interface CollectionPaginationSettingsProps {
@@ -18,14 +18,12 @@ export function CollectionPaginationSettings({
   onPageSizeChange,
 }: CollectionPaginationSettingsProps) {
   const { t } = useTranslation();
-  const [pageSizeInput, setPageSizeInput] = useState(String(pageSize));
-
-  useEffect(() => {
-    setPageSizeInput(String(pageSize));
-  }, [pageSize]);
+  const [pageSizeDraft, setPageSizeDraft] = useState('');
+  const [isEditingPageSize, setIsEditingPageSize] = useState(false);
+  const pageSizeInput = isEditingPageSize ? pageSizeDraft : String(pageSize);
 
   function handlePageSizeInput(value: string) {
-    setPageSizeInput(value);
+    setPageSizeDraft(value);
     const parsedValue = Number.parseInt(value, 10);
     if (Number.isInteger(parsedValue) && parsedValue >= MIN_COLLECTION_PAGE_SIZE && parsedValue <= MAX_COLLECTION_PAGE_SIZE) {
       onPageSizeChange(parsedValue);
@@ -33,14 +31,11 @@ export function CollectionPaginationSettings({
   }
 
   function commitPageSizeInput() {
-    const parsedValue = Number.parseInt(pageSizeInput, 10);
-    if (!Number.isInteger(parsedValue)) {
-      setPageSizeInput(String(pageSize));
-      return;
-    }
+    setIsEditingPageSize(false);
+    const parsedValue = Number.parseInt(pageSizeDraft, 10);
+    if (!Number.isInteger(parsedValue)) return;
 
     const clampedValue = Math.min(MAX_COLLECTION_PAGE_SIZE, Math.max(MIN_COLLECTION_PAGE_SIZE, parsedValue));
-    setPageSizeInput(String(clampedValue));
     if (clampedValue !== pageSize) onPageSizeChange(clampedValue);
   }
 
@@ -84,6 +79,10 @@ export function CollectionPaginationSettings({
             step="1"
             inputMode="numeric"
             value={pageSizeInput}
+            onFocus={() => {
+              setPageSizeDraft(String(pageSize));
+              setIsEditingPageSize(true);
+            }}
             onChange={(event) => handlePageSizeInput(event.target.value)}
             onBlur={commitPageSizeInput}
             onKeyDown={(event) => {
