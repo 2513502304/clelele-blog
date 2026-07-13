@@ -1,5 +1,7 @@
 import { deleteStyleGalleryObject, headStyleGalleryObject } from '@lib/hf-s3-presign';
+import { mapWithConcurrency } from '@lib/map-with-concurrency';
 import { isAuthorizedStyleGalleryRequest } from '@lib/style-gallery-auth';
+import { getStyleGalleryClientErrorResponse, StyleGalleryClientError } from '@lib/style-gallery-errors';
 import {
   createStyleGalleryExample,
   getStyleGalleryExampleExtension,
@@ -69,8 +71,17 @@ async function getItem(slug: string) {
 
 async function validateExampleObjectsExist(examples: StyleGalleryExample[]): Promise<void> {
   await mapWithConcurrency(examples, 8, async (example) => {
-    const key = getStyleGalleryExampleObjectKey(example);
-    if (!(await headStyleGalleryObject(key))) throw new Error(`Example image object is missing: ${example.src}`);
+    let key: string;
+    try {
+      key = getStyleGalleryExampleObjectKey(example);
+    } catch (error) {
+      throw new StyleGalleryClientError(error instanceof Error ? error.message : 'Invalid example image metadata.', 400, {
+        cause: error,
+      });
+    }
+    if (!(await headStyleGalleryObject(key))) {
+      throw new StyleGalleryClientError(`Example image object is missing: ${example.src}`, 409);
+    }
   });
 }
 
@@ -146,6 +157,8 @@ export const POST: APIRoute = async ({ params, request }) => {
     });
   } catch (error) {
     if (error instanceof z.ZodError) return new Response(error.message, { status: 400 });
+    const clientErrorResponse = getStyleGalleryClientErrorResponse(error);
+    if (clientErrorResponse) return clientErrorResponse;
     return new Response(error instanceof Error ? error.message : 'Failed to update style gallery examples.', { status: 500 });
   }
 };
@@ -154,14 +167,16 @@ export const PATCH: APIRoute = async ({ params, request }) => {
   const slug = params.slug;
   if (!slug || !isValidSlug(slug)) return new Response('Invalid style gallery slug.', { status: 400 });
   try {
-    const body = updateSchema.parse(await request.json());
-    if (!isAuthorizedStyleGalleryRequest(request, body.token)) return new Response('Invalid upload token.', { status: 401 });
+    const rawBody = await request.json();
+    if (!isAuthorizedStyleGalleryRequest(request, rawBody?.token))
+      return new Response('Invalid upload token.', { status: 401 });
+    const body = updateSchema.parse(rawBody);
     const platform = getStyleGalleryPlatform(body.platform);
     if (!platform) return new Response('Invalid style gallery platform.', { status: 400 });
     const selectedIds = new Set(body.ids);
     const result = await updateStyleGalleryItemExamples(slug, (examples, item) => {
       const found = examples.filter((example) => selectedIds.has(example.id));
-      if (found.length !== selectedIds.size) throw new Error('One or more examples were not found.');
+      if (found.length !== selectedIds.size) throw new StyleGalleryClientError('One or more examples were not found.', 404);
       return mergeStyleGalleryExamples(
         examples.map((example) =>
           selectedIds.has(example.id)
@@ -173,6 +188,8 @@ export const PATCH: APIRoute = async ({ params, request }) => {
     return Response.json({ examples: result.item.examples, updatedAt: result.item.updated });
   } catch (error) {
     if (error instanceof z.ZodError) return new Response(error.message, { status: 400 });
+    const clientErrorResponse = getStyleGalleryClientErrorResponse(error);
+    if (clientErrorResponse) return clientErrorResponse;
     return new Response(error instanceof Error ? error.message : 'Failed to update style gallery examples.', { status: 500 });
   }
 };
@@ -181,13 +198,15 @@ export const DELETE: APIRoute = async ({ params, request }) => {
   const slug = params.slug;
   if (!slug || !isValidSlug(slug)) return new Response('Invalid style gallery slug.', { status: 400 });
   try {
-    const body = deleteSchema.parse(await request.json());
-    if (!isAuthorizedStyleGalleryRequest(request, body.token)) return new Response('Invalid upload token.', { status: 401 });
+    const rawBody = await request.json();
+    if (!isAuthorizedStyleGalleryRequest(request, rawBody?.token))
+      return new Response('Invalid upload token.', { status: 401 });
+    const body = deleteSchema.parse(rawBody);
     const selectedIds = new Set(body.ids);
     let removed: StyleGalleryExample[] = [];
     const result = await updateStyleGalleryItemExamples(slug, (examples) => {
       removed = examples.filter((example) => selectedIds.has(example.id));
-      if (removed.length !== selectedIds.size) throw new Error('One or more examples were not found.');
+      if (removed.length !== selectedIds.size) throw new StyleGalleryClientError('One or more examples were not found.', 404);
       return removeStyleGalleryExamples(examples, selectedIds);
     });
     const referenced = new Set(result.index.groups.flatMap((group) => group.examples.map((example) => example.src)));
@@ -200,20 +219,8 @@ export const DELETE: APIRoute = async ({ params, request }) => {
     return Response.json({ examples: result.item.examples, deleted: removed.length, updatedAt: result.item.updated });
   } catch (error) {
     if (error instanceof z.ZodError) return new Response(error.message, { status: 400 });
+    const clientErrorResponse = getStyleGalleryClientErrorResponse(error);
+    if (clientErrorResponse) return clientErrorResponse;
     return new Response(error instanceof Error ? error.message : 'Failed to delete style gallery examples.', { status: 500 });
   }
 };
-
-async function mapWithConcurrency<T, R>(items: T[], concurrency: number, worker: (item: T) => Promise<R>): Promise<R[]> {
-  const results: R[] = [];
-  let nextIndex = 0;
-  async function runWorker() {
-    while (nextIndex < items.length) {
-      const index = nextIndex;
-      nextIndex += 1;
-      results[index] = await worker(items[index]);
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, runWorker));
-  return results;
-}

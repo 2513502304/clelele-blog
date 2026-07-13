@@ -4,7 +4,9 @@ import {
   headStyleGalleryObject,
   putStyleGalleryObject,
 } from '@lib/hf-s3-presign';
+import { mapWithConcurrency } from '@lib/map-with-concurrency';
 import { assertStyleGalleryItemConsistency, getStyleGalleryItemAssetKeys } from '@lib/style-gallery-assets';
+import { StyleGalleryClientError } from '@lib/style-gallery-errors';
 import { toStyleGalleryExampleIndexGroup } from '@lib/style-gallery-examples';
 import { styleGalleryItemSchema, toStyleGalleryCatalogItem } from '@lib/style-gallery-schema';
 import {
@@ -57,9 +59,19 @@ export async function writeStyleGalleryItems(
     for (const submittedItem of submittedItems) {
       const item = styleGalleryItemSchema.parse(submittedItem);
       if (item.examples.length) {
-        throw new Error('Generated examples must be changed through the dedicated examples endpoint.');
+        throw new StyleGalleryClientError('Generated examples must be changed through the dedicated examples endpoint.', 400);
       }
-      assertStyleGalleryItemConsistency(item);
+      try {
+        assertStyleGalleryItemConsistency(item);
+      } catch (error) {
+        throw new StyleGalleryClientError(
+          error instanceof Error ? error.message : 'Invalid style gallery item metadata.',
+          400,
+          {
+            cause: error,
+          },
+        );
+      }
       byHash.set(item.imageHash, item);
     }
     const items = [...byHash.values()];
@@ -86,7 +98,7 @@ export async function writeStyleGalleryItems(
         const slug = existingSlug ?? submittedItem.slug;
         const slugCollision = nextBySlug.get(slug);
         if (slugCollision && slugCollision.imageHash !== submittedItem.imageHash) {
-          throw new Error(`Style gallery slug collision: ${slug}`);
+          throw new StyleGalleryClientError(`Style gallery slug collision: ${slug}`, 409);
         }
 
         const existingItem = existingSlug ? await getStoredStyleGalleryItem(existingSlug, { fresh: true }) : null;
@@ -148,7 +160,7 @@ export async function reconcileStyleGalleryExampleCounts(): Promise<{ checked: n
       getStyleGalleryCatalog({ fresh: true }),
       getStyleGalleryExampleIndex({ fresh: true }),
     ]);
-    const storedItems = await mapWithConcurrencyResult(catalog.items, ASSET_VALIDATION_CONCURRENCY, async (item) => {
+    const storedItems = await mapWithConcurrency(catalog.items, ASSET_VALIDATION_CONCURRENCY, async (item) => {
       const stored = await getStoredStyleGalleryItem(item.slug, { fresh: true });
       if (!stored) throw new Error(`Style gallery item metadata is missing: ${item.slug}`);
       return stored;
@@ -187,7 +199,7 @@ export async function updateStyleGalleryItemExamples(
       getStyleGalleryExampleIndex({ fresh: true }),
     ]);
     if (!previousItem || !previousCatalog.items.some((item) => item.slug === slug)) {
-      throw new Error('Style gallery item not found.');
+      throw new StyleGalleryClientError('Style gallery item not found.', 404);
     }
 
     const examples = transform(previousItem.examples, previousItem);
@@ -227,7 +239,9 @@ export async function updateStyleGalleryItemExamples(
 async function validateItemAssets(items: StoredStyleGalleryItem[]): Promise<void> {
   const keys = [...new Set(items.flatMap(getStyleGalleryItemAssetKeys))];
   await mapWithConcurrency(keys, ASSET_VALIDATION_CONCURRENCY, async (key) => {
-    if (!(await headStyleGalleryObject(key))) throw new Error(`Style gallery asset is missing: ${key}`);
+    if (!(await headStyleGalleryObject(key))) {
+      throw new StyleGalleryClientError(`Style gallery asset is missing: ${key}`, 400);
+    }
   });
 }
 
@@ -268,22 +282,4 @@ async function rollbackMetadata(
   }
   invalidateStyleGalleryStoreCache();
   return errors;
-}
-
-async function mapWithConcurrency<T>(items: T[], concurrency: number, worker: (item: T) => Promise<void>): Promise<void> {
-  await mapWithConcurrencyResult(items, concurrency, worker);
-}
-
-async function mapWithConcurrencyResult<T, R>(items: T[], concurrency: number, worker: (item: T) => Promise<R>): Promise<R[]> {
-  const results: R[] = [];
-  let nextIndex = 0;
-  async function runWorker() {
-    while (nextIndex < items.length) {
-      const index = nextIndex;
-      nextIndex += 1;
-      results[index] = await worker(items[index]);
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, runWorker));
-  return results;
 }

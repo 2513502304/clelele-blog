@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { describe, it } from 'node:test';
 import type { StoredStyleGalleryItem } from '@/types/style-gallery';
+import { mapWithConcurrency } from './map-with-concurrency';
 import { assertStyleGalleryItemConsistency, getStyleGalleryItemAssetKeys } from './style-gallery-assets';
 import { isAuthorizedStyleGalleryRequest } from './style-gallery-auth';
+import { getStyleGalleryClientErrorResponse, StyleGalleryClientError } from './style-gallery-errors';
 import { getStyleGalleryExampleKey, getStyleGalleryExampleObjectKey } from './style-gallery-example-upload';
 import { mergeStyleGalleryExamples, removeStyleGalleryExamples } from './style-gallery-examples';
 import { getStyleGalleryPlatform } from './style-gallery-platforms';
@@ -91,13 +93,32 @@ describe('style gallery metadata', () => {
       id: 'example-pixai',
       model: 'PixAI',
     };
-    assert.deepEqual(mergeStyleGalleryExamples([gptImage, pixaiImage]), [gptImage, pixaiImage]);
-    assert.deepEqual(removeStyleGalleryExamples([pixaiImage], new Set([pixaiImage.id])), []);
+    const updatedGptImage = { ...gptImage, note: 'updated metadata' };
+    const merged = mergeStyleGalleryExamples([gptImage, pixaiImage, updatedGptImage]);
+    assert.deepEqual(merged, [updatedGptImage, pixaiImage]);
+    assert.deepEqual(removeStyleGalleryExamples(merged, new Set([pixaiImage.id, 'missing-example'])), [updatedGptImage]);
     const platform = getStyleGalleryPlatform('pixai');
     assert.ok(platform);
     assert.equal(getStyleGalleryExampleKey(firstHash, 'png'), `examples/images/${firstHash}.png`);
+    assert.equal(getStyleGalleryExampleKey(firstHash, 'PNG'), `examples/images/${firstHash}.png`);
     assert.equal(getStyleGalleryExampleObjectKey(gptImage), `examples/images/${firstHash}.png`);
     assert.throws(() => getStyleGalleryExampleObjectKey({ ...gptImage, imageHash: secondHash }), /does not match/);
+  });
+
+  it('maps concurrent work in input order without exceeding the configured limit', async () => {
+    let active = 0;
+    let maxActive = 0;
+    const results = await mapWithConcurrency([3, 1, 2], 2, async (value) => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((resolve) => setTimeout(resolve, value));
+      active -= 1;
+      return value * 2;
+    });
+
+    assert.deepEqual(results, [6, 2, 4]);
+    assert.equal(maxActive, 2);
+    await assert.rejects(() => mapWithConcurrency([], 0, async () => undefined), /positive integer/);
   });
 });
 
@@ -115,6 +136,9 @@ describe('style gallery write authorization', () => {
       assert.equal(isAuthorizedStyleGalleryRequest(authorized), true);
       assert.equal(isAuthorizedStyleGalleryRequest(unauthorized), false);
       assert.equal(isAuthorizedStyleGalleryRequest(new Request('https://example.test'), 'test-gallery-token'), true);
+      assert.equal(isAuthorizedStyleGalleryRequest(new Request('https://example.test'), 123), false);
+      assert.equal(getStyleGalleryClientErrorResponse(new StyleGalleryClientError('Missing item', 404))?.status, 404);
+      assert.equal(getStyleGalleryClientErrorResponse(new Error('Storage failure')), null);
     } finally {
       if (previous === undefined) delete process.env.STYLE_GALLERY_UPLOAD_TOKEN;
       else process.env.STYLE_GALLERY_UPLOAD_TOKEN = previous;

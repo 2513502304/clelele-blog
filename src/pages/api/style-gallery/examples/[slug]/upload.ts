@@ -17,7 +17,7 @@ export const POST: APIRoute = async ({ params, request, url }) => {
 
   const platform = getStyleGalleryPlatform(url.searchParams.get('platform') ?? '');
   const expectedHash = url.searchParams.get('hash') ?? '';
-  const extension = url.searchParams.get('extension') ?? '';
+  const extension = (url.searchParams.get('extension') ?? '').toLowerCase();
   if (!platform || !/^[a-f0-9]{64}$/i.test(expectedHash) || !/^(jpg|png|webp)$/i.test(extension)) {
     return new Response('Invalid example upload metadata.', { status: 400 });
   }

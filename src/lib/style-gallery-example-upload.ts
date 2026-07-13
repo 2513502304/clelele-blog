@@ -20,7 +20,7 @@ export function getStyleGalleryExampleExtension(contentType: string, fileName = 
 }
 
 export function getStyleGalleryExampleKey(imageHash: string, extension: string): string {
-  return `examples/images/${imageHash}.${extension}`;
+  return `examples/images/${imageHash}.${extension.toLowerCase()}`;
 }
 
 export function createStyleGalleryExample(

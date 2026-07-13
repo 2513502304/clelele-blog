@@ -26,7 +26,10 @@ export async function getStyleGalleryCatalog(options: { fresh?: boolean } = {}):
     catalogCache = { value, expiresAt: now + CACHE_TTL_MS };
     return value;
   } catch (error) {
-    if (!options.fresh && catalogCache) return catalogCache.value;
+    if (!options.fresh && catalogCache) {
+      console.warn('[style-gallery] Serving a stale catalog after an HF storage read failed.', error);
+      return catalogCache.value;
+    }
     throw error;
   }
 }
@@ -46,7 +49,10 @@ export async function getStoredStyleGalleryItem(
     itemCache.set(slug, { value, expiresAt: now + CACHE_TTL_MS });
     return value;
   } catch (error) {
-    if (!options.fresh && cached) return cached.value;
+    if (!options.fresh && cached) {
+      console.warn(`[style-gallery] Serving a stale item (${slug}) after an HF storage read failed.`, error);
+      return cached.value;
+    }
     throw error;
   }
 }
@@ -63,7 +69,10 @@ export async function getStyleGalleryExampleIndex(options: { fresh?: boolean } =
     exampleIndexCache = { value, expiresAt: now + CACHE_TTL_MS };
     return value;
   } catch (error) {
-    if (!options.fresh && exampleIndexCache) return exampleIndexCache.value;
+    if (!options.fresh && exampleIndexCache) {
+      console.warn('[style-gallery] Serving a stale example index after an HF storage read failed.', error);
+      return exampleIndexCache.value;
+    }
     throw error;
   }
 }

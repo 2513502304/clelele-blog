@@ -238,7 +238,9 @@ function isRetryableError(error: unknown): boolean {
 
 async function withRequestRetry<T>(label: string, operation: () => Promise<T>): Promise<T> {
   let lastError: unknown;
+  let attempts = 0;
   for (let attempt = 1; attempt <= REQUEST_ATTEMPTS; attempt += 1) {
+    attempts = attempt;
     try {
       return await operation();
     } catch (error) {
@@ -248,5 +250,5 @@ async function withRequestRetry<T>(label: string, operation: () => Promise<T>): 
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
-  throw new Error(`${label} failed after ${REQUEST_ATTEMPTS} attempts.`, { cause: lastError });
+  throw new Error(`${label} failed after ${attempts} attempt(s).`, { cause: lastError });
 }
