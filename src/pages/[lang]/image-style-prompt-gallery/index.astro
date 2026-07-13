@@ -1,9 +1,7 @@
 ---
-import { getLocaleStaticPaths } from '../../_shared/utils';
 import GalleryPage from '../../image-style-prompt-gallery/index.astro';
 
-export const getStaticPaths = getLocaleStaticPaths;
+export const prerender = false;
 ---
 
 <GalleryPage />
-

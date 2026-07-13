@@ -1,5 +1,7 @@
+import { useCollectionPagination } from '@hooks/useCollectionPagination';
 import { Icon } from '@iconify/react';
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { CollectionPaginationSettings, CollectionPaginator } from '../collection/CollectionPagination';
 
 export interface StyleGalleryBrowserItem {
   slug: string;
@@ -20,30 +22,49 @@ interface StyleGalleryBrowserProps {
   items: StyleGalleryBrowserItem[];
   tags: string[];
   galleryBasePath: string;
+  labels: StyleGalleryBrowserLabels;
 }
 
-type SortMode = 'latest' | 'title' | 'examples';
+export interface StyleGalleryBrowserLabels {
+  searchPlaceholder: string;
+  allTags: string;
+  sortItems: string;
+  sortDefault: string;
+  sortImportedAt: string;
+  sortTitle: string;
+  sortExampleCount: string;
+  sortAscending: string;
+  sortDescending: string;
+  imageCount: string;
+  copy: string;
+  copied: string;
+  copyRetry: string;
+  view: string;
+  noMatches: string;
+}
 
-const sortLabels: Record<SortMode, string> = {
-  latest: 'Latest',
-  title: 'Title',
-  examples: 'Examples',
-};
+type SortKey = 'default' | 'date' | 'title' | 'examples';
+type SortDirection = 'asc' | 'desc';
 
 function normalize(value: string) {
   return value.toLowerCase().trim();
 }
 
-export default function StyleGalleryBrowser({ items, tags, galleryBasePath }: StyleGalleryBrowserProps) {
+export default function StyleGalleryBrowser({ items, tags, galleryBasePath, labels }: StyleGalleryBrowserProps) {
   const [query, setQuery] = useState('');
   const [activeTag, setActiveTag] = useState<string>('all');
-  const [sortMode, setSortMode] = useState<SortMode>('latest');
-  const [copyingSlug, setCopyingSlug] = useState<string | null>(null);
+  const [sortKey, setSortKey] = useState<SortKey>('default');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
   const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
   const [copyErrorSlug, setCopyErrorSlug] = useState<string | null>(null);
-  const promptCache = useRef(new Map<string, string>());
+  const sortLabels: Record<SortKey, string> = {
+    default: labels.sortDefault,
+    date: labels.sortImportedAt,
+    title: labels.sortTitle,
+    examples: labels.sortExampleCount,
+  };
 
-  const visibleItems = useMemo(() => {
+  const filteredItems = useMemo(() => {
     const q = normalize(query);
     const filtered = items.filter((item) => {
       const matchesTag = activeTag === 'all' || item.tags.includes(activeTag);
@@ -52,66 +73,64 @@ export default function StyleGalleryBrowser({ items, tags, galleryBasePath }: St
       return matchesTag && matchesQuery;
     });
 
-    return [...filtered].sort((a, b) => {
-      if (sortMode === 'title') return a.title.localeCompare(b.title);
-      if (sortMode === 'examples') return b.exampleCount - a.exampleCount || b.date.localeCompare(a.date);
-      return b.date.localeCompare(a.date);
-    });
-  }, [activeTag, items, query, sortMode]);
+    const sorted = [...filtered];
+    if (sortKey !== 'default') {
+      sorted.sort((a, b) => {
+        if (sortKey === 'title') return a.title.localeCompare(b.title);
+        if (sortKey === 'examples') return a.exampleCount - b.exampleCount || a.date.localeCompare(b.date);
+        return a.date.localeCompare(b.date);
+      });
+    }
+    return sortDirection === 'desc' ? sorted.reverse() : sorted;
+  }, [activeTag, items, query, sortDirection, sortKey]);
+  const { currentPage, isPaginated, pageSize, setCurrentPage, setIsPaginated, setPageSize, totalPages, visibleItems } =
+    useCollectionPagination(filteredItems, 'style-gallery-pagination-settings');
 
-  async function copyPrompt(slug: string) {
-    setCopyingSlug(slug);
+  function handleQueryChange(value: string) {
+    setQuery(value);
+    setCurrentPage(1);
+  }
+
+  function handleTagChange(tag: string) {
+    setActiveTag(tag);
+    setCurrentPage(1);
+  }
+
+  function handleSortChange(key: SortKey) {
+    setSortKey(key);
+    setCurrentPage(1);
+  }
+
+  function toggleSortDirection() {
+    setSortDirection((direction) => (direction === 'asc' ? 'desc' : 'asc'));
+    setCurrentPage(1);
+  }
+
+  async function copyPrompt(item: StyleGalleryBrowserItem) {
     setCopyErrorSlug(null);
     try {
-      let prompt = promptCache.current.get(slug);
-      if (!prompt) {
-        const response = await fetch(`/image-style-prompt-gallery/prompts/${slug}.json`);
-        if (!response.ok) throw new Error(`Prompt request failed with ${response.status}`);
-        const data = (await response.json()) as { prompt?: string };
-        if (!data.prompt) throw new Error('Prompt response is empty');
-        prompt = data.prompt;
-        promptCache.current.set(slug, prompt);
-      }
-      await navigator.clipboard.writeText(prompt);
-      setCopiedSlug(slug);
-      window.setTimeout(() => setCopiedSlug((current) => (current === slug ? null : current)), 1800);
+      await navigator.clipboard.writeText(item.prompt);
+      setCopiedSlug(item.slug);
+      window.setTimeout(() => setCopiedSlug((current) => (current === item.slug ? null : current)), 1800);
     } catch {
-      setCopyErrorSlug(slug);
-      window.setTimeout(() => setCopyErrorSlug((current) => (current === slug ? null : current)), 2400);
-    } finally {
-      setCopyingSlug((current) => (current === slug ? null : current));
+      setCopyErrorSlug(item.slug);
+      window.setTimeout(() => setCopyErrorSlug((current) => (current === item.slug ? null : current)), 2400);
     }
   }
 
   return (
     <section className="space-y-6" aria-label="Image style prompt gallery browser">
       <div className="rounded-lg border border-rose-100 bg-white/75 p-4 shadow-sm dark:border-rose-950/60 dark:bg-gray-950/60">
-        <div className="grid grid-cols-[1fr_auto] items-center gap-3 md:grid-cols-1">
+        <div>
           <label className="relative block">
             <Icon icon="ri:search-line" className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-rose-400" />
             <input
               value={query}
-              onChange={(event) => setQuery(event.currentTarget.value)}
-              placeholder="Search prompt, tag, model..."
+              onChange={(event) => handleQueryChange(event.currentTarget.value)}
+              placeholder={labels.searchPlaceholder}
               className="h-11 w-full rounded-lg border border-rose-100 bg-white pr-3 pl-10 text-sm outline-none transition focus:border-rose-300 focus:ring-4 focus:ring-rose-100 dark:border-gray-800 dark:bg-gray-900 dark:focus:border-rose-700 dark:focus:ring-rose-950"
             />
           </label>
-          <div className="flex h-11 rounded-lg border border-rose-100 bg-rose-50/70 p-1 dark:border-gray-800 dark:bg-gray-900">
-            {(Object.keys(sortLabels) as SortMode[]).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => setSortMode(mode)}
-                className={`min-w-[5.5rem] rounded-md px-3 font-bold text-xs transition ${
-                  sortMode === mode
-                    ? 'bg-white text-rose-600 shadow-sm dark:bg-gray-800 dark:text-rose-200'
-                    : 'text-gray-500 hover:text-rose-500 dark:text-gray-400'
-                }`}
-              >
-                {sortLabels[mode]}
-              </button>
-            ))}
-          </div>
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2">
@@ -119,16 +138,61 @@ export default function StyleGalleryBrowser({ items, tags, galleryBasePath }: St
             <button
               key={tag}
               type="button"
-              onClick={() => setActiveTag(tag)}
+              onClick={() => handleTagChange(tag)}
               className={`rounded-full border px-3 py-1.5 font-bold text-xs transition ${
                 activeTag === tag
                   ? 'border-rose-300 bg-rose-500 text-white shadow-sm'
                   : 'border-rose-100 bg-white text-gray-500 hover:border-rose-200 hover:text-rose-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300'
               }`}
             >
-              {tag === 'all' ? 'All' : tag}
+              {tag === 'all' ? labels.allTags : tag}
             </button>
           ))}
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-rose-100 border-t pt-4 dark:border-gray-800">
+          <CollectionPaginationSettings
+            isPaginated={isPaginated}
+            pageSize={pageSize}
+            onModeChange={setIsPaginated}
+            onPageSizeChange={setPageSize}
+          />
+          <div className="flex gap-2">
+            <label htmlFor="style-gallery-sort" className="sr-only">
+              {labels.sortItems}
+            </label>
+            <div className="relative">
+              <Icon
+                icon="ri:sort-alphabet-asc"
+                className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+              />
+              <select
+                id="style-gallery-sort"
+                value={sortKey}
+                onChange={(event) => handleSortChange(event.currentTarget.value as SortKey)}
+                className="h-9 appearance-none rounded-md border border-border bg-background pr-8 pl-8 text-sm outline-none transition-colors hover:border-primary/40 focus:border-primary"
+              >
+                {(Object.keys(sortLabels) as SortKey[]).map((key) => (
+                  <option key={key} value={key}>
+                    {sortLabels[key]}
+                  </option>
+                ))}
+              </select>
+              <Icon
+                icon="ri:arrow-down-s-line"
+                className="pointer-events-none absolute top-1/2 right-2 size-4 -translate-y-1/2 text-muted-foreground"
+              />
+            </div>
+            <button
+              type="button"
+              title={sortDirection === 'asc' ? labels.sortAscending : labels.sortDescending}
+              aria-label={sortDirection === 'asc' ? labels.sortAscending : labels.sortDescending}
+              onClick={toggleSortDirection}
+              className="flex size-9 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+            >
+              <Icon icon={sortDirection === 'asc' ? 'ri:sort-asc' : 'ri:sort-desc'} className="size-4" />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -163,7 +227,7 @@ export default function StyleGalleryBrowser({ items, tags, galleryBasePath }: St
                   </span>
                   {item.imageCount > 1 && (
                     <span className="rounded-full bg-sky-50 px-2 py-1 font-bold text-[11px] text-sky-600 dark:bg-sky-950/50 dark:text-sky-200">
-                      {item.imageCount} images
+                      {labels.imageCount.replace('{count}', String(item.imageCount))}
                     </span>
                   )}
                 </div>
@@ -172,7 +236,7 @@ export default function StyleGalleryBrowser({ items, tags, galleryBasePath }: St
                 {item.prompt}
               </p>
               <div className="flex flex-wrap gap-1.5">
-                {item.modelTargets.slice(0, 4).map((target) => (
+                {item.modelTargets.map((target) => (
                   <span
                     key={target}
                     className="rounded-full bg-sky-50 px-2 py-1 font-semibold text-[11px] text-sky-600 dark:bg-sky-950/50 dark:text-sky-200"
@@ -184,9 +248,8 @@ export default function StyleGalleryBrowser({ items, tags, galleryBasePath }: St
               <div className="grid grid-cols-2 gap-2 pt-1">
                 <button
                   type="button"
-                  onClick={() => copyPrompt(item.slug)}
-                  disabled={copyingSlug === item.slug}
-                  className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-rose-100 bg-white px-3 font-bold text-gray-700 text-sm transition hover:border-rose-200 hover:text-rose-600 disabled:cursor-wait disabled:opacity-70 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-rose-800 dark:hover:text-rose-200"
+                  onClick={() => copyPrompt(item)}
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-rose-100 bg-white px-3 font-bold text-gray-700 text-sm transition hover:border-rose-200 hover:text-rose-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-rose-800 dark:hover:text-rose-200"
                   aria-label={`Copy prompt for ${item.title}`}
                   title="Copy prompt"
                 >
@@ -200,13 +263,7 @@ export default function StyleGalleryBrowser({ items, tags, galleryBasePath }: St
                     }
                     className="size-4"
                   />
-                  {copyErrorSlug === item.slug
-                    ? 'Retry'
-                    : copiedSlug === item.slug
-                      ? 'Copied'
-                      : copyingSlug === item.slug
-                        ? 'Copying'
-                        : 'Copy'}
+                  {copyErrorSlug === item.slug ? labels.copyRetry : copiedSlug === item.slug ? labels.copied : labels.copy}
                 </button>
                 <a
                   href={`${galleryBasePath}/${item.slug}`}
@@ -214,7 +271,7 @@ export default function StyleGalleryBrowser({ items, tags, galleryBasePath }: St
                   className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-gray-950 px-3 font-bold text-sm text-white transition hover:bg-rose-600 dark:bg-white dark:text-gray-950 dark:hover:bg-rose-200"
                 >
                   <Icon icon="ri:gallery-view-2" className="size-4" />
-                  View
+                  {labels.view}
                 </a>
               </div>
             </div>
@@ -224,9 +281,11 @@ export default function StyleGalleryBrowser({ items, tags, galleryBasePath }: St
 
       {visibleItems.length === 0 && (
         <div className="rounded-lg border border-rose-200 border-dashed bg-white/70 p-10 text-center text-gray-500 dark:border-gray-800 dark:bg-gray-950/50">
-          No style prompts match the current filters.
+          {labels.noMatches}
         </div>
       )}
+
+      {isPaginated && <CollectionPaginator currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />}
     </section>
   );
 }

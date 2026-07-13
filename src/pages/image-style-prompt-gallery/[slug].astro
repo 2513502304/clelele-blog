@@ -8,38 +8,21 @@ import { siteConfig } from '@constants/site-config';
 import Layout from '@layouts/Layout.astro';
 import TwoColumnLayout from '@layouts/TwoColumnLayout.astro';
 import { displayDate } from '@lib/date';
-import {
-  getStyleGalleryItemById,
-  getStyleGalleryItemBySlug,
-  getStyleGalleryItems,
-  getStyleGallerySlug,
-} from '@lib/style-gallery';
+import { getStyleGalleryItemBySlug } from '@lib/style-gallery';
 import { Icon } from 'astro-icon/components';
 import { getLocaleFromUrl, localizedPath, t } from '@/i18n';
 
-export async function getStaticPaths() {
-  const items = await getStyleGalleryItems();
-  return items.map((item) => ({
-    params: { slug: getStyleGallerySlug(item) },
-    props: { itemId: item.id },
-  }));
-}
+export const prerender = false;
 
-interface Props {
-  itemId?: string;
-}
-
-const { itemId } = Astro.props as Props;
 const { slug } = Astro.params;
 const locale = getLocaleFromUrl(Astro.url.pathname);
-const item = itemId ? await getStyleGalleryItemById(itemId) : slug ? await getStyleGalleryItemBySlug(slug) : undefined;
-if (!item) throw new Error(`Style gallery item not found: ${itemId ?? slug}`);
+const item = slug ? await getStyleGalleryItemBySlug(slug) : undefined;
+if (!item) return Astro.redirect(localizedPath('/image-style-prompt-gallery', locale), 302);
 
-const data = item.data;
+const data = item;
 const title = `${data.title} | ${t(locale, 'gallery.title')} | ${siteConfig.title}`;
 const description = data.prompt.slice(0, 140);
 const galleryPath = localizedPath('/image-style-prompt-gallery', locale);
-const examples = data.examples ?? [];
 const referenceImages = data.images?.length
   ? data.images
   : [
@@ -50,6 +33,7 @@ const referenceImages = data.images?.length
         imageHash: data.imageHash,
       },
     ];
+Astro.response.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=300');
 ---
 
 <Layout title={title} description={description}>
@@ -66,7 +50,7 @@ const referenceImages = data.images?.length
         <span class="line-clamp-1 text-gray-900 dark:text-white">{data.title}</span>
       </nav>
 
-      <article class="grid grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] gap-6 lg:grid-cols-1" data-pagefind-body>
+      <article class="grid grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] items-start gap-6 lg:grid-cols-1" data-pagefind-body>
         <section class="space-y-4">
           <div class="rounded-lg border border-rose-100 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-gray-950">
             <div class:list={['grid gap-3', referenceImages.length > 1 ? 'grid-cols-2 md:grid-cols-1' : 'grid-cols-1']}>
@@ -90,7 +74,7 @@ const referenceImages = data.images?.length
           <div class="grid grid-cols-2 gap-3 md:grid-cols-1">
             <div class="rounded-lg border border-rose-100 bg-white p-4 dark:border-gray-800 dark:bg-gray-950">
               <p class="text-xs font-bold uppercase tracking-wider text-gray-400">{t(locale, 'gallery.importedAt')}</p>
-              <p class="mt-1 font-bold text-gray-900 dark:text-white">{displayDate.date(data.date)}</p>
+              <p class="mt-1 font-bold text-gray-900 dark:text-white">{displayDate.date(new Date(data.date))}</p>
             </div>
             <div class="rounded-lg border border-rose-100 bg-white p-4 dark:border-gray-800 dark:bg-gray-950">
               <p class="text-xs font-bold uppercase tracking-wider text-gray-400">{referenceImages.length > 1 ? 'GROUP SHA-256' : 'SHA-256'}</p>
@@ -128,10 +112,16 @@ const referenceImages = data.images?.length
             ) : null}
           </div>
 
-          <StyleGalleryExamples client:load slug={getStyleGallerySlug(item)} title={data.title} initialExamples={examples} />
-
         </section>
       </article>
+
+      <StyleGalleryExamples
+        client:load
+        slug={item.slug}
+        title={data.title}
+        initialExamples={data.examples}
+        uploadsEnabled={Boolean(process.env.STYLE_GALLERY_UPLOAD_TOKEN)}
+      />
     </div>
   </TwoColumnLayout>
 </Layout>

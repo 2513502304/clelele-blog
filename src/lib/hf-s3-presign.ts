@@ -6,6 +6,10 @@ const DEFAULT_PREFIX = 'image-style-prompt-gallery';
 const DEFAULT_REGION = 'us-east-1';
 const DEFAULT_TTL_SECONDS = 60 * 60 * 24;
 const MAX_TTL_SECONDS = 60 * 60 * 24 * 7;
+const DEFAULT_UPLOAD_TTL_SECONDS = 15 * 60;
+const REQUEST_TIMEOUT_MS = 10_000;
+const OBJECT_TRANSFER_TIMEOUT_MS = 60_000;
+const REQUEST_ATTEMPTS = 3;
 
 interface HfS3Config {
   accessKeyId: string;
@@ -14,10 +18,6 @@ interface HfS3Config {
   bucket: string;
   prefix: string;
   region: string;
-}
-
-export function getStyleGalleryImagePath(kind: 'source' | 'thumb' | 'examples', fileName: string): string {
-  return `/api/style-gallery/image/${kind}/${fileName}`;
 }
 
 function rfc3986Encode(value: string): string {
@@ -84,9 +84,8 @@ function getObjectPath(config: HfS3Config, key: string): string {
     .join('/');
 }
 
-export function createStyleGallerySignedImageUrl(key: string, now = new Date()): string {
+function createPresignedUrl(method: 'GET' | 'PUT', key: string, expires: number, now = new Date()): string {
   const config = getHfS3Config();
-  const expires = getTtlSeconds();
   const { amzDate, dateStamp } = formatAmzDate(now);
   const credentialScope = `${dateStamp}/${config.region}/s3/aws4_request`;
   const objectPath = getObjectPath(config, key);
@@ -105,12 +104,20 @@ export function createStyleGallerySignedImageUrl(key: string, now = new Date()):
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([name, value]) => `${rfc3986Encode(name)}=${rfc3986Encode(value)}`)
     .join('&');
-  const canonicalRequest = ['GET', canonicalUri, canonicalQuery, `host:${host}\n`, 'host', 'UNSIGNED-PAYLOAD'].join('\n');
+  const canonicalRequest = [method, canonicalUri, canonicalQuery, `host:${host}\n`, 'host', 'UNSIGNED-PAYLOAD'].join('\n');
   const canonicalRequestHash = createHash('sha256').update(canonicalRequest, 'utf8').digest('hex');
   const stringToSign = ['AWS4-HMAC-SHA256', amzDate, credentialScope, canonicalRequestHash];
   const signature = hmacHex(getSigningKey(config.secretAccessKey, dateStamp, config.region), stringToSign.join('\n'));
 
   return `${config.endpoint.origin}${canonicalUri}?${canonicalQuery}&X-Amz-Signature=${signature}`;
+}
+
+export function createStyleGallerySignedImageUrl(key: string, now = new Date()): string {
+  return createPresignedUrl('GET', key, getTtlSeconds(), now);
+}
+
+export function createStyleGallerySignedUploadUrl(key: string, now = new Date()): string {
+  return createPresignedUrl('PUT', key, DEFAULT_UPLOAD_TTL_SECONDS, now);
 }
 
 function createSignedHeaders(
@@ -153,50 +160,93 @@ function createSignedHeaders(
 }
 
 export async function putStyleGalleryObject(key: string, body: Uint8Array, contentType: string): Promise<void> {
-  const signed = createSignedHeaders('PUT', key, body, contentType);
   const requestBody = new ArrayBuffer(body.byteLength);
   new Uint8Array(requestBody).set(body);
-  const response = await fetch(signed.url, {
-    method: 'PUT',
-    headers: signed.headers,
-    body: requestBody,
+  await withRequestRetry(`upload HF S3 object "${key}"`, async () => {
+    const signed = createSignedHeaders('PUT', key, body, contentType);
+    const response = await fetch(signed.url, {
+      method: 'PUT',
+      headers: signed.headers,
+      body: requestBody,
+      signal: AbortSignal.timeout(OBJECT_TRANSFER_TIMEOUT_MS),
+    });
+    if (!response.ok) throw await createRequestError(response, `Failed to upload HF S3 object "${key}"`);
   });
-  if (!response.ok) {
-    throw new Error(`Failed to upload HF S3 object "${key}": ${response.status} ${await response.text()}`);
-  }
 }
 
 export async function headStyleGalleryObject(key: string): Promise<boolean> {
-  const signed = createSignedHeaders('HEAD', key, new Uint8Array());
-  const response = await fetch(signed.url, {
-    method: 'HEAD',
-    headers: signed.headers,
-    cache: 'no-store',
+  return withRequestRetry(`check HF S3 object "${key}"`, async () => {
+    const signed = createSignedHeaders('HEAD', key, new Uint8Array());
+    const response = await fetch(signed.url, {
+      method: 'HEAD',
+      headers: signed.headers,
+      cache: 'no-store',
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    if (response.status === 404 || response.status === 403) return false;
+    if (!response.ok) throw await createRequestError(response, `Failed to check HF S3 object "${key}"`);
+    return true;
   });
-  if (response.status === 404 || response.status === 403) return false;
-  if (!response.ok) {
-    throw new Error(`Failed to check HF S3 object "${key}": ${response.status} ${await response.text()}`);
-  }
-  return true;
 }
 
 export async function deleteStyleGalleryObject(key: string): Promise<void> {
-  const signed = createSignedHeaders('DELETE', key, new Uint8Array());
-  const response = await fetch(signed.url, {
-    method: 'DELETE',
-    headers: signed.headers,
+  await withRequestRetry(`delete HF S3 object "${key}"`, async () => {
+    const signed = createSignedHeaders('DELETE', key, new Uint8Array());
+    const response = await fetch(signed.url, {
+      method: 'DELETE',
+      headers: signed.headers,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    if (!response.ok && response.status !== 404) {
+      throw await createRequestError(response, `Failed to delete HF S3 object "${key}"`);
+    }
   });
-  if (!response.ok && response.status !== 404) {
-    throw new Error(`Failed to delete HF S3 object "${key}": ${response.status} ${await response.text()}`);
-  }
 }
 
 export async function getStyleGalleryObjectText(key: string): Promise<string | null> {
-  const url = createStyleGallerySignedImageUrl(key);
-  const response = await fetch(url, { cache: 'no-store' });
-  if (response.status === 404 || response.status === 403) return null;
-  if (!response.ok) {
-    throw new Error(`Failed to read HF S3 object "${key}": ${response.status} ${await response.text()}`);
+  return withRequestRetry(`read HF S3 object "${key}"`, async () => {
+    const response = await fetch(createStyleGallerySignedImageUrl(key), {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    if (response.status === 404 || response.status === 403) return null;
+    if (!response.ok) throw await createRequestError(response, `Failed to read HF S3 object "${key}"`);
+    return response.text();
+  });
+}
+
+class RetryableRequestError extends Error {
+  retryable: boolean;
+
+  constructor(message: string, retryable: boolean) {
+    super(message);
+    this.name = 'RetryableRequestError';
+    this.retryable = retryable;
   }
-  return response.text();
+}
+
+async function createRequestError(response: Response, prefix: string): Promise<RetryableRequestError> {
+  const detail = await response.text().catch(() => '');
+  const retryable = response.status === 408 || response.status === 429 || response.status >= 500;
+  return new RetryableRequestError(`${prefix}: ${response.status}${detail ? ` ${detail}` : ''}`, retryable);
+}
+
+function isRetryableError(error: unknown): boolean {
+  if (error instanceof RetryableRequestError) return error.retryable;
+  return error instanceof TypeError || (error instanceof DOMException && ['AbortError', 'TimeoutError'].includes(error.name));
+}
+
+async function withRequestRetry<T>(label: string, operation: () => Promise<T>): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= REQUEST_ATTEMPTS; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableError(error) || attempt === REQUEST_ATTEMPTS) break;
+      const delay = 250 * 2 ** (attempt - 1) + Math.floor(Math.random() * 150);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+  throw new Error(`${label} failed after ${REQUEST_ATTEMPTS} attempts.`, { cause: lastError });
 }

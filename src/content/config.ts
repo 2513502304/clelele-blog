@@ -55,45 +55,6 @@ const blogCollection = defineCollection({
   }) satisfies z.ZodType<BlogSchema, z.ZodTypeDef, BlogSchemaInput>,
 });
 
-const styleGalleryImageSchema = z.object({
-  sourceImage: z.string(),
-  thumbnailImage: z.string().optional(),
-  sourceImageAlt: z.string().optional(),
-  imageHash: z.string(),
-});
-
-const styleGalleryCollection = defineCollection({
-  schema: z.object({
-    title: z.string(),
-    date: dateInSiteTimezone,
-    updated: dateInSiteTimezone.optional(),
-    sourceImage: z.string(),
-    thumbnailImage: z.string().optional(),
-    sourceImageAlt: z.string().optional(),
-    prompt: z.string(),
-    originalPrompt: z.string().optional(),
-    imageHash: z.string(),
-    images: z.array(styleGalleryImageSchema).optional(),
-    sourceSession: z.string().optional(),
-    sourceLine: z.number().optional(),
-    tags: z.array(z.string()).optional().default([]),
-    modelTargets: z.array(z.string()).optional().default([]),
-    examples: z
-      .array(
-        z.object({
-          src: z.string(),
-          alt: z.string().optional(),
-          model: z.string().optional(),
-          note: z.string().optional(),
-        }),
-      )
-      .optional()
-      .default([]),
-    draft: z.boolean().optional(),
-  }),
-});
-
 export const collections = {
   blog: blogCollection,
-  styleGallery: styleGalleryCollection,
 };
