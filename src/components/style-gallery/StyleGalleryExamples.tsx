@@ -1,5 +1,4 @@
 import { Icon } from '@iconify/react';
-import { mergeStyleGalleryExamples } from '@lib/style-gallery-examples';
 import { compareStyleGalleryPlatform, STYLE_GALLERY_PLATFORMS } from '@lib/style-gallery-platforms';
 import { openModal } from '@store/modal';
 import { useEffect, useMemo, useState } from 'react';
@@ -9,6 +8,7 @@ interface StyleGalleryExamplesProps {
   slug: string;
   title: string;
   initialExamples: StyleGalleryExample[];
+  uploadsEnabled: boolean;
 }
 
 interface ExamplesResponse {
@@ -18,48 +18,123 @@ interface ExamplesResponse {
   skippedDuplicates?: number;
 }
 
+interface PreparedUpload {
+  imageHash: string;
+  example: StyleGalleryExample;
+  duplicate: boolean;
+  exists: boolean;
+}
+
+interface FileProgress {
+  id: string;
+  name: string;
+  loaded: number;
+  total: number;
+  state: 'hashing' | 'ready' | 'uploading' | 'processing' | 'saving' | 'done' | 'skipped' | 'failed';
+}
+
 const TOKEN_STORAGE_KEY = 'style-gallery-upload-token';
 const UPLOAD_CONCURRENCY = 5;
 const MAX_UPLOAD_ATTEMPTS = 3;
+const REQUEST_TIMEOUT_MS = 30_000;
+const RAW_UPLOAD_TIMEOUT_MS = 120_000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 function shouldRetryUpload(status: number): boolean {
-  return status === 429 || status >= 500;
+  return status === 408 || status === 429 || status >= 500;
 }
 
-export default function StyleGalleryExamples({ slug, title, initialExamples }: StyleGalleryExamplesProps) {
+async function fetchWithRetry(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= MAX_UPLOAD_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await fetch(input, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+      if (!shouldRetryUpload(response.status) || attempt === MAX_UPLOAD_ATTEMPTS) return response;
+      lastError = new Error(`Request failed with ${response.status}`);
+    } catch (error) {
+      lastError = error;
+      if (attempt === MAX_UPLOAD_ATTEMPTS) break;
+    }
+    await sleep(500 * 2 ** (attempt - 1) + Math.floor(Math.random() * 200));
+  }
+  throw lastError instanceof Error ? lastError : new Error('Request failed');
+}
+
+async function sha256(file: File): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function uploadWithProgress(
+  url: string,
+  file: File,
+  token: string,
+  onProgress: (loaded: number, total: number) => void,
+  onTransferComplete: () => void,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open('POST', url);
+    request.timeout = RAW_UPLOAD_TIMEOUT_MS;
+    request.setRequestHeader('Authorization', `Bearer ${token}`);
+    request.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+    request.upload.onprogress = (event) => onProgress(event.loaded, event.lengthComputable ? event.total : file.size);
+    request.upload.onload = onTransferComplete;
+    request.onload = () => {
+      if (request.status >= 200 && request.status < 300) resolve();
+      else
+        reject(
+          Object.assign(new Error(request.responseText || `Upload failed with ${request.status}`), { status: request.status }),
+        );
+    };
+    request.onerror = () => reject(new TypeError('Network error while uploading'));
+    request.ontimeout = () => reject(new DOMException('Upload timed out', 'TimeoutError'));
+    request.send(file);
+  });
+}
+
+async function uploadWithProgressAndRetry(
+  url: string,
+  file: File,
+  token: string,
+  onProgress: (loaded: number, total: number) => void,
+  onTransferComplete: () => void,
+): Promise<void> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= MAX_UPLOAD_ATTEMPTS; attempt += 1) {
+    try {
+      await uploadWithProgress(url, file, token, onProgress, onTransferComplete);
+      return;
+    } catch (error) {
+      lastError = error;
+      const status = typeof error === 'object' && error && 'status' in error ? Number(error.status) : 0;
+      if ((status && !shouldRetryUpload(status)) || attempt === MAX_UPLOAD_ATTEMPTS) break;
+      onProgress(0, file.size);
+      await sleep(500 * 2 ** (attempt - 1) + Math.floor(Math.random() * 200));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('Upload failed');
+}
+
+export default function StyleGalleryExamples({ slug, title, initialExamples, uploadsEnabled }: StyleGalleryExamplesProps) {
   const [examples, setExamples] = useState<StyleGalleryExample[]>(initialExamples);
-  const [uploadsEnabled, setUploadsEnabled] = useState(true);
   const [platform, setPlatform] = useState<string>(STYLE_GALLERY_PLATFORMS[0].slug);
   const [note, setNote] = useState('');
   const [token, setToken] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
+  const [fileProgress, setFileProgress] = useState<FileProgress[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkPlatform, setBulkPlatform] = useState<string>(STYLE_GALLERY_PLATFORMS[0].slug);
+  const [mutating, setMutating] = useState(false);
 
   useEffect(() => {
     setToken(localStorage.getItem(TOKEN_STORAGE_KEY) ?? '');
-    let cancelled = false;
-    fetch(`/api/style-gallery/examples/${slug}`)
-      .then((response) => {
-        if (!response.ok) throw new Error(`Examples request failed with ${response.status}`);
-        return response.json() as Promise<ExamplesResponse>;
-      })
-      .then((data) => {
-        if (cancelled) return;
-        setExamples(mergeStyleGalleryExamples([...initialExamples, ...(data.examples ?? [])]));
-        setUploadsEnabled(data.uploadsEnabled ?? false);
-      })
-      .catch(() => {
-        if (!cancelled) setStatus('Failed to load generated examples');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [initialExamples, slug]);
+  }, []);
 
   const exampleGroups = useMemo(
     () =>
@@ -76,13 +151,30 @@ export default function StyleGalleryExamples({ slug, title, initialExamples }: S
   );
 
   const lightboxImages = useMemo(
-    () =>
-      examples.map((example) => ({
-        src: example.src,
-        alt: example.alt ?? example.model ?? 'Generated example',
-      })),
+    () => examples.map((example) => ({ src: example.src, alt: example.alt ?? example.model ?? 'Generated example' })),
     [examples],
   );
+
+  const aggregateProgress = useMemo(() => {
+    const total = fileProgress.reduce((sum, item) => sum + item.total, 0);
+    const loaded = fileProgress.reduce((sum, item) => {
+      if (['processing', 'saving', 'done', 'skipped'].includes(item.state)) return sum + item.total;
+      return sum + item.loaded;
+    }, 0);
+    return { loaded, total, percent: total ? Math.round((loaded / total) * 100) : 0 };
+  }, [fileProgress]);
+
+  const uploadDisabledReason = !uploadsEnabled
+    ? 'Uploads are disabled because STYLE_GALLERY_UPLOAD_TOKEN is not configured on the server.'
+    : !token.trim()
+      ? 'Enter the upload token to continue.'
+      : !files.length
+        ? 'Select one or more images to upload.'
+        : null;
+
+  function updateFileProgress(id: string, update: Partial<FileProgress>) {
+    setFileProgress((current) => current.map((item) => (item.id === id ? { ...item, ...update } : item)));
+  }
 
   function openExampleLightbox(example: StyleGalleryExample) {
     const currentIndex = Math.max(
@@ -97,14 +189,75 @@ export default function StyleGalleryExamples({ slug, title, initialExamples }: S
     });
   }
 
+  async function apiMutation(method: 'PATCH' | 'DELETE', body: { ids: string[]; platform?: string }) {
+    const response = await fetchWithRetry(`/api/style-gallery/examples/${slug}`, {
+      method,
+      headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) throw new Error((await response.text()) || `Request failed with ${response.status}`);
+    const data = (await response.json()) as ExamplesResponse;
+    setExamples(data.examples ?? []);
+    setSelectedIds(new Set());
+    localStorage.setItem(TOKEN_STORAGE_KEY, token);
+  }
+
+  async function updateSelectedPlatform() {
+    if (!selectedIds.size || mutating) return;
+    setMutating(true);
+    setStatus(`Moving ${selectedIds.size} selected example${selectedIds.size === 1 ? '' : 's'}`);
+    try {
+      await apiMutation('PATCH', { ids: [...selectedIds], platform: bulkPlatform });
+      setStatus('Selected examples updated');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Failed to update examples');
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  async function deleteSelectedExamples() {
+    if (
+      !selectedIds.size ||
+      mutating ||
+      !window.confirm(`Delete ${selectedIds.size} selected example${selectedIds.size === 1 ? '' : 's'} permanently?`)
+    )
+      return;
+    setMutating(true);
+    setStatus(`Deleting ${selectedIds.size} selected example${selectedIds.size === 1 ? '' : 's'}`);
+    try {
+      await apiMutation('DELETE', { ids: [...selectedIds] });
+      setStatus('Selected examples deleted');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Failed to delete examples');
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  function toggleExample(id: string) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleGroup(groupExamples: StyleGalleryExample[]) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      const selectAll = groupExamples.some((example) => !next.has(example.id));
+      for (const example of groupExamples) selectAll ? next.add(example.id) : next.delete(example.id);
+      return next;
+    });
+  }
+
   async function cleanupUploadedExamples(uploadedExamples: StyleGalleryExample[]) {
     if (!uploadedExamples.length) return;
-    await fetch(`/api/style-gallery/examples/${slug}`, {
+    await fetchWithRetry(`/api/style-gallery/examples/${slug}`, {
       method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        ...(token ? { authorization: `Bearer ${token}` } : {}),
-      },
+      headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
       body: JSON.stringify({ action: 'cleanup', examples: uploadedExamples }),
     });
   }
@@ -112,114 +265,106 @@ export default function StyleGalleryExamples({ slug, title, initialExamples }: S
   async function handleUpload(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!files.length || uploading) return;
-
     setUploading(true);
-    setStatus(null);
+    setStatus('Hashing selected images');
     const form = event.currentTarget;
+    const selected = files.map((file, index) => ({ id: `${index}-${file.name}`, file, imageHash: '' }));
+    setFileProgress(selected.map(({ id, file }) => ({ id, name: file.name, loaded: 0, total: file.size, state: 'hashing' })));
 
+    const uploadedExamples: StyleGalleryExample[] = [];
     try {
-      const selectedFiles = [...files];
-      let uploaded = 0;
-      let skippedDuplicates = 0;
-      let completed = 0;
-      let nextFileIndex = 0;
-      const uploadedExamples: StyleGalleryExample[] = [];
-      const failures: string[] = [];
+      let nextHashIndex = 0;
+      async function hashWorker() {
+        while (nextHashIndex < selected.length) {
+          const entry = selected[nextHashIndex];
+          nextHashIndex += 1;
+          entry.imageHash = await sha256(entry.file);
+          updateFileProgress(entry.id, { state: 'ready' });
+        }
+      }
+      await Promise.all(Array.from({ length: Math.min(UPLOAD_CONCURRENCY, selected.length) }, hashWorker));
 
-      async function uploadFile(file: File): Promise<ExamplesResponse> {
-        let lastError = '';
-        for (let attempt = 1; attempt <= MAX_UPLOAD_ATTEMPTS; attempt += 1) {
-          try {
-            const formData = new FormData();
-            formData.set('platform', platform);
-            formData.set('commit', 'false');
-            if (note.trim()) formData.set('note', note.trim());
-            formData.append('images', file);
+      setStatus('Checking existing examples');
+      const prepareResponse = await fetchWithRetry(`/api/style-gallery/examples/${slug}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({
+          action: 'prepare',
+          platform,
+          note: note.trim() || undefined,
+          files: selected.map(({ file, imageHash }) => ({ name: file.name, type: file.type, size: file.size, imageHash })),
+        }),
+      });
+      if (!prepareResponse.ok) throw new Error((await prepareResponse.text()) || 'Failed to prepare uploads');
+      const prepared = ((await prepareResponse.json()) as { uploads: PreparedUpload[] }).uploads;
 
-            const response = await fetch(`/api/style-gallery/examples/${slug}`, {
-              method: 'POST',
-              headers: token ? { authorization: `Bearer ${token}` } : undefined,
-              body: formData,
-            });
-            if (response.ok) return (await response.json()) as ExamplesResponse;
-
-            lastError = await response.text();
-            if (!shouldRetryUpload(response.status) || attempt === MAX_UPLOAD_ATTEMPTS) {
-              throw new Error(lastError || `Upload failed with ${response.status}`);
+      let nextUploadIndex = 0;
+      const uploadFailures: string[] = [];
+      async function uploadWorker() {
+        while (nextUploadIndex < selected.length) {
+          const index = nextUploadIndex;
+          nextUploadIndex += 1;
+          const entry = selected[index];
+          const upload = prepared[index];
+          if (upload.duplicate) {
+            updateFileProgress(entry.id, { state: 'skipped', loaded: entry.file.size });
+            continue;
+          }
+          if (!upload.exists) {
+            updateFileProgress(entry.id, { state: 'uploading' });
+            const extension = upload.example.src.split('.').pop() ?? 'jpg';
+            const uploadUrl = `/api/style-gallery/examples/${slug}/upload?platform=${encodeURIComponent(platform)}&hash=${entry.imageHash}&extension=${extension}`;
+            try {
+              await uploadWithProgressAndRetry(
+                uploadUrl,
+                entry.file,
+                token,
+                (loaded, total) => updateFileProgress(entry.id, { state: 'uploading', loaded, total }),
+                () => updateFileProgress(entry.id, { state: 'processing', loaded: entry.file.size }),
+              );
+              uploadedExamples.push(upload.example);
+            } catch (error) {
+              updateFileProgress(entry.id, { state: 'failed' });
+              uploadFailures.push(`${entry.file.name}: ${error instanceof Error ? error.message : 'Upload failed'}`);
+              continue;
             }
-          } catch (error) {
-            lastError = error instanceof Error ? error.message : 'Upload failed';
-            if (attempt === MAX_UPLOAD_ATTEMPTS) throw new Error(lastError);
           }
-          await sleep(500 * attempt);
-        }
-        throw new Error(lastError || 'Upload failed');
-      }
-
-      async function worker() {
-        while (nextFileIndex < selectedFiles.length) {
-          const fileIndex = nextFileIndex;
-          nextFileIndex += 1;
-          const file = selectedFiles[fileIndex];
-          setStatus(`Uploading ${completed}/${selectedFiles.length}`);
-
-          try {
-            const data = await uploadFile(file);
-            uploaded += data.uploaded ?? 0;
-            skippedDuplicates += data.skippedDuplicates ?? 0;
-            uploadedExamples.push(...(data.examples ?? []));
-          } catch (error) {
-            failures.push(`${file.name}: ${error instanceof Error ? error.message : 'Upload failed'}`);
-          } finally {
-            completed += 1;
-            setStatus(`Uploading ${completed}/${selectedFiles.length}`);
-          }
+          updateFileProgress(entry.id, { state: 'saving', loaded: entry.file.size });
         }
       }
+      await Promise.all(Array.from({ length: Math.min(UPLOAD_CONCURRENCY, selected.length) }, uploadWorker));
+      if (uploadFailures.length) throw new Error(uploadFailures.join('; '));
 
-      await Promise.all(Array.from({ length: Math.min(UPLOAD_CONCURRENCY, selectedFiles.length) }, () => worker()));
-
-      if (uploadedExamples.length) {
-        setStatus('Saving gallery');
-        let mergeResponse: Response;
-        try {
-          mergeResponse = await fetch(`/api/style-gallery/examples/${slug}`, {
-            method: 'POST',
-            headers: {
-              'content-type': 'application/json',
-              ...(token ? { authorization: `Bearer ${token}` } : {}),
-            },
-            body: JSON.stringify({ examples: uploadedExamples }),
-          });
-        } catch (error) {
-          await cleanupUploadedExamples(uploadedExamples);
-          throw error;
-        }
+      const examplesToCommit = prepared.filter((upload) => !upload.duplicate).map((upload) => upload.example);
+      if (examplesToCommit.length) {
+        setStatus('Saving sub-gallery');
+        const mergeResponse = await fetchWithRetry(`/api/style-gallery/examples/${slug}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+          body: JSON.stringify({ action: 'merge', examples: examplesToCommit }),
+        });
         if (!mergeResponse.ok) {
           const message = await mergeResponse.text();
-          await cleanupUploadedExamples(uploadedExamples);
           throw new Error(message);
         }
-
         const mergeData = (await mergeResponse.json()) as ExamplesResponse;
-        skippedDuplicates += mergeData.skippedDuplicates ?? 0;
-        setExamples(mergeStyleGalleryExamples([...initialExamples, ...(mergeData.examples ?? [])]));
+        setExamples(mergeData.examples ?? []);
       }
+
+      setFileProgress((current) =>
+        current.map((item) => (item.state === 'saving' ? { ...item, state: 'done' as const } : item)),
+      );
 
       localStorage.setItem(TOKEN_STORAGE_KEY, token);
       setFiles([]);
       setNote('');
       form.reset();
+      const skipped = prepared.filter((upload) => upload.duplicate).length;
       setStatus(
-        [
-          `Uploaded ${uploaded}`,
-          skippedDuplicates ? `skipped ${skippedDuplicates} duplicate${skippedDuplicates > 1 ? 's' : ''}` : '',
-          failures.length ? `${failures.length} failed` : '',
-        ]
-          .filter(Boolean)
-          .join('; '),
+        `Added ${prepared.length - skipped} example${prepared.length - skipped === 1 ? '' : 's'}${skipped ? `; skipped ${skipped} duplicates` : ''}`,
       );
     } catch (error) {
+      await cleanupUploadedExamples(uploadedExamples).catch(() => undefined);
       setStatus(error instanceof Error ? error.message : 'Upload failed');
     } finally {
       setUploading(false);
@@ -284,17 +429,53 @@ export default function StyleGalleryExamples({ slug, title, initialExamples }: S
             className="h-10 w-full rounded-lg border border-sky-100 bg-white px-3 text-gray-900 text-sm outline-none dark:border-gray-800 dark:bg-gray-900 dark:text-white"
           />
         </label>
+
+        {fileProgress.length > 0 && (
+          <div className="col-span-2 space-y-2 md:col-span-1" aria-live="polite">
+            <div className="flex items-center justify-between text-gray-500 text-xs dark:text-gray-300">
+              <span>{status}</span>
+              <span className="font-mono tabular-nums">{aggregateProgress.percent}%</span>
+            </div>
+            <progress
+              className="h-2 w-full overflow-hidden rounded-full accent-rose-500"
+              value={aggregateProgress.loaded}
+              max={aggregateProgress.total || 1}
+            />
+            <div className="grid max-h-28 grid-cols-2 gap-x-4 gap-y-1 overflow-y-auto md:grid-cols-1">
+              {fileProgress.map((item) => (
+                <div key={item.id} className="flex min-w-0 items-center gap-2 text-xs">
+                  <Icon
+                    icon={
+                      item.state === 'failed'
+                        ? 'ri:error-warning-line'
+                        : item.state === 'done' || item.state === 'skipped'
+                          ? 'ri:check-line'
+                          : 'ri:loader-4-line'
+                    }
+                    className={`size-3.5 shrink-0 ${['hashing', 'uploading', 'processing', 'saving'].includes(item.state) ? 'animate-spin' : ''}`}
+                  />
+                  <span className="truncate">{item.name}</span>
+                  <span className="ml-auto shrink-0 text-gray-400">{item.state}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="col-span-2 flex flex-wrap items-center justify-between gap-3 md:col-span-1">
           <p className="text-gray-500 text-xs dark:text-gray-300">
-            {files.length ? `${files.length} image${files.length > 1 ? 's' : ''} selected` : status}
+            {uploadDisabledReason || (files.length ? `${files.length} image${files.length > 1 ? 's' : ''} selected` : status)}
           </p>
           <button
             type="submit"
-            disabled={!uploadsEnabled || uploading || !files.length}
+            disabled={Boolean(uploadDisabledReason) || uploading}
             className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-gray-950 px-4 font-bold text-sm text-white transition hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-gray-950 dark:hover:bg-rose-200"
-            title={uploadsEnabled ? `Upload examples for ${title}` : 'Uploads disabled'}
+            title={uploadDisabledReason ?? `Upload examples for ${title}`}
           >
-            <Icon icon={uploading ? 'ri:loader-4-line' : 'ri:upload-cloud-2-line'} className="size-4" />
+            <Icon
+              icon={uploading ? 'ri:loader-4-line' : 'ri:upload-cloud-2-line'}
+              className={`size-4 ${uploading ? 'animate-spin' : ''}`}
+            />
             {uploading ? 'Uploading' : 'Upload'}
           </button>
         </div>
@@ -302,41 +483,101 @@ export default function StyleGalleryExamples({ slug, title, initialExamples }: S
 
       {examples.length ? (
         <div className="space-y-6">
+          {uploadsEnabled && (
+            <div className="sticky top-3 z-10 flex flex-wrap items-center gap-2 rounded-lg border border-rose-200 bg-white/95 p-3 shadow-md backdrop-blur dark:border-rose-900 dark:bg-gray-950/95">
+              <span className="mr-auto font-bold text-sm tabular-nums">{selectedIds.size} selected</span>
+              <select
+                value={bulkPlatform}
+                disabled={!selectedIds.size || mutating}
+                onChange={(event) => setBulkPlatform(event.currentTarget.value)}
+                aria-label="Destination platform"
+                className="h-9 rounded-md border border-gray-200 bg-white px-3 text-sm outline-none disabled:opacity-50 dark:border-gray-700 dark:bg-gray-950"
+              >
+                {STYLE_GALLERY_PLATFORMS.map((item) => (
+                  <option key={item.slug} value={item.slug}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                disabled={!selectedIds.size || mutating}
+                onClick={updateSelectedPlatform}
+                className="inline-flex h-9 items-center gap-2 rounded-md bg-gray-950 px-3 font-bold text-sm text-white disabled:opacity-50 dark:bg-white dark:text-gray-950"
+              >
+                <Icon icon="ri:swap-2-line" className="size-4" />
+                Change platform
+              </button>
+              <button
+                type="button"
+                disabled={!selectedIds.size || mutating}
+                onClick={deleteSelectedExamples}
+                className="inline-flex h-9 items-center gap-2 rounded-md border border-red-200 px-3 font-bold text-red-500 text-sm disabled:opacity-50 dark:border-red-950"
+              >
+                <Icon icon="ri:delete-bin-line" className="size-4" />
+                Delete
+              </button>
+            </div>
+          )}
           {exampleGroups.map(([platformName, platformExamples]) => (
             <section className="space-y-3" key={platformName}>
               <div className="flex items-center justify-between gap-3 border-rose-100 border-b pb-2 dark:border-gray-800">
                 <h3 className="font-black text-gray-900 text-lg dark:text-white">{platformName}</h3>
-                <span className="rounded-full bg-sky-50 px-3 py-1 font-bold text-sky-600 text-xs dark:bg-sky-950/50 dark:text-sky-200">
-                  {platformExamples.length}
-                </span>
+                <div className="flex items-center gap-2">
+                  {uploadsEnabled && (
+                    <label className="inline-flex cursor-pointer items-center gap-2 text-muted-foreground text-xs">
+                      <input
+                        type="checkbox"
+                        checked={platformExamples.every((example) => selectedIds.has(example.id))}
+                        onChange={() => toggleGroup(platformExamples)}
+                        className="size-4 accent-rose-500"
+                      />
+                      Select group
+                    </label>
+                  )}
+                  <span className="rounded-full bg-sky-50 px-3 py-1 font-bold text-sky-600 text-xs dark:bg-sky-950/50 dark:text-sky-200">
+                    {platformExamples.length}
+                  </span>
+                </div>
               </div>
               <div className="grid grid-cols-3 gap-3 md:grid-cols-2">
-                {platformExamples.map((example) => (
-                  <figure
-                    key={example.src}
-                    className="overflow-hidden rounded-lg border border-gray-100 bg-gray-50 dark:border-gray-800 dark:bg-gray-900"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => openExampleLightbox(example)}
-                      className="group block w-full cursor-zoom-in overflow-hidden text-left"
-                      aria-label={`Open ${example.alt ?? example.model ?? 'generated example'} preview`}
+                {platformExamples.map((example) => {
+                  return (
+                    <figure
+                      key={example.src}
+                      className="relative overflow-hidden rounded-lg border border-gray-100 bg-gray-50 dark:border-gray-800 dark:bg-gray-900"
                     >
-                      <img
-                        src={example.src}
-                        alt={example.alt ?? example.model ?? 'Generated example'}
-                        loading="lazy"
-                        className="aspect-square w-full object-cover transition duration-200 group-hover:scale-105"
-                      />
-                    </button>
-                    {(example.note || example.alt) && (
-                      <figcaption className="space-y-1 p-3 text-gray-500 text-xs dark:text-gray-300">
+                      <button
+                        type="button"
+                        onClick={() => openExampleLightbox(example)}
+                        className="group block w-full cursor-zoom-in overflow-hidden text-left"
+                        aria-label={`Open ${example.alt ?? example.model ?? 'generated example'} preview`}
+                      >
+                        <img
+                          src={example.src}
+                          alt={example.alt ?? example.model ?? 'Generated example'}
+                          loading="lazy"
+                          className="aspect-square w-full object-cover transition duration-200 group-hover:scale-105"
+                        />
+                      </button>
+                      {uploadsEnabled && (
+                        <label className="absolute top-2 left-2 flex size-8 cursor-pointer items-center justify-center rounded-md bg-white/90 shadow dark:bg-gray-950/90">
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(example.id)}
+                            disabled={mutating}
+                            onChange={() => toggleExample(example.id)}
+                            aria-label={`Select ${example.alt ?? 'generated example'}`}
+                            className="size-4 accent-rose-500"
+                          />
+                        </label>
+                      )}
+                      <figcaption className="space-y-2 p-3 text-gray-500 text-xs dark:text-gray-300">
                         {example.note && <p>{example.note}</p>}
-                        {!example.note && example.alt && <p>{example.alt}</p>}
                       </figcaption>
-                    )}
-                  </figure>
-                ))}
+                    </figure>
+                  );
+                })}
               </div>
             </section>
           ))}

@@ -1,46 +1,35 @@
 #!/usr/bin/env node
-import { execFile, execFileSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
-import { promisify } from 'node:util';
-import matter from 'gray-matter';
 import sharp from 'sharp';
 
-const execFileAsync = promisify(execFile);
 const PLACEHOLDER = '[在此处替换为您想要生成的主体内容]';
-const DEFAULT_TARGETS = ['GPT-Image2', 'Nano Banana', 'PixAI', 'Midjourney', 'Flux'];
-const HF_S3_PROFILE = process.env.STYLE_GALLERY_S3_PROFILE ?? 'hf';
-const HF_S3_ENDPOINT = process.env.HF_S3_ENDPOINT ?? 'https://s3.hf.co/clelele0722';
-const HF_BUCKET_NAMESPACE = new URL(HF_S3_ENDPOINT).pathname.replace(/^\/+|\/+$/g, '');
-const HF_S3_BUCKET = process.env.HF_S3_BUCKET ?? 'raw-datasets';
-const HF_S3_PREFIX = (process.env.STYLE_GALLERY_BUCKET_PREFIX ?? 'image-style-prompt-gallery').replace(/^\/+|\/+$/g, '');
-const HF_BUCKET_URI = `hf://buckets/${[HF_BUCKET_NAMESPACE, HF_S3_BUCKET, HF_S3_PREFIX].filter(Boolean).join('/')}`;
-const IMPORT_UPLOAD_CONCURRENCY = positiveInteger(process.env.STYLE_GALLERY_IMPORT_UPLOAD_CONCURRENCY, 5);
-const IMPORT_UPLOAD_ATTEMPTS = positiveInteger(process.env.STYLE_GALLERY_IMPORT_UPLOAD_ATTEMPTS, 3);
+const DEFAULT_API_BASE_URL = process.env.STYLE_GALLERY_API_BASE_URL ?? 'https://clelele-blog.vercel.app';
+const REQUEST_TIMEOUT_MS = positiveInteger(process.env.STYLE_GALLERY_IMPORT_REQUEST_TIMEOUT_MS, 30_000);
+const UPLOAD_TIMEOUT_MS = positiveInteger(process.env.STYLE_GALLERY_IMPORT_UPLOAD_TIMEOUT_MS, 120_000);
+const REQUEST_ATTEMPTS = positiveInteger(process.env.STYLE_GALLERY_IMPORT_ATTEMPTS, 3);
+const UPLOAD_CONCURRENCY = positiveInteger(process.env.STYLE_GALLERY_IMPORT_UPLOAD_CONCURRENCY, 5);
+
+class NonRetryableRequestError extends Error {}
 
 function usage() {
-  console.error('Usage: node scripts/import-style-prompts.mjs <codex-session.jsonl> [--metadata-only]');
-  console.error('       node scripts/import-style-prompts.mjs <codex-session.jsonl> [--update-metadata-only]');
+  console.error('Usage: node scripts/import-style-prompts.mjs <codex-session.jsonl> [--metadata-only] [--api-base-url=<url>]');
+  console.error('Required environment: STYLE_GALLERY_UPLOAD_TOKEN');
 }
 
 function parseArgs(argv) {
-  const flags = new Set();
   let sessionPath = null;
-
+  let apiBaseUrl = DEFAULT_API_BASE_URL;
+  let metadataOnly = false;
+  let help = false;
   for (const arg of argv) {
-    if (arg === '-h' || arg.startsWith('--')) {
-      flags.add(arg);
-    } else if (!sessionPath) {
-      sessionPath = arg;
-    }
+    if (arg === '--help' || arg === '-h') help = true;
+    else if (arg === '--metadata-only' || arg === '--update-metadata-only') metadataOnly = true;
+    else if (arg.startsWith('--api-base-url=')) apiBaseUrl = arg.slice('--api-base-url='.length);
+    else if (!arg.startsWith('--') && !sessionPath) sessionPath = arg;
   }
-
-  if (flags.has('--help') || flags.has('-h')) return { help: true, sessionPath, metadataOnly: false };
-
-  const metadataOnly = flags.has('--metadata-only') || flags.has('--update-metadata-only');
-  return { help: false, sessionPath, metadataOnly };
+  return { apiBaseUrl: apiBaseUrl.replace(/\/$/, ''), help, metadataOnly, sessionPath };
 }
 
 function positiveInteger(value, fallback) {
@@ -52,8 +41,8 @@ function parseDataUri(uri) {
   const match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/.exec(uri);
   if (!match) return null;
   const [, mime, data] = match;
-  const ext = mime === 'image/jpeg' ? 'jpg' : mime.split('/')[1] || 'bin';
-  return { mime, data, ext };
+  const extension = mime === 'image/jpeg' ? 'jpg' : mime.split('/')[1] || 'bin';
+  return { bytes: Buffer.from(data, 'base64'), extension, mime };
 }
 
 function sanitizeOriginalPrompt(prompt) {
@@ -68,187 +57,8 @@ function itemHashFromImageHashes(imageHashes) {
   return crypto.createHash('sha256').update(imageHashes.join('\n')).digest('hex');
 }
 
-async function writeThumbnail(bytes, thumbnailPath) {
-  await sharp(bytes).resize({ width: 720, withoutEnlargement: true }).webp({ quality: 82 }).toFile(thumbnailPath);
-}
-
-function s3Uri(kind, fileName = '') {
-  return `s3://${HF_S3_BUCKET}/${HF_S3_PREFIX}/${kind}/${fileName}`;
-}
-
 function apiImagePath(kind, fileName) {
   return `/api/style-gallery/image/${kind}/${fileName}`;
-}
-
-function importCommandComment(absoluteSessionPath, metadataOnly) {
-  const sessionName = path.basename(absoluteSessionPath);
-  const metadataFlag = metadataOnly ? ' --metadata-only' : '';
-  return [
-    `// script: node scripts/import-style-prompts.mjs /path/to/${sessionName}${metadataFlag}`,
-    `// npm run import:style-prompts -- /path/to/${sessionName}${metadataFlag}`,
-  ].join('\n');
-}
-
-function isPlainYamlScalar(value) {
-  return (
-    value.length > 0 &&
-    value.length <= 120 &&
-    !/^[\s"'[\]{}#&*!|>@`%-]/.test(value) &&
-    !/[:\n\r]/.test(value) &&
-    !/\s#/.test(value)
-  );
-}
-
-function scalarYaml(value) {
-  if (value.includes('\n')) {
-    return ['|-', ...value.split('\n').map((line) => (line ? `  ${line}` : ''))].join('\n');
-  }
-  if (value.length > 120) return [`>-`, `  ${value}`].join('\n');
-  if (isPlainYamlScalar(value)) return value;
-  return JSON.stringify(value);
-}
-
-function serializeFrontmatterField(key, value) {
-  if (typeof value === 'string') return `${key}: ${scalarYaml(value)}`;
-  if (typeof value === 'number' || typeof value === 'boolean') return `${key}: ${value}`;
-  if (Array.isArray(value)) {
-    if (value.length === 0) return `${key}: []`;
-    if (value.every((item) => typeof item === 'string')) {
-      return [`${key}:`, ...value.map((item) => `  - ${scalarYaml(item).replace(/\n/g, '\n    ')}`)].join('\n');
-    }
-    return `${key}: ${JSON.stringify(value)}`;
-  }
-  if (value instanceof Date) return `${key}: ${JSON.stringify(value.toISOString())}`;
-  return null;
-}
-
-function s5cmdArgs(...args) {
-  return ['--profile', HF_S3_PROFILE, '--endpoint-url', HF_S3_ENDPOINT, ...args];
-}
-
-function listRemoteFiles(kind) {
-  try {
-    const output = execFileSync('s5cmd', s5cmdArgs('ls', s3Uri(kind)), { encoding: 'utf8' });
-    return new Set(
-      output
-        .split(/\r?\n/)
-        .map((line) => line.trim().split(/\s+/).at(-1))
-        .filter(Boolean)
-        .map((remotePath) => path.basename(remotePath)),
-    );
-  } catch (error) {
-    if (error.stdout || error.stderr) {
-      const message = `${error.stdout ?? ''}${error.stderr ?? ''}`;
-      if (message.includes('no object found')) return new Set();
-    }
-    throw error;
-  }
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function commandErrorMessage(command, error) {
-  const output = [error.stdout, error.stderr]
-    .filter(Boolean)
-    .map((value) => String(value).trim())
-    .filter(Boolean)
-    .join('\n');
-  return output || `${command} failed${error.code ? ` with exit code ${error.code}` : ''}`;
-}
-
-async function runCommand(command, args) {
-  try {
-    await execFileAsync(command, args, { maxBuffer: 1024 * 1024 });
-  } catch (error) {
-    throw new Error(commandErrorMessage(command, error));
-  }
-}
-
-async function uploadToBucketOnce(localPath, kind, fileName) {
-  const target = s3Uri(kind, fileName);
-  try {
-    await runCommand('s5cmd', s5cmdArgs('cp', localPath, target));
-  } catch (error) {
-    if (kind !== 'source') throw error;
-    await runCommand('aws', ['--profile', HF_S3_PROFILE, '--endpoint-url', HF_S3_ENDPOINT, 's3', 'cp', localPath, target]);
-  }
-}
-
-async function uploadToBucket(localPath, kind, fileName) {
-  let lastError;
-  for (let attempt = 1; attempt <= IMPORT_UPLOAD_ATTEMPTS; attempt += 1) {
-    try {
-      await uploadToBucketOnce(localPath, kind, fileName);
-      return;
-    } catch (error) {
-      lastError = error;
-      if (attempt < IMPORT_UPLOAD_ATTEMPTS) await sleep(500 * attempt);
-    }
-  }
-  throw lastError;
-}
-
-async function mapWithConcurrency(items, concurrency, worker) {
-  const results = [];
-  let nextIndex = 0;
-
-  async function runWorker() {
-    while (nextIndex < items.length) {
-      const currentIndex = nextIndex;
-      nextIndex += 1;
-      results[currentIndex] = await worker(items[currentIndex], currentIndex);
-    }
-  }
-
-  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, runWorker));
-  return results;
-}
-
-async function uploadAsset(asset) {
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'style-gallery-import-'));
-  try {
-    const imagePath = path.join(tempDir, asset.imageName);
-    const thumbnailPath = path.join(tempDir, asset.thumbnailName);
-    await fs.writeFile(imagePath, asset.bytes);
-
-    let uploadedSourceImages = 0;
-    let uploadedThumbnails = 0;
-    if (asset.uploadSource) {
-      await uploadToBucket(imagePath, 'source', asset.imageName);
-      uploadedSourceImages += 1;
-    }
-    if (asset.uploadThumbnail) {
-      await writeThumbnail(asset.bytes, thumbnailPath);
-      await uploadToBucket(thumbnailPath, 'thumb', asset.thumbnailName);
-      uploadedThumbnails += 1;
-    }
-
-    return { uploadedSourceImages, uploadedThumbnails };
-  } finally {
-    await fs.rm(tempDir, { recursive: true, force: true });
-  }
-}
-
-function frontmatter(data) {
-  const lines = [];
-  for (const [key, value] of Object.entries(data)) {
-    const serialized = serializeFrontmatterField(key, value);
-    if (serialized) lines.push(serialized);
-  }
-  return `${lines.join('\n')}\n`;
-}
-
-function itemBody(data, importComment) {
-  return [
-    '---',
-    frontmatter(data).trimEnd(),
-    '---',
-    '',
-    'Imported from a Codex session history by `scripts/import-style-prompts.mjs`.',
-    importComment,
-  ].join('\n');
 }
 
 async function readRecords(sessionPath) {
@@ -268,309 +78,233 @@ async function readRecords(sessionPath) {
 function extractItems(records) {
   const items = [];
   let pendingInput = null;
-
   for (const { index, record } of records) {
     const payload = record?.payload;
     if (!payload || typeof payload !== 'object') continue;
-
     if (record.type === 'event_msg' && payload.type === 'user_message' && Array.isArray(payload.images)) {
       const images = payload.images.filter((value) => typeof value === 'string' && value.startsWith('data:image/'));
-      if (images.length > 0) {
-        const message = typeof payload.message === 'string' ? payload.message : '';
+      if (images.length) {
         pendingInput = {
           images,
-          originalPrompt: sanitizeOriginalPrompt(message),
-          timestamp: record.timestamp,
+          originalPrompt: sanitizeOriginalPrompt(typeof payload.message === 'string' ? payload.message : ''),
           sourceLine: index,
+          timestamp: record.timestamp,
         };
       }
       continue;
     }
-
     if (record.type === 'event_msg' && payload.type === 'agent_message') {
       const message = typeof payload.message === 'string' ? payload.message : payload.message?.content;
       if (pendingInput && typeof message === 'string' && message.includes(PLACEHOLDER)) {
-        items.push({
-          ...pendingInput,
-          prompt: message.trim(),
-          promptLine: index,
-        });
+        items.push({ ...pendingInput, prompt: message.trim(), promptLine: index });
         pendingInput = null;
       }
     }
   }
-
   return items;
 }
 
-async function getExistingItems(contentDir) {
-  const items = new Map();
-  let files = [];
-  try {
-    files = await fs.readdir(contentDir);
-  } catch (error) {
-    if (error.code === 'ENOENT') return items;
-    throw error;
-  }
+async function buildImportData(extractedItems, sessionPath, existingByHash, metadataOnly) {
+  const assets = new Map();
+  const items = [];
+  let skippedDuplicates = 0;
+  let skippedNewMetadata = 0;
 
-  await Promise.all(
-    files
-      .filter((file) => /\.(md|mdx)$/.test(file))
-      .map(async (file) => {
-        const filePath = path.join(contentDir, file);
-        const parsed = matter(await fs.readFile(filePath, 'utf8'));
-        const imageHashes = Array.isArray(parsed.data.images)
-          ? parsed.data.images.map((image) => image?.imageHash).filter(Boolean)
-          : [parsed.data.imageHash].filter(Boolean);
-        if (imageHashes.length > 0) {
-          items.set(itemHashFromImageHashes(imageHashes), { filePath, data: parsed.data });
-        }
-      }),
-  );
+  for (const extracted of extractedItems) {
+    const parsedImages = extracted.images.map(parseDataUri);
+    if (parsedImages.some((image) => !image)) continue;
+    const imageHashes = parsedImages.map((image) => crypto.createHash('sha256').update(image.bytes).digest('hex'));
+    const itemHash = itemHashFromImageHashes(imageHashes);
+    const existing = existingByHash.get(itemHash);
+    if (existing && !metadataOnly) skippedDuplicates += 1;
+    if (!existing && metadataOnly) {
+      skippedNewMetadata += 1;
+      continue;
+    }
 
-  return items;
-}
+    const shortHash = itemHash.slice(0, 12);
+    const date = extracted.timestamp ? new Date(extracted.timestamp) : new Date();
+    const slug = existing?.slug ?? `${date.toISOString().slice(0, 10)}-${shortHash}`;
+    const title = `Style Prompt ${shortHash}`;
+    const imageRefs = [];
 
-async function updateExistingItemMetadata(existingItem, metadata, importComment) {
-  const raw = await fs.readFile(existingItem.filePath, 'utf8');
-  const fields = {};
-  const originalPrompt = metadata.originalPrompt || existingItem.data.originalPrompt;
-  if (originalPrompt && originalPrompt !== existingItem.data.originalPrompt) fields.originalPrompt = originalPrompt;
-  if (metadata.sourceSession && metadata.sourceSession !== existingItem.data.sourceSession) {
-    fields.sourceSession = metadata.sourceSession;
-  }
-  if (metadata.sourceLine !== undefined && metadata.sourceLine !== existingItem.data.sourceLine) {
-    fields.sourceLine = metadata.sourceLine;
-  }
-  const updatedFrontmatter = updateFrontmatterFields(raw, fields);
-  const updatedContent = updateImportCommandComment(updatedFrontmatter, importComment);
-  if (updatedContent !== raw) {
-    await fs.writeFile(existingItem.filePath, updatedContent.endsWith('\n') ? updatedContent : `${updatedContent}\n`, 'utf8');
-  }
-}
+    for (let index = 0; index < parsedImages.length; index += 1) {
+      const image = parsedImages[index];
+      const imageHash = imageHashes[index];
+      const imageName = `${imageHash.slice(0, 12)}.${image.extension}`;
+      const thumbnailName = `${imageHash.slice(0, 12)}.webp`;
+      const sourceKey = `source/${imageName}`;
+      const thumbnailKey = `thumb/${thumbnailName}`;
+      assets.set(sourceKey, { body: image.bytes, contentType: image.mime });
+      if (!assets.has(thumbnailKey)) {
+        const thumbnail = await sharp(image.bytes)
+          .resize({ width: 720, withoutEnlargement: true })
+          .webp({ quality: 82 })
+          .toBuffer();
+        assets.set(thumbnailKey, { body: thumbnail, contentType: 'image/webp' });
+      }
+      imageRefs.push({
+        sourceImage: apiImagePath('source', imageName),
+        thumbnailImage: apiImagePath('thumb', thumbnailName),
+        sourceImageAlt: `${title} reference image ${index + 1}`,
+        imageHash,
+      });
+    }
 
-function splitFrontmatter(raw) {
-  const lines = raw.split(/\r?\n/);
-  if (lines[0] !== '---') return null;
-  const endIndex = lines.findIndex((line, index) => index > 0 && line === '---');
-  if (endIndex < 0) return null;
-  return {
-    lines,
-    startIndex: 1,
-    endIndex,
-  };
-}
-
-function findFieldRange(lines, startIndex, endIndex, key) {
-  const fieldPattern = new RegExp(`^${key}:`);
-  const topLevelFieldPattern = /^[A-Za-z_][A-Za-z0-9_-]*:/;
-  const start = lines.findIndex((line, index) => index >= startIndex && index < endIndex && fieldPattern.test(line));
-  if (start < 0) return null;
-  let end = start + 1;
-  while (end < endIndex && !topLevelFieldPattern.test(lines[end])) end += 1;
-  return { start, end };
-}
-
-function updateFrontmatterFields(raw, fields) {
-  const frontmatterParts = splitFrontmatter(raw);
-  if (!frontmatterParts) return raw;
-  const { lines } = frontmatterParts;
-  let endIndex = frontmatterParts.endIndex;
-
-  for (const [key, value] of Object.entries(fields)) {
-    if (value === undefined || value === null || value === '') continue;
-    const serialized = serializeFrontmatterField(key, value);
-    if (!serialized) continue;
-    const replacement = serialized.split('\n');
-    const range = findFieldRange(lines, frontmatterParts.startIndex, endIndex, key);
-    if (range) {
-      lines.splice(range.start, range.end - range.start, ...replacement);
-      endIndex += replacement.length - (range.end - range.start);
-    } else {
-      lines.splice(endIndex, 0, ...replacement);
-      endIndex += replacement.length;
+    if (!existing || metadataOnly) {
+      items.push({
+        version: 3,
+        slug,
+        title,
+        date: date.toISOString(),
+        sourceImage: imageRefs[0].sourceImage,
+        thumbnailImage: imageRefs[0].thumbnailImage,
+        sourceImageAlt: imageRefs[0].sourceImageAlt,
+        prompt: extracted.prompt,
+        ...(extracted.originalPrompt ? { originalPrompt: extracted.originalPrompt } : {}),
+        imageHash: itemHash,
+        images: imageRefs,
+        sourceSession: path.basename(sessionPath),
+        sourceLine: extracted.sourceLine,
+        examples: [],
+      });
     }
   }
-
-  return lines.join('\n');
+  return { assets, items, skippedDuplicates, skippedNewMetadata };
 }
 
-function updateImportCommandComment(raw, importComment) {
-  const marker = 'Imported from a Codex session history by `scripts/import-style-prompts.mjs`.';
-  const commentLines = importComment.split('\n');
-  const lines = raw.split(/\r?\n/);
-  const markerIndex = lines.findIndex((line) => line.trim() === marker);
-  if (markerIndex < 0) return raw;
-
-  let insertEnd = markerIndex + 1;
-  while (insertEnd < lines.length && /^\/\/ (script|npm): /.test(lines[insertEnd])) {
-    insertEnd += 1;
+async function requestJson(url, options, timeoutMs = REQUEST_TIMEOUT_MS) {
+  let lastError;
+  for (let attempt = 1; attempt <= REQUEST_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await fetch(url, { ...options, signal: AbortSignal.timeout(timeoutMs) });
+      if (response.ok) return response.json();
+      const message = await response.text();
+      if (![408, 429].includes(response.status) && response.status < 500) {
+        throw new NonRetryableRequestError(message || `HTTP ${response.status}`);
+      }
+      lastError = new Error(message || `HTTP ${response.status}`);
+    } catch (error) {
+      if (error instanceof NonRetryableRequestError) throw error;
+      lastError = error;
+      if (attempt === REQUEST_ATTEMPTS) break;
+    }
+    await sleep(400 * 2 ** (attempt - 1) + Math.floor(Math.random() * 200));
   }
-  lines.splice(markerIndex + 1, insertEnd - markerIndex - 1, ...commentLines);
-  return lines.join('\n');
+  throw new Error(`Request failed after ${REQUEST_ATTEMPTS} attempts: ${url}`, { cause: lastError });
+}
+
+async function uploadObject(uploadUrl, asset) {
+  let lastError;
+  for (let attempt = 1; attempt <= REQUEST_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await fetch(uploadUrl, {
+        method: 'PUT',
+        body: asset.body,
+        headers: { 'content-type': asset.contentType },
+        signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
+      });
+      if (response.ok) return;
+      const message = await response.text();
+      if (![408, 429].includes(response.status) && response.status < 500) {
+        throw new NonRetryableRequestError(message || `HTTP ${response.status}`);
+      }
+      lastError = new Error(message || `HTTP ${response.status}`);
+    } catch (error) {
+      if (error instanceof NonRetryableRequestError) throw error;
+      lastError = error;
+      if (attempt === REQUEST_ATTEMPTS) break;
+    }
+    await sleep(500 * 2 ** (attempt - 1) + Math.floor(Math.random() * 250));
+  }
+  throw new Error(`Asset upload failed after ${REQUEST_ATTEMPTS} attempts.`, { cause: lastError });
+}
+
+async function prepareAndUploadAssets(apiBaseUrl, token, assets) {
+  const entries = [...assets.entries()];
+  const uploadedKeys = [];
+  for (const chunk of chunks(entries, 200)) {
+    const prepared = await requestJson(`${apiBaseUrl}/api/style-gallery/uploads`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'prepare', keys: chunk.map(([key]) => key) }),
+    });
+    const uploadByKey = new Map(prepared.uploads.map((upload) => [upload.key, upload]));
+    const pending = chunk.filter(([key]) => !uploadByKey.get(key)?.exists);
+    let nextIndex = 0;
+    async function worker() {
+      while (nextIndex < pending.length) {
+        const [key, asset] = pending[nextIndex];
+        nextIndex += 1;
+        const upload = uploadByKey.get(key);
+        if (!upload?.uploadUrl) throw new Error(`Missing signed upload URL for ${key}.`);
+        await uploadObject(upload.uploadUrl, asset);
+        uploadedKeys.push(key);
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(UPLOAD_CONCURRENCY, pending.length) }, worker));
+  }
+  return uploadedKeys;
+}
+
+async function cleanupAssets(apiBaseUrl, token, keys) {
+  if (!keys.length) return;
+  for (const chunk of chunks(keys, 200)) {
+    await requestJson(`${apiBaseUrl}/api/style-gallery/uploads`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'cleanup', keys: chunk }),
+    }).catch((error) => console.error(`Cleanup warning: ${error.message}`));
+  }
+}
+
+function chunks(items, size) {
+  const result = [];
+  for (let index = 0; index < items.length; index += size) result.push(items.slice(index, index + size));
+  return result;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function main() {
-  const { help, sessionPath, metadataOnly } = parseArgs(process.argv.slice(2));
+  const { apiBaseUrl, help, metadataOnly, sessionPath } = parseArgs(process.argv.slice(2));
   if (help || !sessionPath) {
     usage();
     process.exit(help ? 0 : 1);
   }
-
-  const root = process.cwd();
+  const token = process.env.STYLE_GALLERY_UPLOAD_TOKEN;
+  if (!token) throw new Error('STYLE_GALLERY_UPLOAD_TOKEN is required.');
   const absoluteSessionPath = path.resolve(sessionPath);
-  const importComment = importCommandComment(absoluteSessionPath, metadataOnly);
-  const contentDir = path.join(root, 'src/content/styleGallery');
-  await fs.mkdir(contentDir, { recursive: true });
-
   const records = await readRecords(absoluteSessionPath);
-  const items = extractItems(records);
-  const seenRemoteSourceFiles = metadataOnly ? new Set() : listRemoteFiles('source');
-  const seenRemoteThumbnailFiles = metadataOnly ? new Set() : listRemoteFiles('thumb');
-  const seenSourceFiles = new Set(seenRemoteSourceFiles);
-  const seenThumbnailFiles = new Set(seenRemoteThumbnailFiles);
-  const existingItems = await getExistingItems(contentDir);
-  const duplicateHashes = new Set();
-  let written = 0;
-  let existingMatched = 0;
-  let metadataUpdated = 0;
-  let metadataMissing = 0;
-  let skippedDuplicate = 0;
-  let uploadedSourceImages = 0;
-  let uploadedThumbnails = 0;
-  let skippedExistingSourceImages = 0;
-  let skippedExistingThumbnails = 0;
-  const uploadAssets = [];
-  const pendingWrites = [];
+  const extractedItems = extractItems(records);
+  const catalog = await requestJson(`${apiBaseUrl}/api/style-gallery/catalog`, { headers: { accept: 'application/json' } });
+  const existingByHash = new Map(catalog.items.map((item) => [item.imageHash, item]));
+  const prepared = await buildImportData(extractedItems, absoluteSessionPath, existingByHash, metadataOnly);
 
-  function queueMissingAssets(assets) {
-    for (const asset of assets) {
-      const uploadSource = !seenSourceFiles.has(asset.imageName);
-      const uploadThumbnail = !seenThumbnailFiles.has(asset.thumbnailName);
-      if (!uploadSource) skippedExistingSourceImages += 1;
-      if (!uploadThumbnail) skippedExistingThumbnails += 1;
-      if (!uploadSource && !uploadThumbnail) continue;
-
-      uploadAssets.push({ ...asset, uploadSource, uploadThumbnail });
-      seenSourceFiles.add(asset.imageName);
-      seenThumbnailFiles.add(asset.thumbnailName);
+  console.log(`Found ${extractedItems.length} image/prompt items.`);
+  let uploadedKeys = [];
+  try {
+    uploadedKeys = await prepareAndUploadAssets(apiBaseUrl, token, prepared.assets);
+    let written = 0;
+    let apiDuplicates = 0;
+    for (const itemChunk of chunks(prepared.items, 100)) {
+      const result = await requestJson(`${apiBaseUrl}/api/style-gallery/items`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ mode: metadataOnly ? 'upsert' : 'create', items: itemChunk }),
+      });
+      written += result.written ?? 0;
+      apiDuplicates += result.skippedDuplicates ?? 0;
     }
-  }
-
-  for (const item of items) {
-    const assets = [];
-    for (const image of item.images) {
-      const parsed = parseDataUri(image);
-      if (!parsed) continue;
-
-      const bytes = Buffer.from(parsed.data, 'base64');
-      const hash = crypto.createHash('sha256').update(bytes).digest('hex');
-      const shortHash = hash.slice(0, 12);
-      const imageName = `${shortHash}.${parsed.ext}`;
-      const thumbnailName = `${shortHash}.webp`;
-      assets.push({ bytes, hash, shortHash, imageName, thumbnailName });
-    }
-
-    if (assets.length === 0) continue;
-
-    const imageHashes = assets.map((asset) => asset.hash);
-    const itemHash = itemHashFromImageHashes(imageHashes);
-    const itemShortHash = itemHash.slice(0, 12);
-    const existingItem = existingItems.get(itemHash);
-
-    if (existingItem) {
-      duplicateHashes.add(itemHash);
-      existingMatched += 1;
-      if (metadataOnly) {
-        await updateExistingItemMetadata(
-          existingItem,
-          {
-            originalPrompt: item.originalPrompt,
-            sourceSession: path.basename(absoluteSessionPath),
-            sourceLine: item.sourceLine,
-          },
-          importComment,
-        );
-        metadataUpdated += 1;
-      } else {
-        queueMissingAssets(assets);
-      }
-      skippedDuplicate += 1;
-      continue;
-    }
-
-    if (metadataOnly) {
-      metadataMissing += 1;
-      continue;
-    }
-
-    queueMissingAssets(assets);
-
-    const date = item.timestamp ? new Date(item.timestamp) : new Date();
-    const datePrefix = date.toISOString().slice(0, 10);
-    const slug = `${datePrefix}-${itemShortHash}`;
-    const title = `Style Prompt ${itemShortHash}`;
-    const imageRefs = assets.map((asset, index) => ({
-      sourceImage: apiImagePath('source', asset.imageName),
-      thumbnailImage: apiImagePath('thumb', asset.thumbnailName),
-      sourceImageAlt: `${title} reference image ${index + 1}`,
-      imageHash: asset.hash,
-    }));
-    const data = {
-      title,
-      date: date.toISOString(),
-      sourceImage: imageRefs[0].sourceImage,
-      thumbnailImage: imageRefs[0].thumbnailImage,
-      sourceImageAlt: imageRefs[0].sourceImageAlt,
-      prompt: item.prompt,
-      originalPrompt: item.originalPrompt,
-      imageHash: itemHash,
-      images: imageRefs,
-      sourceSession: path.basename(absoluteSessionPath),
-      sourceLine: item.sourceLine,
-      tags: ['codex-session', 'style-prompt'],
-      modelTargets: DEFAULT_TARGETS,
-      examples: [],
-    };
-
-    const filePath = path.join(contentDir, `${slug}.md`);
-    pendingWrites.push({ filePath, data });
-    existingItems.set(itemHash, { filePath, data });
-  }
-
-  if (uploadAssets.length > 0) {
-    console.log(`Uploading ${uploadAssets.length} image assets with concurrency ${IMPORT_UPLOAD_CONCURRENCY}.`);
-    const uploadResults = await mapWithConcurrency(uploadAssets, IMPORT_UPLOAD_CONCURRENCY, uploadAsset);
-    for (const result of uploadResults) {
-      uploadedSourceImages += result.uploadedSourceImages;
-      uploadedThumbnails += result.uploadedThumbnails;
-    }
-  }
-
-  for (const pendingWrite of pendingWrites) {
-    await fs.writeFile(pendingWrite.filePath, `${itemBody(pendingWrite.data, importComment)}\n`, 'utf8');
-    written += 1;
-  }
-
-  console.log(`Found ${items.length} image/prompt items.`);
-  console.log(`Wrote ${written} unique gallery items.`);
-  if (metadataOnly) {
-    console.log(`Matched ${existingMatched} existing gallery items.`);
-    console.log(`Updated metadata for ${metadataUpdated} existing gallery items.`);
-    console.log(`Skipped ${metadataMissing} new image/prompt records because --metadata-only was set.`);
-  } else {
-    const uploadedFiles = uploadedSourceImages + uploadedThumbnails;
-    console.log(
-      `Uploaded ${uploadedSourceImages} source images and ${uploadedThumbnails} thumbnails (${uploadedFiles} files) to ${HF_BUCKET_URI}.`,
-    );
-    console.log(
-      `Skipped ${skippedExistingSourceImages} existing source images and ${skippedExistingThumbnails} existing thumbnails already in ${HF_BUCKET_URI}.`,
-    );
-    if (skippedDuplicate > 0) {
-      console.log(
-        `Skipped ${skippedDuplicate} duplicate image/prompt records (${duplicateHashes.size} unique image groups already in the gallery).`,
-      );
-    }
+    console.log(`Uploaded ${uploadedKeys.length} missing image assets with concurrency ${UPLOAD_CONCURRENCY}.`);
+    console.log(`${metadataOnly ? 'Updated' : 'Wrote'} ${written} gallery metadata items in HF storage.`);
+    console.log(`Skipped ${prepared.skippedDuplicates + apiDuplicates} duplicate image/prompt records.`);
+    if (metadataOnly) console.log(`Skipped ${prepared.skippedNewMetadata} new records because --metadata-only was set.`);
+  } catch (error) {
+    await cleanupAssets(apiBaseUrl, token, uploadedKeys);
+    throw error;
   }
 }
 
@@ -579,5 +313,5 @@ main().catch((error) => {
   process.exit(1);
 });
 
-// Direct script: node scripts/import-style-prompts.mjs /path/to/codex-session.jsonl
-// npm script: npm run import:style-prompts -- /path/to/codex-session.jsonl
+// Direct script: STYLE_GALLERY_UPLOAD_TOKEN=... node scripts/import-style-prompts.mjs /path/to/codex-session.jsonl
+// npm script: STYLE_GALLERY_UPLOAD_TOKEN=... npm run import:style-prompts -- /path/to/codex-session.jsonl

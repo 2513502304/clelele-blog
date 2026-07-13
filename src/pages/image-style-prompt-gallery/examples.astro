@@ -1,0 +1,48 @@
+---
+import HomeSider from '@components/layout/HomeSider.astro';
+import StyleGalleryExamplesOverview from '@components/style-gallery/StyleGalleryExamplesOverview';
+import Cover from '@components/ui/cover/Cover.astro';
+import { CONTENT_PADDING } from '@constants/layout';
+import { siteConfig } from '@constants/site-config';
+import Layout from '@layouts/Layout.astro';
+import TwoColumnLayout from '@layouts/TwoColumnLayout.astro';
+import { getStyleGalleryExampleOverview } from '@lib/style-gallery';
+import { Icon } from 'astro-icon/components';
+import { getLocaleFromUrl, localizedPath, t } from '@/i18n';
+
+export const prerender = false;
+
+const locale = getLocaleFromUrl(Astro.url.pathname);
+const examples = await getStyleGalleryExampleOverview();
+const galleryBasePath = localizedPath('/image-style-prompt-gallery', locale);
+const title = `${t(locale, 'gallery.subGallery')} | ${t(locale, 'gallery.title')} | ${siteConfig.title}`;
+const overviewLabels = {
+  searchPlaceholder: t(locale, 'gallery.examplesSearchPlaceholder'),
+  platform: t(locale, 'gallery.examplesPlatform'),
+  allPlatforms: t(locale, 'gallery.examplesAllPlatforms'),
+  otherPlatform: t(locale, 'gallery.examplesOtherPlatform'),
+  noMatches: t(locale, 'gallery.examplesNoMatches'),
+};
+Astro.response.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=300');
+---
+
+<Layout title={title} description={t(locale, 'gallery.subGalleryDescription')}>
+  <TwoColumnLayout>
+    <Cover slot="cover" title={t(locale, 'gallery.subGallery')} />
+    <HomeSider slot="sider" />
+    <div class={`bg-gradient-start shadow-box tablet:shadow-none flex flex-col gap-6 overflow-hidden ${CONTENT_PADDING.standard}`}>
+      <header class="flex flex-wrap items-end justify-between gap-4 border-border border-b pb-5">
+        <div class="space-y-2">
+          <a href={galleryBasePath} data-astro-prefetch="false" class="inline-flex items-center gap-1 text-muted-foreground text-sm transition hover:text-primary">
+            <Icon name="ri:arrow-left-line" class="size-4" />
+            {t(locale, 'gallery.title')}
+          </a>
+          <h1 class="font-black text-4xl text-foreground md:text-3xl">{t(locale, 'gallery.examplesOverviewTitle')}</h1>
+          <p class="max-w-2xl text-muted-foreground leading-7">{t(locale, 'gallery.subGalleryDescription')}</p>
+        </div>
+        <span class="font-black text-3xl text-primary tabular-nums">{examples.length}</span>
+      </header>
+      <StyleGalleryExamplesOverview client:load examples={examples} galleryBasePath={galleryBasePath} labels={overviewLabels} />
+    </div>
+  </TwoColumnLayout>
+</Layout>
