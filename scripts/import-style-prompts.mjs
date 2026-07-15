@@ -313,5 +313,11 @@ main().catch((error) => {
   process.exit(1);
 });
 
-// Direct script: STYLE_GALLERY_UPLOAD_TOKEN=... node scripts/import-style-prompts.mjs /path/to/codex-session.jsonl
-// npm script: STYLE_GALLERY_UPLOAD_TOKEN=... npm run import:style-prompts -- /path/to/codex-session.jsonl
+/*
+NODE_OPTIONS=--use-env-proxy \
+HTTP_PROXY=http://127.0.0.1:7897 \
+HTTPS_PROXY=http://127.0.0.1:7897 \
+STYLE_GALLERY_UPLOAD_TOKEN='...' \
+STYLE_GALLERY_IMPORT_ATTEMPTS=5 \
+npm run import:style-prompts -- <session.jsonl>
+*/
