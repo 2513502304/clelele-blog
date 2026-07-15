@@ -1,7 +1,8 @@
 import { Icon } from '@iconify/react';
+import { cn } from '@lib/utils';
 import { useState } from 'react';
 
-interface StylePromptCopyProps {
+export interface StylePromptCopyProps {
   prompt: string;
   label: string;
   copyLabel: string;
@@ -13,14 +14,21 @@ export default function StylePromptCopy({ prompt, label, copyLabel, copiedLabel,
   const [copied, setCopied] = useState(false);
 
   async function copyPrompt() {
-    await navigator.clipboard.writeText(prompt);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1800);
+    try {
+      await navigator.clipboard.writeText(prompt);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch (error) {
+      console.error('Failed to copy prompt:', error);
+    }
   }
 
   return (
     <div
-      className={`overflow-hidden rounded-lg border border-rose-200/70 bg-white/80 shadow-sm dark:border-rose-900/40 dark:bg-gray-950/60 ${className}`}
+      className={cn(
+        'overflow-hidden rounded-lg border border-rose-200/70 bg-white/80 shadow-sm dark:border-rose-900/40 dark:bg-gray-950/60',
+        className,
+      )}
     >
       <div className="flex min-h-14 items-center justify-between gap-3 border-rose-100 border-b bg-rose-50/55 px-5 py-2.5 dark:border-rose-950/60 dark:bg-rose-950/20">
         <p className="font-bold text-rose-500 text-sm dark:text-rose-300">{label}</p>
