@@ -1,3 +1,4 @@
+import { ErrorBoundary, InlineErrorFallback } from '@components/common';
 import { Icon } from '@iconify/react';
 import { parseAsString, parseAsStringLiteral, useQueryState } from 'nuqs';
 import { NuqsAdapter } from 'nuqs/adapters/react';
@@ -30,6 +31,10 @@ type SortKey = (typeof sortKeys)[number];
 
 function normalize(value: string) {
   return value.toLowerCase().trim();
+}
+
+function reportUrlStateError(error: unknown) {
+  console.error('Failed to update style gallery image index URL state:', error);
 }
 
 function StyleGalleryImageIndexContent({ items, galleryBasePath, labels }: StyleGalleryImageIndexProps) {
@@ -70,7 +75,7 @@ function StyleGalleryImageIndexContent({ items, galleryBasePath, labels }: Style
           <Icon icon="ri:search-line" className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
           <input
             value={query}
-            onChange={(event) => void setQuery(event.currentTarget.value)}
+            onChange={(event) => setQuery(event.currentTarget.value).catch(reportUrlStateError)}
             placeholder={labels.searchPlaceholder}
             className="h-10 w-full rounded-md border border-border bg-background pr-3 pl-9 text-sm outline-none transition-colors focus:border-primary"
           />
@@ -87,7 +92,7 @@ function StyleGalleryImageIndexContent({ items, galleryBasePath, labels }: Style
             <select
               id="style-gallery-index-sort"
               value={sortKey}
-              onChange={(event) => void setSortKey(event.currentTarget.value as SortKey)}
+              onChange={(event) => setSortKey(event.currentTarget.value as SortKey).catch(reportUrlStateError)}
               className="h-10 w-full appearance-none rounded-md border border-border bg-background pr-8 pl-3 text-sm outline-none transition-colors hover:border-primary/40 focus:border-primary"
             >
               {(Object.keys(sortLabels) as SortKey[]).map((key) => (
@@ -105,7 +110,7 @@ function StyleGalleryImageIndexContent({ items, galleryBasePath, labels }: Style
             type="button"
             title={sortDirection === 'asc' ? labels.sortAscending : labels.sortDescending}
             aria-label={sortDirection === 'asc' ? labels.sortAscending : labels.sortDescending}
-            onClick={() => void setSortDirection((direction) => (direction === 'asc' ? 'desc' : 'asc'))}
+            onClick={() => setSortDirection((direction) => (direction === 'asc' ? 'desc' : 'asc')).catch(reportUrlStateError)}
             className="flex size-10 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
           >
             <Icon icon={sortDirection === 'asc' ? 'ri:sort-asc' : 'ri:sort-desc'} className="size-4" />
@@ -159,8 +164,10 @@ function StyleGalleryImageIndexContent({ items, galleryBasePath, labels }: Style
 
 export default function StyleGalleryImageIndex(props: StyleGalleryImageIndexProps) {
   return (
-    <NuqsAdapter>
-      <StyleGalleryImageIndexContent {...props} />
-    </NuqsAdapter>
+    <ErrorBoundary FallbackComponent={InlineErrorFallback}>
+      <NuqsAdapter>
+        <StyleGalleryImageIndexContent {...props} />
+      </NuqsAdapter>
+    </ErrorBoundary>
   );
 }
