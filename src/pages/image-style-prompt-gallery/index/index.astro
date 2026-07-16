@@ -1,0 +1,56 @@
+---
+import HomeSider from '@components/layout/HomeSider.astro';
+import StyleGalleryImageIndex from '@components/style-gallery/StyleGalleryImageIndex';
+import Cover from '@components/ui/cover/Cover.astro';
+import { CONTENT_PADDING } from '@constants/layout';
+import { siteConfig } from '@constants/site-config';
+import Layout from '@layouts/Layout.astro';
+import TwoColumnLayout from '@layouts/TwoColumnLayout.astro';
+import { getStyleGalleryData, toStyleGalleryCardDataList } from '@lib/style-gallery';
+import { Icon } from 'astro-icon/components';
+import { getLocaleFromUrl, localizedPath, t } from '@/i18n';
+
+export const prerender = false;
+
+const locale = getLocaleFromUrl(Astro.url.pathname);
+const gallery = await getStyleGalleryData();
+const items = toStyleGalleryCardDataList(gallery);
+const galleryBasePath = localizedPath('/image-style-prompt-gallery', locale);
+const title = `${t(locale, 'gallery.imageIndex')} | ${t(locale, 'gallery.title')} | ${siteConfig.title}`;
+const labels = {
+  searchPlaceholder: t(locale, 'gallery.indexSearchPlaceholder'),
+  sortItems: t(locale, 'gallery.sortItems'),
+  sortDefault: t(locale, 'gallery.sortDefault'),
+  sortImportedAt: t(locale, 'gallery.sortImportedAt'),
+  sortImageId: t(locale, 'gallery.sortImageId'),
+  sortExampleCount: t(locale, 'gallery.sortExampleCount'),
+  sortAscending: t(locale, 'gallery.sortAscending'),
+  sortDescending: t(locale, 'gallery.sortDescending'),
+  imageCount: t(locale, 'gallery.imageCount', { count: '{count}' }),
+  noMatches: t(locale, 'gallery.noMatches'),
+  view: t(locale, 'gallery.view'),
+};
+Astro.response.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=300');
+---
+
+<Layout title={title} description={t(locale, 'gallery.imageIndexDescription')}>
+  <TwoColumnLayout>
+    <Cover slot="cover" title={t(locale, 'gallery.imageIndex')} />
+    <HomeSider slot="sider" />
+    <div class={`bg-gradient-start shadow-box tablet:shadow-none flex flex-col gap-5 overflow-hidden ${CONTENT_PADDING.standard}`}>
+      <header class="flex flex-wrap items-end justify-between gap-4 border-border border-b pb-5">
+        <div class="space-y-2">
+          <a href={galleryBasePath} data-astro-prefetch="false" class="inline-flex items-center gap-1 text-muted-foreground text-sm transition hover:text-primary">
+            <Icon name="ri:arrow-left-line" class="size-4" />
+            {t(locale, 'gallery.title')}
+          </a>
+          <h1 class="font-black text-4xl text-foreground md:text-3xl">{t(locale, 'gallery.imageIndex')}</h1>
+          <p class="max-w-2xl text-muted-foreground leading-7">{t(locale, 'gallery.imageIndexDescription')}</p>
+        </div>
+        <span class="font-black text-3xl text-primary tabular-nums">{items.length}</span>
+      </header>
+
+      <StyleGalleryImageIndex client:load items={items} galleryBasePath={galleryBasePath} labels={labels} />
+    </div>
+  </TwoColumnLayout>
+</Layout>

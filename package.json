@@ -94,6 +94,7 @@
     "metascraper-url": "^5.49.7",
     "motion": "^11.18.2",
     "nanostores": "^0.11.4",
+    "nuqs": "^2.9.0",
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
     "react-error-boundary": "^5.0.0",
