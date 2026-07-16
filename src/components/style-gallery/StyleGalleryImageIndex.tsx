@@ -1,5 +1,7 @@
 import { Icon } from '@iconify/react';
-import { useMemo, useState } from 'react';
+import { parseAsString, parseAsStringLiteral, useQueryState } from 'nuqs';
+import { NuqsAdapter } from 'nuqs/adapters/react';
+import { useMemo } from 'react';
 import type { StyleGalleryCardData } from '@/types/style-gallery';
 
 interface StyleGalleryImageIndexProps {
@@ -22,17 +24,18 @@ export interface StyleGalleryImageIndexLabels {
   view: string;
 }
 
-type SortKey = 'default' | 'date' | 'id' | 'examples';
-type SortDirection = 'asc' | 'desc';
+const sortKeys = ['default', 'date', 'id', 'examples'] as const;
+const sortDirections = ['asc', 'desc'] as const;
+type SortKey = (typeof sortKeys)[number];
 
 function normalize(value: string) {
   return value.toLowerCase().trim();
 }
 
-export default function StyleGalleryImageIndex({ items, galleryBasePath, labels }: StyleGalleryImageIndexProps) {
-  const [query, setQuery] = useState('');
-  const [sortKey, setSortKey] = useState<SortKey>('default');
-  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+function StyleGalleryImageIndexContent({ items, galleryBasePath, labels }: StyleGalleryImageIndexProps) {
+  const [query, setQuery] = useQueryState('q', parseAsString.withDefault(''));
+  const [sortKey, setSortKey] = useQueryState('sort', parseAsStringLiteral(sortKeys).withDefault('default'));
+  const [sortDirection, setSortDirection] = useQueryState('dir', parseAsStringLiteral(sortDirections).withDefault('asc'));
   const sortLabels: Record<SortKey, string> = {
     default: labels.sortDefault,
     date: labels.sortImportedAt,
@@ -67,7 +70,7 @@ export default function StyleGalleryImageIndex({ items, galleryBasePath, labels 
           <Icon icon="ri:search-line" className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
           <input
             value={query}
-            onChange={(event) => setQuery(event.currentTarget.value)}
+            onChange={(event) => void setQuery(event.currentTarget.value)}
             placeholder={labels.searchPlaceholder}
             className="h-10 w-full rounded-md border border-border bg-background pr-3 pl-9 text-sm outline-none transition-colors focus:border-primary"
           />
@@ -84,7 +87,7 @@ export default function StyleGalleryImageIndex({ items, galleryBasePath, labels 
             <select
               id="style-gallery-index-sort"
               value={sortKey}
-              onChange={(event) => setSortKey(event.currentTarget.value as SortKey)}
+              onChange={(event) => void setSortKey(event.currentTarget.value as SortKey)}
               className="h-10 w-full appearance-none rounded-md border border-border bg-background pr-8 pl-3 text-sm outline-none transition-colors hover:border-primary/40 focus:border-primary"
             >
               {(Object.keys(sortLabels) as SortKey[]).map((key) => (
@@ -102,7 +105,7 @@ export default function StyleGalleryImageIndex({ items, galleryBasePath, labels 
             type="button"
             title={sortDirection === 'asc' ? labels.sortAscending : labels.sortDescending}
             aria-label={sortDirection === 'asc' ? labels.sortAscending : labels.sortDescending}
-            onClick={() => setSortDirection((direction) => (direction === 'asc' ? 'desc' : 'asc'))}
+            onClick={() => void setSortDirection((direction) => (direction === 'asc' ? 'desc' : 'asc'))}
             className="flex size-10 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
           >
             <Icon icon={sortDirection === 'asc' ? 'ri:sort-asc' : 'ri:sort-desc'} className="size-4" />
@@ -151,5 +154,13 @@ export default function StyleGalleryImageIndex({ items, galleryBasePath, labels 
         </div>
       )}
     </section>
+  );
+}
+
+export default function StyleGalleryImageIndex(props: StyleGalleryImageIndexProps) {
+  return (
+    <NuqsAdapter>
+      <StyleGalleryImageIndexContent {...props} />
+    </NuqsAdapter>
   );
 }
