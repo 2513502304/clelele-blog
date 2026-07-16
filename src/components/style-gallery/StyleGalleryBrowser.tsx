@@ -31,7 +31,7 @@ export interface StyleGalleryBrowserLabels {
   sortItems: string;
   sortDefault: string;
   sortImportedAt: string;
-  sortTitle: string;
+  sortImageId: string;
   sortExampleCount: string;
   sortAscending: string;
   sortDescending: string;
@@ -43,7 +43,7 @@ export interface StyleGalleryBrowserLabels {
   noMatches: string;
 }
 
-type SortKey = 'default' | 'date' | 'title' | 'examples';
+type SortKey = 'default' | 'date' | 'id' | 'examples';
 type SortDirection = 'asc' | 'desc';
 
 function normalize(value: string) {
@@ -60,7 +60,7 @@ export default function StyleGalleryBrowser({ items, tags, galleryBasePath, labe
   const sortLabels: Record<SortKey, string> = {
     default: labels.sortDefault,
     date: labels.sortImportedAt,
-    title: labels.sortTitle,
+    id: labels.sortImageId,
     examples: labels.sortExampleCount,
   };
 
@@ -76,7 +76,7 @@ export default function StyleGalleryBrowser({ items, tags, galleryBasePath, labe
     const sorted = [...filtered];
     if (sortKey !== 'default') {
       sorted.sort((a, b) => {
-        if (sortKey === 'title') return a.title.localeCompare(b.title);
+        if (sortKey === 'id') return a.imageHash.localeCompare(b.imageHash);
         if (sortKey === 'examples') return a.exampleCount - b.exampleCount || a.date.localeCompare(b.date);
         return a.date.localeCompare(b.date);
       });
