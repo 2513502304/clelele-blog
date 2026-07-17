@@ -1,0 +1,20 @@
+---
+interface Props {
+  character: string;
+  quote: string;
+}
+
+const { character, quote } = Astro.props;
+---
+
+<figure
+  class="not-prose mx-0 my-5 w-full min-w-0 border-primary/35 border-l-2 pl-4 text-left md:my-6 md:pl-5"
+  data-character-quote
+>
+  <blockquote class="m-0 border-0 p-0 text-left text-foreground/80 text-[15px] leading-7 md:text-base">
+    {quote}
+  </blockquote>
+  <figcaption class="mt-1.5 pr-8 text-right text-muted-foreground text-sm md:pr-0">
+    <span aria-hidden="true">— </span><cite class="not-italic">{character}</cite>
+  </figcaption>
+</figure>
