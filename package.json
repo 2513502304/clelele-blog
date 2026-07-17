@@ -17,6 +17,7 @@
     "check": "astro check",
     "test:hpoi": "node --import tsx --test src/lib/hpoi/*.test.ts",
     "test:bangumi": "node --import tsx --test src/lib/bangumi/*.test.ts",
+    "test:character-quote": "node --import tsx --test src/lib/character-quote.test.ts",
     "test:style-gallery": "node --import tsx --test src/lib/style-gallery*.test.ts",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",

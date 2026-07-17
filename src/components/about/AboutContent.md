@@ -1,15 +1,3 @@
----
-layout: ../layouts/PageLayout.astro
-title: "About"
-coverTitle: "关于clelele"
-date: 2026-07-07 18:58:00
-description: "关于clelele"
----
-
-## 你好，这里是 clelele
-
-Even if you don't reincarnate into another world, you must show your true abilities!
-
 我会在这里记录技术、AIGC、ACG，以及一些个人的兴趣爱好
 
 最近主要在折腾的一些事：
