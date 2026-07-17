@@ -13,7 +13,7 @@ let quote = FALLBACK_QUOTE;
 let displayedCharacter = characterLabel || character;
 
 try {
-  const result = await fetchCharacterQuote(character, { retries: 1, timeoutMs: 3_000 });
+  const result = await fetchCharacterQuote(character, { retries: 0, timeoutMs: 1_500 });
   quote = result.quote;
   displayedCharacter = characterLabel || result.character;
 } catch (error) {

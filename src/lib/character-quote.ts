@@ -86,7 +86,7 @@ export async function fetchCharacterQuote(
       if (!quote) throw new CharacterQuoteError(`No Yurippe quote found for ${normalizedCharacter}.`, 404);
       return quote;
     } catch (error) {
-      if (error instanceof CharacterQuoteError && error.status < 500) throw error;
+      if (error instanceof CharacterQuoteError && (error.status < 500 || error.status === 502)) throw error;
       if (attempt === retries) {
         throw new CharacterQuoteError('Yurippe is temporarily unavailable.', 503, { cause: error });
       }

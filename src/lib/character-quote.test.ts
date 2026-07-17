@@ -50,6 +50,27 @@ describe('fetchCharacterQuote', () => {
     assert.equal(quote.show, 'Code Geass');
   });
 
+  it('does not retry non-retryable upstream failures', async () => {
+    let attempts = 0;
+
+    await assert.rejects(
+      () =>
+        fetchCharacterQuote('Yukino', {
+          fetcher: async () => {
+            attempts += 1;
+            return new Response('bad request', { status: 400 });
+          },
+        }),
+      (error: unknown) => {
+        assert.ok(error instanceof CharacterQuoteError);
+        assert.equal(error.status, 502);
+        return true;
+      },
+    );
+
+    assert.equal(attempts, 1);
+  });
+
   it('rejects missing characters and malformed upstream responses', async () => {
     await assert.rejects(
       () => fetchCharacterQuote('   '),

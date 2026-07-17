@@ -1,7 +1,10 @@
 ---
 import AboutPage from '@components/about/AboutPage.astro';
+import { defaultLocale, isLocaleSupported } from '@/i18n/config';
 
 export const prerender = false;
+const lang = Astro.params.lang;
+if (!lang || lang === defaultLocale || !isLocaleSupported(lang)) return new Response('Not Found', { status: 404 });
 Astro.response.headers.set('Cache-Control', 'no-store');
 ---
 
