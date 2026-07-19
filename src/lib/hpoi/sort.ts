@@ -29,7 +29,11 @@ function getSortValue(item: HpoiCollectionItem, key: Exclude<HpoiSortKey, 'defau
   }
 }
 
-/** Sort a copy of a collection while preserving Hpoi's extracted order as the default. */
+/**
+ * 返回排序后的副本，不修改抓取结果。
+ *
+ * `default` 的升序保持 Hpoi 页面顺序、降序反转页面顺序；缺少评分或出荷日期的条目始终排在末尾。
+ */
 export function sortHpoiCollectionItems(
   items: HpoiCollectionItem[],
   key: HpoiSortKey,

@@ -53,7 +53,7 @@ function parseReleaseDate(value: string | null): string | null {
   return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
 }
 
-/** Parse the public profile header and collection statistics from an Hpoi profile page. */
+/** 解析 Hpoi 公开个人页中的基础资料和“我的收藏/我的预定”汇总统计。 */
 export function parseHpoiProfile(html: string, userId: string): HpoiProfile {
   const $ = load(html);
   const stats = { ...EMPTY_STATS };
@@ -75,7 +75,12 @@ export function parseHpoiProfile(html: string, userId: string): HpoiProfile {
   };
 }
 
-/** Parse either of Hpoi's current large-card and compact-list collection views. */
+/**
+ * 兼容 Hpoi 当前的大卡片和紧凑列表两种公开收藏视图。
+ *
+ * 小图路径 `/gk/cover/s/` 会提升为同源的普通清晰度 `/gk/cover/n/`；条目按 Hpoi ID 去重，
+ * 同时保留原始出荷文案和供稳定排序使用的 ISO 日期。
+ */
 export function parseHpoiCollection(html: string): HpoiCollectionItem[] {
   const $ = load(html);
   const items = new Map<string, HpoiCollectionItem>();
@@ -107,7 +112,7 @@ export function parseHpoiCollection(html: string): HpoiCollectionItem[] {
   return [...items.values()];
 }
 
-/** Read the lazy-load page count embedded in Hpoi's collection bootstrap script. */
+/** 读取 Hpoi 收藏页初始化脚本中的懒加载总页数；未找到时按仅有首屏处理。 */
 export function parseHpoiCollectionPageCount(html: string): number {
   const $ = load(html);
   for (const script of $('script').toArray()) {
@@ -122,7 +127,7 @@ export function parseHpoiCollectionPageCount(html: string): number {
   return 1;
 }
 
-/** Distinguish a valid empty collection from an unrelated block/error page. */
+/** 通过页面容器区分“有效但为空的收藏页”和拦截页、错误页等非预期响应。 */
 export function isHpoiCollectionPage(html: string): boolean {
   const $ = load(html);
   return $('.hpoi-collect-container').length > 0;

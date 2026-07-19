@@ -6,6 +6,10 @@ interface StoredPaginationSettings {
   pageSize: number;
 }
 
+/**
+ * 为已经加载到客户端的集合提供统一分页，并按 `storageKey` 保存分页模式和每页数量。
+ * 数据筛选导致总页数缩小时会夹紧当前页；关闭分页只改变 `visibleItems`，不会改变上游抓取行为。
+ */
 export function useCollectionPagination<T>(items: T[], storageKey: string) {
   const [isPaginated, setIsPaginated] = useState(true);
   const [pageSize, setPageSize] = useState(DEFAULT_COLLECTION_PAGE_SIZE);

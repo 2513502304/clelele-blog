@@ -27,7 +27,12 @@ function getSortValue(item: BangumiUserCollection, key: Exclude<BangumiSortKey, 
   }
 }
 
-/** Sort a copy of a collection while preserving the Bangumi API order as the default. */
+/**
+ * 返回排序后的副本，不修改 Bangumi API 返回的原数组。
+ *
+ * `default` 的升序保留接口顺序、降序反转接口顺序；其他字段无值的条目无论方向都放在末尾，
+ * 避免切换升降序时空值突然占据列表开头。
+ */
 export function sortBangumiCollectionItems(
   items: BangumiUserCollection[],
   key: BangumiSortKey,

@@ -101,6 +101,7 @@ function uploadWithProgress(
   });
 }
 
+/** 每个分块独立计算超时和重试次数，某个文件失败不会消耗其他并发文件的重试预算。 */
 async function uploadWithProgressAndRetry(
   url: string,
   body: Blob,
@@ -190,6 +191,10 @@ async function uploadFileInChunks(
   }
 }
 
+/**
+ * 单个 prompt item 的 Sub-gallery 管理器。
+ * 支持并发文件任务、4 MiB 分块、逐文件失败隔离，以及带令牌的批量改平台/删除操作。
+ */
 export default function StyleGalleryExamples({ slug, title, initialExamples, uploadsEnabled }: StyleGalleryExamplesProps) {
   const [examples, setExamples] = useState<StyleGalleryExample[]>(initialExamples);
   const [platform, setPlatform] = useState<string>(STYLE_GALLERY_PLATFORMS[0].slug);
@@ -372,6 +377,7 @@ export default function StyleGalleryExamples({ slug, title, initialExamples, upl
       let nextUploadIndex = 0;
       const uploadFailures: string[] = [];
       const examplesToCommit: StyleGalleryExample[] = [];
+      // 固定数量 worker 从共享游标领取文件；失败文件只记录自身错误，成功文件仍进入本批元数据提交。
       async function uploadWorker() {
         while (nextUploadIndex < selected.length) {
           const index = nextUploadIndex;
@@ -410,6 +416,7 @@ export default function StyleGalleryExamples({ slug, title, initialExamples, upl
       await Promise.all(Array.from({ length: Math.min(UPLOAD_CONCURRENCY, selected.length) }, uploadWorker));
 
       if (examplesToCommit.length) {
+        // 所有成功文件完成服务端组合后再统一 merge，避免 catalog 引用尚未存在的图片对象。
         setStatus('Saving sub-gallery');
         const mergeResponse = await fetchWithRetry(`/api/style-gallery/examples/${slug}`, {
           method: 'POST',
@@ -432,7 +439,7 @@ export default function StyleGalleryExamples({ slug, title, initialExamples, upl
       try {
         localStorage.setItem(TOKEN_STORAGE_KEY, token);
       } catch {
-        // Upload success must not be reported as a failure when browser storage is unavailable.
+        // 浏览器存储不可用不应把已经完成的上传误报为失败。
       }
       const skipped = prepared.filter((upload) => upload.duplicate).length;
       const statusParts = [

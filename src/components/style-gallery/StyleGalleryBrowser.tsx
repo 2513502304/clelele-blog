@@ -50,6 +50,10 @@ function normalize(value: string) {
   return value.toLowerCase().trim();
 }
 
+/**
+ * Gallery 主预览页：在 catalog 的完整 prompt 上搜索，再执行标签筛选、排序和本地分页。
+ * 搜索和复制都不读取详情 item，避免每张卡片额外访问 HF。
+ */
 export default function StyleGalleryBrowser({ items, tags, galleryBasePath, labels }: StyleGalleryBrowserProps) {
   const [query, setQuery] = useState('');
   const [activeTag, setActiveTag] = useState<string>('all');

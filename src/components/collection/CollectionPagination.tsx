@@ -11,6 +11,10 @@ interface CollectionPaginationSettingsProps {
   onPageSizeChange: (pageSize: number) => void;
 }
 
+/**
+ * 分页模式和每页数量控件。
+ * 编辑期间保留用户输入的原始文本，合法值即时生效；失焦时再夹紧越界数字，避免 UI 显示值与实际页大小不一致。
+ */
 export function CollectionPaginationSettings({
   isPaginated,
   pageSize,
@@ -103,6 +107,7 @@ interface CollectionPaginatorProps {
   onPageChange: (page: number) => void;
 }
 
+/** 只展示首尾页和当前页附近页码，跳过的连续区间用省略号表示。 */
 export function CollectionPaginator({ currentPage, totalPages, onPageChange }: CollectionPaginatorProps) {
   const { t } = useTranslation();
 

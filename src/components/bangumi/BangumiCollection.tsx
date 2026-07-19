@@ -41,6 +41,12 @@ interface BangumiCollectionProps {
   userId: string;
 }
 
+/**
+ * 追番页的交互容器。
+ *
+ * `useBangumiData` 先取得各作品类型的完整收藏，再依次执行标签页筛选、收藏状态筛选、排序和本地分页；
+ * 因此“每页数量”只影响渲染数量，不会改变 Bangumi 数据的抓取范围。
+ */
 export function BangumiCollection({ userId }: BangumiCollectionProps) {
   const { t } = useTranslation();
   const { data, isLoading, error, retry } = useBangumiData(userId);
@@ -80,6 +86,7 @@ export function BangumiCollection({ userId }: BangumiCollectionProps) {
     () => sortBangumiCollectionItems(filteredItems, sortKey, sortDirection),
     [filteredItems, sortDirection, sortKey],
   );
+  // 分页状态持久化到浏览器；输入集合已经完成筛选和排序，切页不会触发额外 API 请求。
   const { currentPage, isPaginated, pageSize, setCurrentPage, setIsPaginated, setPageSize, totalPages, visibleItems } =
     useCollectionPagination(sortedItems, 'bangumi-pagination-settings');
 

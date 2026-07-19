@@ -12,7 +12,10 @@ interface ProgressiveListState {
   count: number;
 }
 
-/** Progressively mounts large collections before the user reaches their end. */
+/**
+ * 分批挂载大型列表，并在观察点进入预加载距离时自动扩充下一批。
+ * 筛选或排序改变 `resetKey` 后立即回到首批，既稳定网格顺序，也避免一次创建全部图片节点。
+ */
 export function useProgressiveList<T>(items: T[], options: ProgressiveListOptions) {
   const { initialCount, batchSize, resetKey, rootMargin = '800px 0px' } = options;
   const [state, setState] = useState<ProgressiveListState>(() => ({ resetKey, count: initialCount }));

@@ -41,6 +41,10 @@ function reportUrlStateError(error: unknown) {
   console.error('Failed to update style gallery image index URL state:', error);
 }
 
+/**
+ * 高密度图片矩阵。筛选和排序后采用渐进挂载，未挂载的图片不会发出请求；已挂载卡片使用固定比例占位，
+ * 防止后到图片改变网格位置。
+ */
 function StyleGalleryImageIndexContent({ items, galleryBasePath, labels }: StyleGalleryImageIndexProps) {
   const [query, setQuery] = useQueryState('q', parseAsString.withDefault(''));
   const [sortKey, setSortKey] = useQueryState('sort', parseAsStringLiteral(sortKeys).withDefault('default'));

@@ -72,6 +72,10 @@ export const styleGalleryExampleIndexSchema = z.object({
   ),
 });
 
+/**
+ * 从完整 item 派生列表索引条目。
+ * 这里有意只保留 `exampleCount`，示例明细由详情 item 和独立示例索引负责。
+ */
 export function toStyleGalleryCatalogItem(
   item: StoredStyleGalleryItem,
   exampleCount = item.examples.length,

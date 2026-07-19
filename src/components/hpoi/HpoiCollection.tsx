@@ -43,6 +43,12 @@ const SORT_OPTIONS: Array<{ key: HpoiSortKey; label: TranslationKey }> = [
   { key: 'releaseDate', label: 'hpoi.sortReleaseDate' },
 ];
 
+/**
+ * 手办收藏页的客户端交互容器。
+ *
+ * `/api/hpoi` 先在服务端抓取全部状态及其懒加载分页，本组件只在完整快照上切换状态、排序和本地分页；
+ * 因此用户配置的每页数量不会改变 Hpoi 上游请求参数或遗漏第 21 条之后的数据。
+ */
 export function HpoiCollection() {
   const { t, locale } = useTranslation();
   const [data, setData] = useState<HpoiCollectionResponse | null>(null);
@@ -75,6 +81,7 @@ export function HpoiCollection() {
     () => (data ? sortHpoiCollectionItems(data.collections[activeState], sortKey, sortDirection) : []),
     [activeState, data, sortDirection, sortKey],
   );
+  // 本地分页设置持久化到浏览器；切页不重新抓取 Hpoi。
   const { currentPage, isPaginated, pageSize, setCurrentPage, setIsPaginated, setPageSize, totalPages, visibleItems } =
     useCollectionPagination(activeItems, 'hpoi-pagination-settings');
 

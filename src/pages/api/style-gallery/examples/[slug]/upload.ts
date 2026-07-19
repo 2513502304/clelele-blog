@@ -98,6 +98,10 @@ async function handleChunkUpload(request: Request, url: URL): Promise<Response> 
   return Response.json({ key, partIndex, size: bytes.length });
 }
 
+/**
+ * 校验分块 manifest、逐块复核大小与哈希，再在服务端组合并复核完整文件 SHA-256。
+ * 正式对象以内容哈希命名，可直接复用已有对象；临时分块无论成功或中止都由调用链清理。
+ */
 async function handleCompleteUpload(rawBody: unknown): Promise<Response> {
   const body = completeSchema.parse(rawBody);
   const expectedPartCount = getStyleGalleryUploadPartCount(body.size);

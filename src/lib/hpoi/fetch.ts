@@ -35,7 +35,12 @@ function createCollectionPageBody(collectionUrl: string, page: number, pageCount
   return params;
 }
 
-/** Fetch one complete Hpoi collection state, including pages loaded by Hpoi's scroll handler. */
+/**
+ * 获取某个 Hpoi 收藏状态的完整条目集合。
+ *
+ * 第 1 页使用公开收藏页 GET 请求，后续页复用页面滚动加载器的 POST 参数并发获取。页数来自首屏脚本，
+ * 同时受 `MAX_COLLECTION_PAGES` 限制，避免上游页面结构异常时发出失控请求。最终按 Hpoi ID 去重并保留首次顺序。
+ */
 export async function fetchHpoiCollectionState(
   userId: string,
   state: HpoiCollectionState,
@@ -80,7 +85,12 @@ function createFallbackProfile(userId: string): HpoiProfile {
   };
 }
 
-/** Fetch an Hpoi profile and all configured collection states in parallel. */
+/**
+ * 并发获取公开个人资料与全部收藏状态。
+ *
+ * 单个状态失败会以 `warnings` 返回，其余状态仍可展示；只有全部收藏状态都失败时才整体报错。
+ * 个人资料失败则使用不含统计值的占位资料，不阻断收藏列表。
+ */
 export async function fetchHpoiCollection(userId: string): Promise<HpoiCollectionResponse> {
   const profilePromise = fetchHtml(createHpoiProfileUrl(userId)).then((html) => parseHpoiProfile(html, userId));
   const collectionPromises = HPOI_COLLECTION_STATES.map(async (state) => {

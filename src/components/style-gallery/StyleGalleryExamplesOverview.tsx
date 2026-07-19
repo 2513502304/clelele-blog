@@ -25,6 +25,10 @@ const INITIAL_EXAMPLE_COUNT = 24;
 const EXAMPLE_BATCH_SIZE = 24;
 const EAGER_EXAMPLE_COUNT = 8;
 
+/**
+ * 跨 item 的 Sub-gallery 总览。数据来自轻量示例索引，并采用固定比例卡片与渐进挂载，
+ * 因此慢图片只会在预留区域内补齐，不会把已经显示的卡片重新排位。
+ */
 export default function StyleGalleryExamplesOverview({ examples, galleryBasePath, locale, labels }: Props) {
   const [platform, setPlatform] = useState('all');
   const [query, setQuery] = useState('');

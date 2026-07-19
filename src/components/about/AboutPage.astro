@@ -12,6 +12,7 @@ const characterLabel = process.env.ANIME_QUOTE_CHARACTER_LABEL?.trim();
 let quote = FALLBACK_QUOTE;
 let displayedCharacter = characterLabel || character;
 
+// 名言在 SSR 阶段获取，避免客户端先出现空白再回填；上游不可用时仍完整渲染关于页面。
 try {
   const result = await fetchCharacterQuote(character, { retries: 0, timeoutMs: 1_500 });
   quote = result.quote;

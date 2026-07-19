@@ -12,9 +12,8 @@ function isAllowedImageKey(key: string): boolean {
 const DEVELOPMENT_IMAGE_TIMEOUT_MS = 30_000;
 
 /**
- * Astro's development audit fetches image URLs and cannot follow the HF redirect
- * because the bucket response has no CORS headers. Proxy only in development so
- * local audits stay same-origin; production keeps the bandwidth-efficient redirect.
+ * Astro 开发审计会主动 fetch 图片，无法跨越不带 CORS 响应头的 HF 重定向。
+ * 因此仅在开发环境同源代理图片；生产环境继续使用省带宽的签名 URL 重定向。
  */
 async function proxyDevelopmentImage(signedUrl: string): Promise<Response> {
   const upstream = await fetch(signedUrl, {
