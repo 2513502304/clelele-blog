@@ -19,6 +19,12 @@ export interface CharacterQuote {
   show: string;
 }
 
+/**
+ * 名言请求的可测试配置。
+ *
+ * 注入 `fetcher` 时应在多次调用间复用同一个函数引用；缓存和并发合并以该引用区分数据源，
+ * 每次创建新的包装函数会得到彼此隔离的缓存。
+ */
 interface FetchCharacterQuoteOptions {
   cacheTtlMs?: number;
   fetcher?: typeof fetch;
@@ -34,6 +40,8 @@ interface QuoteCacheEntry {
   quotes: CharacterQuote[];
 }
 
+// WeakMap 同时隔离生产 fetch 与测试注入的 fetcher。自定义 fetcher 只有在多次调用间保持同一函数引用，
+// 才能共享缓存并合并并发请求；每次临时创建包装函数会被视为不同的数据源。
 const quoteCaches = new WeakMap<typeof fetch, Map<string, QuoteCacheEntry>>();
 const inflightRequests = new WeakMap<typeof fetch, Map<string, Promise<CharacterQuote[]>>>();
 
@@ -62,6 +70,15 @@ function getFetcherMap<T>(store: WeakMap<typeof fetch, Map<string, T>>, fetcher:
   const created = new Map<string, T>();
   store.set(fetcher, created);
   return created;
+}
+
+/**
+ * 为调用方创建可独立修改的深度足够副本。
+ *
+ * `CharacterQuote` 目前只有字符串字段，因此逐项浅拷贝即可切断数组和元素对象与长期缓存之间的共享引用。
+ */
+function cloneCharacterQuotes(quotes: CharacterQuote[]): CharacterQuote[] {
+  return quotes.map((quote) => ({ ...quote }));
 }
 
 async function requestCharacterQuotes(character: string, options: FetchCharacterQuoteOptions = {}): Promise<CharacterQuote[]> {
@@ -110,7 +127,12 @@ async function requestCharacterQuotes(character: string, options: FetchCharacter
   throw new CharacterQuoteError('Yurippe is temporarily unavailable.');
 }
 
-/** Returns the validated quote collection, cached per character for the current server instance. */
+/**
+ * 获取并校验指定角色的全部名言，并在当前服务实例内按角色缓存。
+ *
+ * 返回值是缓存数据的副本，调用方可以修改数组或元素而不会污染后续请求。缓存只存在于当前
+ * 服务实例的内存中，不作为跨实例的一致性存储。
+ */
 export async function fetchCharacterQuotes(
   character: string,
   options: FetchCharacterQuoteOptions = {},
@@ -125,12 +147,12 @@ export async function fetchCharacterQuotes(
   const cache = getFetcherMap(quoteCaches, fetcher);
   const cached = cache.get(normalizedCharacter);
   const currentTime = now();
-  if (cached && cached.expiresAt > currentTime) return cached.quotes;
+  if (cached && cached.expiresAt > currentTime) return cloneCharacterQuotes(cached.quotes);
   if (cached) cache.delete(normalizedCharacter);
 
   const pending = getFetcherMap(inflightRequests, fetcher);
   const existingRequest = pending.get(normalizedCharacter);
-  if (existingRequest) return existingRequest;
+  if (existingRequest) return cloneCharacterQuotes(await existingRequest);
 
   const request = requestCharacterQuotes(normalizedCharacter, options);
   pending.set(normalizedCharacter, request);
@@ -138,13 +160,13 @@ export async function fetchCharacterQuotes(
   try {
     const quotes = await request;
     if (cacheTtlMs > 0) cache.set(normalizedCharacter, { expiresAt: currentTime + cacheTtlMs, quotes });
-    return quotes;
+    return cloneCharacterQuotes(quotes);
   } finally {
     pending.delete(normalizedCharacter);
   }
 }
 
-/** Selects one quote locally from the cached Yurippe collection. */
+/** 从已缓存的角色名言全集中本地随机选择一条，不为每次页面刷新重复请求 Yurippe。 */
 export async function fetchCharacterQuote(
   character: string,
   options: FetchCharacterQuoteOptions = {},

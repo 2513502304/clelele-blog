@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { CharacterQuoteError, fetchCharacterQuote } from './character-quote';
+import { CharacterQuoteError, fetchCharacterQuote, fetchCharacterQuotes } from './character-quote';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return Response.json(body, { status });
@@ -53,6 +53,45 @@ describe('fetchCharacterQuote', () => {
     assert.equal(second.quote, 'Second quote');
   });
 
+  it('refreshes the collection after its cache TTL expires', async () => {
+    let attempts = 0;
+    let currentTime = 1_000;
+    const fetcher = async () => {
+      attempts += 1;
+      return jsonResponse([{ character: 'Yukino', quote: `Quote ${attempts}`, show: 'Oregairu' }]);
+    };
+    const options = {
+      cacheTtlMs: 30_000,
+      fetcher,
+      now: () => currentTime,
+    };
+
+    const cached = await fetchCharacterQuote('Yukino TTL', options);
+    currentTime += 30_001;
+    const refreshed = await fetchCharacterQuote('Yukino TTL', options);
+
+    assert.equal(attempts, 2);
+    assert.equal(cached.quote, 'Quote 1');
+    assert.equal(refreshed.quote, 'Quote 2');
+  });
+
+  it('does not expose mutable references owned by the cache', async () => {
+    let attempts = 0;
+    const fetcher = async () => {
+      attempts += 1;
+      return jsonResponse([{ character: 'Yukino', quote: 'Original quote', show: 'Oregairu' }]);
+    };
+
+    const first = await fetchCharacterQuotes('Yukino copy isolation', { fetcher });
+    first[0].quote = 'Mutated quote';
+    first.push({ character: 'Yukino', quote: 'Injected quote', show: 'Oregairu' });
+    const second = await fetchCharacterQuotes('Yukino copy isolation', { fetcher });
+
+    assert.equal(attempts, 1);
+    assert.equal(second.length, 1);
+    assert.equal(second[0].quote, 'Original quote');
+  });
+
   it('coalesces concurrent cache misses for the same character', async () => {
     let attempts = 0;
     const fetcher = async () => {
@@ -62,13 +101,13 @@ describe('fetchCharacterQuote', () => {
     };
 
     const [first, second] = await Promise.all([
-      fetchCharacterQuote('Yukino concurrent', { fetcher }),
-      fetchCharacterQuote('Yukino concurrent', { fetcher }),
+      fetchCharacterQuotes('Yukino concurrent', { fetcher }),
+      fetchCharacterQuotes('Yukino concurrent', { fetcher }),
     ]);
+    first[0].quote = 'Mutated concurrent quote';
 
     assert.equal(attempts, 1);
-    assert.equal(first.quote, 'Shared quote');
-    assert.equal(second.quote, 'Shared quote');
+    assert.equal(second[0].quote, 'Shared quote');
   });
 
   it('retries transient failures before returning a validated quote', async () => {
