@@ -3,6 +3,7 @@ import { Icon } from '@iconify/react';
 import { parseAsString, parseAsStringLiteral, useQueryState } from 'nuqs';
 import { NuqsAdapter } from 'nuqs/adapters/react';
 import { useMemo } from 'react';
+import { useProgressiveList } from '@/hooks/useProgressiveList';
 import type { StyleGalleryCardData } from '@/types/style-gallery';
 
 interface StyleGalleryImageIndexProps {
@@ -23,11 +24,14 @@ export interface StyleGalleryImageIndexLabels {
   imageCount: string;
   noMatches: string;
   view: string;
+  loadMore: string;
 }
 
 const sortKeys = ['default', 'date', 'id', 'examples'] as const;
 const sortDirections = ['asc', 'desc'] as const;
 type SortKey = (typeof sortKeys)[number];
+const INITIAL_INDEX_ITEM_COUNT = 120;
+const INDEX_ITEM_BATCH_SIZE = 120;
 
 function normalize(value: string) {
   return value.toLowerCase().trim();
@@ -67,6 +71,16 @@ function StyleGalleryImageIndexContent({ items, galleryBasePath, labels }: Style
 
     return sortDirection === 'desc' ? sorted.reverse() : sorted;
   }, [items, query, sortDirection, sortKey]);
+  const {
+    hasMore,
+    loadMore,
+    loadMoreRef,
+    visibleItems: renderedItems,
+  } = useProgressiveList(visibleItems, {
+    initialCount: INITIAL_INDEX_ITEM_COUNT,
+    batchSize: INDEX_ITEM_BATCH_SIZE,
+    resetKey: `${query.trim().toLowerCase()}\u0000${sortKey}\u0000${sortDirection}`,
+  });
 
   return (
     <section className="space-y-4" aria-label="Image style prompt gallery index">
@@ -119,40 +133,56 @@ function StyleGalleryImageIndexContent({ items, galleryBasePath, labels }: Style
       </div>
 
       {visibleItems.length ? (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(92px,1fr))] gap-2.5 md:grid-cols-[repeat(auto-fill,minmax(76px,1fr))] md:gap-2">
-          {visibleItems.map((item, index) => (
-            <a
-              key={item.slug}
-              href={`${galleryBasePath}/${item.slug}`}
-              data-astro-prefetch="false"
-              className="group relative aspect-square min-w-0 overflow-hidden rounded-md border border-border bg-muted shadow-sm transition hover:z-10 hover:-translate-y-0.5 hover:border-primary/60 hover:shadow-md focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-              aria-label={`${labels.view}: ${item.title}`}
-              title={item.title}
-            >
-              <img
-                src={item.thumbnailImage ?? item.sourceImage}
-                alt={item.sourceImageAlt ?? item.title}
-                loading={index < 24 ? 'eager' : 'lazy'}
-                decoding="async"
-                className="h-full w-full object-cover transition duration-200 group-hover:scale-105"
-              />
-              <span className="absolute top-1 left-1 rounded-sm bg-black/65 px-1 py-0.5 font-mono text-[9px] text-white tabular-nums">
-                {String(index + 1).padStart(3, '0')}
-              </span>
-              {item.imageCount > 1 && (
-                <span
-                  className="absolute top-1 right-1 flex min-w-5 items-center justify-center rounded-sm bg-sky-500/90 px-1 py-0.5 font-bold text-[9px] text-white"
-                  title={labels.imageCount.replace('{count}', String(item.imageCount))}
-                >
-                  ×{item.imageCount}
+        <>
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(92px,1fr))] gap-2.5 md:grid-cols-[repeat(auto-fill,minmax(76px,1fr))] md:gap-2">
+            {renderedItems.map((item, index) => (
+              <a
+                key={item.slug}
+                href={`${galleryBasePath}/${item.slug}`}
+                data-astro-prefetch="false"
+                className="group relative aspect-square min-w-0 overflow-hidden rounded-md border border-border bg-muted shadow-sm transition hover:z-10 hover:-translate-y-0.5 hover:border-primary/60 hover:shadow-md focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                aria-label={`${labels.view}: ${item.title}`}
+                title={item.title}
+              >
+                <img
+                  src={item.thumbnailImage ?? item.sourceImage}
+                  alt={item.sourceImageAlt ?? item.title}
+                  width={1}
+                  height={1}
+                  loading={index < 24 ? 'eager' : 'lazy'}
+                  fetchPriority={index < 12 ? 'high' : 'auto'}
+                  decoding="async"
+                  className="h-full w-full object-cover transition duration-200 group-hover:scale-105"
+                />
+                <span className="absolute top-1 left-1 rounded-sm bg-black/65 px-1 py-0.5 font-mono text-[9px] text-white tabular-nums">
+                  {String(index + 1).padStart(3, '0')}
                 </span>
-              )}
-              <span className="absolute inset-x-0 bottom-0 truncate bg-black/70 px-1.5 py-1 font-mono text-[9px] text-white">
-                {item.imageHash.slice(0, 12)}
-              </span>
-            </a>
-          ))}
-        </div>
+                {item.imageCount > 1 && (
+                  <span
+                    className="absolute top-1 right-1 flex min-w-5 items-center justify-center rounded-sm bg-sky-500/90 px-1 py-0.5 font-bold text-[9px] text-white"
+                    title={labels.imageCount.replace('{count}', String(item.imageCount))}
+                  >
+                    ×{item.imageCount}
+                  </span>
+                )}
+                <span className="absolute inset-x-0 bottom-0 truncate bg-black/70 px-1.5 py-1 font-mono text-[9px] text-white">
+                  {item.imageHash.slice(0, 12)}
+                </span>
+              </a>
+            ))}
+          </div>
+          {hasMore && (
+            <div ref={loadMoreRef} className="flex justify-center pt-2">
+              <button
+                type="button"
+                onClick={loadMore}
+                className="rounded-md border border-border bg-background px-4 py-2 font-medium text-muted-foreground text-sm transition hover:border-primary/40 hover:text-foreground"
+              >
+                {labels.loadMore}
+              </button>
+            </div>
+          )}
+        </>
       ) : (
         <div className="flex min-h-52 items-center justify-center rounded-lg border border-border border-dashed px-6 text-center text-muted-foreground text-sm">
           {labels.noMatches}

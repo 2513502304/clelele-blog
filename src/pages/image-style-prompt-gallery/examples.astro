@@ -22,6 +22,7 @@ const overviewLabels = {
   allPlatforms: t(locale, 'gallery.examplesAllPlatforms'),
   otherPlatform: t(locale, 'gallery.examplesOtherPlatform'),
   noMatches: t(locale, 'gallery.examplesNoMatches'),
+  loadMore: t(locale, 'search.loadMore'),
 };
 Astro.response.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=300');
 ---
@@ -42,7 +43,13 @@ Astro.response.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-re
         </div>
         <span class="font-black text-3xl text-primary tabular-nums">{examples.length}</span>
       </header>
-      <StyleGalleryExamplesOverview client:load examples={examples} galleryBasePath={galleryBasePath} labels={overviewLabels} />
+      <StyleGalleryExamplesOverview
+        client:load
+        examples={examples}
+        galleryBasePath={galleryBasePath}
+        locale={locale}
+        labels={overviewLabels}
+      />
     </div>
   </TwoColumnLayout>
 </Layout>
