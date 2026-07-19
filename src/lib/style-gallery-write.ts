@@ -258,7 +258,7 @@ async function validateItemAssets(items: StoredStyleGalleryItem[]): Promise<void
   });
 }
 
-/** 写后确认所有非草稿 item 已进入 catalog，防止详情成功但列表索引遗漏。 */
+/** 写后确认本次提交的所有非草稿 item 已进入 catalog，防止详情成功但列表索引遗漏。 */
 function assertCatalogContains(catalog: StyleGalleryCatalog, items: StoredStyleGalleryItem[]): void {
   const savedHashes = new Set(catalog.items.map((item) => item.imageHash));
   const missing = items.filter((item) => !savedHashes.has(item.imageHash));

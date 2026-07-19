@@ -11,7 +11,7 @@ export class StyleGalleryClientError extends Error {
   }
 }
 
-/** 只转换已知客户端错误；未知异常返回 `null`，由路由记录并按服务端故障处理。 */
+/** 只转换已知客户端错误；未知异常返回 `null`，由调用路由自行决定服务端错误响应。 */
 export function getStyleGalleryClientErrorResponse(error: unknown): Response | null {
   return error instanceof StyleGalleryClientError ? new Response(error.message, { status: error.status }) : null;
 }

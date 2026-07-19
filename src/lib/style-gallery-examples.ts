@@ -11,7 +11,7 @@ export function mergeStyleGalleryExamples(examples: StyleGalleryExample[]): Styl
   return [...byIdentity.values()];
 }
 
-/** 示例身份包含平台，因此同一张图可以在不同平台分组中各保留一份。 */
+/** 示例身份由规范化后的 `model` 与图片哈希组成，因此同一张图可在不同 model 分组中各保留一份。 */
 export function getStyleGalleryExampleIdentity(example: StyleGalleryExample): string {
   return `${example.model.trim().toLowerCase()}::${example.imageHash}`;
 }

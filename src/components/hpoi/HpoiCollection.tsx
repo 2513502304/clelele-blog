@@ -46,8 +46,8 @@ const SORT_OPTIONS: Array<{ key: HpoiSortKey; label: TranslationKey }> = [
 /**
  * 手办收藏页的客户端交互容器。
  *
- * `/api/hpoi` 先在服务端抓取全部状态及其懒加载分页，本组件只在完整快照上切换状态、排序和本地分页；
- * 因此用户配置的每页数量不会改变 Hpoi 上游请求参数或遗漏第 21 条之后的数据。
+ * `/api/hpoi` 先在服务端抓取全部状态及首屏元数据可发现的懒加载分页，本组件再切换状态、排序和本地分页；
+ * 因此用户配置的每页数量不会改变 Hpoi 上游请求，但抓取完整性仍取决于 Hpoi 是否提供可解析的页数元数据。
  */
 export function HpoiCollection() {
   const { t, locale } = useTranslation();

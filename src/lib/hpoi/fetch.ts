@@ -36,10 +36,11 @@ function createCollectionPageBody(collectionUrl: string, page: number, pageCount
 }
 
 /**
- * 获取某个 Hpoi 收藏状态的完整条目集合。
+ * 获取某个 Hpoi 收藏状态中能够发现的条目集合。
  *
  * 第 1 页使用公开收藏页 GET 请求，后续页复用页面滚动加载器的 POST 参数并发获取。页数来自首屏脚本，
- * 同时受 `MAX_COLLECTION_PAGES` 限制，避免上游页面结构异常时发出失控请求。最终按 Hpoi ID 去重并保留首次顺序。
+ * 同时受 `MAX_COLLECTION_PAGES` 限制；脚本缺少页数元数据时只能按首屏处理，不能保证发现后续条目。
+ * 最终按 Hpoi ID 去重并保留首次顺序。
  */
 export async function fetchHpoiCollectionState(
   userId: string,
