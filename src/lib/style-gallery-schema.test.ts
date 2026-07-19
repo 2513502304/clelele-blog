@@ -5,6 +5,13 @@ import type { StoredStyleGalleryItem } from '@/types/style-gallery';
 import { mapWithConcurrency } from './map-with-concurrency';
 import { assertStyleGalleryItemConsistency, getStyleGalleryItemAssetKeys } from './style-gallery-assets';
 import { isAuthorizedStyleGalleryRequest } from './style-gallery-auth';
+import {
+  getStyleGalleryUploadPartCount,
+  getStyleGalleryUploadPartKey,
+  isStyleGalleryUploadId,
+  MAX_STYLE_GALLERY_UPLOAD_PARTS,
+  STYLE_GALLERY_UPLOAD_CHUNK_SIZE,
+} from './style-gallery-chunk-upload';
 import { getStyleGalleryClientErrorResponse, StyleGalleryClientError } from './style-gallery-errors';
 import { getStyleGalleryExampleKey, getStyleGalleryExampleObjectKey } from './style-gallery-example-upload';
 import { mergeStyleGalleryExamples, removeStyleGalleryExamples } from './style-gallery-examples';
@@ -143,5 +150,25 @@ describe('style gallery write authorization', () => {
       if (previous === undefined) delete process.env.STYLE_GALLERY_UPLOAD_TOKEN;
       else process.env.STYLE_GALLERY_UPLOAD_TOKEN = previous;
     }
+  });
+});
+
+describe('style gallery chunk uploads', () => {
+  it('keeps every upload request below the Vercel Function payload limit', () => {
+    assert.equal(STYLE_GALLERY_UPLOAD_CHUNK_SIZE, 4 * 1024 * 1024);
+    assert.equal(getStyleGalleryUploadPartCount(STYLE_GALLERY_UPLOAD_CHUNK_SIZE), 1);
+    assert.equal(getStyleGalleryUploadPartCount(STYLE_GALLERY_UPLOAD_CHUNK_SIZE + 1), 2);
+    assert.equal(getStyleGalleryUploadPartCount(12 * 1024 * 1024), MAX_STYLE_GALLERY_UPLOAD_PARTS);
+    assert.throws(() => getStyleGalleryUploadPartCount(0), /Invalid style gallery upload size/);
+    assert.throws(() => getStyleGalleryUploadPartCount(12 * 1024 * 1024 + 1), /Invalid style gallery upload size/);
+  });
+
+  it('uses traversal-safe temporary object keys', () => {
+    const uploadId = '019f4f58-103a-7ac1-9f5e-6e27c9712154';
+    assert.equal(isStyleGalleryUploadId(uploadId), true);
+    assert.equal(getStyleGalleryUploadPartKey(uploadId, 2), 'examples/uploads/019f4f58103a7ac19f5e6e27c9712154/02.part');
+    assert.equal(isStyleGalleryUploadId('../metadata/catalog.json'), false);
+    assert.throws(() => getStyleGalleryUploadPartKey('../metadata/catalog.json', 0), /Invalid style gallery upload ID/);
+    assert.throws(() => getStyleGalleryUploadPartKey(uploadId, MAX_STYLE_GALLERY_UPLOAD_PARTS), /part index/);
   });
 });
