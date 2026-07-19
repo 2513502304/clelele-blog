@@ -1,5 +1,6 @@
 import type { StyleGalleryExample, StyleGalleryExampleIndexEntry, StyleGalleryExampleIndexGroup } from '@/types/style-gallery';
 
+/** 按“平台 + 图片哈希”合并示例，后出现的元数据覆盖同一身份的旧值。 */
 export function mergeStyleGalleryExamples(examples: StyleGalleryExample[]): StyleGalleryExample[] {
   const byIdentity = new Map<string, StyleGalleryExample>();
   for (const example of examples) {
@@ -10,10 +11,12 @@ export function mergeStyleGalleryExamples(examples: StyleGalleryExample[]): Styl
   return [...byIdentity.values()];
 }
 
+/** 示例身份由规范化后的 `model` 与图片哈希组成，因此同一张图可在不同 model 分组中各保留一份。 */
 export function getStyleGalleryExampleIdentity(example: StyleGalleryExample): string {
   return `${example.model.trim().toLowerCase()}::${example.imageHash}`;
 }
 
+/** 将详情示例裁剪为总览索引需要的最小字段。 */
 export function toStyleGalleryExampleIndexEntry(example: StyleGalleryExample): StyleGalleryExampleIndexEntry {
   return {
     id: example.id,

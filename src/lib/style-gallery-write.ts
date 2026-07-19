@@ -41,6 +41,10 @@ interface UpdateExamplesResult {
   index: StyleGalleryExampleIndex;
 }
 
+/**
+ * 在单个服务实例内串行执行 Gallery 元数据写入，避免 catalog 的读-改-写相互覆盖。
+ * 该队列不是跨实例分布式锁，因此每次操作仍需使用强制刷新、写后校验和回滚保护一致性。
+ */
 export function serializeStyleGalleryWrite<T>(operation: () => Promise<T>): Promise<T> {
   const result = writeQueue.then(operation, operation);
   writeQueue = result.then(
@@ -50,6 +54,12 @@ export function serializeStyleGalleryWrite<T>(operation: () => Promise<T>): Prom
   return result;
 }
 
+/**
+ * 写入新 item 或更新既有 item。
+ *
+ * 流程固定为：校验元数据和图片对象存在 -> 保存详情快照 -> 更新 catalog 与示例索引 -> 重新读取验证。
+ * 任一步失败都会尽力恢复旧详情和索引；生成示例必须走专用 endpoint，避免导入覆盖已有 Sub-gallery。
+ */
 export async function writeStyleGalleryItems(
   submittedItems: StoredStyleGalleryItem[],
   mode: 'create' | 'upsert',
@@ -187,7 +197,10 @@ export async function reconcileStyleGalleryExampleCounts(): Promise<{ checked: n
   });
 }
 
-/** Commits one item's examples and both derived indexes as a rollback-capable metadata transaction. */
+/**
+ * 将单个 item 的 examples、catalog 计数和总览索引作为一组可回滚元数据提交。
+ * 图片对象的创建/删除在调用方完成；本函数只负责三份元数据视图保持一致。
+ */
 export async function updateStyleGalleryItemExamples(
   slug: string,
   transform: (examples: StyleGalleryExample[], item: StoredStyleGalleryItem) => StyleGalleryExample[],
@@ -245,6 +258,7 @@ async function validateItemAssets(items: StoredStyleGalleryItem[]): Promise<void
   });
 }
 
+/** 写后确认本次提交的所有非草稿 item 已进入 catalog，防止详情成功但列表索引遗漏。 */
 function assertCatalogContains(catalog: StyleGalleryCatalog, items: StoredStyleGalleryItem[]): void {
   const savedHashes = new Set(catalog.items.map((item) => item.imageHash));
   const missing = items.filter((item) => !savedHashes.has(item.imageHash));

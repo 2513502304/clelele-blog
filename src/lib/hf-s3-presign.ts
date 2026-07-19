@@ -204,14 +204,23 @@ export async function deleteStyleGalleryObject(key: string): Promise<void> {
 }
 
 export async function getStyleGalleryObjectText(key: string): Promise<string | null> {
+  const bytes = await getStyleGalleryObjectBytes(key, REQUEST_TIMEOUT_MS);
+  return bytes ? new TextDecoder().decode(bytes) : null;
+}
+
+/** Reads a binary object with a fresh timeout for every storage retry attempt. */
+export async function getStyleGalleryObjectBytes(
+  key: string,
+  timeoutMs = OBJECT_TRANSFER_TIMEOUT_MS,
+): Promise<Uint8Array | null> {
   return withRequestRetry(`read HF S3 object "${key}"`, async () => {
     const response = await fetch(createStyleGallerySignedImageUrl(key), {
       cache: 'no-store',
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (response.status === 404 || response.status === 403) return null;
     if (!response.ok) throw await createRequestError(response, `Failed to read HF S3 object "${key}"`);
-    return response.text();
+    return new Uint8Array(await response.arrayBuffer());
   });
 }
 

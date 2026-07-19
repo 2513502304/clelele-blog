@@ -11,6 +11,7 @@ export function getStyleGalleryAssetKey(path: string): string {
   return key;
 }
 
+/** 收集 item 中去重后的原图与缩略图对象键，用于写入前 HEAD 校验和失败清理。 */
 export function getStyleGalleryItemAssetKeys(item: StoredStyleGalleryItem): string[] {
   const paths = item.images
     .flatMap((image) => [image.sourceImage, image.thumbnailImage])
@@ -22,6 +23,12 @@ export function isStyleGalleryAssetKey(key: string): boolean {
   return ASSET_KEY_PATTERN.test(key);
 }
 
+/**
+ * 校验 item 元数据与图片资产命名的不变量。
+ *
+ * 顶层图片必须等于 `images[0]`，文件名前缀必须来自对应 SHA-256；多图 item 的总哈希按图片输入顺序
+ * 拼接各图哈希后再次计算。该顺序不可随意排序，否则会改变 item 身份。
+ */
 export function assertStyleGalleryItemConsistency(item: StoredStyleGalleryItem): void {
   const firstImage = item.images[0];
   if (

@@ -11,10 +11,15 @@ let catalogCache: { value: StyleGalleryCatalog; expiresAt: number } | null = nul
 let exampleIndexCache: { value: StyleGalleryExampleIndex; expiresAt: number } | null = null;
 const itemCache = new Map<string, { value: StoredStyleGalleryItem; expiresAt: number }>();
 
+/** 将经过校验的 slug 转换为 HF 中的详情对象键。 */
 export function getStyleGalleryItemKey(slug: string): string {
   return `${STYLE_GALLERY_ITEM_PREFIX}/${slug}.json`;
 }
 
+/**
+ * 读取并校验 Gallery catalog。短期内存缓存减少 HF 往返；非强制刷新失败时允许返回已有旧值，
+ * 但进程首次读取失败仍会向上抛错，避免把“无数据”误报为有效空列表。
+ */
 export async function getStyleGalleryCatalog(options: { fresh?: boolean } = {}): Promise<StyleGalleryCatalog> {
   const now = Date.now();
   if (!options.fresh && catalogCache && catalogCache.expiresAt > now) return catalogCache.value;
@@ -34,6 +39,7 @@ export async function getStyleGalleryCatalog(options: { fresh?: boolean } = {}):
   }
 }
 
+/** 按需读取单个详情 item，不会为列表页预取所有 item 文件。 */
 export async function getStoredStyleGalleryItem(
   slug: string,
   options: { fresh?: boolean } = {},
@@ -57,6 +63,7 @@ export async function getStoredStyleGalleryItem(
   }
 }
 
+/** 读取 Sub-gallery 总览索引；索引尚未创建时返回带固定版本的空结构。 */
 export async function getStyleGalleryExampleIndex(options: { fresh?: boolean } = {}): Promise<StyleGalleryExampleIndex> {
   const now = Date.now();
   if (!options.fresh && exampleIndexCache && exampleIndexCache.expiresAt > now) return exampleIndexCache.value;
@@ -77,6 +84,7 @@ export async function getStyleGalleryExampleIndex(options: { fresh?: boolean } =
   }
 }
 
+/** 写入前执行 schema 校验，并同步更新当前实例的详情缓存。 */
 export async function putStoredStyleGalleryItem(item: StoredStyleGalleryItem): Promise<void> {
   const value = styleGalleryItemSchema.parse(item);
   await putJson(getStyleGalleryItemKey(value.slug), value);
@@ -95,6 +103,7 @@ export async function putStyleGalleryExampleIndex(index: StyleGalleryExampleInde
   exampleIndexCache = { value, expiresAt: Date.now() + CACHE_TTL_MS };
 }
 
+/** 清除当前实例内所有 Gallery 元数据缓存，供多对象写入完成后强制重新校验。 */
 export function invalidateStyleGalleryStoreCache(): void {
   catalogCache = null;
   exampleIndexCache = null;

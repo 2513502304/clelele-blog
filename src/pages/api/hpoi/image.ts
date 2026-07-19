@@ -4,6 +4,10 @@ import type { APIRoute } from 'astro';
 
 export const prerender = false;
 
+/**
+ * 同源代理 Hpoi 图片，统一补充 Referer、校验响应类型并缓存结果。
+ * 来源白名单由 `isAllowedHpoiImageUrl` 控制，防止该接口退化为任意 URL 代理。
+ */
 export const GET: APIRoute = async ({ url }) => {
   const sourceUrl = url.searchParams.get('source');
   if (!sourceUrl || !isAllowedHpoiImageUrl(sourceUrl)) {

@@ -17,10 +17,12 @@ interface BangumiCardProps {
   item: BangumiUserCollection;
 }
 
+/** 展示 fork 新增的个人评分、站点评分、放送信息和收藏统计，并保留 Bangumi 详情页入口。 */
 export function BangumiCard({ item }: BangumiCardProps) {
   const { t, locale } = useTranslation();
   const { subject } = item;
   const title = subject.name_cn || subject.name;
+  // 用户为收藏设置的标签更能表达个人分类；未设置时才回退到条目的公共标签。
   const tags = item.tags.length > 0 ? item.tags : (subject.tags?.map((tag) => tag.name) ?? []);
   const displayTags = tags.slice(0, 3);
   const overflowCount = tags.length - displayTags.length;

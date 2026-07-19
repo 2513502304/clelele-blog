@@ -1,4 +1,5 @@
 import { Icon } from '@iconify/react';
+import { getStyleGalleryUploadPartCount, STYLE_GALLERY_UPLOAD_CHUNK_SIZE } from '@lib/style-gallery-chunk-upload';
 import { compareStyleGalleryPlatform, STYLE_GALLERY_PLATFORMS } from '@lib/style-gallery-platforms';
 import { openModal } from '@store/modal';
 import { useEffect, useMemo, useState } from 'react';
@@ -33,6 +34,12 @@ interface FileProgress {
   state: 'hashing' | 'ready' | 'uploading' | 'processing' | 'saving' | 'done' | 'skipped' | 'failed';
 }
 
+interface UploadedPart {
+  index: number;
+  size: number;
+  hash: string;
+}
+
 const TOKEN_STORAGE_KEY = 'style-gallery-upload-token';
 const UPLOAD_CONCURRENCY = 5;
 const MAX_UPLOAD_ATTEMPTS = 3;
@@ -47,11 +54,11 @@ function shouldRetryUpload(status: number): boolean {
   return status === 408 || status === 429 || status >= 500;
 }
 
-async function fetchWithRetry(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+async function fetchWithRetry(input: RequestInfo | URL, init?: RequestInit, timeoutMs = REQUEST_TIMEOUT_MS): Promise<Response> {
   let lastError: unknown;
   for (let attempt = 1; attempt <= MAX_UPLOAD_ATTEMPTS; attempt += 1) {
     try {
-      const response = await fetch(input, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+      const response = await fetch(input, { ...init, signal: AbortSignal.timeout(timeoutMs) });
       if (!shouldRetryUpload(response.status) || attempt === MAX_UPLOAD_ATTEMPTS) return response;
       lastError = new Error(`Request failed with ${response.status}`);
     } catch (error) {
@@ -63,26 +70,24 @@ async function fetchWithRetry(input: RequestInfo | URL, init?: RequestInit): Pro
   throw lastError instanceof Error ? lastError : new Error('Request failed');
 }
 
-async function sha256(file: File): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+async function sha256(blob: Blob): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 function uploadWithProgress(
   url: string,
-  file: File,
+  body: Blob,
   token: string,
   onProgress: (loaded: number, total: number) => void,
-  onTransferComplete: () => void,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest();
     request.open('POST', url);
     request.timeout = RAW_UPLOAD_TIMEOUT_MS;
     request.setRequestHeader('Authorization', `Bearer ${token}`);
-    request.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
-    request.upload.onprogress = (event) => onProgress(event.loaded, event.lengthComputable ? event.total : file.size);
-    request.upload.onload = onTransferComplete;
+    request.setRequestHeader('Content-Type', 'application/octet-stream');
+    request.upload.onprogress = (event) => onProgress(event.loaded, event.lengthComputable ? event.total : body.size);
     request.onload = () => {
       if (request.status >= 200 && request.status < 300) resolve();
       else
@@ -92,33 +97,104 @@ function uploadWithProgress(
     };
     request.onerror = () => reject(new TypeError('Network error while uploading'));
     request.ontimeout = () => reject(new DOMException('Upload timed out', 'TimeoutError'));
-    request.send(file);
+    request.send(body);
   });
 }
 
+/** 每个分块独立计算超时和重试次数，某个文件失败不会消耗其他并发文件的重试预算。 */
 async function uploadWithProgressAndRetry(
   url: string,
-  file: File,
+  body: Blob,
   token: string,
   onProgress: (loaded: number, total: number) => void,
-  onTransferComplete: () => void,
 ): Promise<void> {
   let lastError: unknown;
   for (let attempt = 1; attempt <= MAX_UPLOAD_ATTEMPTS; attempt += 1) {
     try {
-      await uploadWithProgress(url, file, token, onProgress, onTransferComplete);
+      await uploadWithProgress(url, body, token, onProgress);
       return;
     } catch (error) {
       lastError = error;
       const status = typeof error === 'object' && error && 'status' in error ? Number(error.status) : 0;
       if ((status && !shouldRetryUpload(status)) || attempt === MAX_UPLOAD_ATTEMPTS) break;
-      onProgress(0, file.size);
+      onProgress(0, body.size);
       await sleep(500 * 2 ** (attempt - 1) + Math.floor(Math.random() * 200));
     }
   }
   throw lastError instanceof Error ? lastError : new Error('Upload failed');
 }
 
+async function uploadFileInChunks(
+  slug: string,
+  platform: string,
+  file: File,
+  imageHash: string,
+  extension: string,
+  token: string,
+  onProgress: (loaded: number, total: number) => void,
+  onProcessing: () => void,
+): Promise<void> {
+  const uploadId = crypto.randomUUID();
+  const partCount = getStyleGalleryUploadPartCount(file.size);
+  const parts: UploadedPart[] = [];
+  const endpoint = `/api/style-gallery/examples/${slug}/upload?platform=${encodeURIComponent(platform)}`;
+
+  try {
+    for (let index = 0; index < partCount; index += 1) {
+      const offset = index * STYLE_GALLERY_UPLOAD_CHUNK_SIZE;
+      const chunk = file.slice(offset, Math.min(file.size, offset + STYLE_GALLERY_UPLOAD_CHUNK_SIZE));
+      const chunkHash = await sha256(chunk);
+      const query = new URLSearchParams({
+        action: 'chunk',
+        uploadId,
+        partIndex: index.toString(),
+        partCount: partCount.toString(),
+        chunkHash,
+      });
+      await uploadWithProgressAndRetry(`${endpoint}&${query}`, chunk, token, (loaded) =>
+        onProgress(offset + loaded, file.size),
+      );
+      parts.push({ index, size: chunk.size, hash: chunkHash });
+      onProgress(offset + chunk.size, file.size);
+    }
+
+    onProcessing();
+    const response = await fetchWithRetry(
+      endpoint,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          action: 'complete',
+          uploadId,
+          imageHash,
+          extension,
+          contentType: file.type,
+          size: file.size,
+          parts,
+        }),
+      },
+      RAW_UPLOAD_TIMEOUT_MS,
+    );
+    if (!response.ok) throw new Error((await response.text()) || `Upload completion failed with ${response.status}`);
+  } catch (error) {
+    await fetchWithRetry(
+      endpoint,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action: 'abort', uploadId, partCount }),
+      },
+      RAW_UPLOAD_TIMEOUT_MS,
+    ).catch(() => undefined);
+    throw error;
+  }
+}
+
+/**
+ * 单个 prompt item 的 Sub-gallery 管理器。
+ * 支持并发文件任务、4 MiB 分块、逐文件失败隔离，以及带令牌的批量改平台/删除操作。
+ */
 export default function StyleGalleryExamples({ slug, title, initialExamples, uploadsEnabled }: StyleGalleryExamplesProps) {
   const [examples, setExamples] = useState<StyleGalleryExample[]>(initialExamples);
   const [platform, setPlatform] = useState<string>(STYLE_GALLERY_PLATFORMS[0].slug);
@@ -300,6 +376,8 @@ export default function StyleGalleryExamples({ slug, title, initialExamples, upl
 
       let nextUploadIndex = 0;
       const uploadFailures: string[] = [];
+      const examplesToCommit: StyleGalleryExample[] = [];
+      // 固定数量 worker 从共享游标领取文件；失败文件只记录自身错误，成功文件仍进入本批元数据提交。
       async function uploadWorker() {
         while (nextUploadIndex < selected.length) {
           const index = nextUploadIndex;
@@ -313,11 +391,13 @@ export default function StyleGalleryExamples({ slug, title, initialExamples, upl
           if (!upload.exists) {
             updateFileProgress(entry.id, { state: 'uploading' });
             const extension = upload.example.src.split('.').pop() ?? 'jpg';
-            const uploadUrl = `/api/style-gallery/examples/${slug}/upload?platform=${encodeURIComponent(platform)}&hash=${entry.imageHash}&extension=${extension}`;
             try {
-              await uploadWithProgressAndRetry(
-                uploadUrl,
+              await uploadFileInChunks(
+                slug,
+                platform,
                 entry.file,
+                entry.imageHash,
+                extension,
                 token,
                 (loaded, total) => updateFileProgress(entry.id, { state: 'uploading', loaded, total }),
                 () => updateFileProgress(entry.id, { state: 'processing', loaded: entry.file.size }),
@@ -329,14 +409,14 @@ export default function StyleGalleryExamples({ slug, title, initialExamples, upl
               continue;
             }
           }
+          examplesToCommit.push(upload.example);
           updateFileProgress(entry.id, { state: 'saving', loaded: entry.file.size });
         }
       }
       await Promise.all(Array.from({ length: Math.min(UPLOAD_CONCURRENCY, selected.length) }, uploadWorker));
-      if (uploadFailures.length) throw new Error(uploadFailures.join('; '));
 
-      const examplesToCommit = prepared.filter((upload) => !upload.duplicate).map((upload) => upload.example);
       if (examplesToCommit.length) {
+        // 所有成功文件完成服务端组合后再统一 merge，避免 catalog 引用尚未存在的图片对象。
         setStatus('Saving sub-gallery');
         const mergeResponse = await fetchWithRetry(`/api/style-gallery/examples/${slug}`, {
           method: 'POST',
@@ -349,20 +429,30 @@ export default function StyleGalleryExamples({ slug, title, initialExamples, upl
         }
         const mergeData = (await mergeResponse.json()) as ExamplesResponse;
         setExamples(mergeData.examples ?? []);
+        uploadedExamples.length = 0;
       }
 
       setFileProgress((current) =>
         current.map((item) => (item.state === 'saving' ? { ...item, state: 'done' as const } : item)),
       );
 
-      localStorage.setItem(TOKEN_STORAGE_KEY, token);
-      setFiles([]);
-      setNote('');
-      form.reset();
+      try {
+        localStorage.setItem(TOKEN_STORAGE_KEY, token);
+      } catch {
+        // 浏览器存储不可用不应把已经完成的上传误报为失败。
+      }
       const skipped = prepared.filter((upload) => upload.duplicate).length;
-      setStatus(
-        `Added ${prepared.length - skipped} example${prepared.length - skipped === 1 ? '' : 's'}${skipped ? `; skipped ${skipped} duplicates` : ''}`,
-      );
+      const statusParts = [
+        `Added ${examplesToCommit.length} example${examplesToCommit.length === 1 ? '' : 's'}`,
+        skipped ? `skipped ${skipped} duplicate${skipped === 1 ? '' : 's'}` : '',
+        uploadFailures.length ? `${uploadFailures.length} failed: ${uploadFailures.join('; ')}` : '',
+      ].filter(Boolean);
+      setStatus(statusParts.join('; '));
+      if (!uploadFailures.length) {
+        setFiles([]);
+        setNote('');
+        form.reset();
+      }
     } catch (error) {
       await cleanupUploadedExamples(uploadedExamples).catch(() => undefined);
       setStatus(error instanceof Error ? error.message : 'Upload failed');

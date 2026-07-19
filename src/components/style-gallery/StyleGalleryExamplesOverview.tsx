@@ -2,11 +2,13 @@ import { Icon } from '@iconify/react';
 import { STYLE_GALLERY_PLATFORMS } from '@lib/style-gallery-platforms';
 import { openModal } from '@store/modal';
 import { useMemo, useState } from 'react';
+import { useProgressiveList } from '@/hooks/useProgressiveList';
 import type { StyleGalleryExampleOverviewItem } from '@/types/style-gallery';
 
 interface Props {
   examples: StyleGalleryExampleOverviewItem[];
   galleryBasePath: string;
+  locale: string;
   labels: StyleGalleryExamplesOverviewLabels;
 }
 
@@ -16,11 +18,24 @@ export interface StyleGalleryExamplesOverviewLabels {
   allPlatforms: string;
   otherPlatform: string;
   noMatches: string;
+  loadMore: string;
 }
 
-export default function StyleGalleryExamplesOverview({ examples, galleryBasePath, labels }: Props) {
+const INITIAL_EXAMPLE_COUNT = 24;
+const EXAMPLE_BATCH_SIZE = 24;
+const EAGER_EXAMPLE_COUNT = 8;
+
+/**
+ * 跨 item 的 Sub-gallery 总览。数据来自轻量示例索引，并采用固定比例卡片与渐进挂载，
+ * 因此慢图片只会在预留区域内补齐，不会把已经显示的卡片重新排位。
+ */
+export default function StyleGalleryExamplesOverview({ examples, galleryBasePath, locale, labels }: Props) {
   const [platform, setPlatform] = useState('all');
   const [query, setQuery] = useState('');
+  const dateFormatter = useMemo(
+    () => new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'numeric', day: 'numeric', timeZone: 'UTC' }),
+    [locale],
+  );
   const filtered = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     return examples.filter((example) => {
@@ -34,6 +49,11 @@ export default function StyleGalleryExamplesOverview({ examples, galleryBasePath
     () => filtered.map((example) => ({ src: example.src, alt: `${example.sourceTitle} ${example.model}` })),
     [filtered],
   );
+  const { hasMore, loadMore, loadMoreRef, visibleItems } = useProgressiveList(filtered, {
+    initialCount: INITIAL_EXAMPLE_COUNT,
+    batchSize: EXAMPLE_BATCH_SIZE,
+    resetKey: `${platform}\u0000${query.trim().toLowerCase()}`,
+  });
 
   function openLightbox(example: StyleGalleryExampleOverviewItem) {
     const currentIndex = Math.max(
@@ -88,52 +108,74 @@ export default function StyleGalleryExamplesOverview({ examples, galleryBasePath
       </div>
 
       {filtered.length ? (
-        <div className="columns-4 gap-4 md:columns-1 lg:columns-2 xl:columns-3">
-          {filtered.map((example) => (
-            <figure
-              key={`${example.sourceSlug}-${example.src}`}
-              className="mb-4 break-inside-avoid overflow-hidden rounded-lg border border-border bg-background shadow-sm"
-            >
-              <button
-                type="button"
-                onClick={() => openLightbox(example)}
-                className="group block w-full cursor-zoom-in overflow-hidden text-left"
+        <>
+          <div className="grid grid-cols-4 items-stretch gap-4 md:grid-cols-1 lg:grid-cols-2 xl:grid-cols-3">
+            {visibleItems.map((example, index) => (
+              <figure
+                key={`${example.sourceSlug}-${example.src}`}
+                className="flex h-full w-full min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-background shadow-sm"
               >
-                <img
-                  src={example.src}
-                  alt={`${example.sourceTitle} ${example.model}`}
-                  loading="lazy"
-                  className="aspect-[4/5] w-full object-cover transition duration-200 group-hover:scale-[1.02]"
-                />
-              </button>
-              <figcaption className="space-y-3 p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="rounded-full bg-sky-50 px-2 py-1 font-semibold text-sky-600 text-xs dark:bg-sky-950/50 dark:text-sky-200">
-                    {example.model || labels.otherPlatform}
-                  </span>
-                  {example.uploadedAt && (
-                    <time className="text-muted-foreground text-xs">{new Date(example.uploadedAt).toLocaleDateString()}</time>
-                  )}
-                </div>
-                {example.note && <p className="text-muted-foreground text-xs leading-5">{example.note}</p>}
-                <a
-                  href={`${galleryBasePath}/${example.sourceSlug}`}
-                  data-astro-prefetch="false"
-                  className="flex items-center gap-2 border-border border-t pt-3 text-sm transition hover:text-primary"
+                <button
+                  type="button"
+                  onClick={() => openLightbox(example)}
+                  className="group block w-full cursor-zoom-in overflow-hidden bg-muted text-left"
                 >
                   <img
-                    src={example.sourceImage}
-                    alt={example.sourceImageAlt ?? example.sourceTitle}
-                    loading="lazy"
-                    className="size-9 shrink-0 rounded-md object-cover"
+                    src={example.src}
+                    alt={`${example.sourceTitle} ${example.model}`}
+                    width={4}
+                    height={5}
+                    loading={index < EAGER_EXAMPLE_COUNT ? 'eager' : 'lazy'}
+                    fetchPriority={index < 4 ? 'high' : 'auto'}
+                    decoding="async"
+                    className="aspect-[4/5] w-full object-cover transition duration-200 group-hover:scale-[1.02]"
                   />
-                  <span className="min-w-0 flex-1 truncate font-medium">{example.sourceTitle}</span>
-                  <Icon icon="ri:arrow-right-s-line" className="size-4 shrink-0" />
-                </a>
-              </figcaption>
-            </figure>
-          ))}
-        </div>
+                </button>
+                <figcaption className="flex flex-1 flex-col gap-3 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="rounded-full bg-sky-50 px-2 py-1 font-semibold text-sky-600 text-xs dark:bg-sky-950/50 dark:text-sky-200">
+                      {example.model || labels.otherPlatform}
+                    </span>
+                    {example.uploadedAt && (
+                      <time dateTime={example.uploadedAt} className="text-muted-foreground text-xs">
+                        {dateFormatter.format(new Date(example.uploadedAt))}
+                      </time>
+                    )}
+                  </div>
+                  {example.note && <p className="line-clamp-2 text-muted-foreground text-xs leading-5">{example.note}</p>}
+                  <a
+                    href={`${galleryBasePath}/${example.sourceSlug}`}
+                    data-astro-prefetch="false"
+                    className="mt-auto flex items-center gap-2 border-border border-t pt-3 text-sm transition hover:text-primary"
+                  >
+                    <img
+                      src={example.sourceImage}
+                      alt={example.sourceImageAlt ?? example.sourceTitle}
+                      width={36}
+                      height={36}
+                      loading="lazy"
+                      decoding="async"
+                      className="size-9 shrink-0 rounded-md object-cover"
+                    />
+                    <span className="min-w-0 flex-1 truncate font-medium">{example.sourceTitle}</span>
+                    <Icon icon="ri:arrow-right-s-line" className="size-4 shrink-0" />
+                  </a>
+                </figcaption>
+              </figure>
+            ))}
+          </div>
+          {hasMore && (
+            <div ref={loadMoreRef} className="flex justify-center pt-2">
+              <button
+                type="button"
+                onClick={loadMore}
+                className="rounded-md border border-border bg-background px-4 py-2 font-medium text-muted-foreground text-sm transition hover:border-primary/40 hover:text-foreground"
+              >
+                {labels.loadMore}
+              </button>
+            </div>
+          )}
+        </>
       ) : (
         <div className="flex min-h-52 items-center justify-center rounded-lg border border-border border-dashed text-muted-foreground text-sm">
           {labels.noMatches}

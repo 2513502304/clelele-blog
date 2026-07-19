@@ -112,6 +112,7 @@ export const POST: APIRoute = async ({ params, request }) => {
       return new Response('Invalid upload token.', { status: 401 });
 
     if (rawBody?.action === 'prepare') {
+      // prepare 只分配元数据并检查内容哈希对象是否已存在，不在请求体内传输图片字节。
       const body = prepareSchema.parse(rawBody);
       const platform = getStyleGalleryPlatform(body.platform);
       if (!platform) return new Response('Invalid style gallery platform.', { status: 400 });
@@ -136,6 +137,7 @@ export const POST: APIRoute = async ({ params, request }) => {
     }
 
     if (rawBody?.action === 'cleanup') {
+      // 只删除未被总览索引引用的对象，避免失败补偿误删其他 item 正在使用的同哈希图片。
       const body = cleanupSchema.parse(rawBody);
       const index = await getStyleGalleryExampleIndex({ fresh: true });
       const referenced = new Set(index.groups.flatMap((group) => group.examples.map((example) => example.src)));
@@ -144,6 +146,7 @@ export const POST: APIRoute = async ({ params, request }) => {
       return Response.json({ deleted: removable.length, retained: body.examples.length - removable.length });
     }
 
+    // 图片全部写入并经 HEAD 校验后，才提交 item、catalog 计数和示例总览索引。
     const body = mergeSchema.parse(rawBody);
     await validateExampleObjectsExist(body.examples);
     const result = await updateStyleGalleryItemExamples(slug, (examples) =>
@@ -210,6 +213,7 @@ export const DELETE: APIRoute = async ({ params, request }) => {
       return removeStyleGalleryExamples(examples, selectedIds);
     });
     const referenced = new Set(result.index.groups.flatMap((group) => group.examples.map((example) => example.src)));
+    // 先提交删除后的元数据，再清理成为孤儿的图片；对象清理失败不会复活已删除的示例记录。
     const orphaned = removed.filter((example) => !referenced.has(example.src));
     await mapWithConcurrency(orphaned, 8, (example) =>
       deleteStyleGalleryObject(getStyleGalleryExampleObjectKey(example)).catch((error) => {

@@ -45,6 +45,7 @@ function parseDataUri(uri) {
   return { bytes: Buffer.from(data, 'base64'), extension, mime };
 }
 
+/** 移除原始用户 prompt 中的本机 skill 绝对路径，只保留可公开展示的 `/skill-name`。 */
 function sanitizeOriginalPrompt(prompt) {
   return prompt
     .replace(/\[\$([^\]\s]+)\]\((?:file:\/\/)?(?:~|\/Users|\/home)[^)]*\/SKILL\.md\)/g, '/$1')
@@ -52,6 +53,7 @@ function sanitizeOriginalPrompt(prompt) {
     .trim();
 }
 
+/** 单图沿用图片哈希；多图按用户输入顺序拼接各图哈希后再次计算，作为组合 item 的稳定身份。 */
 function itemHashFromImageHashes(imageHashes) {
   if (imageHashes.length === 1) return imageHashes[0];
   return crypto.createHash('sha256').update(imageHashes.join('\n')).digest('hex');
@@ -75,6 +77,12 @@ async function readRecords(sessionPath) {
     });
 }
 
+/**
+ * 从 Codex JSONL 的 canonical `event_msg` 中提取图片与最终 prompt 配对。
+ *
+ * 同一内容还可能出现在 `response_item`、`task_complete` 或压缩记录中；这里不读取这些副本，避免重复导入
+ * base64 图片。最近一条带图 user_message 会与随后第一条包含占位符的 agent_message 配对，成功后立即清空。
+ */
 function extractItems(records) {
   const items = [];
   let pendingInput = null;
@@ -104,6 +112,10 @@ function extractItems(records) {
   return items;
 }
 
+/**
+ * 构造待写入的 v3 item 和缺失资产集合。
+ * 同一用户消息中的多张图保持原顺序并归入一个 item；资产 Map 按对象键去重，缩略图只生成一次。
+ */
 async function buildImportData(extractedItems, sessionPath, existingByHash, metadataOnly) {
   const assets = new Map();
   const items = [];
@@ -194,6 +206,7 @@ async function requestJson(url, options, timeoutMs = REQUEST_TIMEOUT_MS) {
   throw new Error(`Request failed after ${REQUEST_ATTEMPTS} attempts: ${url}`, { cause: lastError });
 }
 
+/** 上传一个 HF 签名 URL；每次重试都有独立 timeout，明确的非重试型 4xx 会立即失败。 */
 async function uploadObject(uploadUrl, asset) {
   let lastError;
   for (let attempt = 1; attempt <= REQUEST_ATTEMPTS; attempt += 1) {
@@ -220,6 +233,10 @@ async function uploadObject(uploadUrl, asset) {
   throw new Error(`Asset upload failed after ${REQUEST_ATTEMPTS} attempts.`, { cause: lastError });
 }
 
+/**
+ * 先让服务端 HEAD 检查 HF 对象，只为缺失资产申请签名 URL，再用固定 worker 数并发上传。
+ * 返回值只包含本轮新写入的键，供后续元数据失败时做精确补偿清理。
+ */
 async function prepareAndUploadAssets(apiBaseUrl, token, assets) {
   const entries = [...assets.entries()];
   const uploadedKeys = [];
@@ -303,6 +320,7 @@ async function main() {
     console.log(`Skipped ${prepared.skippedDuplicates + apiDuplicates} duplicate image/prompt records.`);
     if (metadataOnly) console.log(`Skipped ${prepared.skippedNewMetadata} new records because --metadata-only was set.`);
   } catch (error) {
+    // 元数据未完成时只清理由本轮新增且未被 catalog 引用的资产，既有 HF 对象不会进入该列表。
     await cleanupAssets(apiBaseUrl, token, uploadedKeys);
     throw error;
   }
