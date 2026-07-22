@@ -13,7 +13,9 @@ export const GET: APIRoute = async ({ cookies, redirect, url }) => {
   const code = url.searchParams.get('code');
   const state = url.searchParams.get('state');
   if (!flow || !code || !state || state !== flow.state) {
-    return new Response('Invalid or expired GitHub login flow.', { status: 400 });
+    const target = new URL(flow?.returnTo ?? '/image-style-prompt-gallery/examples', url.origin);
+    target.searchParams.set('loginError', 'github');
+    return redirect(`${target.pathname}${target.search}${target.hash}`, 302);
   }
 
   try {

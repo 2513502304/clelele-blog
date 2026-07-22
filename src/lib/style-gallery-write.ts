@@ -250,7 +250,7 @@ export async function updateStyleGalleryItemExamples(
       const rollback = await Promise.allSettled([
         putStoredStyleGalleryItem(previousItem),
         putStyleGalleryCatalog(previousCatalog),
-        restoreStyleGalleryExampleIndexStructure(previousIndex),
+        restoreStyleGalleryExampleIndexStructure(previousIndex, new Set([slug])),
       ]);
       const rollbackErrors = rollback.flatMap((result) => (result.status === 'rejected' ? [result.reason] : []));
       if (rollbackErrors.length) {
@@ -304,7 +304,7 @@ async function rollbackMetadata(
     errors.push(error);
   }
   try {
-    await restoreStyleGalleryExampleIndexStructure(previousIndex);
+    await restoreStyleGalleryExampleIndexStructure(previousIndex, new Set(previousItemBodies.keys()));
   } catch (error) {
     errors.push(error);
   }
@@ -312,20 +312,51 @@ async function rollbackMetadata(
   return errors;
 }
 
-/** 回滚示例结构时保留并发期间已经写入的点赞，避免补偿逻辑反向覆盖新投票。 */
-async function restoreStyleGalleryExampleIndexStructure(previous: StyleGalleryExampleIndex): Promise<void> {
+/**
+ * 只恢复本次写操作影响的 group。未涉及的 slug 必须原样采用 current，避免补偿写覆盖其他实例刚提交的结构；
+ * 对被恢复的示例则保留 current 中同 ID 的点赞事实。
+ */
+export function mergeStyleGalleryExampleIndexRollback(
+  current: StyleGalleryExampleIndex,
+  previous: StyleGalleryExampleIndex,
+  affectedSlugs: ReadonlySet<string>,
+): StyleGalleryExampleIndex['groups'] {
+  const currentBySlug = new Map(current.groups.map((group) => [group.sourceSlug, group]));
+  const restoredBySlug = new Map(
+    previous.groups
+      .filter((group) => affectedSlugs.has(group.sourceSlug))
+      .map((group) => {
+        const currentById = new Map(currentBySlug.get(group.sourceSlug)?.examples.map((example) => [example.id, example]));
+        return [
+          group.sourceSlug,
+          {
+            ...group,
+            examples: group.examples.map((example) => ({
+              ...example,
+              likedBy: currentById.get(example.id)?.likedBy ?? example.likedBy,
+            })),
+          },
+        ] as const;
+      }),
+  );
+  const merged = current.groups.flatMap((group) => {
+    if (!affectedSlugs.has(group.sourceSlug)) return [group];
+    const restored = restoredBySlug.get(group.sourceSlug);
+    restoredBySlug.delete(group.sourceSlug);
+    return restored ? [restored] : [];
+  });
+  return [...merged, ...restoredBySlug.values()];
+}
+
+async function restoreStyleGalleryExampleIndexStructure(
+  previous: StyleGalleryExampleIndex,
+  affectedSlugs: ReadonlySet<string>,
+): Promise<void> {
   await mutateStyleGalleryExampleIndex((current) => {
-    const currentById = new Map(current.groups.flatMap((group) => group.examples.map((example) => [example.id, example])));
     return {
       version: 2,
       updatedAt: new Date().toISOString(),
-      groups: previous.groups.map((group) => ({
-        ...group,
-        examples: group.examples.map((example) => ({
-          ...example,
-          likedBy: currentById.get(example.id)?.likedBy ?? example.likedBy,
-        })),
-      })),
+      groups: mergeStyleGalleryExampleIndexRollback(current, previous, affectedSlugs),
     };
   });
 }

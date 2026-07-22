@@ -24,7 +24,8 @@ export const GET: APIRoute = async ({ cookies }) => {
       { headers: { 'Cache-Control': 'private, no-store' } },
     );
   } catch (error) {
-    return new Response(error instanceof Error ? error.message : 'Failed to load style gallery likes.', { status: 503 });
+    console.error('[style-gallery] Failed to load likes.', error);
+    return new Response('Failed to load style gallery likes.', { status: 503 });
   }
 };
 
@@ -44,6 +45,7 @@ export const PUT: APIRoute = async ({ cookies, request, url }) => {
     if (error instanceof Error && error.message.startsWith('Style gallery example not found:')) {
       return new Response(error.message, { status: 404 });
     }
-    return new Response(error instanceof Error ? error.message : 'Failed to update style gallery like.', { status: 503 });
+    console.error('[style-gallery] Failed to update like.', error);
+    return new Response('Failed to update style gallery like.', { status: 503 });
   }
 };

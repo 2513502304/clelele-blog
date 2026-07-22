@@ -1,6 +1,9 @@
+import { ErrorBoundary, InlineErrorFallback } from '@components/common';
 import { Icon } from '@iconify/react';
 import { STYLE_GALLERY_PLATFORMS } from '@lib/style-gallery-platforms';
 import { openModal } from '@store/modal';
+import { parseAsStringLiteral, useQueryState } from 'nuqs';
+import { NuqsAdapter } from 'nuqs/adapters/react';
 import { useMemo, useState } from 'react';
 import { useProgressiveList } from '@/hooks/useProgressiveList';
 import type { StyleGalleryExampleOverviewItem } from '@/types/style-gallery';
@@ -35,18 +38,22 @@ const INITIAL_EXAMPLE_COUNT = 24;
 const EXAMPLE_BATCH_SIZE = 24;
 const EAGER_EXAMPLE_COUNT = 8;
 const sortKeys = ['default', 'date', 'id', 'examples', 'likes'] as const;
+const sortDirections = ['asc', 'desc'] as const;
 type SortKey = (typeof sortKeys)[number];
-type SortDirection = 'asc' | 'desc';
+
+function reportUrlStateError(error: unknown) {
+  console.error('Failed to update sub-gallery overview URL state:', error);
+}
 
 /**
  * 跨 item 的 Sub-gallery 总览。数据来自轻量示例索引，并采用固定比例卡片与渐进挂载，
  * 因此慢图片只会在预留区域内补齐，不会把已经显示的卡片重新排位。
  */
-export default function StyleGalleryExamplesOverview({ examples, galleryBasePath, locale, labels }: Props) {
+function StyleGalleryExamplesOverviewContent({ examples, galleryBasePath, locale, labels }: Props) {
   const [platform, setPlatform] = useState('all');
   const [query, setQuery] = useState('');
-  const [sortKey, setSortKey] = useState<SortKey>('default');
-  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+  const [sortKey, setSortKey] = useQueryState('sort', parseAsStringLiteral(sortKeys).withDefault('default'));
+  const [sortDirection, setSortDirection] = useQueryState('dir', parseAsStringLiteral(sortDirections).withDefault('asc'));
   const likes = useStyleGalleryLikes(Object.fromEntries(examples.map((example) => [example.id, example.likeCount])));
   const sortLabels: Record<SortKey, string> = {
     default: labels.sortDefault,
@@ -145,7 +152,7 @@ export default function StyleGalleryExamplesOverview({ examples, galleryBasePath
           <select
             id="example-sort"
             value={sortKey}
-            onChange={(event) => setSortKey(event.currentTarget.value as SortKey)}
+            onChange={(event) => setSortKey(event.currentTarget.value as SortKey).catch(reportUrlStateError)}
             className="h-10 w-full appearance-none rounded-md border border-border bg-background pr-8 pl-3 text-sm outline-none focus:border-primary"
           >
             {sortKeys.map((key) => (
@@ -161,7 +168,7 @@ export default function StyleGalleryExamplesOverview({ examples, galleryBasePath
         </div>
         <button
           type="button"
-          onClick={() => setSortDirection((direction) => (direction === 'asc' ? 'desc' : 'asc'))}
+          onClick={() => setSortDirection((direction) => (direction === 'asc' ? 'desc' : 'asc')).catch(reportUrlStateError)}
           title={sortDirection === 'asc' ? labels.sortAscending : labels.sortDescending}
           aria-label={sortDirection === 'asc' ? labels.sortAscending : labels.sortDescending}
           className="flex size-10 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground transition hover:border-primary/40 hover:text-foreground"
@@ -251,5 +258,16 @@ export default function StyleGalleryExamplesOverview({ examples, galleryBasePath
         </div>
       )}
     </section>
+  );
+}
+
+/** 为总览交互提供 URL 状态上下文，并将渲染异常限制在当前 Gallery 区域。 */
+export default function StyleGalleryExamplesOverview(props: Props) {
+  return (
+    <ErrorBoundary FallbackComponent={InlineErrorFallback}>
+      <NuqsAdapter>
+        <StyleGalleryExamplesOverviewContent {...props} />
+      </NuqsAdapter>
+    </ErrorBoundary>
   );
 }

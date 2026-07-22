@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { AstroCookies } from 'astro';
 import {
+  authenticateStyleGalleryGitHubUser,
   createStyleGalleryOAuthFlow,
   getStyleGalleryOAuthChallenge,
   getStyleGalleryViewer,
@@ -77,6 +78,52 @@ describe('style gallery GitHub login session', () => {
         if (value === undefined) delete process.env[key];
         else process.env[key] = value;
       }
+    }
+  });
+
+  it('exchanges the OAuth code as form-encoded PKCE data', async () => {
+    const originalFetch = globalThis.fetch;
+    const previousClientId = process.env.STYLE_GALLERY_GITHUB_CLIENT_ID;
+    const previousClientSecret = process.env.STYLE_GALLERY_GITHUB_CLIENT_SECRET;
+    process.env.STYLE_GALLERY_GITHUB_CLIENT_ID = 'client-id';
+    process.env.STYLE_GALLERY_GITHUB_CLIENT_SECRET = 'client-secret';
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+    globalThis.fetch = async (input, init) => {
+      requests.push({ url: String(input), init });
+      if (String(input).includes('/login/oauth/access_token')) {
+        return Response.json({ access_token: 'token', token_type: 'bearer' });
+      }
+      return Response.json({
+        id: 2513502304,
+        login: 'clelele',
+        name: 'clelele',
+        avatar_url: 'https://avatars.githubusercontent.com/u/2513502304',
+        html_url: 'https://github.com/2513502304',
+      });
+    };
+
+    try {
+      await authenticateStyleGalleryGitHubUser({
+        code: 'temporary-code',
+        verifier: 'pkce-verifier',
+        redirectUri: 'https://blog.example.com/api/style-gallery/auth/github/callback',
+      });
+      const tokenRequest = requests[0];
+      assert.equal(new Headers(tokenRequest.init?.headers).get('content-type'), 'application/x-www-form-urlencoded');
+      assert.ok(tokenRequest.init?.body instanceof URLSearchParams);
+      assert.deepEqual(Object.fromEntries(tokenRequest.init.body), {
+        client_id: 'client-id',
+        client_secret: 'client-secret',
+        code: 'temporary-code',
+        redirect_uri: 'https://blog.example.com/api/style-gallery/auth/github/callback',
+        code_verifier: 'pkce-verifier',
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (previousClientId === undefined) delete process.env.STYLE_GALLERY_GITHUB_CLIENT_ID;
+      else process.env.STYLE_GALLERY_GITHUB_CLIENT_ID = previousClientId;
+      if (previousClientSecret === undefined) delete process.env.STYLE_GALLERY_GITHUB_CLIENT_SECRET;
+      else process.env.STYLE_GALLERY_GITHUB_CLIENT_SECRET = previousClientSecret;
     }
   });
 });
