@@ -1,5 +1,5 @@
 import { Icon } from '@iconify/react';
-import type { ImageLightboxLikeAction, ImageLightboxLikeMutationResult } from '@store/modal';
+import { type ImageLightboxLikeAction, type ImageLightboxLikeMutationResult, syncImageLightboxLikes } from '@store/modal';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { StyleGalleryViewer } from '@/types/style-gallery';
 
@@ -156,6 +156,17 @@ export function createStyleGalleryLightboxLikeAction(
     labels,
     toggle: () => controller.toggle(exampleId),
   };
+}
+
+/** 将异步登录态和任意入口触发的点赞结果同步到当前 Gallery lightbox。 */
+export function syncStyleGalleryLightboxLikes(controller: StyleGalleryLikesController): void {
+  syncImageLightboxLikes((exampleId) => ({
+    liked: controller.isLiked(exampleId),
+    likeCount: controller.getCount(exampleId),
+    pending: controller.isPending(exampleId),
+    authEnabled: controller.authEnabled,
+    viewerAuthenticated: Boolean(controller.viewer),
+  }));
 }
 
 interface LikeButtonProps {

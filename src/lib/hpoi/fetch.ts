@@ -65,15 +65,22 @@ async function mapWithConcurrency<T, R>(
   mapper: (item: T) => Promise<R>,
 ): Promise<R[]> {
   const results = new Array<R>(items.length);
+  const failures: unknown[] = [];
   let nextIndex = 0;
   async function worker() {
-    while (nextIndex < items.length) {
+    while (nextIndex < items.length && failures.length === 0) {
       const index = nextIndex;
       nextIndex += 1;
-      results[index] = await mapper(items[index]);
+      try {
+        results[index] = await mapper(items[index]);
+      } catch (error) {
+        failures.push(error);
+      }
     }
   }
+  // 首次失败后不再领取新任务，但要等待已经在途的 worker 收束，避免嵌套 pool 越过并发边界。
   await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, worker));
+  if (failures.length > 0) throw failures[0];
   return results;
 }
 

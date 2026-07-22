@@ -6,6 +6,7 @@ import {
   type ImageLightboxLikeAction,
   navigateImage,
   openModal,
+  syncImageLightboxLikes,
   updateImageLightboxLike,
 } from '@store/modal';
 
@@ -40,5 +41,43 @@ test('keeps an updated like state when navigating away from an image and back', 
   const data = $imageLightboxData.get();
   assert.equal(data?.images[0].like?.liked, true);
   assert.equal(data?.images[0].like?.likeCount, 1);
+  closeModal();
+});
+
+test('synchronizes viewer hydration and external mutations into an open lightbox', () => {
+  const action = likeAction('first');
+  action.authEnabled = false;
+  action.viewerAuthenticated = false;
+  action.pending = true;
+  openModal('imageLightbox', {
+    src: '/first.webp',
+    alt: 'First',
+    currentIndex: 0,
+    images: [{ src: '/first.webp', alt: 'First', like: action }],
+  });
+
+  assert.equal(
+    syncImageLightboxLikes(() => ({
+      liked: true,
+      likeCount: 4,
+      pending: false,
+      authEnabled: true,
+      viewerAuthenticated: true,
+    })),
+    true,
+  );
+
+  const synced = $imageLightboxData.get()?.images[0].like;
+  assert.deepEqual(
+    synced && {
+      liked: synced.liked,
+      likeCount: synced.likeCount,
+      pending: synced.pending,
+      authEnabled: synced.authEnabled,
+      viewerAuthenticated: synced.viewerAuthenticated,
+    },
+    { liked: true, likeCount: 4, pending: false, authEnabled: true, viewerAuthenticated: true },
+  );
+  assert.equal(synced?.toggle, action.toggle);
   closeModal();
 });

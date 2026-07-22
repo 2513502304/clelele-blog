@@ -13,6 +13,7 @@ import {
   createStyleGalleryLightboxLikeAction,
   StyleGalleryLikeButton,
   type StyleGalleryLikeLabels,
+  syncStyleGalleryLightboxLikes,
   useStyleGalleryLikes,
 } from './StyleGalleryLikeButton';
 
@@ -222,6 +223,9 @@ export default function StyleGalleryExamples({
 }: StyleGalleryExamplesProps) {
   const [examples, setExamples] = useState<StyleGalleryExample[]>(initialExamples);
   const likes = useStyleGalleryLikes(Object.fromEntries(initialExamples.map((example) => [example.id, example.likeCount])));
+  useEffect(() => {
+    syncStyleGalleryLightboxLikes(likes);
+  }, [likes]);
   const [platform, setPlatform] = useState<string>(STYLE_GALLERY_PLATFORMS[0].slug);
   const [note, setNote] = useState('');
   const [token, setToken] = useState('');

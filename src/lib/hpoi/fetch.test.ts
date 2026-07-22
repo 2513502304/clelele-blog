@@ -69,6 +69,29 @@ describe('fetchHpoiCollectionState', () => {
     );
   });
 
+  it('drains in-flight pagination workers before rejecting a failed collection state', async () => {
+    let activeRequests = 0;
+    const requestedPages: number[] = [];
+    globalThis.fetch = async (_input, init) => {
+      if (!init?.body) return new Response(collectionPage(['1'], 4));
+
+      const page = Number(new URLSearchParams(String(init.body)).get('page'));
+      requestedPages.push(page);
+      activeRequests += 1;
+      if (page === 2) {
+        activeRequests -= 1;
+        return new Response('temporary upstream failure', { status: 503 });
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1_100));
+      activeRequests -= 1;
+      return new Response(collectionPage(['3']));
+    };
+
+    await assert.rejects(fetchHpoiCollectionState('783694', 'buy'), /HTTP 503/);
+    assert.equal(activeRequests, 0);
+    assert.equal(requestedPages.includes(4), false);
+  });
+
   it('limits concurrent collection states so retries do not form a request burst', async () => {
     let activeRequests = 0;
     let maxActiveRequests = 0;

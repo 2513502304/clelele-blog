@@ -4,13 +4,14 @@ import { STYLE_GALLERY_PLATFORMS } from '@lib/style-gallery-platforms';
 import { openModal } from '@store/modal';
 import { parseAsString, parseAsStringLiteral, useQueryState } from 'nuqs';
 import { NuqsAdapter } from 'nuqs/adapters/react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useProgressiveList } from '@/hooks/useProgressiveList';
 import type { StyleGalleryExampleOverviewItem } from '@/types/style-gallery';
 import {
   createStyleGalleryLightboxLikeAction,
   StyleGalleryLikeButton,
   type StyleGalleryLikeLabels,
+  syncStyleGalleryLightboxLikes,
   useStyleGalleryLikes,
 } from './StyleGalleryLikeButton';
 
@@ -61,6 +62,9 @@ function StyleGalleryExamplesOverviewContent({ examples, galleryBasePath, locale
   const [sortKey, setSortKey] = useQueryState('sort', parseAsStringLiteral(sortKeys).withDefault('default'));
   const [sortDirection, setSortDirection] = useQueryState('dir', parseAsStringLiteral(sortDirections).withDefault('asc'));
   const likes = useStyleGalleryLikes(Object.fromEntries(examples.map((example) => [example.id, example.likeCount])));
+  useEffect(() => {
+    syncStyleGalleryLightboxLikes(likes);
+  }, [likes]);
   // 点赞计数实时更新，但排序快照由用户主动刷新，避免连续浏览或 popup 点赞时网格在背景中跳位。
   const [likeSortCounts, setLikeSortCounts] = useState<Record<string, number>>(() =>
     Object.fromEntries(examples.map((example) => [example.id, example.likeCount])),
