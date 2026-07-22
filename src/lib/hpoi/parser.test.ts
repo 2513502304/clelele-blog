@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { createHpoiImageProxyUrl, isAllowedHpoiImageUrl } from './image';
-import { isHpoiCollectionFragment, isHpoiCollectionPage, parseHpoiCollection, parseHpoiProfile } from './parser';
+import {
+  isHpoiCollectionFragment,
+  isHpoiCollectionPage,
+  isHpoiProfilePage,
+  parseHpoiCollection,
+  parseHpoiProfile,
+} from './parser';
 
 describe('parseHpoiProfile', () => {
   it('reads identity and public collection statistics', () => {
@@ -33,6 +39,11 @@ describe('parseHpoiProfile', () => {
       preordered: '1',
       pendingPayment: '555.00人民币',
     });
+  });
+
+  it('recognizes profile pages by their public nickname element', () => {
+    assert.equal(isHpoiProfilePage('<span class="hpoi-user-nickname">clelele</span>'), true);
+    assert.equal(isHpoiProfilePage('<h1>Request blocked</h1>'), false);
   });
 });
 
@@ -98,6 +109,7 @@ describe('parseHpoiCollection', () => {
     assert.equal(isHpoiCollectionPage('<div class="hpoi-collect-container"><p>还没有内容</p></div>'), true);
     assert.equal(isHpoiCollectionPage('<h1>Request blocked</h1>'), false);
     assert.equal(isHpoiCollectionFragment('<div class="collect-hobby-list-small"><div class="item"></div></div>'), true);
+    assert.equal(isHpoiCollectionFragment('<div class="collect-hobby-list-large"><div class="item"></div></div>'), true);
     assert.equal(isHpoiCollectionFragment('<h1>Request blocked</h1>'), false);
   });
 });

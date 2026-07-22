@@ -42,11 +42,14 @@ export function useStyleGalleryLikes(initialCounts: Record<string, number>): Sty
   const pendingIdsRef = useRef(pendingIds);
   const viewerRef = useRef(viewer);
   const authEnabledRef = useRef(authEnabled);
-  countsRef.current = counts;
-  likedIdsRef.current = likedIds;
-  pendingIdsRef.current = pendingIds;
-  viewerRef.current = viewer;
-  authEnabledRef.current = authEnabled;
+
+  useEffect(() => {
+    countsRef.current = counts;
+    likedIdsRef.current = likedIds;
+    pendingIdsRef.current = pendingIds;
+    viewerRef.current = viewer;
+    authEnabledRef.current = authEnabled;
+  }, [authEnabled, counts, likedIds, pendingIds, viewer]);
 
   useEffect(() => {
     const controller = new AbortController();

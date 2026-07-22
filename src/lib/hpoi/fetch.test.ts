@@ -24,6 +24,10 @@ function collectionPage(ids: string[], pageCount?: number): string {
   `;
 }
 
+function profilePage(name = 'clelele'): string {
+  return `<span class="hpoi-user-nickname">${name}</span>`;
+}
+
 afterEach(() => {
   globalThis.fetch = originalFetch;
 });
@@ -101,7 +105,7 @@ describe('fetchHpoiCollectionState', () => {
       maxActiveRequests = Math.max(maxActiveRequests, activeRequests);
       await new Promise((resolve) => setTimeout(resolve, 10));
       activeRequests -= 1;
-      if (!String(input).includes('/hobby')) return new Response('<html><body></body></html>');
+      if (!String(input).includes('/hobby')) return new Response(profilePage());
       collectionId += 1;
       return new Response(collectionPage([String(collectionId)]));
     };
@@ -111,6 +115,21 @@ describe('fetchHpoiCollectionState', () => {
     assert.deepEqual(data.warnings, []);
     // 六个收藏状态取一半为三个 worker，再加上并行的个人资料请求。
     assert.ok(maxActiveRequests <= 4, `expected at most 4 concurrent requests, received ${maxActiveRequests}`);
+  });
+
+  it('retries a blocked profile response and keeps a valid retry warning-free', async () => {
+    let profileAttempts = 0;
+    globalThis.fetch = async (input) => {
+      if (String(input).includes('/hobby')) return new Response(collectionPage(['1']));
+      profileAttempts += 1;
+      return new Response(profileAttempts === 1 ? '<h1>Request blocked</h1>' : profilePage('clelele'));
+    };
+
+    const data = await fetchHpoiCollection('783694');
+
+    assert.equal(profileAttempts, 2);
+    assert.equal(data.profile.name, 'clelele');
+    assert.deepEqual(data.warnings, []);
   });
 
   it('handles an early profile failure while collection workers are still running', async () => {

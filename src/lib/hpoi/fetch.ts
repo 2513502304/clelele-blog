@@ -4,6 +4,7 @@ import { createHpoiCollectionUrl, createHpoiProfileUrl } from './constants';
 import {
   isHpoiCollectionFragment,
   isHpoiCollectionPage,
+  isHpoiProfilePage,
   parseHpoiCollection,
   parseHpoiCollectionPageCount,
   parseHpoiProfile,
@@ -38,7 +39,7 @@ async function fetchHtml(url: string, body?: URLSearchParams, validate?: (html: 
       });
       if (!response.ok) throw new Error(`Hpoi returned HTTP ${response.status}.`);
       const html = await response.text();
-      if (validate && !validate(html)) throw new Error('Hpoi returned an unexpected page instead of collection data.');
+      if (validate && !validate(html)) throw new Error('Hpoi returned an unexpected page instead of the requested data.');
       return html;
     } catch (error) {
       lastError = error;
@@ -145,7 +146,7 @@ function createFallbackProfile(userId: string): HpoiProfile {
  */
 export async function fetchHpoiCollection(userId: string): Promise<HpoiCollectionResponse> {
   // 创建时立即吸收 rejection；分类抓取可能持续数十秒，不能让 profile 失败在等待期间变成未处理拒绝。
-  const profileResultPromise = fetchHtml(createHpoiProfileUrl(userId)).then(
+  const profileResultPromise = fetchHtml(createHpoiProfileUrl(userId), undefined, isHpoiProfilePage).then(
     (html) => ({ status: 'fulfilled' as const, value: parseHpoiProfile(html, userId) }),
     (reason) => ({ status: 'rejected' as const, reason }),
   );
