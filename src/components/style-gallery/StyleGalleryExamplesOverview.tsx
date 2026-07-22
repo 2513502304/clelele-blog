@@ -2,9 +2,9 @@ import { ErrorBoundary, InlineErrorFallback } from '@components/common';
 import { Icon } from '@iconify/react';
 import { STYLE_GALLERY_PLATFORMS } from '@lib/style-gallery-platforms';
 import { openModal } from '@store/modal';
-import { parseAsStringLiteral, useQueryState } from 'nuqs';
+import { parseAsString, parseAsStringLiteral, useQueryState } from 'nuqs';
 import { NuqsAdapter } from 'nuqs/adapters/react';
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useProgressiveList } from '@/hooks/useProgressiveList';
 import type { StyleGalleryExampleOverviewItem } from '@/types/style-gallery';
 import { StyleGalleryLikeButton, type StyleGalleryLikeLabels, useStyleGalleryLikes } from './StyleGalleryLikeButton';
@@ -50,8 +50,8 @@ function reportUrlStateError(error: unknown) {
  * 因此慢图片只会在预留区域内补齐，不会把已经显示的卡片重新排位。
  */
 function StyleGalleryExamplesOverviewContent({ examples, galleryBasePath, locale, labels }: Props) {
-  const [platform, setPlatform] = useState('all');
-  const [query, setQuery] = useState('');
+  const [platform, setPlatform] = useQueryState('platform', parseAsString.withDefault('all'));
+  const [query, setQuery] = useQueryState('q', parseAsString.withDefault(''));
   const [sortKey, setSortKey] = useQueryState('sort', parseAsStringLiteral(sortKeys).withDefault('default'));
   const [sortDirection, setSortDirection] = useQueryState('dir', parseAsStringLiteral(sortDirections).withDefault('asc'));
   const likes = useStyleGalleryLikes(Object.fromEntries(examples.map((example) => [example.id, example.likeCount])));
@@ -115,7 +115,7 @@ function StyleGalleryExamplesOverviewContent({ examples, galleryBasePath, locale
           <Icon icon="ri:search-line" className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
           <input
             value={query}
-            onChange={(event) => setQuery(event.currentTarget.value)}
+            onChange={(event) => setQuery(event.currentTarget.value).catch(reportUrlStateError)}
             placeholder={labels.searchPlaceholder}
             className="h-10 w-full rounded-md border border-border bg-background pr-3 pl-9 text-sm outline-none focus:border-primary"
           />
@@ -127,7 +127,7 @@ function StyleGalleryExamplesOverviewContent({ examples, galleryBasePath, locale
           <select
             id="example-platform-filter"
             value={platform}
-            onChange={(event) => setPlatform(event.currentTarget.value)}
+            onChange={(event) => setPlatform(event.currentTarget.value).catch(reportUrlStateError)}
             className="h-10 appearance-none rounded-md border border-border bg-background pr-8 pl-3 text-sm outline-none focus:border-primary"
           >
             <option value="all">{labels.allPlatforms}</option>
