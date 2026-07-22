@@ -138,6 +138,7 @@ export const uiStrings = {
   'gallery.sortImportedAt': '按导入时间排序',
   'gallery.sortImageId': '按图片 ID 排序',
   'gallery.sortExampleCount': '按生成示例数量排序',
+  'gallery.sortLikeCount': '按点赞数量排序',
   'gallery.sortAscending': '顺序',
   'gallery.sortDescending': '逆序',
   'gallery.imageCount': '{count} 张参考图',
@@ -153,6 +154,10 @@ export const uiStrings = {
   'gallery.examplesAllPlatforms': '全部平台',
   'gallery.examplesOtherPlatform': '其他平台',
   'gallery.examplesNoMatches': '没有符合当前筛选条件的生成示例。',
+  'gallery.like': '点赞',
+  'gallery.unlike': '取消点赞',
+  'gallery.likeLoginRequired': '使用 GitHub 登录后点赞',
+  'gallery.likeUnavailable': '点赞登录尚未配置',
 
   // ── Code Block ──────────────────────────────────────────────
   'code.copy': '复制代码',

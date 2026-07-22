@@ -62,12 +62,16 @@ export const styleGalleryCatalogSchema = z.object({
 });
 
 export const styleGalleryExampleIndexSchema = z.object({
-  version: z.literal(1),
+  version: z.literal(2),
   updatedAt: z.string().datetime({ offset: true }),
   groups: z.array(
     z.object({
       sourceSlug: z.string().regex(/^[a-z0-9-]+$/i),
-      examples: z.array(styleGalleryExampleSchema.pick({ id: true, src: true, model: true, note: true, uploadedAt: true })),
+      examples: z.array(
+        styleGalleryExampleSchema
+          .pick({ id: true, src: true, model: true, note: true, uploadedAt: true })
+          .extend({ likedBy: z.array(z.number().int().positive()).max(100_000) }),
+      ),
     }),
   ),
 });

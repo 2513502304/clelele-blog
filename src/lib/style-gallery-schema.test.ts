@@ -14,9 +14,19 @@ import {
 } from './style-gallery-chunk-upload';
 import { getStyleGalleryClientErrorResponse, StyleGalleryClientError } from './style-gallery-errors';
 import { getStyleGalleryExampleKey, getStyleGalleryExampleObjectKey } from './style-gallery-example-upload';
-import { mergeStyleGalleryExamples, removeStyleGalleryExamples } from './style-gallery-examples';
+import {
+  appendUniqueStyleGalleryExamples,
+  mergeStyleGalleryExamples,
+  removeStyleGalleryExamples,
+  toStyleGalleryExampleIndexGroup,
+} from './style-gallery-examples';
 import { getStyleGalleryPlatform } from './style-gallery-platforms';
-import { styleGalleryCatalogSchema, styleGalleryItemSchema, toStyleGalleryCatalogItem } from './style-gallery-schema';
+import {
+  styleGalleryCatalogSchema,
+  styleGalleryExampleIndexSchema,
+  styleGalleryItemSchema,
+  toStyleGalleryCatalogItem,
+} from './style-gallery-schema';
 
 const firstHash = 'a'.repeat(64);
 const secondHash = 'b'.repeat(64);
@@ -110,6 +120,21 @@ describe('style gallery metadata', () => {
     assert.equal(getStyleGalleryExampleKey(firstHash, 'PNG'), `examples/images/${firstHash}.png`);
     assert.equal(getStyleGalleryExampleObjectKey(gptImage), `examples/images/${firstHash}.png`);
     assert.throws(() => getStyleGalleryExampleObjectKey({ ...gptImage, imageHash: secondHash }), /does not match/);
+
+    const group = toStyleGalleryExampleIndexGroup('source-item', [updatedGptImage, pixaiImage], {
+      sourceSlug: 'source-item',
+      examples: [{ id: gptImage.id, src: gptImage.src, model: gptImage.model, uploadedAt: gptImage.uploadedAt, likedBy: [7] }],
+    });
+    assert.deepEqual(
+      group.examples.map((example) => example.likedBy),
+      [[7], []],
+    );
+    assert.equal(
+      styleGalleryExampleIndexSchema.parse({ version: 2, updatedAt: gptImage.uploadedAt, groups: [group] }).version,
+      2,
+    );
+
+    assert.deepEqual(appendUniqueStyleGalleryExamples([gptImage], [{ ...gptImage, id: 'replacement' }]), [gptImage]);
   });
 
   it('maps concurrent work in input order without exceeding the configured limit', async () => {

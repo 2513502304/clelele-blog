@@ -140,6 +140,7 @@ export const uiStrings: UIStrings = {
   'gallery.sortImportedAt': 'Imported date',
   'gallery.sortImageId': 'Image ID',
   'gallery.sortExampleCount': 'Generated example count',
+  'gallery.sortLikeCount': 'Like count',
   'gallery.sortAscending': 'Ascending',
   'gallery.sortDescending': 'Descending',
   'gallery.imageCount': '{count} reference images',
@@ -155,6 +156,10 @@ export const uiStrings: UIStrings = {
   'gallery.examplesAllPlatforms': 'All platforms',
   'gallery.examplesOtherPlatform': 'Other platform',
   'gallery.examplesNoMatches': 'No generated examples match the current filters.',
+  'gallery.like': 'Like',
+  'gallery.unlike': 'Unlike',
+  'gallery.likeLoginRequired': 'Sign in with GitHub to like',
+  'gallery.likeUnavailable': 'Like login is not configured',
 
   // ── Code Block ──────────────────────────────────────────────
   'code.copy': 'Copy code',

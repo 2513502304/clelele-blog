@@ -1,15 +1,22 @@
 import { Icon } from '@iconify/react';
 import { getStyleGalleryUploadPartCount, STYLE_GALLERY_UPLOAD_CHUNK_SIZE } from '@lib/style-gallery-chunk-upload';
 import { compareStyleGalleryPlatform, STYLE_GALLERY_PLATFORMS } from '@lib/style-gallery-platforms';
+import {
+  chunkStyleGalleryRequestItems,
+  STYLE_GALLERY_MUTATION_BATCH_SIZE,
+  STYLE_GALLERY_PREPARE_BATCH_SIZE,
+} from '@lib/style-gallery-request-batches';
 import { openModal } from '@store/modal';
 import { useEffect, useMemo, useState } from 'react';
-import type { StyleGalleryExample } from '@/types/style-gallery';
+import type { StyleGalleryExample, StyleGalleryExampleView } from '@/types/style-gallery';
+import { StyleGalleryLikeButton, type StyleGalleryLikeLabels, useStyleGalleryLikes } from './StyleGalleryLikeButton';
 
 interface StyleGalleryExamplesProps {
   slug: string;
   title: string;
-  initialExamples: StyleGalleryExample[];
+  initialExamples: StyleGalleryExampleView[];
   uploadsEnabled: boolean;
+  likeLabels: StyleGalleryLikeLabels;
 }
 
 interface ExamplesResponse {
@@ -38,6 +45,12 @@ interface UploadedPart {
   index: number;
   size: number;
   hash: string;
+}
+
+interface SelectedUpload {
+  id: string;
+  file: File;
+  imageHash: string;
 }
 
 const TOKEN_STORAGE_KEY = 'style-gallery-upload-token';
@@ -195,8 +208,15 @@ async function uploadFileInChunks(
  * 单个 prompt item 的 Sub-gallery 管理器。
  * 支持并发文件任务、4 MiB 分块、逐文件失败隔离，以及带令牌的批量改平台/删除操作。
  */
-export default function StyleGalleryExamples({ slug, title, initialExamples, uploadsEnabled }: StyleGalleryExamplesProps) {
+export default function StyleGalleryExamples({
+  slug,
+  title,
+  initialExamples,
+  uploadsEnabled,
+  likeLabels,
+}: StyleGalleryExamplesProps) {
   const [examples, setExamples] = useState<StyleGalleryExample[]>(initialExamples);
+  const likes = useStyleGalleryLikes(Object.fromEntries(initialExamples.map((example) => [example.id, example.likeCount])));
   const [platform, setPlatform] = useState<string>(STYLE_GALLERY_PLATFORMS[0].slug);
   const [note, setNote] = useState('');
   const [token, setToken] = useState('');
@@ -274,8 +294,20 @@ export default function StyleGalleryExamples({ slug, title, initialExamples, upl
     if (!response.ok) throw new Error((await response.text()) || `Request failed with ${response.status}`);
     const data = (await response.json()) as ExamplesResponse;
     setExamples(data.examples ?? []);
-    setSelectedIds(new Set());
     localStorage.setItem(TOKEN_STORAGE_KEY, token);
+    return data.examples ?? [];
+  }
+
+  /** 批量管理在客户端拆成有界请求；已成功的批次立即反映到 UI，失败时只保留尚未处理的选择。 */
+  async function mutateSelectedExamples(method: 'PATCH' | 'DELETE', ids: string[], platform?: string) {
+    for (const idBatch of chunkStyleGalleryRequestItems(ids, STYLE_GALLERY_MUTATION_BATCH_SIZE)) {
+      await apiMutation(method, { ids: idBatch, platform });
+      setSelectedIds((current) => {
+        const next = new Set(current);
+        for (const id of idBatch) next.delete(id);
+        return next;
+      });
+    }
   }
 
   async function updateSelectedPlatform() {
@@ -283,7 +315,7 @@ export default function StyleGalleryExamples({ slug, title, initialExamples, upl
     setMutating(true);
     setStatus(`Moving ${selectedIds.size} selected example${selectedIds.size === 1 ? '' : 's'}`);
     try {
-      await apiMutation('PATCH', { ids: [...selectedIds], platform: bulkPlatform });
+      await mutateSelectedExamples('PATCH', [...selectedIds], bulkPlatform);
       setStatus('Selected examples updated');
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Failed to update examples');
@@ -302,7 +334,7 @@ export default function StyleGalleryExamples({ slug, title, initialExamples, upl
     setMutating(true);
     setStatus(`Deleting ${selectedIds.size} selected example${selectedIds.size === 1 ? '' : 's'}`);
     try {
-      await apiMutation('DELETE', { ids: [...selectedIds] });
+      await mutateSelectedExamples('DELETE', [...selectedIds]);
       setStatus('Selected examples deleted');
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Failed to delete examples');
@@ -331,11 +363,60 @@ export default function StyleGalleryExamples({ slug, title, initialExamples, upl
 
   async function cleanupUploadedExamples(uploadedExamples: StyleGalleryExample[]) {
     if (!uploadedExamples.length) return;
-    await fetchWithRetry(`/api/style-gallery/examples/${slug}`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
-      body: JSON.stringify({ action: 'cleanup', examples: uploadedExamples }),
-    });
+    for (const exampleBatch of chunkStyleGalleryRequestItems(uploadedExamples, STYLE_GALLERY_MUTATION_BATCH_SIZE)) {
+      const response = await fetchWithRetry(`/api/style-gallery/examples/${slug}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ action: 'cleanup', examples: exampleBatch }),
+      });
+      if (!response.ok) throw new Error((await response.text()) || `Cleanup failed with ${response.status}`);
+    }
+  }
+
+  async function prepareUploads(selected: SelectedUpload[]): Promise<{
+    prepared: Array<PreparedUpload | null>;
+    localDuplicateCount: number;
+  }> {
+    const prepared: Array<PreparedUpload | null> = Array.from({ length: selected.length }, () => null);
+    const firstIndexByHash = new Map<string, number>();
+    const uniqueEntries: Array<{ index: number; entry: SelectedUpload }> = [];
+
+    for (const [index, entry] of selected.entries()) {
+      if (firstIndexByHash.has(entry.imageHash)) continue;
+      firstIndexByHash.set(entry.imageHash, index);
+      uniqueEntries.push({ index, entry });
+    }
+
+    // prepare 会为每个文件执行 HF HEAD；限制同时在途的批次数，避免大选择集瞬间放大外部请求。
+    const batches = chunkStyleGalleryRequestItems(uniqueEntries, STYLE_GALLERY_PREPARE_BATCH_SIZE);
+    let nextBatchIndex = 0;
+    async function prepareWorker() {
+      while (nextBatchIndex < batches.length) {
+        const batch = batches[nextBatchIndex];
+        nextBatchIndex += 1;
+        const response = await fetchWithRetry(`/api/style-gallery/examples/${slug}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+          body: JSON.stringify({
+            action: 'prepare',
+            platform,
+            note: note.trim() || undefined,
+            files: batch.map(({ entry }) => ({
+              name: entry.file.name,
+              type: entry.file.type,
+              size: entry.file.size,
+              imageHash: entry.imageHash,
+            })),
+          }),
+        });
+        if (!response.ok) throw new Error((await response.text()) || 'Failed to prepare uploads');
+        const uploads = ((await response.json()) as { uploads: PreparedUpload[] }).uploads;
+        if (uploads.length !== batch.length) throw new Error('Upload preparation returned an inconsistent result count.');
+        for (const [batchIndex, upload] of uploads.entries()) prepared[batch[batchIndex].index] = upload;
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(3, batches.length) }, prepareWorker));
+    return { prepared, localDuplicateCount: selected.length - uniqueEntries.length };
   }
 
   async function handleUpload(event: React.FormEvent<HTMLFormElement>) {
@@ -361,22 +442,13 @@ export default function StyleGalleryExamples({ slug, title, initialExamples, upl
       await Promise.all(Array.from({ length: Math.min(UPLOAD_CONCURRENCY, selected.length) }, hashWorker));
 
       setStatus('Checking existing examples');
-      const prepareResponse = await fetchWithRetry(`/api/style-gallery/examples/${slug}`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({
-          action: 'prepare',
-          platform,
-          note: note.trim() || undefined,
-          files: selected.map(({ file, imageHash }) => ({ name: file.name, type: file.type, size: file.size, imageHash })),
-        }),
-      });
-      if (!prepareResponse.ok) throw new Error((await prepareResponse.text()) || 'Failed to prepare uploads');
-      const prepared = ((await prepareResponse.json()) as { uploads: PreparedUpload[] }).uploads;
+      const { prepared, localDuplicateCount } = await prepareUploads(selected);
 
       let nextUploadIndex = 0;
       const uploadFailures: string[] = [];
       const examplesToCommit: StyleGalleryExample[] = [];
+      let committedCount = 0;
+      let mergeDuplicateCount = 0;
       // 固定数量 worker 从共享游标领取文件；失败文件只记录自身错误，成功文件仍进入本批元数据提交。
       async function uploadWorker() {
         while (nextUploadIndex < selected.length) {
@@ -384,6 +456,10 @@ export default function StyleGalleryExamples({ slug, title, initialExamples, upl
           nextUploadIndex += 1;
           const entry = selected[index];
           const upload = prepared[index];
+          if (!upload) {
+            updateFileProgress(entry.id, { state: 'skipped', loaded: entry.file.size });
+            continue;
+          }
           if (upload.duplicate) {
             updateFileProgress(entry.id, { state: 'skipped', loaded: entry.file.size });
             continue;
@@ -416,20 +492,24 @@ export default function StyleGalleryExamples({ slug, title, initialExamples, upl
       await Promise.all(Array.from({ length: Math.min(UPLOAD_CONCURRENCY, selected.length) }, uploadWorker));
 
       if (examplesToCommit.length) {
-        // 所有成功文件完成服务端组合后再统一 merge，避免 catalog 引用尚未存在的图片对象。
+        // 所有成功文件完成服务端组合后再拆批 merge，避免 catalog 引用尚未存在的图片对象。
         setStatus('Saving sub-gallery');
-        const mergeResponse = await fetchWithRetry(`/api/style-gallery/examples/${slug}`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
-          body: JSON.stringify({ action: 'merge', examples: examplesToCommit }),
-        });
-        if (!mergeResponse.ok) {
-          const message = await mergeResponse.text();
-          throw new Error(message);
+        for (const exampleBatch of chunkStyleGalleryRequestItems(examplesToCommit, STYLE_GALLERY_MUTATION_BATCH_SIZE)) {
+          const mergeResponse = await fetchWithRetry(`/api/style-gallery/examples/${slug}`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+            body: JSON.stringify({ action: 'merge', examples: exampleBatch }),
+          });
+          if (!mergeResponse.ok) throw new Error(await mergeResponse.text());
+          const mergeData = (await mergeResponse.json()) as ExamplesResponse;
+          committedCount += mergeData.uploaded ?? exampleBatch.length;
+          mergeDuplicateCount += mergeData.skippedDuplicates ?? 0;
+          setExamples(mergeData.examples ?? []);
+          const committedIds = new Set(exampleBatch.map((example) => example.id));
+          for (let index = uploadedExamples.length - 1; index >= 0; index -= 1) {
+            if (committedIds.has(uploadedExamples[index].id)) uploadedExamples.splice(index, 1);
+          }
         }
-        const mergeData = (await mergeResponse.json()) as ExamplesResponse;
-        setExamples(mergeData.examples ?? []);
-        uploadedExamples.length = 0;
       }
 
       setFileProgress((current) =>
@@ -441,9 +521,9 @@ export default function StyleGalleryExamples({ slug, title, initialExamples, upl
       } catch {
         // 浏览器存储不可用不应把已经完成的上传误报为失败。
       }
-      const skipped = prepared.filter((upload) => upload.duplicate).length;
+      const skipped = localDuplicateCount + prepared.filter((upload) => upload?.duplicate).length + mergeDuplicateCount;
       const statusParts = [
-        `Added ${examplesToCommit.length} example${examplesToCommit.length === 1 ? '' : 's'}`,
+        `Added ${committedCount} example${committedCount === 1 ? '' : 's'}`,
         skipped ? `skipped ${skipped} duplicate${skipped === 1 ? '' : 's'}` : '',
         uploadFailures.length ? `${uploadFailures.length} failed: ${uploadFailures.join('; ')}` : '',
       ].filter(Boolean);
@@ -662,6 +742,12 @@ export default function StyleGalleryExamples({ slug, title, initialExamples, upl
                           />
                         </label>
                       )}
+                      <StyleGalleryLikeButton
+                        exampleId={example.id}
+                        controller={likes}
+                        labels={likeLabels}
+                        className="absolute top-2 right-2 z-10"
+                      />
                       <figcaption className="space-y-2 p-3 text-gray-500 text-xs dark:text-gray-300">
                         {example.note && <p>{example.note}</p>}
                       </figcaption>

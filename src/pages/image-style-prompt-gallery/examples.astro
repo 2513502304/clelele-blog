@@ -23,6 +23,20 @@ const overviewLabels = {
   otherPlatform: t(locale, 'gallery.examplesOtherPlatform'),
   noMatches: t(locale, 'gallery.examplesNoMatches'),
   loadMore: t(locale, 'search.loadMore'),
+  sortItems: t(locale, 'gallery.sortItems'),
+  sortDefault: t(locale, 'gallery.sortDefault'),
+  sortImportedAt: t(locale, 'gallery.sortImportedAt'),
+  sortImageId: t(locale, 'gallery.sortImageId'),
+  sortExampleCount: t(locale, 'gallery.sortExampleCount'),
+  sortLikeCount: t(locale, 'gallery.sortLikeCount'),
+  sortAscending: t(locale, 'gallery.sortAscending'),
+  sortDescending: t(locale, 'gallery.sortDescending'),
+  likes: {
+    like: t(locale, 'gallery.like'),
+    unlike: t(locale, 'gallery.unlike'),
+    loginRequired: t(locale, 'gallery.likeLoginRequired'),
+    unavailable: t(locale, 'gallery.likeUnavailable'),
+  },
 };
 Astro.response.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=300');
 ---

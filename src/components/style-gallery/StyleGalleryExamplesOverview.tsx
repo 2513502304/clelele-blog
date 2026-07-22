@@ -4,6 +4,7 @@ import { openModal } from '@store/modal';
 import { useMemo, useState } from 'react';
 import { useProgressiveList } from '@/hooks/useProgressiveList';
 import type { StyleGalleryExampleOverviewItem } from '@/types/style-gallery';
+import { StyleGalleryLikeButton, type StyleGalleryLikeLabels, useStyleGalleryLikes } from './StyleGalleryLikeButton';
 
 interface Props {
   examples: StyleGalleryExampleOverviewItem[];
@@ -19,11 +20,23 @@ export interface StyleGalleryExamplesOverviewLabels {
   otherPlatform: string;
   noMatches: string;
   loadMore: string;
+  sortItems: string;
+  sortDefault: string;
+  sortImportedAt: string;
+  sortImageId: string;
+  sortExampleCount: string;
+  sortLikeCount: string;
+  sortAscending: string;
+  sortDescending: string;
+  likes: StyleGalleryLikeLabels;
 }
 
 const INITIAL_EXAMPLE_COUNT = 24;
 const EXAMPLE_BATCH_SIZE = 24;
 const EAGER_EXAMPLE_COUNT = 8;
+const sortKeys = ['default', 'date', 'id', 'examples', 'likes'] as const;
+type SortKey = (typeof sortKeys)[number];
+type SortDirection = 'asc' | 'desc';
 
 /**
  * 跨 item 的 Sub-gallery 总览。数据来自轻量示例索引，并采用固定比例卡片与渐进挂载，
@@ -32,19 +45,39 @@ const EAGER_EXAMPLE_COUNT = 8;
 export default function StyleGalleryExamplesOverview({ examples, galleryBasePath, locale, labels }: Props) {
   const [platform, setPlatform] = useState('all');
   const [query, setQuery] = useState('');
+  const [sortKey, setSortKey] = useState<SortKey>('default');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+  const likes = useStyleGalleryLikes(Object.fromEntries(examples.map((example) => [example.id, example.likeCount])));
+  const sortLabels: Record<SortKey, string> = {
+    default: labels.sortDefault,
+    date: labels.sortImportedAt,
+    id: labels.sortImageId,
+    examples: labels.sortExampleCount,
+    likes: labels.sortLikeCount,
+  };
   const dateFormatter = useMemo(
     () => new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'numeric', day: 'numeric', timeZone: 'UTC' }),
     [locale],
   );
   const filtered = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
-    return examples.filter((example) => {
+    const matches = examples.filter((example) => {
       const matchesPlatform = platform === 'all' || example.model === platform;
       const matchesQuery =
         !normalizedQuery || `${example.sourceTitle} ${example.note ?? ''}`.toLowerCase().includes(normalizedQuery);
       return matchesPlatform && matchesQuery;
     });
-  }, [examples, platform, query]);
+    const sorted = [...matches];
+    if (sortKey !== 'default') {
+      sorted.sort((a, b) => {
+        if (sortKey === 'id') return a.id.localeCompare(b.id);
+        if (sortKey === 'examples') return a.sourceExampleCount - b.sourceExampleCount || a.id.localeCompare(b.id);
+        if (sortKey === 'likes') return likes.getCount(a.id) - likes.getCount(b.id) || a.id.localeCompare(b.id);
+        return a.uploadedAt.localeCompare(b.uploadedAt) || a.id.localeCompare(b.id);
+      });
+    }
+    return sortDirection === 'desc' ? sorted.reverse() : sorted;
+  }, [examples, likes, platform, query, sortDirection, sortKey]);
   const lightboxImages = useMemo(
     () => filtered.map((example) => ({ src: example.src, alt: `${example.sourceTitle} ${example.model}` })),
     [filtered],
@@ -52,7 +85,7 @@ export default function StyleGalleryExamplesOverview({ examples, galleryBasePath
   const { hasMore, loadMore, loadMoreRef, visibleItems } = useProgressiveList(filtered, {
     initialCount: INITIAL_EXAMPLE_COUNT,
     batchSize: EXAMPLE_BATCH_SIZE,
-    resetKey: `${platform}\u0000${query.trim().toLowerCase()}`,
+    resetKey: `${platform}\u0000${query.trim().toLowerCase()}\u0000${sortKey}\u0000${sortDirection}`,
   });
 
   function openLightbox(example: StyleGalleryExampleOverviewItem) {
@@ -105,6 +138,36 @@ export default function StyleGalleryExamplesOverview({ examples, galleryBasePath
         <span className="text-muted-foreground text-sm tabular-nums">
           {filtered.length} / {examples.length}
         </span>
+        <label className="sr-only" htmlFor="example-sort">
+          {labels.sortItems}
+        </label>
+        <div className="relative min-w-44">
+          <select
+            id="example-sort"
+            value={sortKey}
+            onChange={(event) => setSortKey(event.currentTarget.value as SortKey)}
+            className="h-10 w-full appearance-none rounded-md border border-border bg-background pr-8 pl-3 text-sm outline-none focus:border-primary"
+          >
+            {sortKeys.map((key) => (
+              <option key={key} value={key}>
+                {sortLabels[key]}
+              </option>
+            ))}
+          </select>
+          <Icon
+            icon="ri:arrow-down-s-line"
+            className="pointer-events-none absolute top-1/2 right-2 size-4 -translate-y-1/2 text-muted-foreground"
+          />
+        </div>
+        <button
+          type="button"
+          onClick={() => setSortDirection((direction) => (direction === 'asc' ? 'desc' : 'asc'))}
+          title={sortDirection === 'asc' ? labels.sortAscending : labels.sortDescending}
+          aria-label={sortDirection === 'asc' ? labels.sortAscending : labels.sortDescending}
+          className="flex size-10 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground transition hover:border-primary/40 hover:text-foreground"
+        >
+          <Icon icon={sortDirection === 'asc' ? 'ri:sort-asc' : 'ri:sort-desc'} className="size-4" />
+        </button>
       </div>
 
       {filtered.length ? (
@@ -112,8 +175,8 @@ export default function StyleGalleryExamplesOverview({ examples, galleryBasePath
           <div className="grid grid-cols-4 items-stretch gap-4 md:grid-cols-1 lg:grid-cols-2 xl:grid-cols-3">
             {visibleItems.map((example, index) => (
               <figure
-                key={`${example.sourceSlug}-${example.src}`}
-                className="flex h-full w-full min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-background shadow-sm"
+                key={example.id}
+                className="relative flex h-full w-full min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-background shadow-sm"
               >
                 <button
                   type="button"
@@ -131,6 +194,12 @@ export default function StyleGalleryExamplesOverview({ examples, galleryBasePath
                     className="aspect-[4/5] w-full object-cover transition duration-200 group-hover:scale-[1.02]"
                   />
                 </button>
+                <StyleGalleryLikeButton
+                  exampleId={example.id}
+                  controller={likes}
+                  labels={labels.likes}
+                  className="absolute top-2 right-2 z-10"
+                />
                 <figcaption className="flex flex-1 flex-col gap-3 p-3">
                   <div className="flex items-center justify-between gap-2">
                     <span className="rounded-full bg-sky-50 px-2 py-1 font-semibold text-sky-600 text-xs dark:bg-sky-950/50 dark:text-sky-200">

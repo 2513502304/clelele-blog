@@ -15,9 +15,9 @@ import {
   getStyleGalleryExampleIndex,
   getStyleGalleryItemKey,
   invalidateStyleGalleryStoreCache,
+  mutateStyleGalleryExampleIndex,
   putStoredStyleGalleryItem,
   putStyleGalleryCatalog,
-  putStyleGalleryExampleIndex,
   STYLE_GALLERY_CATALOG_KEY,
 } from '@lib/style-gallery-store';
 import type {
@@ -139,12 +139,12 @@ export async function writeStyleGalleryItems(
           items: [...nextBySlug.values()].sort((a, b) => b.date.localeCompare(a.date)),
         };
         const activeSlugs = new Set(nextCatalog.items.map((item) => item.slug));
-        const nextIndex = {
-          ...previousIndex,
+        await putStyleGalleryCatalog(nextCatalog);
+        await mutateStyleGalleryExampleIndex((current) => ({
+          version: 2,
           updatedAt: nextCatalog.updatedAt,
-          groups: previousIndex.groups.filter((group) => activeSlugs.has(group.sourceSlug)),
-        };
-        await Promise.all([putStyleGalleryCatalog(nextCatalog), putStyleGalleryExampleIndex(nextIndex)]);
+          groups: current.groups.filter((group) => activeSlugs.has(group.sourceSlug)),
+        }));
         invalidateStyleGalleryStoreCache();
         const savedCatalog = await getStyleGalleryCatalog({ fresh: true });
         assertCatalogContains(
@@ -182,16 +182,26 @@ export async function reconcileStyleGalleryExampleCounts(): Promise<{ checked: n
       updated += 1;
       return { ...item, exampleCount };
     });
-    const groups = storedItems.flatMap((item) => {
-      return item.examples.length ? [toStyleGalleryExampleIndexGroup(item.slug, item.examples)] : [];
-    });
+    const previousBySlug = new Map(previousIndex.groups.map((group) => [group.sourceSlug, group]));
+    const groups = storedItems.flatMap((item) =>
+      item.examples.length ? [toStyleGalleryExampleIndexGroup(item.slug, item.examples, previousBySlug.get(item.slug))] : [],
+    );
     const indexChanged = JSON.stringify(groups) !== JSON.stringify(previousIndex.groups);
     if (updated || indexChanged) {
       const updatedAt = new Date().toISOString();
-      await Promise.all([
-        putStyleGalleryCatalog({ ...catalog, updatedAt, items }),
-        putStyleGalleryExampleIndex({ version: 1, updatedAt, groups }),
-      ]);
+      await putStyleGalleryCatalog({ ...catalog, updatedAt, items });
+      await mutateStyleGalleryExampleIndex((current) => {
+        const currentBySlug = new Map(current.groups.map((group) => [group.sourceSlug, group]));
+        return {
+          version: 2,
+          updatedAt,
+          groups: storedItems.flatMap((item) =>
+            item.examples.length
+              ? [toStyleGalleryExampleIndexGroup(item.slug, item.examples, currentBySlug.get(item.slug))]
+              : [],
+          ),
+        };
+      });
     }
     return { checked: catalog.items.length, updated };
   });
@@ -225,18 +235,22 @@ export async function updateStyleGalleryItemExamples(
         candidate.slug === slug ? { ...candidate, exampleCount: examples.length } : candidate,
       ),
     };
-    const groups = previousIndex.groups.filter((group) => group.sourceSlug !== slug);
-    if (examples.length) groups.push(toStyleGalleryExampleIndexGroup(slug, examples));
-    const index: StyleGalleryExampleIndex = { version: 1, updatedAt, groups };
+    let index: StyleGalleryExampleIndex | undefined;
 
     try {
-      await Promise.all([putStoredStyleGalleryItem(item), putStyleGalleryCatalog(catalog), putStyleGalleryExampleIndex(index)]);
+      await Promise.all([putStoredStyleGalleryItem(item), putStyleGalleryCatalog(catalog)]);
+      index = await mutateStyleGalleryExampleIndex((current) => {
+        const previousGroup = current.groups.find((group) => group.sourceSlug === slug);
+        const groups = current.groups.filter((group) => group.sourceSlug !== slug);
+        if (examples.length) groups.push(toStyleGalleryExampleIndexGroup(slug, examples, previousGroup));
+        return { version: 2, updatedAt, groups };
+      });
       return { item, index };
     } catch (error) {
       const rollback = await Promise.allSettled([
         putStoredStyleGalleryItem(previousItem),
         putStyleGalleryCatalog(previousCatalog),
-        putStyleGalleryExampleIndex(previousIndex),
+        restoreStyleGalleryExampleIndexStructure(previousIndex),
       ]);
       const rollbackErrors = rollback.flatMap((result) => (result.status === 'rejected' ? [result.reason] : []));
       if (rollbackErrors.length) {
@@ -290,10 +304,28 @@ async function rollbackMetadata(
     errors.push(error);
   }
   try {
-    await putStyleGalleryExampleIndex(previousIndex);
+    await restoreStyleGalleryExampleIndexStructure(previousIndex);
   } catch (error) {
     errors.push(error);
   }
   invalidateStyleGalleryStoreCache();
   return errors;
+}
+
+/** 回滚示例结构时保留并发期间已经写入的点赞，避免补偿逻辑反向覆盖新投票。 */
+async function restoreStyleGalleryExampleIndexStructure(previous: StyleGalleryExampleIndex): Promise<void> {
+  await mutateStyleGalleryExampleIndex((current) => {
+    const currentById = new Map(current.groups.flatMap((group) => group.examples.map((example) => [example.id, example])));
+    return {
+      version: 2,
+      updatedAt: new Date().toISOString(),
+      groups: previous.groups.map((group) => ({
+        ...group,
+        examples: group.examples.map((example) => ({
+          ...example,
+          likedBy: currentById.get(example.id)?.likedBy ?? example.likedBy,
+        })),
+      })),
+    };
+  });
 }
