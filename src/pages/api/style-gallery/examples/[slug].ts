@@ -11,11 +11,12 @@ import {
   MAX_STYLE_GALLERY_EXAMPLE_FILES,
 } from '@lib/style-gallery-example-upload';
 import {
+  appendUniqueStyleGalleryExamples,
   getStyleGalleryExampleIdentity,
-  mergeStyleGalleryExamples,
   removeStyleGalleryExamples,
 } from '@lib/style-gallery-examples';
 import { getStyleGalleryPlatform } from '@lib/style-gallery-platforms';
+import { STYLE_GALLERY_MUTATION_BATCH_SIZE } from '@lib/style-gallery-request-batches';
 import { getStoredStyleGalleryItem, getStyleGalleryExampleIndex } from '@lib/style-gallery-store';
 import { updateStyleGalleryItemExamples } from '@lib/style-gallery-write';
 import type { APIRoute } from 'astro';
@@ -51,13 +52,13 @@ const prepareSchema = z.object({
     .min(1)
     .max(MAX_STYLE_GALLERY_EXAMPLE_FILES),
 });
-const examplesSchema = z.array(exampleSchema).min(1).max(128);
+const examplesSchema = z.array(exampleSchema).min(1).max(STYLE_GALLERY_MUTATION_BATCH_SIZE);
 const mergeSchema = z.object({ token: z.string().optional(), action: z.literal('merge'), examples: examplesSchema });
 const cleanupSchema = z.object({ token: z.string().optional(), action: z.literal('cleanup'), examples: examplesSchema });
 const idsSchema = z
   .array(z.string().regex(/^[a-z0-9-]+$/i))
   .min(1)
-  .max(128);
+  .max(STYLE_GALLERY_MUTATION_BATCH_SIZE);
 const updateSchema = z.object({ token: z.string().optional(), ids: idsSchema, platform: z.string() });
 const deleteSchema = z.object({ token: z.string().optional(), ids: idsSchema });
 
@@ -149,13 +150,16 @@ export const POST: APIRoute = async ({ params, request }) => {
     // 图片全部写入并经 HEAD 校验后，才提交 item、catalog 计数和示例总览索引。
     const body = mergeSchema.parse(rawBody);
     await validateExampleObjectsExist(body.examples);
-    const result = await updateStyleGalleryItemExamples(slug, (examples) =>
-      mergeStyleGalleryExamples([...examples, ...body.examples]),
-    );
+    let added = 0;
+    const result = await updateStyleGalleryItemExamples(slug, (examples) => {
+      const merged = appendUniqueStyleGalleryExamples(examples, body.examples);
+      added = merged.length - examples.length;
+      return merged;
+    });
     return Response.json({
       examples: result.item.examples,
-      uploaded: body.examples.length,
-      skippedDuplicates: body.examples.length - new Set(body.examples.map(getStyleGalleryExampleIdentity)).size,
+      uploaded: added,
+      skippedDuplicates: body.examples.length - added,
       updatedAt: result.item.updated,
     });
   } catch (error) {
@@ -180,13 +184,19 @@ export const PATCH: APIRoute = async ({ params, request }) => {
     const result = await updateStyleGalleryItemExamples(slug, (examples, item) => {
       const found = examples.filter((example) => selectedIds.has(example.id));
       if (found.length !== selectedIds.size) throw new StyleGalleryClientError('One or more examples were not found.', 404);
-      return mergeStyleGalleryExamples(
-        examples.map((example) =>
-          selectedIds.has(example.id)
-            ? { ...example, alt: `${item.title} ${platform.label} example`, model: platform.label }
-            : example,
-        ),
+      const updated = examples.map((example) =>
+        selectedIds.has(example.id)
+          ? { ...example, alt: `${item.title} ${platform.label} example`, model: platform.label }
+          : example,
       );
+      const identities = updated.map(getStyleGalleryExampleIdentity);
+      if (new Set(identities).size !== identities.length) {
+        throw new StyleGalleryClientError(
+          'Changing platform would duplicate an existing image in the destination platform.',
+          409,
+        );
+      }
+      return updated;
     });
     return Response.json({ examples: result.item.examples, updatedAt: result.item.updated });
   } catch (error) {

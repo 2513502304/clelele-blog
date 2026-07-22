@@ -15,9 +15,9 @@ import {
   getStyleGalleryExampleIndex,
   getStyleGalleryItemKey,
   invalidateStyleGalleryStoreCache,
+  mutateStyleGalleryExampleIndex,
   putStoredStyleGalleryItem,
   putStyleGalleryCatalog,
-  putStyleGalleryExampleIndex,
   STYLE_GALLERY_CATALOG_KEY,
 } from '@lib/style-gallery-store';
 import type {
@@ -25,6 +25,7 @@ import type {
   StyleGalleryCatalog,
   StyleGalleryExample,
   StyleGalleryExampleIndex,
+  StyleGalleryExampleIndexGroup,
 } from '@/types/style-gallery';
 
 const ASSET_VALIDATION_CONCURRENCY = 8;
@@ -95,6 +96,7 @@ export async function writeStyleGalleryItems(
     const slugByHash = new Map(previousCatalog.items.map((item) => [item.imageHash, item.slug]));
     const previousItemBodies = new Map<string, string | null>();
     const writtenItems: StoredStyleGalleryItem[] = [];
+    const attemptedIndexGroups = new Map<string, StyleGalleryExampleIndexGroup | null>();
     let skippedDuplicates = 0;
 
     try {
@@ -139,12 +141,15 @@ export async function writeStyleGalleryItems(
           items: [...nextBySlug.values()].sort((a, b) => b.date.localeCompare(a.date)),
         };
         const activeSlugs = new Set(nextCatalog.items.map((item) => item.slug));
-        const nextIndex = {
-          ...previousIndex,
+        for (const item of writtenItems) {
+          if (!activeSlugs.has(item.slug)) attemptedIndexGroups.set(item.slug, null);
+        }
+        await putStyleGalleryCatalog(nextCatalog);
+        await mutateStyleGalleryExampleIndex((current) => ({
+          version: 2,
           updatedAt: nextCatalog.updatedAt,
-          groups: previousIndex.groups.filter((group) => activeSlugs.has(group.sourceSlug)),
-        };
-        await Promise.all([putStyleGalleryCatalog(nextCatalog), putStyleGalleryExampleIndex(nextIndex)]);
+          groups: current.groups.filter((group) => activeSlugs.has(group.sourceSlug)),
+        }));
         invalidateStyleGalleryStoreCache();
         const savedCatalog = await getStyleGalleryCatalog({ fresh: true });
         assertCatalogContains(
@@ -155,7 +160,7 @@ export async function writeStyleGalleryItems(
 
       return { items: writtenItems, written: writtenItems.length, skippedDuplicates };
     } catch (error) {
-      const rollbackErrors = await rollbackMetadata(previousCatalog, previousIndex, previousItemBodies);
+      const rollbackErrors = await rollbackMetadata(previousCatalog, previousIndex, previousItemBodies, attemptedIndexGroups);
       if (rollbackErrors.length) {
         throw new AggregateError([error, ...rollbackErrors], 'Style gallery write failed and rollback was incomplete.');
       }
@@ -182,16 +187,26 @@ export async function reconcileStyleGalleryExampleCounts(): Promise<{ checked: n
       updated += 1;
       return { ...item, exampleCount };
     });
-    const groups = storedItems.flatMap((item) => {
-      return item.examples.length ? [toStyleGalleryExampleIndexGroup(item.slug, item.examples)] : [];
-    });
+    const previousBySlug = new Map(previousIndex.groups.map((group) => [group.sourceSlug, group]));
+    const groups = storedItems.flatMap((item) =>
+      item.examples.length ? [toStyleGalleryExampleIndexGroup(item.slug, item.examples, previousBySlug.get(item.slug))] : [],
+    );
     const indexChanged = JSON.stringify(groups) !== JSON.stringify(previousIndex.groups);
     if (updated || indexChanged) {
       const updatedAt = new Date().toISOString();
-      await Promise.all([
-        putStyleGalleryCatalog({ ...catalog, updatedAt, items }),
-        putStyleGalleryExampleIndex({ version: 1, updatedAt, groups }),
-      ]);
+      await putStyleGalleryCatalog({ ...catalog, updatedAt, items });
+      await mutateStyleGalleryExampleIndex((current) => {
+        const currentBySlug = new Map(current.groups.map((group) => [group.sourceSlug, group]));
+        return {
+          version: 2,
+          updatedAt,
+          groups: storedItems.flatMap((item) =>
+            item.examples.length
+              ? [toStyleGalleryExampleIndexGroup(item.slug, item.examples, currentBySlug.get(item.slug))]
+              : [],
+          ),
+        };
+      });
     }
     return { checked: catalog.items.length, updated };
   });
@@ -225,18 +240,23 @@ export async function updateStyleGalleryItemExamples(
         candidate.slug === slug ? { ...candidate, exampleCount: examples.length } : candidate,
       ),
     };
-    const groups = previousIndex.groups.filter((group) => group.sourceSlug !== slug);
-    if (examples.length) groups.push(toStyleGalleryExampleIndexGroup(slug, examples));
-    const index: StyleGalleryExampleIndex = { version: 1, updatedAt, groups };
+    const previousGroup = previousIndex.groups.find((group) => group.sourceSlug === slug);
+    const attemptedGroup = examples.length ? toStyleGalleryExampleIndexGroup(slug, examples, previousGroup) : null;
 
     try {
-      await Promise.all([putStoredStyleGalleryItem(item), putStyleGalleryCatalog(catalog), putStyleGalleryExampleIndex(index)]);
+      await Promise.all([putStoredStyleGalleryItem(item), putStyleGalleryCatalog(catalog)]);
+      const index = await mutateStyleGalleryExampleIndex((current) => {
+        const currentGroup = current.groups.find((group) => group.sourceSlug === slug);
+        const groups = current.groups.filter((group) => group.sourceSlug !== slug);
+        if (examples.length) groups.push(toStyleGalleryExampleIndexGroup(slug, examples, currentGroup));
+        return { version: 2, updatedAt, groups };
+      });
       return { item, index };
     } catch (error) {
       const rollback = await Promise.allSettled([
         putStoredStyleGalleryItem(previousItem),
         putStyleGalleryCatalog(previousCatalog),
-        putStyleGalleryExampleIndex(previousIndex),
+        restoreStyleGalleryExampleIndexStructure(previousIndex, new Map([[slug, attemptedGroup]])),
       ]);
       const rollbackErrors = rollback.flatMap((result) => (result.status === 'rejected' ? [result.reason] : []));
       if (rollbackErrors.length) {
@@ -269,6 +289,7 @@ async function rollbackMetadata(
   previousCatalog: StyleGalleryCatalog,
   previousIndex: StyleGalleryExampleIndex,
   previousItemBodies: Map<string, string | null>,
+  attemptedIndexGroups: ReadonlyMap<string, StyleGalleryExampleIndexGroup | null>,
 ): Promise<unknown[]> {
   const errors: unknown[] = [];
   for (const [slug, body] of previousItemBodies) {
@@ -289,11 +310,118 @@ async function rollbackMetadata(
   } catch (error) {
     errors.push(error);
   }
-  try {
-    await putStyleGalleryExampleIndex(previousIndex);
-  } catch (error) {
-    errors.push(error);
+  if (attemptedIndexGroups.size) {
+    try {
+      await restoreStyleGalleryExampleIndexStructure(previousIndex, attemptedIndexGroups);
+    } catch (error) {
+      errors.push(error);
+    }
   }
   invalidateStyleGalleryStoreCache();
   return errors;
+}
+
+/**
+ * 对 previous / attempted / current 做条件回滚。只有 current 仍等于本次 attempted 结构时才恢复 previous；
+ * 如果同一 slug 已出现其他实例的结构变更，则保留 current。结构比较忽略 likedBy，恢复时再合并最新点赞。
+ */
+export function mergeStyleGalleryExampleIndexRollback(
+  current: StyleGalleryExampleIndex,
+  previous: StyleGalleryExampleIndex,
+  attemptedBySlug: ReadonlyMap<string, StyleGalleryExampleIndexGroup | null>,
+): StyleGalleryExampleIndex['groups'] {
+  const currentBySlug = new Map(current.groups.map((group) => [group.sourceSlug, group]));
+  const previousBySlug = new Map(previous.groups.map((group) => [group.sourceSlug, group]));
+  const handledSlugs = new Set<string>();
+  const merged = current.groups.flatMap((group) => {
+    if (!attemptedBySlug.has(group.sourceSlug)) return [group];
+    handledSlugs.add(group.sourceSlug);
+    const attempted = attemptedBySlug.get(group.sourceSlug) ?? null;
+    const previousGroup = previousBySlug.get(group.sourceSlug);
+    const restored = rollbackGroupStructure(group, previousGroup ?? null, attempted);
+    return restored ? [restored] : [];
+  });
+
+  for (const [slug, attempted] of attemptedBySlug) {
+    if (handledSlugs.has(slug) || currentBySlug.has(slug) || attempted !== null) continue;
+    const previousGroup = previousBySlug.get(slug);
+    if (previousGroup) merged.push(previousGroup);
+  }
+  return merged;
+}
+
+async function restoreStyleGalleryExampleIndexStructure(
+  previous: StyleGalleryExampleIndex,
+  attemptedBySlug: ReadonlyMap<string, StyleGalleryExampleIndexGroup | null>,
+): Promise<void> {
+  await mutateStyleGalleryExampleIndex((current) => {
+    return {
+      version: 2,
+      updatedAt: new Date().toISOString(),
+      groups: mergeStyleGalleryExampleIndexRollback(current, previous, attemptedBySlug),
+    };
+  });
+}
+
+function rollbackGroupStructure(
+  current: StyleGalleryExampleIndexGroup | null,
+  previous: StyleGalleryExampleIndexGroup | null,
+  attempted: StyleGalleryExampleIndexGroup | null,
+): StyleGalleryExampleIndexGroup | null {
+  if (!current || !attempted) return current;
+  if (hasSameGroupStructure(current, attempted)) return previous ? restoreGroupWithCurrentLikes(previous, current) : null;
+
+  const previousById = new Map(previous?.examples.map((example) => [example.id, example]));
+  const attemptedById = new Map(attempted.examples.map((example) => [example.id, example]));
+  const currentIds = new Set(current.examples.map((example) => example.id));
+  const examples = current.examples.flatMap((example) => {
+    const attemptedExample = attemptedById.get(example.id);
+    if (!attemptedExample || !hasSameEntryStructure(example, attemptedExample)) return [example];
+    const previousExample = previousById.get(example.id);
+    return previousExample ? [{ ...previousExample, likedBy: example.likedBy }] : [];
+  });
+
+  // attempted 中缺失且 current 中仍缺失的旧记录属于本次删除，需要恢复；并发重新加入的版本已经在上面保留。
+  for (const previousExample of previous?.examples ?? []) {
+    if (!attemptedById.has(previousExample.id) && !currentIds.has(previousExample.id)) examples.push(previousExample);
+  }
+  return examples.length ? { sourceSlug: current.sourceSlug, examples } : null;
+}
+
+function hasSameGroupStructure(left: StyleGalleryExampleIndexGroup, right: StyleGalleryExampleIndexGroup): boolean {
+  return (
+    left.sourceSlug === right.sourceSlug &&
+    left.examples.length === right.examples.length &&
+    left.examples.every((example, index) => {
+      const candidate = right.examples[index];
+      return candidate !== undefined && hasSameEntryStructure(example, candidate);
+    })
+  );
+}
+
+function hasSameEntryStructure(
+  left: StyleGalleryExampleIndexGroup['examples'][number],
+  right: StyleGalleryExampleIndexGroup['examples'][number],
+): boolean {
+  return (
+    left.id === right.id &&
+    left.src === right.src &&
+    left.model === right.model &&
+    left.note === right.note &&
+    left.uploadedAt === right.uploadedAt
+  );
+}
+
+function restoreGroupWithCurrentLikes(
+  previous: StyleGalleryExampleIndexGroup,
+  current: StyleGalleryExampleIndexGroup,
+): StyleGalleryExampleIndexGroup {
+  const currentById = new Map(current.examples.map((example) => [example.id, example]));
+  return {
+    ...previous,
+    examples: previous.examples.map((example) => ({
+      ...example,
+      likedBy: currentById.get(example.id)?.likedBy ?? example.likedBy,
+    })),
+  };
 }

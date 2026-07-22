@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import type { StyleGalleryPlatform } from '@lib/style-gallery-platforms';
+import { STYLE_GALLERY_PREPARE_BATCH_SIZE } from '@lib/style-gallery-request-batches';
 import type { StyleGalleryExample } from '@/types/style-gallery';
 
 export { MAX_STYLE_GALLERY_EXAMPLE_FILE_SIZE } from '@lib/style-gallery-chunk-upload';
 
-export const MAX_STYLE_GALLERY_EXAMPLE_FILES = 32;
+export const MAX_STYLE_GALLERY_EXAMPLE_FILES = STYLE_GALLERY_PREPARE_BATCH_SIZE;
 
 const IMAGE_EXTENSIONS: Record<string, string> = {
   'image/jpeg': 'jpg',

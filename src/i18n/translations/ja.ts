@@ -140,6 +140,7 @@ export const uiStrings: UIStrings = {
   'gallery.sortImportedAt': 'インポート日時順',
   'gallery.sortImageId': '画像 ID 順',
   'gallery.sortExampleCount': '生成例の数順',
+  'gallery.sortLikeCount': 'いいね数順',
   'gallery.sortAscending': '昇順',
   'gallery.sortDescending': '降順',
   'gallery.imageCount': '参考画像 {count} 枚',
@@ -155,6 +156,10 @@ export const uiStrings: UIStrings = {
   'gallery.examplesAllPlatforms': 'すべてのプラットフォーム',
   'gallery.examplesOtherPlatform': 'その他',
   'gallery.examplesNoMatches': '現在の条件に一致する生成例はありません。',
+  'gallery.like': 'いいね',
+  'gallery.unlike': 'いいねを取り消す',
+  'gallery.likeLoginRequired': 'GitHub でログインしていいね',
+  'gallery.likeUnavailable': 'いいね用ログインが未設定です',
 
   // ── コードブロック ──────────────────────────────────────────────
   'code.copy': 'コードをコピー',

@@ -16,6 +16,7 @@ export interface StyleGalleryBrowserItem {
   tags: string[];
   modelTargets: string[];
   exampleCount: number;
+  likeCount: number;
 }
 
 interface StyleGalleryBrowserProps {
@@ -33,6 +34,7 @@ export interface StyleGalleryBrowserLabels {
   sortImportedAt: string;
   sortImageId: string;
   sortExampleCount: string;
+  sortLikeCount: string;
   sortAscending: string;
   sortDescending: string;
   imageCount: string;
@@ -43,7 +45,7 @@ export interface StyleGalleryBrowserLabels {
   noMatches: string;
 }
 
-type SortKey = 'default' | 'date' | 'id' | 'examples';
+type SortKey = 'default' | 'date' | 'id' | 'examples' | 'likes';
 type SortDirection = 'asc' | 'desc';
 
 function normalize(value: string) {
@@ -66,6 +68,7 @@ export default function StyleGalleryBrowser({ items, tags, galleryBasePath, labe
     date: labels.sortImportedAt,
     id: labels.sortImageId,
     examples: labels.sortExampleCount,
+    likes: labels.sortLikeCount,
   };
 
   const filteredItems = useMemo(() => {
@@ -82,6 +85,7 @@ export default function StyleGalleryBrowser({ items, tags, galleryBasePath, labe
       sorted.sort((a, b) => {
         if (sortKey === 'id') return a.imageHash.localeCompare(b.imageHash);
         if (sortKey === 'examples') return a.exampleCount - b.exampleCount || a.date.localeCompare(b.date);
+        if (sortKey === 'likes') return a.likeCount - b.likeCount || a.date.localeCompare(b.date);
         return a.date.localeCompare(b.date);
       });
     }
@@ -234,6 +238,10 @@ export default function StyleGalleryBrowser({ items, tags, galleryBasePath, labe
                       {labels.imageCount.replace('{count}', String(item.imageCount))}
                     </span>
                   )}
+                  <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-1 font-bold text-[11px] text-rose-500 dark:bg-rose-950/50 dark:text-rose-200">
+                    <Icon icon="ri:heart-3-fill" className="size-3" />
+                    <span className="tabular-nums">{item.likeCount}</span>
+                  </span>
                 </div>
               </div>
               <p className="line-clamp-4 min-h-22 text-pretty text-gray-600 text-sm leading-6 dark:text-gray-300">

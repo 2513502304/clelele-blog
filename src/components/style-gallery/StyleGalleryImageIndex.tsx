@@ -19,6 +19,7 @@ export interface StyleGalleryImageIndexLabels {
   sortImportedAt: string;
   sortImageId: string;
   sortExampleCount: string;
+  sortLikeCount: string;
   sortAscending: string;
   sortDescending: string;
   imageCount: string;
@@ -27,7 +28,7 @@ export interface StyleGalleryImageIndexLabels {
   loadMore: string;
 }
 
-const sortKeys = ['default', 'date', 'id', 'examples'] as const;
+const sortKeys = ['default', 'date', 'id', 'examples', 'likes'] as const;
 const sortDirections = ['asc', 'desc'] as const;
 type SortKey = (typeof sortKeys)[number];
 const INITIAL_INDEX_ITEM_COUNT = 120;
@@ -54,6 +55,7 @@ function StyleGalleryImageIndexContent({ items, galleryBasePath, labels }: Style
     date: labels.sortImportedAt,
     id: labels.sortImageId,
     examples: labels.sortExampleCount,
+    likes: labels.sortLikeCount,
   };
 
   const visibleItems = useMemo(() => {
@@ -69,6 +71,7 @@ function StyleGalleryImageIndexContent({ items, galleryBasePath, labels }: Style
       sorted.sort((a, b) => {
         if (sortKey === 'id') return a.imageHash.localeCompare(b.imageHash);
         if (sortKey === 'examples') return a.exampleCount - b.exampleCount || a.date.localeCompare(b.date);
+        if (sortKey === 'likes') return a.likeCount - b.likeCount || a.date.localeCompare(b.date);
         return a.date.localeCompare(b.date);
       });
     }
@@ -169,6 +172,10 @@ function StyleGalleryImageIndexContent({ items, galleryBasePath, labels }: Style
                     ×{item.imageCount}
                   </span>
                 )}
+                <span className="absolute right-1 bottom-6 inline-flex min-w-7 items-center justify-center gap-0.5 rounded-sm bg-rose-500/90 px-1 py-0.5 font-bold text-[9px] text-white tabular-nums">
+                  <Icon icon="ri:heart-3-fill" className="size-2.5" />
+                  {item.likeCount}
+                </span>
                 <span className="absolute inset-x-0 bottom-0 truncate bg-black/70 px-1.5 py-1 font-mono text-[9px] text-white">
                   {item.imageHash.slice(0, 12)}
                 </span>

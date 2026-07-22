@@ -125,6 +125,7 @@ function createSignedHeaders(
   key: string,
   body: Uint8Array,
   contentType = 'application/octet-stream',
+  conditionalHeaders: { ifMatch?: string; ifNoneMatch?: '*' } = {},
   now = new Date(),
 ): { url: string; headers: Record<string, string> } {
   const config = getHfS3Config();
@@ -140,6 +141,8 @@ function createSignedHeaders(
     'x-amz-date': amzDate,
   };
   if (method === 'PUT') headers['content-type'] = contentType;
+  if (conditionalHeaders.ifMatch) headers['if-match'] = conditionalHeaders.ifMatch;
+  if (conditionalHeaders.ifNoneMatch) headers['if-none-match'] = conditionalHeaders.ifNoneMatch;
   const signedHeaders = Object.keys(headers).sort().join(';');
   const canonicalHeaders = Object.entries(headers)
     .sort(([a], [b]) => a.localeCompare(b))
@@ -159,17 +162,34 @@ function createSignedHeaders(
   };
 }
 
-export async function putStyleGalleryObject(key: string, body: Uint8Array, contentType: string): Promise<void> {
+export class StyleGalleryObjectConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'StyleGalleryObjectConflictError';
+  }
+}
+
+/**
+ * 写入 HF 对象。`ifMatch` / `ifNoneMatch` 用于跨 Vercel 实例的乐观并发控制；
+ * 条件不满足时保留 412 语义，让上层重新读取最新快照后重放业务操作。
+ */
+export async function putStyleGalleryObject(
+  key: string,
+  body: Uint8Array,
+  contentType: string,
+  conditions: { ifMatch?: string; ifNoneMatch?: '*' } = {},
+): Promise<void> {
   const requestBody = new ArrayBuffer(body.byteLength);
   new Uint8Array(requestBody).set(body);
   await withRequestRetry(`upload HF S3 object "${key}"`, async () => {
-    const signed = createSignedHeaders('PUT', key, body, contentType);
+    const signed = createSignedHeaders('PUT', key, body, contentType, conditions);
     const response = await fetch(signed.url, {
       method: 'PUT',
       headers: signed.headers,
       body: requestBody,
       signal: AbortSignal.timeout(OBJECT_TRANSFER_TIMEOUT_MS),
     });
+    if (response.status === 412) throw new StyleGalleryObjectConflictError(`HF S3 object changed: ${key}`);
     if (!response.ok) throw await createRequestError(response, `Failed to upload HF S3 object "${key}"`);
   });
 }
@@ -206,6 +226,19 @@ export async function deleteStyleGalleryObject(key: string): Promise<void> {
 export async function getStyleGalleryObjectText(key: string): Promise<string | null> {
   const bytes = await getStyleGalleryObjectBytes(key, REQUEST_TIMEOUT_MS);
   return bytes ? new TextDecoder().decode(bytes) : null;
+}
+
+/** 强制读取文本及 ETag，供条件写入使用；不存在的对象返回 `etag: null`。 */
+export async function getStyleGalleryObjectTextSnapshot(key: string): Promise<{ text: string | null; etag: string | null }> {
+  return withRequestRetry(`read HF S3 object snapshot "${key}"`, async () => {
+    const response = await fetch(createStyleGallerySignedImageUrl(key), {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    if (response.status === 404 || response.status === 403) return { text: null, etag: null };
+    if (!response.ok) throw await createRequestError(response, `Failed to read HF S3 object "${key}"`);
+    return { text: await response.text(), etag: response.headers.get('etag') };
+  });
 }
 
 /** Reads a binary object with a fresh timeout for every storage retry attempt. */
@@ -259,5 +292,6 @@ async function withRequestRetry<T>(label: string, operation: () => Promise<T>): 
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
+  if (lastError instanceof StyleGalleryObjectConflictError) throw lastError;
   throw new Error(`${label} failed after ${attempts} attempt(s).`, { cause: lastError });
 }

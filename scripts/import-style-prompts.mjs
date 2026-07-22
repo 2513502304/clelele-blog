@@ -339,3 +339,12 @@ STYLE_GALLERY_UPLOAD_TOKEN='...' \
 STYLE_GALLERY_IMPORT_ATTEMPTS=5 \
 npm run import:style-prompts -- <session.jsonl>
 */
+
+/*
+完整本地功能启动方式（首次运行及 Vercel Development 环境变量变化后，先执行第一行）：
+npm exec --yes --package=node@24 --package=vercel -- vercel env pull .env.local --environment=development --yes
+npm exec --yes --package=node@24 --package=pnpm@9.15.1 -- pnpm dev --host 127.0.0.1 --port 4324
+
+Astro 会自动读取被 gitignore 的 .env.local。不要把 Upload Token、HF S3 密钥、GitHub OAuth Secret
+或 Session Secret 直接写进本文件；Vercel Development 中配置完整后，上述启动方式会启用全部功能。
+*/

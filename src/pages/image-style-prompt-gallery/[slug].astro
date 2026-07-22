@@ -124,6 +124,12 @@ Astro.response.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-re
         title={data.title}
         initialExamples={data.examples}
         uploadsEnabled={Boolean(process.env.STYLE_GALLERY_UPLOAD_TOKEN)}
+        likeLabels={{
+          like: t(locale, 'gallery.like'),
+          unlike: t(locale, 'gallery.unlike'),
+          loginRequired: t(locale, 'gallery.likeLoginRequired'),
+          unavailable: t(locale, 'gallery.likeUnavailable'),
+        }}
       />
     </div>
   </TwoColumnLayout>
