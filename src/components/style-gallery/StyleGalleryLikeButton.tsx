@@ -1,16 +1,12 @@
 import { Icon } from '@iconify/react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { type ImageLightboxLikeAction, type ImageLightboxLikeMutationResult, syncImageLightboxLikes } from '@store/modal';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { StyleGalleryViewer } from '@/types/style-gallery';
 
 interface ViewerResponse {
   authEnabled: boolean;
   viewer: StyleGalleryViewer | null;
   likedExampleIds: string[];
-}
-
-interface LikeMutationResponse {
-  liked: boolean;
-  likeCount: number;
 }
 
 export interface StyleGalleryLikeLabels {
@@ -26,7 +22,7 @@ export interface StyleGalleryLikesController {
   getCount: (exampleId: string) => number;
   isLiked: (exampleId: string) => boolean;
   isPending: (exampleId: string) => boolean;
-  toggle: (exampleId: string) => void;
+  toggle: (exampleId: string) => Promise<ImageLightboxLikeMutationResult | null>;
 }
 
 /**
@@ -40,6 +36,20 @@ export function useStyleGalleryLikes(initialCounts: Record<string, number>): Sty
   const [viewer, setViewer] = useState<StyleGalleryViewer | null>(null);
   // 登录能力在同源状态接口确认前保持关闭，避免首屏极短窗口内误跳转到未配置的 OAuth 路由。
   const [authEnabled, setAuthEnabled] = useState(false);
+  // popup 会持有 toggle 的长期引用；ref 让该函数始终读取最新状态，避免连续点赞使用过期闭包。
+  const countsRef = useRef(counts);
+  const likedIdsRef = useRef(likedIds);
+  const pendingIdsRef = useRef(pendingIds);
+  const viewerRef = useRef(viewer);
+  const authEnabledRef = useRef(authEnabled);
+
+  useEffect(() => {
+    countsRef.current = counts;
+    likedIdsRef.current = likedIds;
+    pendingIdsRef.current = pendingIds;
+    viewerRef.current = viewer;
+    authEnabledRef.current = authEnabled;
+  }, [authEnabled, counts, likedIds, pendingIds, viewer]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -49,9 +59,12 @@ export function useStyleGalleryLikes(initialCounts: Record<string, number>): Sty
         return response.json() as Promise<ViewerResponse>;
       })
       .then((data) => {
+        authEnabledRef.current = data.authEnabled;
+        viewerRef.current = data.viewer;
+        likedIdsRef.current = new Set(data.likedExampleIds);
         setAuthEnabled(data.authEnabled);
         setViewer(data.viewer);
-        setLikedIds(new Set(data.likedExampleIds));
+        setLikedIds(likedIdsRef.current);
       })
       .catch((error) => {
         if (!(error instanceof DOMException && error.name === 'AbortError')) {
@@ -61,69 +74,61 @@ export function useStyleGalleryLikes(initialCounts: Record<string, number>): Sty
     return () => controller.abort();
   }, []);
 
-  const toggle = useCallback(
-    (exampleId: string) => {
-      if (!authEnabled) return;
-      if (!viewer) {
-        const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-        window.location.assign(`/api/style-gallery/auth/github/login?returnTo=${encodeURIComponent(returnTo)}`);
-        return;
-      }
-      if (pendingIds.has(exampleId)) return;
+  const toggle = useCallback(async (exampleId: string): Promise<ImageLightboxLikeMutationResult | null> => {
+    if (!authEnabledRef.current) return null;
+    if (!viewerRef.current) {
+      const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      window.location.assign(`/api/style-gallery/auth/github/login?returnTo=${encodeURIComponent(returnTo)}`);
+      return null;
+    }
+    if (pendingIdsRef.current.has(exampleId)) return null;
 
-      const wasLiked = likedIds.has(exampleId);
-      const nextLiked = !wasLiked;
-      const previousCount = counts[exampleId] ?? 0;
-      setPendingIds((current) => new Set(current).add(exampleId));
-      setLikedIds((current) => {
-        const next = new Set(current);
-        nextLiked ? next.add(exampleId) : next.delete(exampleId);
-        return next;
-      });
-      setCounts((current) => ({ ...current, [exampleId]: Math.max(0, previousCount + (nextLiked ? 1 : -1)) }));
+    const wasLiked = likedIdsRef.current.has(exampleId);
+    const nextLiked = !wasLiked;
+    const previousCount = countsRef.current[exampleId] ?? 0;
+    const optimisticCount = Math.max(0, previousCount + (nextLiked ? 1 : -1));
+    pendingIdsRef.current = new Set(pendingIdsRef.current).add(exampleId);
+    likedIdsRef.current = new Set(likedIdsRef.current);
+    nextLiked ? likedIdsRef.current.add(exampleId) : likedIdsRef.current.delete(exampleId);
+    countsRef.current = { ...countsRef.current, [exampleId]: optimisticCount };
+    setPendingIds(pendingIdsRef.current);
+    setLikedIds(likedIdsRef.current);
+    setCounts(countsRef.current);
 
-      fetch('/api/style-gallery/likes', {
+    try {
+      const response = await fetch('/api/style-gallery/likes', {
         method: 'PUT',
         credentials: 'same-origin',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ exampleId, liked: nextLiked }),
-      })
-        .then(async (response) => {
-          if (response.status === 401) {
-            const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-            window.location.assign(`/api/style-gallery/auth/github/login?returnTo=${encodeURIComponent(returnTo)}`);
-            throw new Error('GitHub session expired.');
-          }
-          if (!response.ok) throw new Error(await response.text());
-          return response.json() as Promise<LikeMutationResponse>;
-        })
-        .then((data) => {
-          setCounts((current) => ({ ...current, [exampleId]: data.likeCount }));
-          setLikedIds((current) => {
-            const next = new Set(current);
-            data.liked ? next.add(exampleId) : next.delete(exampleId);
-            return next;
-          });
-        })
-        .catch((error) => {
-          console.error('[style-gallery] Failed to update an example like.', error);
-          setCounts((current) => ({ ...current, [exampleId]: previousCount }));
-          setLikedIds((current) => {
-            const next = new Set(current);
-            wasLiked ? next.add(exampleId) : next.delete(exampleId);
-            return next;
-          });
-        })
-        .finally(() => {
-          setPendingIds((current) => {
-            const next = new Set(current);
-            next.delete(exampleId);
-            return next;
-          });
-        });
-    },
-    [authEnabled, counts, likedIds, pendingIds, viewer],
-  );
+      });
+      if (response.status === 401) {
+        const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+        window.location.assign(`/api/style-gallery/auth/github/login?returnTo=${encodeURIComponent(returnTo)}`);
+        throw new Error('GitHub session expired.');
+      }
+      if (!response.ok) throw new Error(await response.text());
+      const data = (await response.json()) as ImageLightboxLikeMutationResult;
+      countsRef.current = { ...countsRef.current, [exampleId]: data.likeCount };
+      likedIdsRef.current = new Set(likedIdsRef.current);
+      data.liked ? likedIdsRef.current.add(exampleId) : likedIdsRef.current.delete(exampleId);
+      setCounts(countsRef.current);
+      setLikedIds(likedIdsRef.current);
+      return data;
+    } catch (error) {
+      console.error('[style-gallery] Failed to update an example like.', error);
+      countsRef.current = { ...countsRef.current, [exampleId]: previousCount };
+      likedIdsRef.current = new Set(likedIdsRef.current);
+      wasLiked ? likedIdsRef.current.add(exampleId) : likedIdsRef.current.delete(exampleId);
+      setCounts(countsRef.current);
+      setLikedIds(likedIdsRef.current);
+      return { liked: wasLiked, likeCount: previousCount };
+    } finally {
+      pendingIdsRef.current = new Set(pendingIdsRef.current);
+      pendingIdsRef.current.delete(exampleId);
+      setPendingIds(pendingIdsRef.current);
+    }
+  }, []);
 
   return useMemo(
     () => ({
@@ -136,6 +141,35 @@ export function useStyleGalleryLikes(initialCounts: Record<string, number>): Sty
     }),
     [authEnabled, counts, likedIds, pendingIds, toggle, viewer],
   );
+}
+
+/** 为通用 lightbox 生成当前示例的点赞快照和稳定 mutation 回调。 */
+export function createStyleGalleryLightboxLikeAction(
+  exampleId: string,
+  controller: StyleGalleryLikesController,
+  labels: StyleGalleryLikeLabels,
+): ImageLightboxLikeAction {
+  return {
+    exampleId,
+    liked: controller.isLiked(exampleId),
+    likeCount: controller.getCount(exampleId),
+    pending: controller.isPending(exampleId),
+    authEnabled: controller.authEnabled,
+    viewerAuthenticated: Boolean(controller.viewer),
+    labels,
+    toggle: () => controller.toggle(exampleId),
+  };
+}
+
+/** 将异步登录态和任意入口触发的点赞结果同步到当前 Gallery lightbox。 */
+export function syncStyleGalleryLightboxLikes(controller: StyleGalleryLikesController): void {
+  syncImageLightboxLikes((exampleId) => ({
+    liked: controller.isLiked(exampleId),
+    likeCount: controller.getCount(exampleId),
+    pending: controller.isPending(exampleId),
+    authEnabled: controller.authEnabled,
+    viewerAuthenticated: Boolean(controller.viewer),
+  }));
 }
 
 interface LikeButtonProps {
@@ -158,7 +192,7 @@ export function StyleGalleryLikeButton({ exampleId, controller, labels, classNam
   return (
     <button
       type="button"
-      onClick={() => controller.toggle(exampleId)}
+      onClick={() => void controller.toggle(exampleId)}
       disabled={!controller.authEnabled || pending}
       aria-pressed={liked}
       aria-label={`${title}: ${controller.getCount(exampleId)}`}

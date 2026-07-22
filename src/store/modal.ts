@@ -37,10 +37,43 @@ export interface DiagramFullscreenData {
 /**
  * Image lightbox data
  */
+export interface ImageLightboxLikeMutationResult {
+  liked: boolean;
+  likeCount: number;
+}
+
+/** 可选的 Gallery 点赞动作；普通文章图片不提供该字段，保持原有 lightbox 行为。 */
+export interface ImageLightboxLikeAction {
+  exampleId: string;
+  liked: boolean;
+  likeCount: number;
+  pending: boolean;
+  authEnabled: boolean;
+  viewerAuthenticated: boolean;
+  labels: {
+    like: string;
+    unlike: string;
+    loginRequired: string;
+    unavailable: string;
+  };
+  toggle: () => Promise<ImageLightboxLikeMutationResult | null>;
+}
+
+export type ImageLightboxLikeState = Pick<
+  ImageLightboxLikeAction,
+  'liked' | 'likeCount' | 'pending' | 'authEnabled' | 'viewerAuthenticated'
+>;
+
+export interface ImageLightboxImage {
+  src: string;
+  alt: string;
+  like?: ImageLightboxLikeAction;
+}
+
 export interface ImageLightboxData {
   src: string;
   alt: string;
-  images: { src: string; alt: string }[];
+  images: ImageLightboxImage[];
   currentIndex: number;
 }
 
@@ -137,5 +170,53 @@ export function navigateImage(direction: 1 | -1): boolean {
     type: 'imageLightbox',
     data: { ...data, src: target.src, alt: target.alt, currentIndex: newIndex },
   });
+  return true;
+}
+
+/**
+ * 将 popup 内的乐观点赞状态同步回导航数组。
+ * 这样切换图片再返回时仍能看到最新状态，同时不要求通用 lightbox 订阅 Gallery 的 React state。
+ */
+export function updateImageLightboxLike(exampleId: string, update: Partial<ImageLightboxLikeState>): boolean {
+  const modal = $activeModal.get();
+  if (modal.type !== 'imageLightbox') return false;
+  const data = modal.data as ImageLightboxData;
+  let changed = false;
+  const images = data.images.map((image) => {
+    if (image.like?.exampleId !== exampleId) return image;
+    changed = true;
+    return { ...image, like: { ...image.like, ...update } };
+  });
+  if (!changed) return false;
+  $activeModal.set({ type: 'imageLightbox', data: { ...data, images } });
+  return true;
+}
+
+/**
+ * 用一次数组遍历将 Gallery controller 的最新状态同步到已打开的 lightbox。
+ * 认证 hydration 和卡片发起的 mutation 都发生在 modal 之外，不能依赖打开时保存的状态快照。
+ */
+export function syncImageLightboxLikes(resolve: (exampleId: string) => ImageLightboxLikeState): boolean {
+  const modal = $activeModal.get();
+  if (modal.type !== 'imageLightbox') return false;
+  const data = modal.data as ImageLightboxData;
+  let changed = false;
+  const images = data.images.map((image) => {
+    if (!image.like) return image;
+    const next = resolve(image.like.exampleId);
+    if (
+      image.like.liked === next.liked &&
+      image.like.likeCount === next.likeCount &&
+      image.like.pending === next.pending &&
+      image.like.authEnabled === next.authEnabled &&
+      image.like.viewerAuthenticated === next.viewerAuthenticated
+    ) {
+      return image;
+    }
+    changed = true;
+    return { ...image, like: { ...image.like, ...next } };
+  });
+  if (!changed) return false;
+  $activeModal.set({ type: 'imageLightbox', data: { ...data, images } });
   return true;
 }

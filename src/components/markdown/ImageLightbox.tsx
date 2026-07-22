@@ -12,7 +12,15 @@ import { useTranslation } from '@hooks/useTranslation';
 import { useZoomPan } from '@hooks/useZoomPan';
 import { Icon } from '@iconify/react';
 import { useStore } from '@nanostores/react';
-import { $imageLightboxData, closeModal, type ImageLightboxData, navigateImage, openModal } from '@store/modal';
+import {
+  $imageLightboxData,
+  closeModal,
+  type ImageLightboxData,
+  type ImageLightboxLikeAction,
+  navigateImage,
+  openModal,
+  updateImageLightboxLike,
+} from '@store/modal';
 import { AnimatePresence, motion } from 'motion/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -20,6 +28,7 @@ export default function ImageLightbox() {
   const { t } = useTranslation();
   const data = useStore($imageLightboxData);
   const isOpen = data !== null;
+  const currentLike = data?.images[data.currentIndex]?.like;
   const [imageLoaded, setImageLoaded] = useState(false);
   const [rotation, setRotation] = useState(0);
 
@@ -37,6 +46,28 @@ export default function ImageLightbox() {
   const handleZoomIn = useCallback(() => zoomTo(scaleRef.current * 1.5), [zoomTo]);
   const handleZoomOut = useCallback(() => zoomTo(scaleRef.current / 1.5), [zoomTo]);
   const handleRotate = useCallback(() => setRotation((r) => (r + 90) % 360), []);
+
+  const handleLike = useCallback(async () => {
+    if (!currentLike || !currentLike.authEnabled || currentLike.pending) return;
+    // 未登录时直接交给 action 跳转 OAuth，不在离开页面前制造一次虚假的乐观计数。
+    if (!currentLike.viewerAuthenticated) {
+      await currentLike.toggle();
+      return;
+    }
+    const previous = { liked: currentLike.liked, likeCount: currentLike.likeCount };
+    updateImageLightboxLike(currentLike.exampleId, {
+      liked: !currentLike.liked,
+      likeCount: Math.max(0, currentLike.likeCount + (currentLike.liked ? -1 : 1)),
+      pending: true,
+    });
+    try {
+      const result = await currentLike.toggle();
+      updateImageLightboxLike(currentLike.exampleId, result ? { ...result, pending: false } : { ...previous, pending: false });
+    } catch {
+      // Gallery controller 会记录详细错误；lightbox 只负责恢复此次交互前的视觉状态。
+      updateImageLightboxLike(currentLike.exampleId, { ...previous, pending: false });
+    }
+  }, [currentLike]);
 
   const navigateTo = useCallback(
     (dir: 1 | -1) => {
@@ -184,6 +215,12 @@ export default function ImageLightbox() {
                   />
                   <div className="h-px tablet:h-5 tablet:w-px w-5 bg-white/20" />
                   <ToolbarButton icon="ri:clockwise-line" label={t('image.rotate')} onClick={handleRotate} />
+                  {currentLike && (
+                    <>
+                      <div className="h-px tablet:h-5 tablet:w-px w-5 bg-white/20" />
+                      <LightboxLikeButton action={currentLike} onClick={handleLike} />
+                    </>
+                  )}
                   <div className="h-px tablet:h-5 tablet:w-px w-5 bg-white/20" />
                   <ToolbarButton icon="ri:close-line" label={t('image.close')} onClick={() => closeModal()} />
                 </motion.div>
@@ -246,6 +283,34 @@ export default function ImageLightbox() {
         )}
       </AnimatePresence>
     </FloatingPortal>
+  );
+}
+
+function LightboxLikeButton({ action, onClick }: { action: ImageLightboxLikeAction; onClick: () => void }) {
+  const title = !action.authEnabled
+    ? action.labels.unavailable
+    : !action.viewerAuthenticated
+      ? action.labels.loginRequired
+      : action.liked
+        ? action.labels.unlike
+        : action.labels.like;
+  return (
+    <motion.button
+      type="button"
+      onClick={onClick}
+      disabled={!action.authEnabled || action.pending}
+      className={`flex h-10 min-w-10 items-center justify-center gap-1 rounded-full px-2 font-bold text-xs transition-colors hover:bg-white/15 disabled:pointer-events-none disabled:opacity-30 ${action.liked ? 'text-rose-400' : 'text-white/80'}`}
+      whileTap={{ scale: 0.85 }}
+      aria-label={`${title}: ${action.likeCount}`}
+      aria-pressed={action.liked}
+      title={title}
+    >
+      <Icon
+        icon={action.pending ? 'ri:loader-4-line' : action.liked ? 'ri:heart-3-fill' : 'ri:heart-3-line'}
+        className={`size-5 ${action.pending ? 'animate-spin' : ''}`}
+      />
+      <span className="tabular-nums">{action.likeCount}</span>
+    </motion.button>
   );
 }
 

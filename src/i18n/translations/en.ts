@@ -141,6 +141,7 @@ export const uiStrings: UIStrings = {
   'gallery.sortImageId': 'Image ID',
   'gallery.sortExampleCount': 'Generated example count',
   'gallery.sortLikeCount': 'Like count',
+  'gallery.refreshLikeSort': 'Apply latest like order',
   'gallery.sortAscending': 'Ascending',
   'gallery.sortDescending': 'Descending',
   'gallery.imageCount': '{count} reference images',

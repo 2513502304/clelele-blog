@@ -1,6 +1,6 @@
 import { Icon } from '@iconify/react';
 import { getStyleGalleryUploadPartCount, STYLE_GALLERY_UPLOAD_CHUNK_SIZE } from '@lib/style-gallery-chunk-upload';
-import { compareStyleGalleryPlatform, STYLE_GALLERY_PLATFORMS } from '@lib/style-gallery-platforms';
+import { groupStyleGalleryExamplesByPlatform, STYLE_GALLERY_PLATFORMS } from '@lib/style-gallery-platforms';
 import {
   chunkStyleGalleryRequestItems,
   STYLE_GALLERY_MUTATION_BATCH_SIZE,
@@ -9,7 +9,13 @@ import {
 import { openModal } from '@store/modal';
 import { useEffect, useMemo, useState } from 'react';
 import type { StyleGalleryExample, StyleGalleryExampleView } from '@/types/style-gallery';
-import { StyleGalleryLikeButton, type StyleGalleryLikeLabels, useStyleGalleryLikes } from './StyleGalleryLikeButton';
+import {
+  createStyleGalleryLightboxLikeAction,
+  StyleGalleryLikeButton,
+  type StyleGalleryLikeLabels,
+  syncStyleGalleryLightboxLikes,
+  useStyleGalleryLikes,
+} from './StyleGalleryLikeButton';
 
 interface StyleGalleryExamplesProps {
   slug: string;
@@ -217,6 +223,9 @@ export default function StyleGalleryExamples({
 }: StyleGalleryExamplesProps) {
   const [examples, setExamples] = useState<StyleGalleryExample[]>(initialExamples);
   const likes = useStyleGalleryLikes(Object.fromEntries(initialExamples.map((example) => [example.id, example.likeCount])));
+  useEffect(() => {
+    syncStyleGalleryLightboxLikes(likes);
+  }, [likes]);
   const [platform, setPlatform] = useState<string>(STYLE_GALLERY_PLATFORMS[0].slug);
   const [note, setNote] = useState('');
   const [token, setToken] = useState('');
@@ -232,24 +241,7 @@ export default function StyleGalleryExamples({
     setToken(localStorage.getItem(TOKEN_STORAGE_KEY) ?? '');
   }, []);
 
-  const exampleGroups = useMemo(
-    () =>
-      [
-        ...examples.reduce((groups, example) => {
-          const platformName = example.model?.trim() || 'Other';
-          const platformExamples = groups.get(platformName) ?? [];
-          platformExamples.push(example);
-          groups.set(platformName, platformExamples);
-          return groups;
-        }, new Map<string, StyleGalleryExample[]>()),
-      ].sort(([platformA], [platformB]) => compareStyleGalleryPlatform(platformA, platformB)),
-    [examples],
-  );
-
-  const lightboxImages = useMemo(
-    () => examples.map((example) => ({ src: example.src, alt: example.alt ?? example.model ?? 'Generated example' })),
-    [examples],
-  );
+  const exampleGroups = useMemo(() => groupStyleGalleryExamplesByPlatform(examples), [examples]);
 
   const aggregateProgress = useMemo(() => {
     const total = fileProgress.reduce((sum, item) => sum + item.total, 0);
@@ -272,10 +264,16 @@ export default function StyleGalleryExamples({
     setFileProgress((current) => current.map((item) => (item.id === id ? { ...item, ...update } : item)));
   }
 
-  function openExampleLightbox(example: StyleGalleryExample) {
+  function openExampleLightbox(example: StyleGalleryExample, platformExamples: StyleGalleryExample[]) {
+    // 导航数组只包含当前视觉分组；平台内部仍保持上传顺序。
+    const lightboxImages = platformExamples.map((candidate) => ({
+      src: candidate.src,
+      alt: candidate.alt ?? candidate.model ?? 'Generated example',
+      like: createStyleGalleryLightboxLikeAction(candidate.id, likes, likeLabels),
+    }));
     const currentIndex = Math.max(
       0,
-      lightboxImages.findIndex((image) => image.src === example.src),
+      platformExamples.findIndex((candidate) => candidate.id === example.id),
     );
     openModal('imageLightbox', {
       src: example.src,
@@ -719,7 +717,7 @@ export default function StyleGalleryExamples({
                     >
                       <button
                         type="button"
-                        onClick={() => openExampleLightbox(example)}
+                        onClick={() => openExampleLightbox(example, platformExamples)}
                         className="group block w-full cursor-zoom-in overflow-hidden text-left"
                         aria-label={`Open ${example.alt ?? example.model ?? 'generated example'} preview`}
                       >
