@@ -4,10 +4,15 @@ import { STYLE_GALLERY_PLATFORMS } from '@lib/style-gallery-platforms';
 import { openModal } from '@store/modal';
 import { parseAsString, parseAsStringLiteral, useQueryState } from 'nuqs';
 import { NuqsAdapter } from 'nuqs/adapters/react';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useProgressiveList } from '@/hooks/useProgressiveList';
 import type { StyleGalleryExampleOverviewItem } from '@/types/style-gallery';
-import { StyleGalleryLikeButton, type StyleGalleryLikeLabels, useStyleGalleryLikes } from './StyleGalleryLikeButton';
+import {
+  createStyleGalleryLightboxLikeAction,
+  StyleGalleryLikeButton,
+  type StyleGalleryLikeLabels,
+  useStyleGalleryLikes,
+} from './StyleGalleryLikeButton';
 
 interface Props {
   examples: StyleGalleryExampleOverviewItem[];
@@ -29,6 +34,7 @@ export interface StyleGalleryExamplesOverviewLabels {
   sortImageId: string;
   sortExampleCount: string;
   sortLikeCount: string;
+  refreshLikeSort: string;
   sortAscending: string;
   sortDescending: string;
   likes: StyleGalleryLikeLabels;
@@ -55,6 +61,10 @@ function StyleGalleryExamplesOverviewContent({ examples, galleryBasePath, locale
   const [sortKey, setSortKey] = useQueryState('sort', parseAsStringLiteral(sortKeys).withDefault('default'));
   const [sortDirection, setSortDirection] = useQueryState('dir', parseAsStringLiteral(sortDirections).withDefault('asc'));
   const likes = useStyleGalleryLikes(Object.fromEntries(examples.map((example) => [example.id, example.likeCount])));
+  // 点赞计数实时更新，但排序快照由用户主动刷新，避免连续浏览或 popup 点赞时网格在背景中跳位。
+  const [likeSortCounts, setLikeSortCounts] = useState<Record<string, number>>(() =>
+    Object.fromEntries(examples.map((example) => [example.id, example.likeCount])),
+  );
   const sortLabels: Record<SortKey, string> = {
     default: labels.sortDefault,
     date: labels.sortImportedAt,
@@ -79,15 +89,22 @@ function StyleGalleryExamplesOverviewContent({ examples, galleryBasePath, locale
       sorted.sort((a, b) => {
         if (sortKey === 'id') return a.id.localeCompare(b.id);
         if (sortKey === 'examples') return a.sourceExampleCount - b.sourceExampleCount || a.id.localeCompare(b.id);
-        if (sortKey === 'likes') return likes.getCount(a.id) - likes.getCount(b.id) || a.id.localeCompare(b.id);
+        if (sortKey === 'likes') return (likeSortCounts[a.id] ?? 0) - (likeSortCounts[b.id] ?? 0) || a.id.localeCompare(b.id);
         return a.uploadedAt.localeCompare(b.uploadedAt) || a.id.localeCompare(b.id);
       });
     }
     return sortDirection === 'desc' ? sorted.reverse() : sorted;
-  }, [examples, likes, platform, query, sortDirection, sortKey]);
+  }, [examples, likeSortCounts, platform, query, sortDirection, sortKey]);
+  const hasPendingLikeSort =
+    sortKey === 'likes' && examples.some((example) => (likeSortCounts[example.id] ?? 0) !== likes.getCount(example.id));
   const lightboxImages = useMemo(
-    () => filtered.map((example) => ({ src: example.src, alt: `${example.sourceTitle} ${example.model}` })),
-    [filtered],
+    () =>
+      filtered.map((example) => ({
+        src: example.src,
+        alt: `${example.sourceTitle} ${example.model}`,
+        like: createStyleGalleryLightboxLikeAction(example.id, likes, labels.likes),
+      })),
+    [filtered, labels.likes, likes],
   );
   const { hasMore, loadMore, loadMoreRef, visibleItems } = useProgressiveList(filtered, {
     initialCount: INITIAL_EXAMPLE_COUNT,
@@ -98,7 +115,7 @@ function StyleGalleryExamplesOverviewContent({ examples, galleryBasePath, locale
   function openLightbox(example: StyleGalleryExampleOverviewItem) {
     const currentIndex = Math.max(
       0,
-      filtered.findIndex((candidate) => candidate.src === example.src),
+      filtered.findIndex((candidate) => candidate.id === example.id),
     );
     openModal('imageLightbox', {
       src: example.src,
@@ -106,6 +123,20 @@ function StyleGalleryExamplesOverviewContent({ examples, galleryBasePath, locale
       images: lightboxImages,
       currentIndex,
     });
+  }
+
+  function refreshLikeSortCounts() {
+    setLikeSortCounts(Object.fromEntries(examples.map((example) => [example.id, likes.getCount(example.id)])));
+  }
+
+  function changeSortKey(nextSortKey: SortKey) {
+    if (nextSortKey === 'likes') refreshLikeSortCounts();
+    setSortKey(nextSortKey).catch(reportUrlStateError);
+  }
+
+  function toggleSortDirection() {
+    if (sortKey === 'likes') refreshLikeSortCounts();
+    setSortDirection((direction) => (direction === 'asc' ? 'desc' : 'asc')).catch(reportUrlStateError);
   }
 
   return (
@@ -152,7 +183,7 @@ function StyleGalleryExamplesOverviewContent({ examples, galleryBasePath, locale
           <select
             id="example-sort"
             value={sortKey}
-            onChange={(event) => setSortKey(event.currentTarget.value as SortKey).catch(reportUrlStateError)}
+            onChange={(event) => changeSortKey(event.currentTarget.value as SortKey)}
             className="h-10 w-full appearance-none rounded-md border border-border bg-background pr-8 pl-3 text-sm outline-none focus:border-primary"
           >
             {sortKeys.map((key) => (
@@ -166,9 +197,19 @@ function StyleGalleryExamplesOverviewContent({ examples, galleryBasePath, locale
             className="pointer-events-none absolute top-1/2 right-2 size-4 -translate-y-1/2 text-muted-foreground"
           />
         </div>
+        {hasPendingLikeSort && (
+          <button
+            type="button"
+            onClick={refreshLikeSortCounts}
+            className="inline-flex h-10 items-center gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 font-medium text-rose-600 text-sm transition hover:border-rose-300 hover:bg-rose-100 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200"
+          >
+            <Icon icon="ri:refresh-line" className="size-4" />
+            {labels.refreshLikeSort}
+          </button>
+        )}
         <button
           type="button"
-          onClick={() => setSortDirection((direction) => (direction === 'asc' ? 'desc' : 'asc')).catch(reportUrlStateError)}
+          onClick={toggleSortDirection}
           title={sortDirection === 'asc' ? labels.sortAscending : labels.sortDescending}
           aria-label={sortDirection === 'asc' ? labels.sortAscending : labels.sortDescending}
           className="flex size-10 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground transition hover:border-primary/40 hover:text-foreground"

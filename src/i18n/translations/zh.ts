@@ -139,6 +139,7 @@ export const uiStrings = {
   'gallery.sortImageId': '按图片 ID 排序',
   'gallery.sortExampleCount': '按生成示例数量排序',
   'gallery.sortLikeCount': '按点赞数量排序',
+  'gallery.refreshLikeSort': '应用最新点赞排序',
   'gallery.sortAscending': '顺序',
   'gallery.sortDescending': '逆序',
   'gallery.imageCount': '{count} 张参考图',

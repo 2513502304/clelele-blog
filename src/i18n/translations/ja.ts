@@ -141,6 +141,7 @@ export const uiStrings: UIStrings = {
   'gallery.sortImageId': '画像 ID 順',
   'gallery.sortExampleCount': '生成例の数順',
   'gallery.sortLikeCount': 'いいね数順',
+  'gallery.refreshLikeSort': '最新のいいね順を適用',
   'gallery.sortAscending': '昇順',
   'gallery.sortDescending': '降順',
   'gallery.imageCount': '参考画像 {count} 枚',

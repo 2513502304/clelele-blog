@@ -25,3 +25,18 @@ export function compareStyleGalleryPlatform(a: string, b: string): number {
   if (indexB === -1) return -1;
   return indexA - indexB;
 }
+
+/**
+ * 按平台展示顺序分组，同时保留每个平台内部的原始上传顺序。
+ * 详情页和 lightbox 必须复用同一分组结果，避免视觉分组与键盘导航顺序不一致。
+ */
+export function groupStyleGalleryExamplesByPlatform<T extends { model?: string }>(examples: readonly T[]): [string, T[]][] {
+  const groups = new Map<string, T[]>();
+  for (const example of examples) {
+    const platformName = example.model?.trim() || 'Other';
+    const platformExamples = groups.get(platformName) ?? [];
+    platformExamples.push(example);
+    groups.set(platformName, platformExamples);
+  }
+  return [...groups].sort(([platformA], [platformB]) => compareStyleGalleryPlatform(platformA, platformB));
+}
