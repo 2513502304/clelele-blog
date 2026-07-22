@@ -132,3 +132,9 @@ export function isHpoiCollectionPage(html: string): boolean {
   const $ = load(html);
   return $('.hpoi-collect-container').length > 0;
 }
+
+/** Hpoi 懒加载 POST 只返回列表片段，不包含首屏容器；至少需要保留一种已知列表结构。 */
+export function isHpoiCollectionFragment(html: string): boolean {
+  const $ = load(html);
+  return $('.collect-hobby-list-large, .collect-hobby-list-small').length > 0;
+}

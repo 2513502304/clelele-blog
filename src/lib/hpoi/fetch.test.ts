@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
-import { fetchHpoiCollectionState } from './fetch';
+import { fetchHpoiCollection, fetchHpoiCollectionState } from './fetch';
 
 const originalFetch = globalThis.fetch;
 
@@ -51,5 +51,55 @@ describe('fetchHpoiCollectionState', () => {
       items.map((item) => item.id),
       ['1', '2', '3'],
     );
+  });
+
+  it('retries a successful HTTP response that contains an upstream block page', async () => {
+    let attempts = 0;
+    globalThis.fetch = async () => {
+      attempts += 1;
+      return new Response(attempts === 1 ? '<html>temporary block page</html>' : collectionPage(['42']));
+    };
+
+    const items = await fetchHpoiCollectionState('783694', 'care');
+
+    assert.equal(attempts, 2);
+    assert.deepEqual(
+      items.map((item) => item.id),
+      ['42'],
+    );
+  });
+
+  it('limits concurrent collection states so retries do not form a request burst', async () => {
+    let activeRequests = 0;
+    let maxActiveRequests = 0;
+    let collectionId = 0;
+    globalThis.fetch = async (input) => {
+      activeRequests += 1;
+      maxActiveRequests = Math.max(maxActiveRequests, activeRequests);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      activeRequests -= 1;
+      if (!String(input).includes('/hobby')) return new Response('<html><body></body></html>');
+      collectionId += 1;
+      return new Response(collectionPage([String(collectionId)]));
+    };
+
+    const data = await fetchHpoiCollection('783694');
+
+    assert.deepEqual(data.warnings, []);
+    // 六个收藏状态取一半为三个 worker，再加上并行的个人资料请求。
+    assert.ok(maxActiveRequests <= 4, `expected at most 4 concurrent requests, received ${maxActiveRequests}`);
+  });
+
+  it('handles an early profile failure while collection workers are still running', async () => {
+    globalThis.fetch = async (input) => {
+      if (!String(input).includes('/hobby')) throw new Error('profile unavailable');
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      return new Response(collectionPage(['1']));
+    };
+
+    const data = await fetchHpoiCollection('783694');
+
+    assert.deepEqual(data.warnings, ['profile']);
+    assert.equal(data.collections.care.length, 1);
   });
 });

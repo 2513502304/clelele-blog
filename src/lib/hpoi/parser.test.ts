@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { createHpoiImageProxyUrl, isAllowedHpoiImageUrl } from './image';
-import { isHpoiCollectionPage, parseHpoiCollection, parseHpoiProfile } from './parser';
+import { isHpoiCollectionFragment, isHpoiCollectionPage, parseHpoiCollection, parseHpoiProfile } from './parser';
 
 describe('parseHpoiProfile', () => {
   it('reads identity and public collection statistics', () => {
@@ -97,5 +97,7 @@ describe('parseHpoiCollection', () => {
     assert.equal(item.imageUrl, 'https://rfx.hpoi.net/gk/cover/n/2021/04/example.jpeg');
     assert.equal(isHpoiCollectionPage('<div class="hpoi-collect-container"><p>还没有内容</p></div>'), true);
     assert.equal(isHpoiCollectionPage('<h1>Request blocked</h1>'), false);
+    assert.equal(isHpoiCollectionFragment('<div class="collect-hobby-list-small"><div class="item"></div></div>'), true);
+    assert.equal(isHpoiCollectionFragment('<h1>Request blocked</h1>'), false);
   });
 });
