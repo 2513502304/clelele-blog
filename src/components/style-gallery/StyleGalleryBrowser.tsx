@@ -230,7 +230,7 @@ export default function StyleGalleryBrowser({ items, tags, galleryBasePath, labe
               <div className="flex items-start justify-between gap-3">
                 <a href={`${galleryBasePath}/${item.slug}`} data-astro-prefetch="false" className="min-w-0">
                   <h2 className="line-clamp-1 font-bold text-gray-900 text-lg transition group-hover:text-rose-600 dark:text-white">
-                    {item.title}
+                    {item.imageHash.slice(0, 12)}
                   </h2>
                 </a>
                 <div className="flex shrink-0 flex-col items-end gap-1">
@@ -247,16 +247,6 @@ export default function StyleGalleryBrowser({ items, tags, galleryBasePath, labe
               <p className="line-clamp-3 min-h-18 text-pretty text-gray-600 text-sm leading-6 dark:text-gray-300">
                 {item.prompt}
               </p>
-              <div className="flex flex-wrap gap-1.5">
-                {item.modelTargets.map((target) => (
-                  <span
-                    key={target}
-                    className="rounded-full bg-sky-50 px-2 py-1 font-semibold text-[11px] text-sky-600 dark:bg-sky-950/50 dark:text-sky-200"
-                  >
-                    {target}
-                  </span>
-                ))}
-              </div>
               <div className="grid grid-cols-2 gap-2 pt-1">
                 <button
                   type="button"
