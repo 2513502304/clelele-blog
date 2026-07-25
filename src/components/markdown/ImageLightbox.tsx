@@ -239,7 +239,7 @@ export default function ImageLightbox() {
       <AnimatePresence>
         {isOpen && (
           <motion.div
-            className="fixed inset-0 z-50"
+            className="fixed inset-0 z-60"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -252,7 +252,7 @@ export default function ImageLightbox() {
               <div ref={refs.setFloating} className="fixed inset-0 flex items-center justify-center" {...getFloatingProps()}>
                 {/* Toolbar: vertical right on desktop, horizontal top on tablet */}
                 <motion.div
-                  className="absolute tablet:top-4 top-1/2 right-4 tablet:right-auto tablet:left-1/2 z-10 flex tablet:-translate-x-1/2 -translate-y-1/2 tablet:translate-y-0 tablet:flex-row flex-col items-center gap-1 rounded-2xl bg-black/50 p-1.5 backdrop-blur-sm"
+                  className="absolute tablet:top-4 top-1/2 right-4 tablet:right-auto tablet:left-1/2 z-10 flex tablet:w-[calc(100vw-2rem)] tablet:max-w-sm tablet:-translate-x-1/2 -translate-y-1/2 tablet:translate-y-0 tablet:flex-row flex-col tablet:flex-wrap items-center tablet:justify-center gap-1 rounded-2xl bg-black/50 p-1.5 backdrop-blur-sm"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   transition={{ duration: 0.2, delay: 0.1 }}
@@ -266,7 +266,7 @@ export default function ImageLightbox() {
                   <motion.button
                     type="button"
                     onClick={handleResetAll}
-                    className="flex size-10 items-center justify-center rounded-full text-white/60 text-xs tabular-nums transition-colors hover:bg-white/15 hover:text-white/80"
+                    className="flex size-10 shrink-0 items-center justify-center rounded-full text-white/60 text-xs tabular-nums transition-colors hover:bg-white/15 hover:text-white/80"
                     whileTap={{ scale: 0.85 }}
                     aria-label={t('image.resetZoomRotate')}
                   >
@@ -314,11 +314,11 @@ export default function ImageLightbox() {
                       </motion.div>
                     )}
                   </AnimatePresence>
-                  <div className="h-px tablet:h-5 tablet:w-px w-5 bg-white/20" />
+                  <div className="h-px tablet:h-5 tablet:w-px w-5 shrink-0 bg-white/20" />
                   <ToolbarButton icon="ri:clockwise-line" label={t('image.rotate')} onClick={handleRotate} />
                   {currentLike && (
                     <>
-                      <div className="h-px tablet:h-5 tablet:w-px w-5 bg-white/20" />
+                      <div className="h-px tablet:h-5 tablet:w-px w-5 shrink-0 bg-white/20" />
                       <LightboxLikeButton action={currentLike} onClick={handleLike} />
                     </>
                   )}
@@ -375,7 +375,7 @@ export default function ImageLightbox() {
                     icon="ri:download-2-line"
                     label={t('image.download')}
                   />
-                  <div className="h-px tablet:h-5 tablet:w-px w-5 bg-white/20" />
+                  <div className="h-px tablet:h-5 tablet:w-px w-5 shrink-0 bg-white/20" />
                   <ToolbarButton icon="ri:close-line" label={t('image.close')} onClick={() => closeModal()} />
                 </motion.div>
 
@@ -473,7 +473,7 @@ function LightboxLikeButton({ action, onClick }: { action: ImageLightboxLikeActi
       type="button"
       onClick={onClick}
       disabled={!action.authEnabled || action.pending}
-      className={`flex h-10 min-w-10 items-center justify-center gap-1 rounded-full px-2 font-bold text-xs transition-colors hover:bg-white/15 disabled:pointer-events-none disabled:opacity-30 ${action.liked ? 'text-rose-400' : 'text-white/80'}`}
+      className={`flex h-10 min-w-10 shrink-0 items-center justify-center gap-1 rounded-full px-2 font-bold text-xs transition-colors hover:bg-white/15 disabled:pointer-events-none disabled:opacity-30 ${action.liked ? 'text-rose-400' : 'text-white/80'}`}
       whileTap={{ scale: 0.85 }}
       aria-label={`${title}: ${action.likeCount}`}
       aria-pressed={action.liked}
@@ -510,7 +510,7 @@ function ToolbarButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`flex size-10 items-center justify-center rounded-full transition-colors hover:bg-white/15 disabled:pointer-events-none disabled:opacity-30 ${active ? 'bg-white/15 text-rose-300' : tone === 'danger' ? 'text-rose-300' : 'text-white/80'}`}
+      className={`flex size-10 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-white/15 disabled:pointer-events-none disabled:opacity-30 ${active ? 'bg-white/15 text-rose-300' : tone === 'danger' ? 'text-rose-300' : 'text-white/80'}`}
       whileTap={{ scale: 0.85 }}
       aria-label={label}
       aria-pressed={active}
@@ -526,7 +526,7 @@ function ToolbarLink({ href, download, icon, label }: { href: string; download: 
     <motion.a
       href={href}
       download={download}
-      className="flex size-10 items-center justify-center rounded-full text-white/80 transition-colors hover:bg-white/15"
+      className="flex size-10 shrink-0 items-center justify-center rounded-full text-white/80 transition-colors hover:bg-white/15"
       whileTap={{ scale: 0.85 }}
       aria-label={label}
       title={label}
