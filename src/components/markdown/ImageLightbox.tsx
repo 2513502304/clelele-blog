@@ -116,17 +116,8 @@ export default function ImageLightbox() {
       if (!open) closeModal();
     },
   });
-  const dismiss = useDismiss(context, {
-    outsidePressEvent: 'mousedown',
-    outsidePress: (event) => {
-      // Don't close when zoomed in (user might be panning)
-      if (scaleRef.current > 1.05) return false;
-      // Don't close when clicking interactive elements or the image itself
-      const target = event.target as HTMLElement;
-      if (target.closest('button, img, [role="img"]')) return false;
-      return true;
-    },
-  });
+  // Floating content covers the viewport, so background dismissal is handled by the image viewport's exact click target.
+  const dismiss = useDismiss(context, { outsidePress: false });
   const role = useRole(context, { role: 'dialog' });
   const { getFloatingProps } = useInteractions([dismiss, role]);
 
@@ -287,6 +278,9 @@ export default function ImageLightbox() {
                   ref={containerRef}
                   role="img"
                   className="flex h-full w-full touch-none select-none items-center justify-center p-4"
+                  onPointerUp={(event) => {
+                    if (event.target === event.currentTarget) closeModal();
+                  }}
                   onDoubleClick={handleDoubleClick}
                 >
                   <motion.div
