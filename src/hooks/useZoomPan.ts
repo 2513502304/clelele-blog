@@ -30,8 +30,20 @@ export interface UseZoomPanReturn {
   zoomLevel: string;
 }
 
-export function useZoomPan(enabled = true): UseZoomPanReturn {
+interface UseZoomPanOptions {
+  /** 1 为原始输入幅度；小于 1 时同时降低滚轮和双指缩放速度。 */
+  zoomSensitivity?: number;
+}
+
+const DEFAULT_ZOOM_SENSITIVITY = 1;
+
+export function useZoomPan(enabled = true, options: UseZoomPanOptions = {}): UseZoomPanReturn {
   const [state, setState] = useState<ZoomPanState>(INITIAL_STATE);
+  const sensitivityRef = useRef(options.zoomSensitivity ?? DEFAULT_ZOOM_SENSITIVITY);
+
+  useEffect(() => {
+    sensitivityRef.current = options.zoomSensitivity ?? DEFAULT_ZOOM_SENSITIVITY;
+  }, [options.zoomSensitivity]);
 
   // Track the viewport DOM element via state so the effect re-runs when it mounts/unmounts.
   // This solves timing issues with portals (FloatingPortal) where useRef.current is still
@@ -112,7 +124,15 @@ export function useZoomPan(enabled = true): UseZoomPanReturn {
 
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
-      const delta = e.deltaY > 0 ? 0.9 : 1.1;
+      const deltaPixels =
+        e.deltaMode === WheelEvent.DOM_DELTA_LINE
+          ? e.deltaY * 16
+          : e.deltaMode === WheelEvent.DOM_DELTA_PAGE
+            ? e.deltaY * viewport.clientHeight
+            : e.deltaY;
+      // 指数映射保留鼠标滚轮的明确步进，同时让触控板连续的小 delta 平滑累积。
+      const exponent = Math.min(0.35, Math.max(-0.35, -deltaPixels * 0.001 * sensitivityRef.current));
+      const delta = Math.exp(exponent);
       const prev = transformRef.current;
       const newScale = Math.min(Math.max(MIN_SCALE, prev.scale * delta), MAX_SCALE);
       const rect = viewport.getBoundingClientRect();
@@ -174,7 +194,9 @@ export function useZoomPan(enabled = true): UseZoomPanReturn {
       if (e.touches.length === 2) {
         e.preventDefault();
         const newDist = getDistance(e.touches[0], e.touches[1]);
-        const newScale = Math.min(Math.max(MIN_SCALE, d.initialPinchScale * (newDist / d.initialPinchDistance)), MAX_SCALE);
+        const pinchRatio = newDist / d.initialPinchDistance;
+        const adjustedRatio = pinchRatio ** sensitivityRef.current;
+        const newScale = Math.min(Math.max(MIN_SCALE, d.initialPinchScale * adjustedRatio), MAX_SCALE);
         transformRef.current = { ...transformRef.current, scale: newScale };
         flushState();
       } else if (e.touches.length === 1 && d.isDragging) {

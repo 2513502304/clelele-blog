@@ -24,6 +24,11 @@ import {
 import { AnimatePresence, motion } from 'motion/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+const ZOOM_SENSITIVITY_STORAGE_KEY = 'image-lightbox-zoom-sensitivity';
+const DEFAULT_ZOOM_SENSITIVITY = 0.55;
+const MIN_ZOOM_SENSITIVITY = 0.25;
+const MAX_ZOOM_SENSITIVITY = 1.25;
+
 export default function ImageLightbox() {
   const { t } = useTranslation();
   const data = useStore($imageLightboxData);
@@ -31,8 +36,10 @@ export default function ImageLightbox() {
   const currentLike = data?.images[data.currentIndex]?.like;
   const [imageLoaded, setImageLoaded] = useState(false);
   const [rotation, setRotation] = useState(0);
+  const [zoomSensitivity, setZoomSensitivity] = useState(DEFAULT_ZOOM_SENSITIVITY);
+  const [showSensitivity, setShowSensitivity] = useState(false);
 
-  const { containerRef, state, reset, zoomTo, zoomLevel } = useZoomPan(isOpen);
+  const { containerRef, state, reset, zoomTo, zoomLevel } = useZoomPan(isOpen, { zoomSensitivity });
 
   // Use a ref so the outsidePress callback always reads the latest scale
   const scaleRef = useRef(state.scale);
@@ -133,6 +140,13 @@ export default function ImageLightbox() {
     return () => window.removeEventListener('open-image-lightbox', handleOpen as EventListener);
   }, []);
 
+  useEffect(() => {
+    const stored = Number.parseFloat(localStorage.getItem(ZOOM_SENSITIVITY_STORAGE_KEY) ?? '');
+    if (Number.isFinite(stored)) {
+      setZoomSensitivity(Math.min(MAX_ZOOM_SENSITIVITY, Math.max(MIN_ZOOM_SENSITIVITY, stored)));
+    }
+  }, []);
+
   // Close on page navigation
   useEffect(() => {
     const close = () => closeModal();
@@ -146,8 +160,15 @@ export default function ImageLightbox() {
       reset();
       setRotation(0);
       setImageLoaded(false);
+      setShowSensitivity(false);
     }
   }, [isOpen, reset]);
+
+  const updateZoomSensitivity = (value: number) => {
+    const next = Math.min(MAX_ZOOM_SENSITIVITY, Math.max(MIN_ZOOM_SENSITIVITY, value));
+    setZoomSensitivity(next);
+    localStorage.setItem(ZOOM_SENSITIVITY_STORAGE_KEY, next.toString());
+  };
 
   // Lock page scroll while lightbox is open
   useEffect(() => {
@@ -213,6 +234,42 @@ export default function ImageLightbox() {
                     onClick={handleZoomOut}
                     disabled={state.scale <= 0.55}
                   />
+                  <ToolbarButton
+                    icon="ri:equalizer-2-line"
+                    label={t('image.zoomSensitivity')}
+                    onClick={() => setShowSensitivity((visible) => !visible)}
+                    active={showSensitivity}
+                  />
+                  <AnimatePresence>
+                    {showSensitivity && (
+                      <motion.div
+                        className="absolute tablet:top-[calc(100%+0.5rem)] top-1/2 right-[calc(100%+0.5rem)] tablet:right-auto tablet:left-1/2 w-56 tablet:-translate-x-1/2 -translate-y-1/2 tablet:translate-y-0 rounded-xl border border-white/15 bg-black/75 p-3 text-white shadow-xl backdrop-blur-md"
+                        initial={{ opacity: 0, scale: 0.96, x: 4 }}
+                        animate={{ opacity: 1, scale: 1, x: 0 }}
+                        exit={{ opacity: 0, scale: 0.96, x: 4 }}
+                        transition={{ duration: 0.15 }}
+                      >
+                        <div className="mb-2 flex items-center justify-between gap-3 text-xs">
+                          <span className="font-semibold text-white/80">{t('image.zoomSensitivity')}</span>
+                          <span className="font-mono text-white/60 tabular-nums">{zoomSensitivity.toFixed(2)}×</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={MIN_ZOOM_SENSITIVITY}
+                          max={MAX_ZOOM_SENSITIVITY}
+                          step={0.05}
+                          value={zoomSensitivity}
+                          onChange={(event) => updateZoomSensitivity(event.currentTarget.valueAsNumber)}
+                          aria-label={t('image.zoomSensitivity')}
+                          className="h-1.5 w-full cursor-pointer accent-rose-400"
+                        />
+                        <div className="mt-2 flex justify-between text-[10px] text-white/45">
+                          <span>{t('image.zoomSensitivitySlow')}</span>
+                          <span>{t('image.zoomSensitivityFast')}</span>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                   <div className="h-px tablet:h-5 tablet:w-px w-5 bg-white/20" />
                   <ToolbarButton icon="ri:clockwise-line" label={t('image.rotate')} onClick={handleRotate} />
                   {currentLike && (
@@ -319,20 +376,24 @@ function ToolbarButton({
   label,
   onClick,
   disabled,
+  active,
 }: {
   icon: string;
   label: string;
   onClick: () => void;
   disabled?: boolean;
+  active?: boolean;
 }) {
   return (
     <motion.button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="flex size-10 items-center justify-center rounded-full text-white/80 transition-colors hover:bg-white/15 disabled:pointer-events-none disabled:opacity-30"
+      className={`flex size-10 items-center justify-center rounded-full transition-colors hover:bg-white/15 disabled:pointer-events-none disabled:opacity-30 ${active ? 'bg-white/15 text-rose-300' : 'text-white/80'}`}
       whileTap={{ scale: 0.85 }}
       aria-label={label}
+      aria-pressed={active}
+      title={label}
     >
       <Icon icon={icon} className="size-5" />
     </motion.button>
