@@ -269,30 +269,32 @@ function StyleGalleryExamplesOverviewContent({
             {visibleItems.map((example, index) => (
               <figure
                 key={example.id}
-                className="relative flex h-full w-full min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-background shadow-sm"
+                className="flex h-full w-full min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-background shadow-sm"
               >
-                <button
-                  type="button"
-                  onClick={() => openLightbox(example)}
-                  className="group block w-full cursor-zoom-in overflow-hidden bg-muted text-left"
-                >
-                  <img
-                    src={example.src}
-                    alt={`${example.sourceTitle} ${example.model}`}
-                    width={4}
-                    height={5}
-                    loading={index < EAGER_EXAMPLE_COUNT ? 'eager' : 'lazy'}
-                    fetchPriority={index < 4 ? 'high' : 'auto'}
-                    decoding="async"
-                    className="aspect-[4/5] w-full object-cover transition duration-200 group-hover:scale-[1.02]"
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => openLightbox(example)}
+                    className="group block w-full cursor-zoom-in overflow-hidden bg-muted text-left"
+                  >
+                    <img
+                      src={example.src}
+                      alt={`${example.sourceTitle} ${example.model}`}
+                      width={4}
+                      height={5}
+                      loading={index < EAGER_EXAMPLE_COUNT ? 'eager' : 'lazy'}
+                      fetchPriority={index < 4 ? 'high' : 'auto'}
+                      decoding="async"
+                      className="aspect-[4/5] w-full object-cover transition duration-200 group-hover:scale-[1.02]"
+                    />
+                  </button>
+                  <StyleGalleryLikeButton
+                    exampleId={example.id}
+                    controller={likes}
+                    labels={labels.likes}
+                    className="absolute right-2 bottom-2 z-10"
                   />
-                </button>
-                <StyleGalleryLikeButton
-                  exampleId={example.id}
-                  controller={likes}
-                  labels={labels.likes}
-                  className="absolute top-2 right-2 z-10"
-                />
+                </div>
                 <figcaption className="flex flex-1 flex-col gap-3 p-3">
                   <div className="flex items-center justify-between gap-2">
                     <span className="rounded-full bg-sky-50 px-2 py-1 font-semibold text-sky-600 text-xs dark:bg-sky-950/50 dark:text-sky-200">

@@ -213,7 +213,7 @@ export default function StyleGalleryBrowser({ items, tags, galleryBasePath, labe
             <a
               href={`${galleryBasePath}/${item.slug}`}
               data-astro-prefetch="false"
-              className="block aspect-[4/5] overflow-hidden bg-rose-50 dark:bg-gray-900"
+              className="relative block aspect-[4/5] overflow-hidden bg-rose-50 dark:bg-gray-900"
             >
               <img
                 src={item.thumbnailImage ?? item.sourceImage}
@@ -221,6 +221,10 @@ export default function StyleGalleryBrowser({ items, tags, galleryBasePath, labe
                 loading="lazy"
                 className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
               />
+              <span className="absolute right-2 bottom-2 inline-flex min-w-8 items-center justify-center gap-1 rounded-md bg-rose-500/90 px-2 py-1 font-bold text-[11px] text-white tabular-nums shadow-sm backdrop-blur-sm">
+                <Icon icon="ri:heart-3-fill" className="size-3" />
+                {item.likeCount}
+              </span>
             </a>
             <div className="space-y-3 p-4">
               <div className="flex items-start justify-between gap-3">
@@ -238,10 +242,6 @@ export default function StyleGalleryBrowser({ items, tags, galleryBasePath, labe
                       {labels.imageCount.replace('{count}', String(item.imageCount))}
                     </span>
                   )}
-                  <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-1 font-bold text-[11px] text-rose-500 dark:bg-rose-950/50 dark:text-rose-200">
-                    <Icon icon="ri:heart-3-fill" className="size-3" />
-                    <span className="tabular-nums">{item.likeCount}</span>
-                  </span>
                 </div>
               </div>
               <p className="line-clamp-3 min-h-18 text-pretty text-gray-600 text-sm leading-6 dark:text-gray-300">

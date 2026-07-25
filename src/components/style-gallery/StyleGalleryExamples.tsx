@@ -752,39 +752,41 @@ export default function StyleGalleryExamples({
                   return (
                     <figure
                       key={example.src}
-                      className="relative overflow-hidden rounded-lg border border-gray-100 bg-gray-50 dark:border-gray-800 dark:bg-gray-900"
+                      className="overflow-hidden rounded-lg border border-gray-100 bg-gray-50 dark:border-gray-800 dark:bg-gray-900"
                     >
-                      <button
-                        type="button"
-                        onClick={() => openExampleLightbox(example, platformExamples)}
-                        className="group block w-full cursor-zoom-in overflow-hidden text-left"
-                        aria-label={`Open ${example.alt ?? example.model ?? 'generated example'} preview`}
-                      >
-                        <img
-                          src={example.src}
-                          alt={example.alt ?? example.model ?? 'Generated example'}
-                          loading="lazy"
-                          className="aspect-square w-full object-cover transition duration-200 group-hover:scale-105"
-                        />
-                      </button>
-                      {uploadsEnabled && (
-                        <label className="absolute top-2 left-2 flex size-8 cursor-pointer items-center justify-center rounded-md bg-white/90 shadow dark:bg-gray-950/90">
-                          <input
-                            type="checkbox"
-                            checked={selectedIds.has(example.id)}
-                            disabled={mutating}
-                            onChange={() => toggleExample(example.id)}
-                            aria-label={`Select ${example.alt ?? 'generated example'}`}
-                            className="size-4 accent-rose-500"
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => openExampleLightbox(example, platformExamples)}
+                          className="group block w-full cursor-zoom-in overflow-hidden text-left"
+                          aria-label={`Open ${example.alt ?? example.model ?? 'generated example'} preview`}
+                        >
+                          <img
+                            src={example.src}
+                            alt={example.alt ?? example.model ?? 'Generated example'}
+                            loading="lazy"
+                            className="aspect-square w-full object-cover transition duration-200 group-hover:scale-105"
                           />
-                        </label>
-                      )}
-                      <StyleGalleryLikeButton
-                        exampleId={example.id}
-                        controller={likes}
-                        labels={likeLabels}
-                        className="absolute top-2 right-2 z-10"
-                      />
+                        </button>
+                        {uploadsEnabled && (
+                          <label className="absolute top-2 left-2 flex size-8 cursor-pointer items-center justify-center rounded-md bg-white/90 shadow dark:bg-gray-950/90">
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.has(example.id)}
+                              disabled={mutating}
+                              onChange={() => toggleExample(example.id)}
+                              aria-label={`Select ${example.alt ?? 'generated example'}`}
+                              className="size-4 accent-rose-500"
+                            />
+                          </label>
+                        )}
+                        <StyleGalleryLikeButton
+                          exampleId={example.id}
+                          controller={likes}
+                          labels={likeLabels}
+                          className="absolute right-2 bottom-2 z-10"
+                        />
+                      </div>
                       <figcaption className="space-y-2 p-3 text-gray-500 text-xs dark:text-gray-300">
                         {example.note && <p>{example.note}</p>}
                       </figcaption>
