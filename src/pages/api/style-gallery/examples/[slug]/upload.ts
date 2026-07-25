@@ -12,6 +12,7 @@ import {
   getStyleGalleryUploadPartKey,
   isStyleGalleryUploadId,
   MAX_STYLE_GALLERY_UPLOAD_PARTS,
+  STYLE_GALLERY_DIRECT_UPLOAD_MAX_SIZE,
   STYLE_GALLERY_UPLOAD_CHUNK_SIZE,
 } from '@lib/style-gallery-chunk-upload';
 import {
@@ -62,6 +63,44 @@ async function deleteUploadParts(uploadId: string, partCount: number): Promise<v
   );
   const failures = results.filter((result) => result.status === 'rejected');
   if (failures.length) throw new Error(`Failed to delete ${failures.length} temporary upload part(s).`);
+}
+
+/**
+ * 小文件在单个 Function 请求内完成完整哈希校验并直接写正式对象，避免临时对象的额外往返。
+ * 仍然先消费并校验请求体后才复用同名对象，不能只信任客户端声明的内容哈希。
+ */
+async function handleDirectUpload(request: Request, url: URL): Promise<Response> {
+  const expectedHash = imageHashSchema.safeParse(url.searchParams.get('imageHash') ?? '');
+  if (!expectedHash.success) return new Response('Invalid direct upload metadata.', { status: 400 });
+  const imageHash = expectedHash.data.toLowerCase();
+
+  const contentType = request.headers.get('content-type')?.split(';', 1)[0] ?? '';
+  let extension: string;
+  try {
+    extension = getStyleGalleryExampleExtension(contentType);
+  } catch {
+    return new Response('Unsupported image type.', { status: 400 });
+  }
+
+  const contentLength = Number.parseInt(request.headers.get('content-length') ?? '', 10);
+  if (Number.isFinite(contentLength) && contentLength > STYLE_GALLERY_DIRECT_UPLOAD_MAX_SIZE) {
+    return new Response('Direct upload is too large.', { status: 413 });
+  }
+  const image = new Uint8Array(await request.arrayBuffer());
+  if (!image.length) return new Response('No image was provided.', { status: 400 });
+  if (image.length > STYLE_GALLERY_DIRECT_UPLOAD_MAX_SIZE) {
+    return new Response('Direct upload is too large.', { status: 413 });
+  }
+  if (hashBytes(image) !== imageHash) {
+    return new Response('Direct upload hash does not match.', { status: 409 });
+  }
+
+  const finalKey = getStyleGalleryExampleKey(imageHash, extension);
+  if (await headStyleGalleryObject(finalKey)) {
+    return Response.json({ key: finalKey, imageHash, reused: true });
+  }
+  await putStyleGalleryObject(finalKey, image, contentType);
+  return Response.json({ key: finalKey, imageHash, reused: false });
 }
 
 async function handleChunkUpload(request: Request, url: URL): Promise<Response> {
@@ -167,6 +206,7 @@ export const POST: APIRoute = async ({ params, request, url }) => {
       return new Response('Invalid style gallery platform.', { status: 400 });
     }
 
+    if (url.searchParams.get('action') === 'direct') return await handleDirectUpload(request, url);
     if (url.searchParams.get('action') === 'chunk') return await handleChunkUpload(request, url);
 
     const rawBody = await request.json();

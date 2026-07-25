@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { describe, it } from 'node:test';
 import { POST as uploadExample } from '../pages/api/style-gallery/examples/[slug]/upload';
-import { STYLE_GALLERY_UPLOAD_CHUNK_SIZE } from './style-gallery-chunk-upload';
+import { STYLE_GALLERY_DIRECT_UPLOAD_MAX_SIZE, STYLE_GALLERY_UPLOAD_CHUNK_SIZE } from './style-gallery-chunk-upload';
 
 const slug = 'test-style-item';
 const token = 'test-upload-token';
@@ -49,7 +49,7 @@ async function callUpload(url: URL, body: BodyInit, contentType: string): Promis
 }
 
 describe('style gallery upload route', () => {
-  it('assembles a file above Vercel payload size from independently verified parts', async () => {
+  it('stores small files directly and assembles large files from independently verified parts', async () => {
     const previousEnv = {
       token: process.env.STYLE_GALLERY_UPLOAD_TOKEN,
       accessKey: process.env.HF_S3_ACCESS_KEY_ID,
@@ -92,6 +92,46 @@ describe('style gallery upload route', () => {
     };
 
     try {
+      const directImage = new Uint8Array(1024);
+      for (let index = 0; index < directImage.length; index += 1) directImage[index] = index % 251;
+      const directHash = sha256(directImage);
+      const directUrl = new URL(`https://example.test/api/style-gallery/examples/${slug}/upload`);
+      directUrl.search = new URLSearchParams({
+        platform: 'gpt-image2',
+        action: 'direct',
+        imageHash: directHash,
+      }).toString();
+      const directResponse = await callUpload(directUrl, directImage, 'image/webp');
+
+      assert.equal(directResponse.status, 200, await directResponse.text());
+      assert.deepEqual(objects.get(`examples/images/${directHash}.webp`), directImage);
+      assert.equal(
+        [...objects.keys()].some((key) => key.startsWith('examples/uploads/')),
+        false,
+      );
+
+      const boundaryImage = new Uint8Array(STYLE_GALLERY_DIRECT_UPLOAD_MAX_SIZE);
+      const boundaryHash = sha256(boundaryImage);
+      const boundaryUrl = new URL(`https://example.test/api/style-gallery/examples/${slug}/upload`);
+      boundaryUrl.search = new URLSearchParams({
+        platform: 'gpt-image2',
+        action: 'direct',
+        imageHash: boundaryHash,
+      }).toString();
+      const boundaryResponse = await callUpload(boundaryUrl, boundaryImage, 'image/webp');
+      assert.equal(boundaryResponse.status, 200, await boundaryResponse.text());
+      assert.deepEqual(objects.get(`examples/images/${boundaryHash}.webp`), boundaryImage);
+
+      const oversizedDirectImage = new Uint8Array(STYLE_GALLERY_DIRECT_UPLOAD_MAX_SIZE + 1);
+      const oversizedUrl = new URL(`https://example.test/api/style-gallery/examples/${slug}/upload`);
+      oversizedUrl.search = new URLSearchParams({
+        platform: 'gpt-image2',
+        action: 'direct',
+        imageHash: sha256(oversizedDirectImage),
+      }).toString();
+      const oversizedResponse = await callUpload(oversizedUrl, oversizedDirectImage, 'image/webp');
+      assert.equal(oversizedResponse.status, 413);
+
       const image = new Uint8Array(4_495_816);
       for (let index = 0; index < image.length; index += 1) image[index] = index % 251;
       const uploadId = '019f4f58-103a-7ac1-9f5e-6e27c9712154';

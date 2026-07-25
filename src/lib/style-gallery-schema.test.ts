@@ -10,6 +10,7 @@ import {
   getStyleGalleryUploadPartKey,
   isStyleGalleryUploadId,
   MAX_STYLE_GALLERY_UPLOAD_PARTS,
+  STYLE_GALLERY_DIRECT_UPLOAD_MAX_SIZE,
   STYLE_GALLERY_UPLOAD_CHUNK_SIZE,
 } from './style-gallery-chunk-upload';
 import { getStyleGalleryClientErrorResponse, StyleGalleryClientError } from './style-gallery-errors';
@@ -20,6 +21,7 @@ import {
   removeStyleGalleryExamples,
   toStyleGalleryExampleIndexGroup,
 } from './style-gallery-examples';
+import { getStyleGalleryExampleContentType, getStyleGalleryExampleExtension } from './style-gallery-image-type';
 import { getStyleGalleryPlatform } from './style-gallery-platforms';
 import {
   styleGalleryCatalogSchema,
@@ -179,8 +181,9 @@ describe('style gallery write authorization', () => {
 });
 
 describe('style gallery chunk uploads', () => {
-  it('keeps every upload request below the Vercel Function payload limit', () => {
-    assert.equal(STYLE_GALLERY_UPLOAD_CHUNK_SIZE, 4 * 1024 * 1024);
+  it('directs small files and keeps every large-file part below the Vercel Function payload limit', () => {
+    assert.equal(STYLE_GALLERY_DIRECT_UPLOAD_MAX_SIZE, 4.25 * 1024 * 1024);
+    assert.equal(STYLE_GALLERY_UPLOAD_CHUNK_SIZE, STYLE_GALLERY_DIRECT_UPLOAD_MAX_SIZE);
     assert.equal(getStyleGalleryUploadPartCount(STYLE_GALLERY_UPLOAD_CHUNK_SIZE), 1);
     assert.equal(getStyleGalleryUploadPartCount(STYLE_GALLERY_UPLOAD_CHUNK_SIZE + 1), 2);
     assert.equal(getStyleGalleryUploadPartCount(12 * 1024 * 1024), MAX_STYLE_GALLERY_UPLOAD_PARTS);
@@ -195,5 +198,14 @@ describe('style gallery chunk uploads', () => {
     assert.equal(isStyleGalleryUploadId('../metadata/catalog.json'), false);
     assert.throws(() => getStyleGalleryUploadPartKey('../metadata/catalog.json', 0), /Invalid style gallery upload ID/);
     assert.throws(() => getStyleGalleryUploadPartKey(uploadId, MAX_STYLE_GALLERY_UPLOAD_PARTS), /part index/);
+  });
+});
+
+describe('style gallery image types', () => {
+  it('uses one canonical MIME mapping for prepared extensions and direct uploads', () => {
+    assert.equal(getStyleGalleryExampleExtension('', 'example.jpeg'), 'jpg');
+    assert.equal(getStyleGalleryExampleContentType('jpg'), 'image/jpeg');
+    assert.equal(getStyleGalleryExampleContentType('png'), 'image/png');
+    assert.throws(() => getStyleGalleryExampleContentType('gif'), /Unsupported image extension/);
   });
 });

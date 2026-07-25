@@ -1,5 +1,10 @@
 import { Icon } from '@iconify/react';
-import { getStyleGalleryUploadPartCount, STYLE_GALLERY_UPLOAD_CHUNK_SIZE } from '@lib/style-gallery-chunk-upload';
+import {
+  getStyleGalleryUploadPartCount,
+  STYLE_GALLERY_DIRECT_UPLOAD_MAX_SIZE,
+  STYLE_GALLERY_UPLOAD_CHUNK_SIZE,
+} from '@lib/style-gallery-chunk-upload';
+import { getStyleGalleryExampleContentType } from '@lib/style-gallery-image-type';
 import {
   createStyleGalleryCopyAction,
   createStyleGalleryDeleteAction,
@@ -106,14 +111,17 @@ function uploadWithProgress(
   body: Blob,
   token: string,
   onProgress: (loaded: number, total: number) => void,
+  contentType = 'application/octet-stream',
+  onUploaded?: () => void,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest();
     request.open('POST', url);
     request.timeout = RAW_UPLOAD_TIMEOUT_MS;
     request.setRequestHeader('Authorization', `Bearer ${token}`);
-    request.setRequestHeader('Content-Type', 'application/octet-stream');
+    request.setRequestHeader('Content-Type', contentType);
     request.upload.onprogress = (event) => onProgress(event.loaded, event.lengthComputable ? event.total : body.size);
+    if (onUploaded) request.upload.onload = onUploaded;
     request.onload = () => {
       if (request.status >= 200 && request.status < 300) resolve();
       else
@@ -133,11 +141,13 @@ async function uploadWithProgressAndRetry(
   body: Blob,
   token: string,
   onProgress: (loaded: number, total: number) => void,
+  contentType = 'application/octet-stream',
+  onUploaded?: () => void,
 ): Promise<void> {
   let lastError: unknown;
   for (let attempt = 1; attempt <= MAX_UPLOAD_ATTEMPTS; attempt += 1) {
     try {
-      await uploadWithProgress(url, body, token, onProgress);
+      await uploadWithProgress(url, body, token, onProgress, contentType, onUploaded);
       return;
     } catch (error) {
       lastError = error;
@@ -148,6 +158,32 @@ async function uploadWithProgressAndRetry(
     }
   }
   throw lastError instanceof Error ? lastError : new Error('Upload failed');
+}
+
+async function uploadFileDirectly(
+  slug: string,
+  platform: string,
+  file: File,
+  imageHash: string,
+  extension: string,
+  token: string,
+  onProgress: (loaded: number, total: number) => void,
+  onProcessing: () => void,
+): Promise<void> {
+  const contentType = getStyleGalleryExampleContentType(extension);
+  const query = new URLSearchParams({
+    platform,
+    action: 'direct',
+    imageHash,
+  });
+  await uploadWithProgressAndRetry(
+    `/api/style-gallery/examples/${slug}/upload?${query}`,
+    file,
+    token,
+    onProgress,
+    contentType,
+    onProcessing,
+  );
 }
 
 async function uploadFileInChunks(
@@ -217,9 +253,26 @@ async function uploadFileInChunks(
   }
 }
 
+/** 小文件跳过 HF 临时对象；大文件仍按有界请求分块并由 complete 阶段复核完整内容。 */
+async function uploadFile(
+  slug: string,
+  platform: string,
+  file: File,
+  imageHash: string,
+  extension: string,
+  token: string,
+  onProgress: (loaded: number, total: number) => void,
+  onProcessing: () => void,
+): Promise<void> {
+  if (file.size <= STYLE_GALLERY_DIRECT_UPLOAD_MAX_SIZE) {
+    return uploadFileDirectly(slug, platform, file, imageHash, extension, token, onProgress, onProcessing);
+  }
+  return uploadFileInChunks(slug, platform, file, imageHash, extension, token, onProgress, onProcessing);
+}
+
 /**
  * 单个 prompt item 的 Sub-gallery 管理器。
- * 支持并发文件任务、4 MiB 分块、逐文件失败隔离，以及带令牌的批量改平台/删除操作。
+ * 支持小文件直传、大文件分块、并发文件任务、逐文件失败隔离，以及带令牌的批量改平台/删除操作。
  */
 export default function StyleGalleryExamples({
   slug,
@@ -505,7 +558,7 @@ export default function StyleGalleryExamples({
             updateFileProgress(entry.id, { state: 'uploading' });
             const extension = upload.example.src.split('.').pop() ?? 'jpg';
             try {
-              await uploadFileInChunks(
+              await uploadFile(
                 slug,
                 platform,
                 entry.file,
