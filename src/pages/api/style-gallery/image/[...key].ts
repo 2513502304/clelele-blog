@@ -1,4 +1,4 @@
-import { createStyleGallerySignedImageUrl } from '@lib/hf-s3-presign';
+import { createStyleGallerySignedDownloadUrl, createStyleGallerySignedImageUrl } from '@lib/hf-s3-presign';
 import type { APIRoute } from 'astro';
 
 export const prerender = false;
@@ -25,21 +25,22 @@ async function proxyDevelopmentImage(signedUrl: string): Promise<Response> {
   }
 
   const headers = new Headers({ 'cache-control': 'private, max-age=300' });
-  for (const name of ['content-length', 'content-type', 'etag', 'last-modified']) {
+  for (const name of ['content-disposition', 'content-length', 'content-type', 'etag', 'last-modified']) {
     const value = upstream.headers.get(name);
     if (value) headers.set(name, value);
   }
   return new Response(upstream.body, { status: 200, headers });
 }
 
-export const GET: APIRoute = async ({ params }) => {
+export const GET: APIRoute = async ({ params, request }) => {
   const key = params.key;
   if (!key || !isAllowedImageKey(key)) {
     return new Response('Invalid style gallery image key.', { status: 400 });
   }
 
   try {
-    const signedUrl = createStyleGallerySignedImageUrl(key);
+    const download = new URL(request.url).searchParams.get('download') === '1';
+    const signedUrl = download ? createStyleGallerySignedDownloadUrl(key) : createStyleGallerySignedImageUrl(key);
     if (import.meta.env.DEV) return await proxyDevelopmentImage(signedUrl);
 
     return new Response(null, {

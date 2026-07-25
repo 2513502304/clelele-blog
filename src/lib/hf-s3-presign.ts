@@ -84,7 +84,13 @@ function getObjectPath(config: HfS3Config, key: string): string {
     .join('/');
 }
 
-function createPresignedUrl(method: 'GET' | 'PUT', key: string, expires: number, now = new Date()): string {
+function createPresignedUrl(
+  method: 'GET' | 'PUT',
+  key: string,
+  expires: number,
+  now = new Date(),
+  responseOverrides: Record<string, string> = {},
+): string {
   const config = getHfS3Config();
   const { amzDate, dateStamp } = formatAmzDate(now);
   const credentialScope = `${dateStamp}/${config.region}/s3/aws4_request`;
@@ -93,6 +99,7 @@ function createPresignedUrl(method: 'GET' | 'PUT', key: string, expires: number,
   const host = config.endpoint.host;
 
   const queryParams = new URLSearchParams({
+    ...responseOverrides,
     'X-Amz-Algorithm': 'AWS4-HMAC-SHA256',
     'X-Amz-Credential': `${config.accessKeyId}/${credentialScope}`,
     'X-Amz-Date': amzDate,
@@ -101,7 +108,8 @@ function createPresignedUrl(method: 'GET' | 'PUT', key: string, expires: number,
   });
 
   const canonicalQuery = [...queryParams.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
+    // SigV4 要求按 RFC 3986 编码后的字节序排列；localeCompare 会把小写 response 参数排到 X-Amz 前面。
+    .sort(([a], [b]) => (rfc3986Encode(a) < rfc3986Encode(b) ? -1 : 1))
     .map(([name, value]) => `${rfc3986Encode(name)}=${rfc3986Encode(value)}`)
     .join('&');
   const canonicalRequest = [method, canonicalUri, canonicalQuery, `host:${host}\n`, 'host', 'UNSIGNED-PAYLOAD'].join('\n');
@@ -114,6 +122,18 @@ function createPresignedUrl(method: 'GET' | 'PUT', key: string, expires: number,
 
 export function createStyleGallerySignedImageUrl(key: string, now = new Date()): string {
   return createPresignedUrl('GET', key, getTtlSeconds(), now);
+}
+
+/** 让浏览器直接从 HF S3 下载对象，Vercel 仅签名并重定向，不转发图片字节。 */
+export function createStyleGallerySignedDownloadUrl(key: string, now = new Date()): string {
+  const filename =
+    key
+      .split('/')
+      .at(-1)
+      ?.replace(/[^a-zA-Z0-9._-]/g, '_') || 'image';
+  return createPresignedUrl('GET', key, getTtlSeconds(), now, {
+    'response-content-disposition': `attachment; filename="${filename}"`,
+  });
 }
 
 export function createStyleGallerySignedUploadUrl(key: string, now = new Date()): string {

@@ -38,6 +38,8 @@ export default function ImageLightbox() {
   const currentLike = currentImage?.like;
   const currentCopy = currentImage?.copy;
   const currentDelete = currentImage?.delete;
+  const downloadUrl = currentImage ? createDownloadUrl(currentImage.src) : '';
+  const downloadFilename = currentImage ? getDownloadFilename(currentImage.src) : 'image';
   const currentImageKey = currentImage?.id ?? `${data?.currentIndex ?? 0}:${currentImage?.src ?? ''}`;
   const [imageLoaded, setImageLoaded] = useState(false);
   const [rotation, setRotation] = useState(0);
@@ -367,6 +369,12 @@ export default function ImageLightbox() {
                       tone="danger"
                     />
                   )}
+                  <ToolbarLink
+                    href={downloadUrl}
+                    download={downloadFilename}
+                    icon="ri:download-2-line"
+                    label={t('image.download')}
+                  />
                   <div className="h-px tablet:h-5 tablet:w-px w-5 bg-white/20" />
                   <ToolbarButton icon="ri:close-line" label={t('image.close')} onClick={() => closeModal()} />
                 </motion.div>
@@ -435,6 +443,23 @@ export default function ImageLightbox() {
   );
 }
 
+/** Gallery 图片由 API 返回带 attachment 的 HF 签名 URL；其他同源图片使用浏览器原生下载。 */
+function createDownloadUrl(src: string): string {
+  if (!src.startsWith('/api/style-gallery/image/')) return src;
+  const [withoutHash, hash = ''] = src.split('#', 2);
+  return `${withoutHash}${withoutHash.includes('?') ? '&' : '?'}download=1${hash ? `#${hash}` : ''}`;
+}
+
+function getDownloadFilename(src: string): string {
+  const filename = src.split(/[?#]/, 1)[0].split('/').at(-1);
+  if (!filename) return 'image';
+  try {
+    return decodeURIComponent(filename);
+  } catch {
+    return filename;
+  }
+}
+
 function LightboxLikeButton({ action, onClick }: { action: ImageLightboxLikeAction; onClick: () => void }) {
   const title = !action.authEnabled
     ? action.labels.unavailable
@@ -493,6 +518,21 @@ function ToolbarButton({
     >
       <Icon icon={icon} className={`size-5 ${spinning ? 'animate-spin' : ''}`} />
     </motion.button>
+  );
+}
+
+function ToolbarLink({ href, download, icon, label }: { href: string; download: string; icon: string; label: string }) {
+  return (
+    <motion.a
+      href={href}
+      download={download}
+      className="flex size-10 items-center justify-center rounded-full text-white/80 transition-colors hover:bg-white/15"
+      whileTap={{ scale: 0.85 }}
+      aria-label={label}
+      title={label}
+    >
+      <Icon icon={icon} className="size-5" />
+    </motion.a>
   );
 }
 

@@ -198,6 +198,7 @@ export const uiStrings: UIStrings = {
   'image.deleteFailed': '削除に失敗しました',
   'image.deleteRequiresToken': '先にアップロード Token を入力してください',
   'image.deleteConfirm': '「{name}」を完全に削除しますか？',
+  'image.download': '画像をダウンロード',
   'image.close': '閉じる',
   'image.prev': '前へ',
   'image.next': '次へ',
