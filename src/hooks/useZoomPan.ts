@@ -58,6 +58,29 @@ export function useZoomPan(enabled = true, options: UseZoomPanOptions = {}): Use
   const transformRef = useRef<ZoomPanState>(INITIAL_STATE);
   const rafRef = useRef(0);
 
+  // 指针在 popup 关闭前可能收不到最终 mouseup/touchend，因此 reset 和 effect cleanup 都必须显式清理手势状态。
+  const dragRef = useRef({
+    isDragging: false,
+    startX: 0,
+    startY: 0,
+    lastTranslateX: 0,
+    lastTranslateY: 0,
+    initialPinchDistance: 0,
+    initialPinchScale: 1,
+  });
+
+  const resetGesture = useCallback(() => {
+    dragRef.current = {
+      isDragging: false,
+      startX: 0,
+      startY: 0,
+      lastTranslateX: 0,
+      lastTranslateY: 0,
+      initialPinchDistance: 0,
+      initialPinchScale: 1,
+    };
+  }, []);
+
   const flushState = useCallback(() => {
     if (rafRef.current) return;
     rafRef.current = requestAnimationFrame(() => {
@@ -73,26 +96,16 @@ export function useZoomPan(enabled = true, options: UseZoomPanOptions = {}): Use
     };
   }, []);
 
-  // Refs for drag state (don't need re-renders)
-  const dragRef = useRef({
-    isDragging: false,
-    startX: 0,
-    startY: 0,
-    lastTranslateX: 0,
-    lastTranslateY: 0,
-    initialPinchDistance: 0,
-    initialPinchScale: 1,
-  });
-
   const reset = useCallback(() => {
     transformRef.current = INITIAL_STATE;
+    resetGesture();
     // Reset should be immediate, cancel any pending rAF
     if (rafRef.current) {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = 0;
     }
     setState(INITIAL_STATE);
-  }, []);
+  }, [resetGesture]);
 
   const zoomTo = useCallback(
     (targetScale: number, centerX?: number, centerY?: number) => {
@@ -148,7 +161,8 @@ export function useZoomPan(enabled = true, options: UseZoomPanOptions = {}): Use
     };
 
     const handleMouseDown = (e: MouseEvent) => {
-      if (e.button !== 0) return;
+      // 空白 viewport 用于关闭 popup，不应同时成为图片拖拽的起点。
+      if (e.button !== 0 || e.target === viewport) return;
       const d = dragRef.current;
       const s = transformRef.current;
       d.isDragging = true;
@@ -178,9 +192,10 @@ export function useZoomPan(enabled = true, options: UseZoomPanOptions = {}): Use
       const s = transformRef.current;
       if (e.touches.length === 2) {
         e.preventDefault();
+        d.isDragging = false;
         d.initialPinchDistance = getDistance(e.touches[0], e.touches[1]);
         d.initialPinchScale = s.scale;
-      } else if (e.touches.length === 1) {
+      } else if (e.touches.length === 1 && e.target !== viewport) {
         d.isDragging = true;
         d.startX = e.touches[0].clientX;
         d.startY = e.touches[0].clientY;
@@ -193,6 +208,7 @@ export function useZoomPan(enabled = true, options: UseZoomPanOptions = {}): Use
       const d = dragRef.current;
       if (e.touches.length === 2) {
         e.preventDefault();
+        if (d.initialPinchDistance <= 0) return;
         const newDist = getDistance(e.touches[0], e.touches[1]);
         const pinchRatio = newDist / d.initialPinchDistance;
         const adjustedRatio = pinchRatio ** sensitivityRef.current;
@@ -220,8 +236,11 @@ export function useZoomPan(enabled = true, options: UseZoomPanOptions = {}): Use
     viewport.addEventListener('touchstart', handleTouchStart, { passive: false });
     viewport.addEventListener('touchmove', handleTouchMove, { passive: false });
     viewport.addEventListener('touchend', handleTouchEnd);
+    viewport.addEventListener('touchcancel', handleTouchEnd);
+    window.addEventListener('blur', handleMouseUp);
 
     return () => {
+      resetGesture();
       viewport.removeEventListener('wheel', handleWheel);
       viewport.removeEventListener('mousedown', handleMouseDown);
       document.removeEventListener('mousemove', handleMouseMove);
@@ -229,8 +248,10 @@ export function useZoomPan(enabled = true, options: UseZoomPanOptions = {}): Use
       viewport.removeEventListener('touchstart', handleTouchStart);
       viewport.removeEventListener('touchmove', handleTouchMove);
       viewport.removeEventListener('touchend', handleTouchEnd);
+      viewport.removeEventListener('touchcancel', handleTouchEnd);
+      window.removeEventListener('blur', handleMouseUp);
     };
-  }, [flushState, enabled, viewport]);
+  }, [flushState, enabled, resetGesture, viewport]);
 
   return {
     containerRef,

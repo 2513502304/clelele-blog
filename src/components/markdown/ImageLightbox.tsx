@@ -7,16 +7,16 @@
  */
 
 import { FloatingFocusManager, FloatingPortal, useDismiss, useFloating, useInteractions, useRole } from '@floating-ui/react';
+import { useBackdropClickDismiss } from '@hooks/useBackdropClickDismiss';
 import { useKeyboardShortcut } from '@hooks/useKeyboardShortcut';
 import { useTranslation } from '@hooks/useTranslation';
 import { useZoomPan } from '@hooks/useZoomPan';
-import { Icon } from '@iconify/react';
+import { createImageLightboxDownloadAction } from '@lib/image-lightbox-download';
 import { useStore } from '@nanostores/react';
 import {
   $imageLightboxData,
   closeModal,
   type ImageLightboxData,
-  type ImageLightboxLikeAction,
   navigateImage,
   openModal,
   removeImageFromLightbox,
@@ -24,6 +24,7 @@ import {
 } from '@store/modal';
 import { AnimatePresence, motion } from 'motion/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { LightboxLikeButton, NavButton, ToolbarButton, ToolbarLink, ZoomHint } from './ImageLightboxControls';
 
 const ZOOM_SENSITIVITY_STORAGE_KEY = 'image-lightbox-zoom-sensitivity';
 const DEFAULT_ZOOM_SENSITIVITY = 0.55;
@@ -38,8 +39,7 @@ export default function ImageLightbox() {
   const currentLike = currentImage?.like;
   const currentCopy = currentImage?.copy;
   const currentDelete = currentImage?.delete;
-  const downloadUrl = currentImage ? createDownloadUrl(currentImage.src) : '';
-  const downloadFilename = currentImage ? getDownloadFilename(currentImage.src) : 'image';
+  const downloadAction = currentImage ? createImageLightboxDownloadAction(currentImage.src) : null;
   const currentImageKey = currentImage?.id ?? `${data?.currentIndex ?? 0}:${currentImage?.src ?? ''}`;
   const [imageLoaded, setImageLoaded] = useState(false);
   const [rotation, setRotation] = useState(0);
@@ -47,6 +47,10 @@ export default function ImageLightbox() {
   const [showSensitivity, setShowSensitivity] = useState(false);
   const [copyState, setCopyState] = useState<{ key: string; status: 'copying' | 'copied' | 'failed' } | null>(null);
   const [deleteState, setDeleteState] = useState<{ key: string; status: 'deleting' | 'failed' } | null>(null);
+  const copyAttemptRef = useRef(0);
+  const deleteAttemptRef = useRef(0);
+  const copyTimerRef = useRef(0);
+  const deleteTimerRef = useRef(0);
 
   const { containerRef, state, reset, zoomTo, zoomLevel } = useZoomPan(isOpen, { zoomSensitivity });
 
@@ -58,6 +62,12 @@ export default function ImageLightbox() {
     reset();
     setRotation(0);
   }, [reset]);
+
+  const dismissFromBackdrop = useCallback(() => {
+    reset();
+    closeModal();
+  }, [reset]);
+  const backdropPointerHandlers = useBackdropClickDismiss(dismissFromBackdrop);
 
   const handleZoomIn = useCallback(() => zoomTo(scaleRef.current * 1.5), [zoomTo]);
   const handleZoomOut = useCallback(() => zoomTo(scaleRef.current / 1.5), [zoomTo]);
@@ -88,6 +98,8 @@ export default function ImageLightbox() {
   const handleCopy = useCallback(async () => {
     if (!currentCopy) return;
     const key = currentImageKey;
+    const attempt = ++copyAttemptRef.current;
+    window.clearTimeout(copyTimerRef.current);
     setCopyState({ key, status: 'copying' });
     try {
       await navigator.clipboard.writeText(await currentCopy.getText());
@@ -96,18 +108,21 @@ export default function ImageLightbox() {
       console.error('[image-lightbox] Failed to copy contextual text.', error);
       setCopyState({ key, status: 'failed' });
     }
-    window.setTimeout(() => {
-      setCopyState((current) => (current?.key === key ? null : current));
+    copyTimerRef.current = window.setTimeout(() => {
+      if (copyAttemptRef.current === attempt) setCopyState(null);
     }, 2000);
   }, [currentCopy, currentImageKey]);
 
   const handleDelete = useCallback(async () => {
     if (!currentDelete?.enabled || !window.confirm(currentDelete.confirmMessage)) return;
     const key = currentImageKey;
+    const attempt = ++deleteAttemptRef.current;
+    window.clearTimeout(deleteTimerRef.current);
     setDeleteState({ key, status: 'deleting' });
     try {
       if (await currentDelete.run()) {
         removeImageFromLightbox(currentDelete.imageId);
+        window.clearTimeout(deleteTimerRef.current);
         setDeleteState(null);
         reset();
         setRotation(0);
@@ -119,8 +134,8 @@ export default function ImageLightbox() {
       console.error('[image-lightbox] Failed to delete the current image.', error);
       setDeleteState({ key, status: 'failed' });
     }
-    window.setTimeout(() => {
-      setDeleteState((current) => (current?.key === key ? null : current));
+    deleteTimerRef.current = window.setTimeout(() => {
+      if (deleteAttemptRef.current === attempt) setDeleteState(null);
     }, 2400);
   }, [currentDelete, currentImageKey, reset]);
 
@@ -198,6 +213,10 @@ export default function ImageLightbox() {
 
   // Reset zoom, rotation, and image state when opening/closing
   useEffect(() => {
+    copyAttemptRef.current += 1;
+    deleteAttemptRef.current += 1;
+    window.clearTimeout(copyTimerRef.current);
+    window.clearTimeout(deleteTimerRef.current);
     if (isOpen) {
       reset();
       setRotation(0);
@@ -206,6 +225,10 @@ export default function ImageLightbox() {
       setCopyState(null);
       setDeleteState(null);
     }
+    return () => {
+      window.clearTimeout(copyTimerRef.current);
+      window.clearTimeout(deleteTimerRef.current);
+    };
   }, [isOpen, reset]);
 
   const updateZoomSensitivity = (value: number) => {
@@ -369,12 +392,15 @@ export default function ImageLightbox() {
                       tone="danger"
                     />
                   )}
-                  <ToolbarLink
-                    href={downloadUrl}
-                    download={downloadFilename}
-                    icon="ri:download-2-line"
-                    label={t('image.download')}
-                  />
+                  {downloadAction && (
+                    <ToolbarLink
+                      href={downloadAction.href}
+                      download={downloadAction.filename}
+                      opensExternally={downloadAction.opensExternally}
+                      icon={downloadAction.opensExternally ? 'ri:external-link-line' : 'ri:download-2-line'}
+                      label={downloadAction.opensExternally ? t('image.openOriginal') : t('image.download')}
+                    />
+                  )}
                   <div className="h-px tablet:h-5 tablet:w-px w-5 shrink-0 bg-white/20" />
                   <ToolbarButton icon="ri:close-line" label={t('image.close')} onClick={() => closeModal()} />
                 </motion.div>
@@ -384,9 +410,7 @@ export default function ImageLightbox() {
                   ref={containerRef}
                   role="img"
                   className="flex h-full w-full touch-none select-none items-center justify-center p-4"
-                  onPointerUp={(event) => {
-                    if (event.target === event.currentTarget) closeModal();
-                  }}
+                  {...backdropPointerHandlers}
                   onDoubleClick={handleDoubleClick}
                 >
                   <motion.div
@@ -440,147 +464,5 @@ export default function ImageLightbox() {
         )}
       </AnimatePresence>
     </FloatingPortal>
-  );
-}
-
-/** Gallery 图片由 API 返回带 attachment 的 HF 签名 URL；其他同源图片使用浏览器原生下载。 */
-function createDownloadUrl(src: string): string {
-  if (!src.startsWith('/api/style-gallery/image/')) return src;
-  const [withoutHash, hash = ''] = src.split('#', 2);
-  return `${withoutHash}${withoutHash.includes('?') ? '&' : '?'}download=1${hash ? `#${hash}` : ''}`;
-}
-
-function getDownloadFilename(src: string): string {
-  const filename = src.split(/[?#]/, 1)[0].split('/').at(-1);
-  if (!filename) return 'image';
-  try {
-    return decodeURIComponent(filename);
-  } catch {
-    return filename;
-  }
-}
-
-function LightboxLikeButton({ action, onClick }: { action: ImageLightboxLikeAction; onClick: () => void }) {
-  const title = !action.authEnabled
-    ? action.labels.unavailable
-    : !action.viewerAuthenticated
-      ? action.labels.loginRequired
-      : action.liked
-        ? action.labels.unlike
-        : action.labels.like;
-  return (
-    <motion.button
-      type="button"
-      onClick={onClick}
-      disabled={!action.authEnabled || action.pending}
-      className={`flex h-10 min-w-10 shrink-0 items-center justify-center gap-1 rounded-full px-2 font-bold text-xs transition-colors hover:bg-white/15 disabled:pointer-events-none disabled:opacity-30 ${action.liked ? 'text-rose-400' : 'text-white/80'}`}
-      whileTap={{ scale: 0.85 }}
-      aria-label={`${title}: ${action.likeCount}`}
-      aria-pressed={action.liked}
-      title={title}
-    >
-      <Icon
-        icon={action.pending ? 'ri:loader-4-line' : action.liked ? 'ri:heart-3-fill' : 'ri:heart-3-line'}
-        className={`size-5 ${action.pending ? 'animate-spin' : ''}`}
-      />
-      <span className="tabular-nums">{action.likeCount}</span>
-    </motion.button>
-  );
-}
-
-function ToolbarButton({
-  icon,
-  label,
-  onClick,
-  disabled,
-  active,
-  spinning,
-  tone = 'default',
-}: {
-  icon: string;
-  label: string;
-  onClick: () => void;
-  disabled?: boolean;
-  active?: boolean;
-  spinning?: boolean;
-  tone?: 'default' | 'danger';
-}) {
-  return (
-    <motion.button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className={`flex size-10 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-white/15 disabled:pointer-events-none disabled:opacity-30 ${active ? 'bg-white/15 text-rose-300' : tone === 'danger' ? 'text-rose-300' : 'text-white/80'}`}
-      whileTap={{ scale: 0.85 }}
-      aria-label={label}
-      aria-pressed={active}
-      title={label}
-    >
-      <Icon icon={icon} className={`size-5 ${spinning ? 'animate-spin' : ''}`} />
-    </motion.button>
-  );
-}
-
-function ToolbarLink({ href, download, icon, label }: { href: string; download: string; icon: string; label: string }) {
-  return (
-    <motion.a
-      href={href}
-      download={download}
-      className="flex size-10 shrink-0 items-center justify-center rounded-full text-white/80 transition-colors hover:bg-white/15"
-      whileTap={{ scale: 0.85 }}
-      aria-label={label}
-      title={label}
-    >
-      <Icon icon={icon} className="size-5" />
-    </motion.a>
-  );
-}
-
-// Stable animation keyframes — avoids restarting the bounce on every parent re-render
-const BOUNCE_LEFT = { x: [0, -2.5, 0] };
-const BOUNCE_RIGHT = { x: [0, 2.5, 0] };
-const BOUNCE_NONE = { x: 0 };
-
-function NavButton({ direction, disabled, onClick }: { direction: 1 | -1; disabled: boolean; onClick: () => void }) {
-  const { t } = useTranslation();
-  const isLeft = direction === -1;
-  return (
-    <motion.button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className="flex size-8 items-center justify-center rounded-full text-white/80 transition-colors hover:bg-white/15 disabled:pointer-events-none disabled:opacity-30"
-      whileTap={{ scale: 0.82 }}
-      aria-label={isLeft ? t('image.prev') : t('image.next')}
-    >
-      <motion.span
-        animate={disabled ? BOUNCE_NONE : isLeft ? BOUNCE_LEFT : BOUNCE_RIGHT}
-        transition={{ duration: 1.6, repeat: 3, ease: 'easeInOut' }}
-      >
-        <Icon icon={isLeft ? 'ri:arrow-left-s-line' : 'ri:arrow-right-s-line'} className="size-5" />
-      </motion.span>
-    </motion.button>
-  );
-}
-
-function ZoomHint() {
-  const { t } = useTranslation();
-  const [visible, setVisible] = useState(true);
-
-  useEffect(() => {
-    const timer = setTimeout(() => setVisible(false), 4000);
-    return () => clearTimeout(timer);
-  }, []);
-
-  return (
-    <motion.div
-      className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/50 px-4 py-2 text-white/70 text-xs"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: visible ? 1 : 0 }}
-      transition={{ duration: 0.3 }}
-    >
-      <span className="hidden touch-none sm:inline">{t('image.hintDesktop')}</span>
-      <span className="sm:hidden">{t('image.hintMobile')}</span>
-    </motion.div>
   );
 }

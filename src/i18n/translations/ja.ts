@@ -199,6 +199,7 @@ export const uiStrings: UIStrings = {
   'image.deleteRequiresToken': '先にアップロード Token を入力してください',
   'image.deleteConfirm': '「{name}」を完全に削除しますか？',
   'image.download': '画像をダウンロード',
+  'image.openOriginal': '元の画像を開く',
   'image.close': '閉じる',
   'image.prev': '前へ',
   'image.next': '次へ',

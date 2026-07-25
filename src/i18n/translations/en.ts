@@ -199,6 +199,7 @@ export const uiStrings: UIStrings = {
   'image.deleteRequiresToken': 'Enter the upload token first',
   'image.deleteConfirm': 'Permanently delete “{name}”?',
   'image.download': 'Download image',
+  'image.openOriginal': 'Open original image',
   'image.close': 'Close',
   'image.prev': 'Previous',
   'image.next': 'Next',

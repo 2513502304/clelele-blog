@@ -197,6 +197,7 @@ export const uiStrings = {
   'image.deleteRequiresToken': '需要先填写上传 Token',
   'image.deleteConfirm': '确定永久删除“{name}”吗？',
   'image.download': '下载图片',
+  'image.openOriginal': '打开原图',
   'image.close': '关闭',
   'image.prev': '上一张',
   'image.next': '下一张',

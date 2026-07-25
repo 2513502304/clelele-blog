@@ -219,7 +219,7 @@ export const DELETE: APIRoute = async ({ params, request }) => {
     let removed: StyleGalleryExample[] = [];
     const result = await updateStyleGalleryItemExamples(slug, (examples) => {
       removed = examples.filter((example) => selectedIds.has(example.id));
-      if (removed.length !== selectedIds.size) throw new StyleGalleryClientError('One or more examples were not found.', 404);
+      // DELETE 必须可安全重试：首次响应丢失后，同一请求再次到达时缺失 ID 视为已删除。
       return removeStyleGalleryExamples(examples, selectedIds);
     });
     const referenced = new Set(result.index.groups.flatMap((group) => group.examples.map((example) => example.src)));
