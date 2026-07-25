@@ -204,7 +204,7 @@ export default function StyleGalleryBrowser({ items, tags, galleryBasePath, labe
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-4 md:grid-cols-1 xl:grid-cols-2">
+      <div className="grid grid-cols-3 tablet:grid-cols-2 gap-4 md:grid-cols-1">
         {visibleItems.map((item) => (
           <article
             key={item.slug}
