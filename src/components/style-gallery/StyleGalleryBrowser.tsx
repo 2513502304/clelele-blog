@@ -244,7 +244,7 @@ export default function StyleGalleryBrowser({ items, tags, galleryBasePath, labe
                   </span>
                 </div>
               </div>
-              <p className="line-clamp-4 min-h-22 text-pretty text-gray-600 text-sm leading-6 dark:text-gray-300">
+              <p className="line-clamp-3 min-h-18 text-pretty text-gray-600 text-sm leading-6 dark:text-gray-300">
                 {item.prompt}
               </p>
               <div className="flex flex-wrap gap-1.5">
