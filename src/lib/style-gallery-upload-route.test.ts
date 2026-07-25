@@ -110,6 +110,18 @@ describe('style gallery upload route', () => {
         false,
       );
 
+      const boundaryImage = new Uint8Array(STYLE_GALLERY_DIRECT_UPLOAD_MAX_SIZE);
+      const boundaryHash = sha256(boundaryImage);
+      const boundaryUrl = new URL(`https://example.test/api/style-gallery/examples/${slug}/upload`);
+      boundaryUrl.search = new URLSearchParams({
+        platform: 'gpt-image2',
+        action: 'direct',
+        imageHash: boundaryHash,
+      }).toString();
+      const boundaryResponse = await callUpload(boundaryUrl, boundaryImage, 'image/webp');
+      assert.equal(boundaryResponse.status, 200, await boundaryResponse.text());
+      assert.deepEqual(objects.get(`examples/images/${boundaryHash}.webp`), boundaryImage);
+
       const oversizedDirectImage = new Uint8Array(STYLE_GALLERY_DIRECT_UPLOAD_MAX_SIZE + 1);
       const oversizedUrl = new URL(`https://example.test/api/style-gallery/examples/${slug}/upload`);
       oversizedUrl.search = new URLSearchParams({

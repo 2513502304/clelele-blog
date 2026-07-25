@@ -21,6 +21,7 @@ import {
   removeStyleGalleryExamples,
   toStyleGalleryExampleIndexGroup,
 } from './style-gallery-examples';
+import { getStyleGalleryExampleContentType, getStyleGalleryExampleExtension } from './style-gallery-image-type';
 import { getStyleGalleryPlatform } from './style-gallery-platforms';
 import {
   styleGalleryCatalogSchema,
@@ -197,5 +198,14 @@ describe('style gallery chunk uploads', () => {
     assert.equal(isStyleGalleryUploadId('../metadata/catalog.json'), false);
     assert.throws(() => getStyleGalleryUploadPartKey('../metadata/catalog.json', 0), /Invalid style gallery upload ID/);
     assert.throws(() => getStyleGalleryUploadPartKey(uploadId, MAX_STYLE_GALLERY_UPLOAD_PARTS), /part index/);
+  });
+});
+
+describe('style gallery image types', () => {
+  it('uses one canonical MIME mapping for prepared extensions and direct uploads', () => {
+    assert.equal(getStyleGalleryExampleExtension('', 'example.jpeg'), 'jpg');
+    assert.equal(getStyleGalleryExampleContentType('jpg'), 'image/jpeg');
+    assert.equal(getStyleGalleryExampleContentType('png'), 'image/png');
+    assert.throws(() => getStyleGalleryExampleContentType('gif'), /Unsupported image extension/);
   });
 });

@@ -4,22 +4,9 @@ import { STYLE_GALLERY_PREPARE_BATCH_SIZE } from '@lib/style-gallery-request-bat
 import type { StyleGalleryExample } from '@/types/style-gallery';
 
 export { MAX_STYLE_GALLERY_EXAMPLE_FILE_SIZE } from '@lib/style-gallery-chunk-upload';
+export { getStyleGalleryExampleExtension } from '@lib/style-gallery-image-type';
 
 export const MAX_STYLE_GALLERY_EXAMPLE_FILES = STYLE_GALLERY_PREPARE_BATCH_SIZE;
-
-const IMAGE_EXTENSIONS: Record<string, string> = {
-  'image/jpeg': 'jpg',
-  'image/png': 'png',
-  'image/webp': 'webp',
-};
-
-export function getStyleGalleryExampleExtension(contentType: string, fileName = ''): string {
-  const contentTypeExtension = IMAGE_EXTENSIONS[contentType];
-  if (contentTypeExtension) return contentTypeExtension;
-  const match = fileName.toLowerCase().match(/\.(jpe?g|png|webp)$/);
-  if (match?.[1]) return match[1] === 'jpeg' ? 'jpg' : match[1];
-  throw new Error(`Unsupported image type: ${contentType || fileName}`);
-}
 
 export function getStyleGalleryExampleKey(imageHash: string, extension: string): string {
   return `examples/images/${imageHash}.${extension.toLowerCase()}`;

@@ -4,6 +4,7 @@ import {
   STYLE_GALLERY_DIRECT_UPLOAD_MAX_SIZE,
   STYLE_GALLERY_UPLOAD_CHUNK_SIZE,
 } from '@lib/style-gallery-chunk-upload';
+import { getStyleGalleryExampleContentType } from '@lib/style-gallery-image-type';
 import {
   createStyleGalleryCopyAction,
   createStyleGalleryDeleteAction,
@@ -164,10 +165,12 @@ async function uploadFileDirectly(
   platform: string,
   file: File,
   imageHash: string,
+  extension: string,
   token: string,
   onProgress: (loaded: number, total: number) => void,
   onProcessing: () => void,
 ): Promise<void> {
+  const contentType = getStyleGalleryExampleContentType(extension);
   const query = new URLSearchParams({
     platform,
     action: 'direct',
@@ -178,7 +181,7 @@ async function uploadFileDirectly(
     file,
     token,
     onProgress,
-    file.type,
+    contentType,
     onProcessing,
   );
 }
@@ -262,7 +265,7 @@ async function uploadFile(
   onProcessing: () => void,
 ): Promise<void> {
   if (file.size <= STYLE_GALLERY_DIRECT_UPLOAD_MAX_SIZE) {
-    return uploadFileDirectly(slug, platform, file, imageHash, token, onProgress, onProcessing);
+    return uploadFileDirectly(slug, platform, file, imageHash, extension, token, onProgress, onProcessing);
   }
   return uploadFileInChunks(slug, platform, file, imageHash, extension, token, onProgress, onProcessing);
 }
