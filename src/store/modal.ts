@@ -64,10 +64,33 @@ export type ImageLightboxLikeState = Pick<
   'liked' | 'likeCount' | 'pending' | 'authEnabled' | 'viewerAuthenticated'
 >;
 
+/** 按需取得要复制的文本；总览页可延迟加载 prompt，避免扩大首屏数据。 */
+export interface ImageLightboxCopyAction {
+  label: string;
+  copiedLabel: string;
+  failedLabel: string;
+  getText: () => string | Promise<string>;
+}
+
+/** 可选的受保护删除动作；调用方负责 API 鉴权与业务状态同步。 */
+export interface ImageLightboxDeleteAction {
+  imageId: string;
+  label: string;
+  deletingLabel: string;
+  failedLabel: string;
+  unavailableLabel: string;
+  confirmMessage: string;
+  enabled: boolean;
+  run: () => Promise<boolean>;
+}
+
 export interface ImageLightboxImage {
+  id?: string;
   src: string;
   alt: string;
   like?: ImageLightboxLikeAction;
+  copy?: ImageLightboxCopyAction;
+  delete?: ImageLightboxDeleteAction;
 }
 
 export interface ImageLightboxData {
@@ -169,6 +192,34 @@ export function navigateImage(direction: 1 | -1): boolean {
   $activeModal.set({
     type: 'imageLightbox',
     data: { ...data, src: target.src, alt: target.alt, currentIndex: newIndex },
+  });
+  return true;
+}
+
+/**
+ * 删除异步完成时按稳定 ID 移除对应图片。用户若已切换到其他图片，则保持当前视觉焦点；
+ * 删除当前图片时优先显示其后一张，删除最后一张后回退到前一张。
+ */
+export function removeImageFromLightbox(imageId: string): boolean {
+  const modal = $activeModal.get();
+  if (modal.type !== 'imageLightbox') return false;
+  const data = modal.data as ImageLightboxData;
+  const removedIndex = data.images.findIndex((image) => image.id === imageId);
+  if (removedIndex === -1) return false;
+
+  const currentImage = data.images[data.currentIndex];
+  const images = data.images.filter((image) => image.id !== imageId);
+  if (images.length === 0) {
+    closeModal();
+    return true;
+  }
+
+  const retainedCurrentIndex = currentImage.id === imageId ? -1 : images.findIndex((image) => image.id === currentImage.id);
+  const currentIndex = retainedCurrentIndex >= 0 ? retainedCurrentIndex : Math.min(removedIndex, images.length - 1);
+  const target = images[currentIndex];
+  $activeModal.set({
+    type: 'imageLightbox',
+    data: { ...data, src: target.src, alt: target.alt, images, currentIndex },
   });
   return true;
 }

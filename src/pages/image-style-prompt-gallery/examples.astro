@@ -64,6 +64,17 @@ Astro.response.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-re
         galleryBasePath={galleryBasePath}
         locale={locale}
         labels={overviewLabels}
+        uploadsEnabled={Boolean(process.env.STYLE_GALLERY_UPLOAD_TOKEN)}
+        lightboxActionLabels={{
+          copyPrompt: t(locale, 'image.copyPrompt'),
+          copiedPrompt: t(locale, 'image.copiedPrompt'),
+          copyFailed: t(locale, 'image.copyFailed'),
+          deleteImage: t(locale, 'image.deleteImage'),
+          deletingImage: t(locale, 'image.deletingImage'),
+          deleteFailed: t(locale, 'image.deleteFailed'),
+          deleteRequiresToken: t(locale, 'image.deleteRequiresToken'),
+          deleteConfirm: t(locale, 'image.deleteConfirm', { name: '{name}' }),
+        }}
       />
     </div>
   </TwoColumnLayout>

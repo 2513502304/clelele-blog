@@ -10,6 +10,12 @@ import { openModal } from '@store/modal';
 import { useEffect, useMemo, useState } from 'react';
 import type { StyleGalleryExample, StyleGalleryExampleView } from '@/types/style-gallery';
 import {
+  createStyleGalleryCopyAction,
+  createStyleGalleryDeleteAction,
+  STYLE_GALLERY_UPLOAD_TOKEN_STORAGE_KEY,
+  type StyleGalleryLightboxActionLabels,
+} from './StyleGalleryLightboxActions';
+import {
   createStyleGalleryLightboxLikeAction,
   StyleGalleryLikeButton,
   type StyleGalleryLikeLabels,
@@ -20,9 +26,11 @@ import {
 interface StyleGalleryExamplesProps {
   slug: string;
   title: string;
+  prompt: string;
   initialExamples: StyleGalleryExampleView[];
   uploadsEnabled: boolean;
   likeLabels: StyleGalleryLikeLabels;
+  lightboxActionLabels: StyleGalleryLightboxActionLabels;
 }
 
 interface ExamplesResponse {
@@ -59,7 +67,6 @@ interface SelectedUpload {
   imageHash: string;
 }
 
-const TOKEN_STORAGE_KEY = 'style-gallery-upload-token';
 const UPLOAD_CONCURRENCY = 5;
 const MAX_UPLOAD_ATTEMPTS = 3;
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -217,9 +224,11 @@ async function uploadFileInChunks(
 export default function StyleGalleryExamples({
   slug,
   title,
+  prompt,
   initialExamples,
   uploadsEnabled,
   likeLabels,
+  lightboxActionLabels,
 }: StyleGalleryExamplesProps) {
   const [examples, setExamples] = useState<StyleGalleryExample[]>(initialExamples);
   const likes = useStyleGalleryLikes(Object.fromEntries(initialExamples.map((example) => [example.id, example.likeCount])));
@@ -238,7 +247,7 @@ export default function StyleGalleryExamples({
   const [mutating, setMutating] = useState(false);
 
   useEffect(() => {
-    setToken(localStorage.getItem(TOKEN_STORAGE_KEY) ?? '');
+    setToken(localStorage.getItem(STYLE_GALLERY_UPLOAD_TOKEN_STORAGE_KEY) ?? '');
   }, []);
 
   const exampleGroups = useMemo(() => groupStyleGalleryExamplesByPlatform(examples), [examples]);
@@ -267,9 +276,18 @@ export default function StyleGalleryExamples({
   function openExampleLightbox(example: StyleGalleryExample, platformExamples: StyleGalleryExample[]) {
     // 导航数组只包含当前视觉分组；平台内部仍保持上传顺序。
     const lightboxImages = platformExamples.map((candidate) => ({
+      id: candidate.id,
       src: candidate.src,
       alt: candidate.alt ?? candidate.model ?? 'Generated example',
       like: createStyleGalleryLightboxLikeAction(candidate.id, likes, likeLabels),
+      copy: createStyleGalleryCopyAction(() => prompt, lightboxActionLabels),
+      delete: createStyleGalleryDeleteAction(
+        candidate.id,
+        candidate.alt ?? candidate.model ?? 'generated example',
+        uploadsEnabled && Boolean(token.trim()) && !mutating,
+        () => deleteLightboxExample(candidate.id),
+        lightboxActionLabels,
+      ),
     }));
     const currentIndex = Math.max(
       0,
@@ -292,8 +310,29 @@ export default function StyleGalleryExamples({
     if (!response.ok) throw new Error((await response.text()) || `Request failed with ${response.status}`);
     const data = (await response.json()) as ExamplesResponse;
     setExamples(data.examples ?? []);
-    localStorage.setItem(TOKEN_STORAGE_KEY, token);
+    localStorage.setItem(STYLE_GALLERY_UPLOAD_TOKEN_STORAGE_KEY, token);
     return data.examples ?? [];
+  }
+
+  async function deleteLightboxExample(id: string): Promise<boolean> {
+    if (!uploadsEnabled || !token.trim() || mutating) return false;
+    setMutating(true);
+    setStatus('Deleting selected example');
+    try {
+      await apiMutation('DELETE', { ids: [id] });
+      setSelectedIds((current) => {
+        const next = new Set(current);
+        next.delete(id);
+        return next;
+      });
+      setStatus('Example deleted');
+      return true;
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Failed to delete example');
+      throw error;
+    } finally {
+      setMutating(false);
+    }
   }
 
   /** 批量管理在客户端拆成有界请求；已成功的批次立即反映到 UI，失败时只保留尚未处理的选择。 */
@@ -515,7 +554,7 @@ export default function StyleGalleryExamples({
       );
 
       try {
-        localStorage.setItem(TOKEN_STORAGE_KEY, token);
+        localStorage.setItem(STYLE_GALLERY_UPLOAD_TOKEN_STORAGE_KEY, token);
       } catch {
         // 浏览器存储不可用不应把已经完成的上传误报为失败。
       }

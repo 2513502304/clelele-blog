@@ -19,6 +19,7 @@ import {
   type ImageLightboxLikeAction,
   navigateImage,
   openModal,
+  removeImageFromLightbox,
   updateImageLightboxLike,
 } from '@store/modal';
 import { AnimatePresence, motion } from 'motion/react';
@@ -33,11 +34,17 @@ export default function ImageLightbox() {
   const { t } = useTranslation();
   const data = useStore($imageLightboxData);
   const isOpen = data !== null;
-  const currentLike = data?.images[data.currentIndex]?.like;
+  const currentImage = data?.images[data.currentIndex];
+  const currentLike = currentImage?.like;
+  const currentCopy = currentImage?.copy;
+  const currentDelete = currentImage?.delete;
+  const currentImageKey = currentImage?.id ?? `${data?.currentIndex ?? 0}:${currentImage?.src ?? ''}`;
   const [imageLoaded, setImageLoaded] = useState(false);
   const [rotation, setRotation] = useState(0);
   const [zoomSensitivity, setZoomSensitivity] = useState(DEFAULT_ZOOM_SENSITIVITY);
   const [showSensitivity, setShowSensitivity] = useState(false);
+  const [copyState, setCopyState] = useState<{ key: string; status: 'copying' | 'copied' | 'failed' } | null>(null);
+  const [deleteState, setDeleteState] = useState<{ key: string; status: 'deleting' | 'failed' } | null>(null);
 
   const { containerRef, state, reset, zoomTo, zoomLevel } = useZoomPan(isOpen, { zoomSensitivity });
 
@@ -76,14 +83,56 @@ export default function ImageLightbox() {
     }
   }, [currentLike]);
 
+  const handleCopy = useCallback(async () => {
+    if (!currentCopy) return;
+    const key = currentImageKey;
+    setCopyState({ key, status: 'copying' });
+    try {
+      await navigator.clipboard.writeText(await currentCopy.getText());
+      setCopyState({ key, status: 'copied' });
+    } catch (error) {
+      console.error('[image-lightbox] Failed to copy contextual text.', error);
+      setCopyState({ key, status: 'failed' });
+    }
+    window.setTimeout(() => {
+      setCopyState((current) => (current?.key === key ? null : current));
+    }, 2000);
+  }, [currentCopy, currentImageKey]);
+
+  const handleDelete = useCallback(async () => {
+    if (!currentDelete?.enabled || !window.confirm(currentDelete.confirmMessage)) return;
+    const key = currentImageKey;
+    setDeleteState({ key, status: 'deleting' });
+    try {
+      if (await currentDelete.run()) {
+        removeImageFromLightbox(currentDelete.imageId);
+        setDeleteState(null);
+        reset();
+        setRotation(0);
+        setImageLoaded(false);
+        return;
+      }
+      setDeleteState({ key, status: 'failed' });
+    } catch (error) {
+      console.error('[image-lightbox] Failed to delete the current image.', error);
+      setDeleteState({ key, status: 'failed' });
+    }
+    window.setTimeout(() => {
+      setDeleteState((current) => (current?.key === key ? null : current));
+    }, 2400);
+  }, [currentDelete, currentImageKey, reset]);
+
+  const isDeleting = deleteState?.status === 'deleting';
+
   const navigateTo = useCallback(
     (dir: 1 | -1) => {
+      if (isDeleting) return;
       if (!navigateImage(dir)) return;
       reset();
       setRotation(0);
       setImageLoaded(false);
     },
-    [reset],
+    [isDeleting, reset],
   );
 
   // Keyboard shortcuts for navigation
@@ -152,6 +201,8 @@ export default function ImageLightbox() {
       setRotation(0);
       setImageLoaded(false);
       setShowSensitivity(false);
+      setCopyState(null);
+      setDeleteState(null);
     }
   }, [isOpen, reset]);
 
@@ -269,6 +320,53 @@ export default function ImageLightbox() {
                       <LightboxLikeButton action={currentLike} onClick={handleLike} />
                     </>
                   )}
+                  {currentCopy && (
+                    <ToolbarButton
+                      icon={
+                        copyState?.key === currentImageKey && copyState.status === 'copied'
+                          ? 'ri:check-line'
+                          : copyState?.key === currentImageKey && copyState.status === 'failed'
+                            ? 'ri:error-warning-line'
+                            : copyState?.key === currentImageKey && copyState.status === 'copying'
+                              ? 'ri:loader-4-line'
+                              : 'ri:file-copy-line'
+                      }
+                      label={
+                        copyState?.key === currentImageKey && copyState.status === 'copied'
+                          ? currentCopy.copiedLabel
+                          : copyState?.key === currentImageKey && copyState.status === 'failed'
+                            ? currentCopy.failedLabel
+                            : currentCopy.label
+                      }
+                      onClick={() => void handleCopy()}
+                      disabled={copyState?.key === currentImageKey && copyState.status === 'copying'}
+                      spinning={copyState?.key === currentImageKey && copyState.status === 'copying'}
+                    />
+                  )}
+                  {currentDelete && (
+                    <ToolbarButton
+                      icon={
+                        deleteState?.key === currentImageKey && deleteState.status === 'deleting'
+                          ? 'ri:loader-4-line'
+                          : deleteState?.key === currentImageKey && deleteState.status === 'failed'
+                            ? 'ri:error-warning-line'
+                            : 'ri:delete-bin-line'
+                      }
+                      label={
+                        !currentDelete.enabled
+                          ? currentDelete.unavailableLabel
+                          : deleteState?.key === currentImageKey && deleteState.status === 'deleting'
+                            ? currentDelete.deletingLabel
+                            : deleteState?.key === currentImageKey && deleteState.status === 'failed'
+                              ? currentDelete.failedLabel
+                              : currentDelete.label
+                      }
+                      onClick={() => void handleDelete()}
+                      disabled={!currentDelete.enabled || isDeleting}
+                      spinning={deleteState?.key === currentImageKey && deleteState.status === 'deleting'}
+                      tone="danger"
+                    />
+                  )}
                   <div className="h-px tablet:h-5 tablet:w-px w-5 bg-white/20" />
                   <ToolbarButton icon="ri:close-line" label={t('image.close')} onClick={() => closeModal()} />
                 </motion.div>
@@ -314,13 +412,13 @@ export default function ImageLightbox() {
                 {/* Navigation bar */}
                 {data.images.length > 1 && (
                   <div className="absolute bottom-12 left-1/2 flex -translate-x-1/2 items-center gap-0.5 rounded-full bg-black/50 p-1 backdrop-blur-sm">
-                    <NavButton direction={-1} disabled={data.currentIndex === 0} onClick={() => navigateTo(-1)} />
+                    <NavButton direction={-1} disabled={isDeleting || data.currentIndex === 0} onClick={() => navigateTo(-1)} />
                     <span className="min-w-14 px-1 text-center font-mono text-sm text-white/80 tabular-nums">
                       {data.currentIndex + 1} / {data.images.length}
                     </span>
                     <NavButton
                       direction={1}
-                      disabled={data.currentIndex === data.images.length - 1}
+                      disabled={isDeleting || data.currentIndex === data.images.length - 1}
                       onClick={() => navigateTo(1)}
                     />
                   </div>
@@ -371,25 +469,29 @@ function ToolbarButton({
   onClick,
   disabled,
   active,
+  spinning,
+  tone = 'default',
 }: {
   icon: string;
   label: string;
   onClick: () => void;
   disabled?: boolean;
   active?: boolean;
+  spinning?: boolean;
+  tone?: 'default' | 'danger';
 }) {
   return (
     <motion.button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`flex size-10 items-center justify-center rounded-full transition-colors hover:bg-white/15 disabled:pointer-events-none disabled:opacity-30 ${active ? 'bg-white/15 text-rose-300' : 'text-white/80'}`}
+      className={`flex size-10 items-center justify-center rounded-full transition-colors hover:bg-white/15 disabled:pointer-events-none disabled:opacity-30 ${active ? 'bg-white/15 text-rose-300' : tone === 'danger' ? 'text-rose-300' : 'text-white/80'}`}
       whileTap={{ scale: 0.85 }}
       aria-label={label}
       aria-pressed={active}
       title={label}
     >
-      <Icon icon={icon} className="size-5" />
+      <Icon icon={icon} className={`size-5 ${spinning ? 'animate-spin' : ''}`} />
     </motion.button>
   );
 }
