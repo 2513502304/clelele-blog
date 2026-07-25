@@ -7,32 +7,54 @@
  */
 
 import { FloatingFocusManager, FloatingPortal, useDismiss, useFloating, useInteractions, useRole } from '@floating-ui/react';
+import { useBackdropClickDismiss } from '@hooks/useBackdropClickDismiss';
 import { useKeyboardShortcut } from '@hooks/useKeyboardShortcut';
 import { useTranslation } from '@hooks/useTranslation';
 import { useZoomPan } from '@hooks/useZoomPan';
-import { Icon } from '@iconify/react';
+import { createImageLightboxDownloadAction } from '@lib/image-lightbox-download';
 import { useStore } from '@nanostores/react';
 import {
   $imageLightboxData,
   closeModal,
   type ImageLightboxData,
-  type ImageLightboxLikeAction,
   navigateImage,
   openModal,
+  removeImageFromLightbox,
   updateImageLightboxLike,
 } from '@store/modal';
 import { AnimatePresence, motion } from 'motion/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { LightboxLikeButton, NavButton, ToolbarButton, ToolbarLink, ZoomHint } from './ImageLightboxControls';
+
+const ZOOM_SENSITIVITY_STORAGE_KEY = 'image-lightbox-zoom-sensitivity';
+const DEFAULT_ZOOM_SENSITIVITY = 0.55;
+const MIN_ZOOM_SENSITIVITY = 0.25;
+const MAX_ZOOM_SENSITIVITY = 1.25;
 
 export default function ImageLightbox() {
   const { t } = useTranslation();
   const data = useStore($imageLightboxData);
   const isOpen = data !== null;
-  const currentLike = data?.images[data.currentIndex]?.like;
+  const currentImage = data?.images[data.currentIndex];
+  const currentLike = currentImage?.like;
+  const currentCopy = currentImage?.copy;
+  const currentDelete = currentImage?.delete;
+  const downloadAction = currentImage ? createImageLightboxDownloadAction(currentImage.src) : null;
+  const currentImageKey = currentImage?.id ?? `${data?.currentIndex ?? 0}:${currentImage?.src ?? ''}`;
   const [imageLoaded, setImageLoaded] = useState(false);
   const [rotation, setRotation] = useState(0);
+  const [zoomSensitivity, setZoomSensitivity] = useState(DEFAULT_ZOOM_SENSITIVITY);
+  const [showSensitivity, setShowSensitivity] = useState(false);
+  const [copyState, setCopyState] = useState<{ key: string; status: 'copying' | 'copied' | 'failed' } | null>(null);
+  const [deleteState, setDeleteState] = useState<{ key: string; status: 'deleting' | 'failed' } | null>(null);
+  const currentCopyStatus = copyState?.key === currentImageKey ? copyState.status : null;
+  const currentDeleteStatus = deleteState?.key === currentImageKey ? deleteState.status : null;
+  const copyAttemptRef = useRef(0);
+  const deleteAttemptRef = useRef(0);
+  const copyTimerRef = useRef(0);
+  const deleteTimerRef = useRef(0);
 
-  const { containerRef, state, reset, zoomTo, zoomLevel } = useZoomPan(isOpen);
+  const { containerRef, state, reset, zoomTo, zoomLevel } = useZoomPan(isOpen, { zoomSensitivity });
 
   // Use a ref so the outsidePress callback always reads the latest scale
   const scaleRef = useRef(state.scale);
@@ -42,6 +64,12 @@ export default function ImageLightbox() {
     reset();
     setRotation(0);
   }, [reset]);
+
+  const dismissFromBackdrop = useCallback(() => {
+    reset();
+    closeModal();
+  }, [reset]);
+  const backdropPointerHandlers = useBackdropClickDismiss(dismissFromBackdrop);
 
   const handleZoomIn = useCallback(() => zoomTo(scaleRef.current * 1.5), [zoomTo]);
   const handleZoomOut = useCallback(() => zoomTo(scaleRef.current / 1.5), [zoomTo]);
@@ -69,14 +97,61 @@ export default function ImageLightbox() {
     }
   }, [currentLike]);
 
+  const handleCopy = useCallback(async () => {
+    if (!currentCopy) return;
+    const key = currentImageKey;
+    const attempt = ++copyAttemptRef.current;
+    window.clearTimeout(copyTimerRef.current);
+    setCopyState({ key, status: 'copying' });
+    try {
+      await navigator.clipboard.writeText(await currentCopy.getText());
+      setCopyState({ key, status: 'copied' });
+    } catch (error) {
+      console.error('[image-lightbox] Failed to copy contextual text.', error);
+      setCopyState({ key, status: 'failed' });
+    }
+    copyTimerRef.current = window.setTimeout(() => {
+      if (copyAttemptRef.current === attempt) setCopyState(null);
+    }, 2000);
+  }, [currentCopy, currentImageKey]);
+
+  const handleDelete = useCallback(async () => {
+    if (!currentDelete?.enabled || !window.confirm(currentDelete.confirmMessage)) return;
+    const key = currentImageKey;
+    const attempt = ++deleteAttemptRef.current;
+    window.clearTimeout(deleteTimerRef.current);
+    setDeleteState({ key, status: 'deleting' });
+    try {
+      if (await currentDelete.run()) {
+        removeImageFromLightbox(currentDelete.imageId);
+        window.clearTimeout(deleteTimerRef.current);
+        setDeleteState(null);
+        reset();
+        setRotation(0);
+        setImageLoaded(false);
+        return;
+      }
+      setDeleteState({ key, status: 'failed' });
+    } catch (error) {
+      console.error('[image-lightbox] Failed to delete the current image.', error);
+      setDeleteState({ key, status: 'failed' });
+    }
+    deleteTimerRef.current = window.setTimeout(() => {
+      if (deleteAttemptRef.current === attempt) setDeleteState(null);
+    }, 2400);
+  }, [currentDelete, currentImageKey, reset]);
+
+  const isDeleting = deleteState?.status === 'deleting';
+
   const navigateTo = useCallback(
     (dir: 1 | -1) => {
+      if (isDeleting) return;
       if (!navigateImage(dir)) return;
       reset();
       setRotation(0);
       setImageLoaded(false);
     },
-    [reset],
+    [isDeleting, reset],
   );
 
   // Keyboard shortcuts for navigation
@@ -109,17 +184,8 @@ export default function ImageLightbox() {
       if (!open) closeModal();
     },
   });
-  const dismiss = useDismiss(context, {
-    outsidePressEvent: 'mousedown',
-    outsidePress: (event) => {
-      // Don't close when zoomed in (user might be panning)
-      if (scaleRef.current > 1.05) return false;
-      // Don't close when clicking interactive elements or the image itself
-      const target = event.target as HTMLElement;
-      if (target.closest('button, img, [role="img"]')) return false;
-      return true;
-    },
-  });
+  // Floating content covers the viewport, so background dismissal is handled by the image viewport's exact click target.
+  const dismiss = useDismiss(context, { outsidePress: false });
   const role = useRole(context, { role: 'dialog' });
   const { getFloatingProps } = useInteractions([dismiss, role]);
 
@@ -133,6 +199,13 @@ export default function ImageLightbox() {
     return () => window.removeEventListener('open-image-lightbox', handleOpen as EventListener);
   }, []);
 
+  useEffect(() => {
+    const stored = Number.parseFloat(localStorage.getItem(ZOOM_SENSITIVITY_STORAGE_KEY) ?? '');
+    if (Number.isFinite(stored)) {
+      setZoomSensitivity(Math.min(MAX_ZOOM_SENSITIVITY, Math.max(MIN_ZOOM_SENSITIVITY, stored)));
+    }
+  }, []);
+
   // Close on page navigation
   useEffect(() => {
     const close = () => closeModal();
@@ -142,12 +215,34 @@ export default function ImageLightbox() {
 
   // Reset zoom, rotation, and image state when opening/closing
   useEffect(() => {
+    copyAttemptRef.current += 1;
+    deleteAttemptRef.current += 1;
+    window.clearTimeout(copyTimerRef.current);
+    window.clearTimeout(deleteTimerRef.current);
     if (isOpen) {
       reset();
       setRotation(0);
       setImageLoaded(false);
+      setShowSensitivity(false);
+      setCopyState(null);
+      setDeleteState(null);
     }
+    return () => {
+      window.clearTimeout(copyTimerRef.current);
+      window.clearTimeout(deleteTimerRef.current);
+    };
   }, [isOpen, reset]);
+
+  const updateZoomSensitivity = (value: number) => {
+    const next = Math.min(MAX_ZOOM_SENSITIVITY, Math.max(MIN_ZOOM_SENSITIVITY, value));
+    setZoomSensitivity(next);
+    try {
+      localStorage.setItem(ZOOM_SENSITIVITY_STORAGE_KEY, next.toString());
+    } catch (error) {
+      // 隐私模式或存储配额不足时仍保留本次会话中的灵敏度，不阻断 lightbox 操作。
+      console.warn('[image-lightbox] Failed to persist zoom sensitivity.', error);
+    }
+  };
 
   // Lock page scroll while lightbox is open
   useEffect(() => {
@@ -174,7 +269,7 @@ export default function ImageLightbox() {
       <AnimatePresence>
         {isOpen && (
           <motion.div
-            className="fixed inset-0 z-50"
+            className="fixed inset-0 z-60"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -187,7 +282,7 @@ export default function ImageLightbox() {
               <div ref={refs.setFloating} className="fixed inset-0 flex items-center justify-center" {...getFloatingProps()}>
                 {/* Toolbar: vertical right on desktop, horizontal top on tablet */}
                 <motion.div
-                  className="absolute tablet:top-4 top-1/2 right-4 tablet:right-auto tablet:left-1/2 z-10 flex tablet:-translate-x-1/2 -translate-y-1/2 tablet:translate-y-0 tablet:flex-row flex-col items-center gap-1 rounded-2xl bg-black/50 p-1.5 backdrop-blur-sm"
+                  className="absolute tablet:top-4 top-1/2 right-4 tablet:right-auto tablet:left-1/2 z-10 flex tablet:w-[calc(100vw-2rem)] tablet:max-w-sm tablet:-translate-x-1/2 -translate-y-1/2 tablet:translate-y-0 tablet:flex-row flex-col tablet:flex-wrap items-center tablet:justify-center gap-1 rounded-2xl bg-black/50 p-1.5 backdrop-blur-sm"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   transition={{ duration: 0.2, delay: 0.1 }}
@@ -201,7 +296,7 @@ export default function ImageLightbox() {
                   <motion.button
                     type="button"
                     onClick={handleResetAll}
-                    className="flex size-10 items-center justify-center rounded-full text-white/60 text-xs tabular-nums transition-colors hover:bg-white/15 hover:text-white/80"
+                    className="flex size-10 shrink-0 items-center justify-center rounded-full text-white/60 text-xs tabular-nums transition-colors hover:bg-white/15 hover:text-white/80"
                     whileTap={{ scale: 0.85 }}
                     aria-label={t('image.resetZoomRotate')}
                   >
@@ -213,15 +308,107 @@ export default function ImageLightbox() {
                     onClick={handleZoomOut}
                     disabled={state.scale <= 0.55}
                   />
-                  <div className="h-px tablet:h-5 tablet:w-px w-5 bg-white/20" />
+                  <ToolbarButton
+                    icon="ri:equalizer-2-line"
+                    label={t('image.zoomSensitivity')}
+                    onClick={() => setShowSensitivity((visible) => !visible)}
+                    active={showSensitivity}
+                  />
+                  <AnimatePresence>
+                    {showSensitivity && (
+                      <motion.div
+                        className="absolute tablet:top-[calc(100%+0.5rem)] top-1/2 right-[calc(100%+0.5rem)] tablet:right-auto tablet:left-1/2 w-56 tablet:-translate-x-1/2 -translate-y-1/2 tablet:translate-y-0 rounded-xl border border-white/15 bg-black/75 p-3 text-white shadow-xl backdrop-blur-md"
+                        initial={{ opacity: 0, scale: 0.96, x: 4 }}
+                        animate={{ opacity: 1, scale: 1, x: 0 }}
+                        exit={{ opacity: 0, scale: 0.96, x: 4 }}
+                        transition={{ duration: 0.15 }}
+                      >
+                        <div className="mb-2 flex items-center justify-between gap-3 text-xs">
+                          <span className="font-semibold text-white/80">{t('image.zoomSensitivity')}</span>
+                          <span className="font-mono text-white/60 tabular-nums">{zoomSensitivity.toFixed(2)}×</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={MIN_ZOOM_SENSITIVITY}
+                          max={MAX_ZOOM_SENSITIVITY}
+                          step={0.05}
+                          value={zoomSensitivity}
+                          onChange={(event) => updateZoomSensitivity(event.currentTarget.valueAsNumber)}
+                          aria-label={t('image.zoomSensitivity')}
+                          className="h-1.5 w-full cursor-pointer accent-rose-400"
+                        />
+                        <div className="mt-2 flex justify-between text-[10px] text-white/45">
+                          <span>{t('image.zoomSensitivitySlow')}</span>
+                          <span>{t('image.zoomSensitivityFast')}</span>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                  <div className="h-px tablet:h-5 tablet:w-px w-5 shrink-0 bg-white/20" />
                   <ToolbarButton icon="ri:clockwise-line" label={t('image.rotate')} onClick={handleRotate} />
                   {currentLike && (
                     <>
-                      <div className="h-px tablet:h-5 tablet:w-px w-5 bg-white/20" />
+                      <div className="h-px tablet:h-5 tablet:w-px w-5 shrink-0 bg-white/20" />
                       <LightboxLikeButton action={currentLike} onClick={handleLike} />
                     </>
                   )}
-                  <div className="h-px tablet:h-5 tablet:w-px w-5 bg-white/20" />
+                  {currentCopy && (
+                    <ToolbarButton
+                      icon={
+                        currentCopyStatus === 'copied'
+                          ? 'ri:check-line'
+                          : currentCopyStatus === 'failed'
+                            ? 'ri:error-warning-line'
+                            : currentCopyStatus === 'copying'
+                              ? 'ri:loader-4-line'
+                              : 'ri:file-copy-line'
+                      }
+                      label={
+                        currentCopyStatus === 'copied'
+                          ? currentCopy.copiedLabel
+                          : currentCopyStatus === 'failed'
+                            ? currentCopy.failedLabel
+                            : currentCopy.label
+                      }
+                      onClick={() => void handleCopy()}
+                      disabled={currentCopyStatus === 'copying'}
+                      spinning={currentCopyStatus === 'copying'}
+                    />
+                  )}
+                  {currentDelete && (
+                    <ToolbarButton
+                      icon={
+                        currentDeleteStatus === 'deleting'
+                          ? 'ri:loader-4-line'
+                          : currentDeleteStatus === 'failed'
+                            ? 'ri:error-warning-line'
+                            : 'ri:delete-bin-line'
+                      }
+                      label={
+                        !currentDelete.enabled
+                          ? currentDelete.unavailableLabel
+                          : currentDeleteStatus === 'deleting'
+                            ? currentDelete.deletingLabel
+                            : currentDeleteStatus === 'failed'
+                              ? currentDelete.failedLabel
+                              : currentDelete.label
+                      }
+                      onClick={() => void handleDelete()}
+                      disabled={!currentDelete.enabled || isDeleting}
+                      spinning={currentDeleteStatus === 'deleting'}
+                      tone="danger"
+                    />
+                  )}
+                  {downloadAction && (
+                    <ToolbarLink
+                      href={downloadAction.href}
+                      download={downloadAction.filename}
+                      opensExternally={downloadAction.opensExternally}
+                      icon={downloadAction.opensExternally ? 'ri:external-link-line' : 'ri:download-2-line'}
+                      label={downloadAction.opensExternally ? t('image.openOriginal') : t('image.download')}
+                    />
+                  )}
+                  <div className="h-px tablet:h-5 tablet:w-px w-5 shrink-0 bg-white/20" />
                   <ToolbarButton icon="ri:close-line" label={t('image.close')} onClick={() => closeModal()} />
                 </motion.div>
 
@@ -230,6 +417,7 @@ export default function ImageLightbox() {
                   ref={containerRef}
                   role="img"
                   className="flex h-full w-full touch-none select-none items-center justify-center p-4"
+                  {...backdropPointerHandlers}
                   onDoubleClick={handleDoubleClick}
                 >
                   <motion.div
@@ -263,13 +451,13 @@ export default function ImageLightbox() {
                 {/* Navigation bar */}
                 {data.images.length > 1 && (
                   <div className="absolute bottom-12 left-1/2 flex -translate-x-1/2 items-center gap-0.5 rounded-full bg-black/50 p-1 backdrop-blur-sm">
-                    <NavButton direction={-1} disabled={data.currentIndex === 0} onClick={() => navigateTo(-1)} />
+                    <NavButton direction={-1} disabled={isDeleting || data.currentIndex === 0} onClick={() => navigateTo(-1)} />
                     <span className="min-w-14 px-1 text-center font-mono text-sm text-white/80 tabular-nums">
                       {data.currentIndex + 1} / {data.images.length}
                     </span>
                     <NavButton
                       direction={1}
-                      disabled={data.currentIndex === data.images.length - 1}
+                      disabled={isDeleting || data.currentIndex === data.images.length - 1}
                       onClick={() => navigateTo(1)}
                     />
                   </div>
@@ -283,107 +471,5 @@ export default function ImageLightbox() {
         )}
       </AnimatePresence>
     </FloatingPortal>
-  );
-}
-
-function LightboxLikeButton({ action, onClick }: { action: ImageLightboxLikeAction; onClick: () => void }) {
-  const title = !action.authEnabled
-    ? action.labels.unavailable
-    : !action.viewerAuthenticated
-      ? action.labels.loginRequired
-      : action.liked
-        ? action.labels.unlike
-        : action.labels.like;
-  return (
-    <motion.button
-      type="button"
-      onClick={onClick}
-      disabled={!action.authEnabled || action.pending}
-      className={`flex h-10 min-w-10 items-center justify-center gap-1 rounded-full px-2 font-bold text-xs transition-colors hover:bg-white/15 disabled:pointer-events-none disabled:opacity-30 ${action.liked ? 'text-rose-400' : 'text-white/80'}`}
-      whileTap={{ scale: 0.85 }}
-      aria-label={`${title}: ${action.likeCount}`}
-      aria-pressed={action.liked}
-      title={title}
-    >
-      <Icon
-        icon={action.pending ? 'ri:loader-4-line' : action.liked ? 'ri:heart-3-fill' : 'ri:heart-3-line'}
-        className={`size-5 ${action.pending ? 'animate-spin' : ''}`}
-      />
-      <span className="tabular-nums">{action.likeCount}</span>
-    </motion.button>
-  );
-}
-
-function ToolbarButton({
-  icon,
-  label,
-  onClick,
-  disabled,
-}: {
-  icon: string;
-  label: string;
-  onClick: () => void;
-  disabled?: boolean;
-}) {
-  return (
-    <motion.button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className="flex size-10 items-center justify-center rounded-full text-white/80 transition-colors hover:bg-white/15 disabled:pointer-events-none disabled:opacity-30"
-      whileTap={{ scale: 0.85 }}
-      aria-label={label}
-    >
-      <Icon icon={icon} className="size-5" />
-    </motion.button>
-  );
-}
-
-// Stable animation keyframes — avoids restarting the bounce on every parent re-render
-const BOUNCE_LEFT = { x: [0, -2.5, 0] };
-const BOUNCE_RIGHT = { x: [0, 2.5, 0] };
-const BOUNCE_NONE = { x: 0 };
-
-function NavButton({ direction, disabled, onClick }: { direction: 1 | -1; disabled: boolean; onClick: () => void }) {
-  const { t } = useTranslation();
-  const isLeft = direction === -1;
-  return (
-    <motion.button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className="flex size-8 items-center justify-center rounded-full text-white/80 transition-colors hover:bg-white/15 disabled:pointer-events-none disabled:opacity-30"
-      whileTap={{ scale: 0.82 }}
-      aria-label={isLeft ? t('image.prev') : t('image.next')}
-    >
-      <motion.span
-        animate={disabled ? BOUNCE_NONE : isLeft ? BOUNCE_LEFT : BOUNCE_RIGHT}
-        transition={{ duration: 1.6, repeat: 3, ease: 'easeInOut' }}
-      >
-        <Icon icon={isLeft ? 'ri:arrow-left-s-line' : 'ri:arrow-right-s-line'} className="size-5" />
-      </motion.span>
-    </motion.button>
-  );
-}
-
-function ZoomHint() {
-  const { t } = useTranslation();
-  const [visible, setVisible] = useState(true);
-
-  useEffect(() => {
-    const timer = setTimeout(() => setVisible(false), 4000);
-    return () => clearTimeout(timer);
-  }, []);
-
-  return (
-    <motion.div
-      className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/50 px-4 py-2 text-white/70 text-xs"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: visible ? 1 : 0 }}
-      transition={{ duration: 0.3 }}
-    >
-      <span className="hidden touch-none sm:inline">{t('image.hintDesktop')}</span>
-      <span className="sm:hidden">{t('image.hintMobile')}</span>
-    </motion.div>
   );
 }

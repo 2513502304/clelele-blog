@@ -204,7 +204,7 @@ export default function StyleGalleryBrowser({ items, tags, galleryBasePath, labe
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-4 md:grid-cols-1 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 [@media(min-width:769px)]:grid-cols-2 [@media(min-width:993px)]:grid-cols-3">
         {visibleItems.map((item) => (
           <article
             key={item.slug}
@@ -213,7 +213,7 @@ export default function StyleGalleryBrowser({ items, tags, galleryBasePath, labe
             <a
               href={`${galleryBasePath}/${item.slug}`}
               data-astro-prefetch="false"
-              className="block aspect-[4/5] overflow-hidden bg-rose-50 dark:bg-gray-900"
+              className="relative block aspect-[4/5] overflow-hidden bg-rose-50 dark:bg-gray-900"
             >
               <img
                 src={item.thumbnailImage ?? item.sourceImage}
@@ -221,12 +221,22 @@ export default function StyleGalleryBrowser({ items, tags, galleryBasePath, labe
                 loading="lazy"
                 className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
               />
+              <span className="absolute right-2 bottom-2 inline-flex min-w-8 items-center justify-center gap-1 rounded-md bg-rose-500/90 px-2 py-1 font-bold text-[11px] text-white tabular-nums shadow-sm backdrop-blur-sm">
+                <Icon icon="ri:heart-3-fill" className="size-3" />
+                {item.likeCount}
+              </span>
             </a>
             <div className="space-y-3 p-4">
               <div className="flex items-start justify-between gap-3">
-                <a href={`${galleryBasePath}/${item.slug}`} data-astro-prefetch="false" className="min-w-0">
+                <a
+                  href={`${galleryBasePath}/${item.slug}`}
+                  data-astro-prefetch="false"
+                  className="min-w-0"
+                  aria-label={item.title}
+                  title={item.title}
+                >
                   <h2 className="line-clamp-1 font-bold text-gray-900 text-lg transition group-hover:text-rose-600 dark:text-white">
-                    {item.title}
+                    {item.imageHash.slice(0, 12)}
                   </h2>
                 </a>
                 <div className="flex shrink-0 flex-col items-end gap-1">
@@ -238,25 +248,11 @@ export default function StyleGalleryBrowser({ items, tags, galleryBasePath, labe
                       {labels.imageCount.replace('{count}', String(item.imageCount))}
                     </span>
                   )}
-                  <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-1 font-bold text-[11px] text-rose-500 dark:bg-rose-950/50 dark:text-rose-200">
-                    <Icon icon="ri:heart-3-fill" className="size-3" />
-                    <span className="tabular-nums">{item.likeCount}</span>
-                  </span>
                 </div>
               </div>
-              <p className="line-clamp-4 min-h-22 text-pretty text-gray-600 text-sm leading-6 dark:text-gray-300">
+              <p className="line-clamp-3 min-h-18 text-pretty text-gray-600 text-sm leading-6 dark:text-gray-300">
                 {item.prompt}
               </p>
-              <div className="flex flex-wrap gap-1.5">
-                {item.modelTargets.map((target) => (
-                  <span
-                    key={target}
-                    className="rounded-full bg-sky-50 px-2 py-1 font-semibold text-[11px] text-sky-600 dark:bg-sky-950/50 dark:text-sky-200"
-                  >
-                    {target}
-                  </span>
-                ))}
-              </div>
               <div className="grid grid-cols-2 gap-2 pt-1">
                 <button
                   type="button"

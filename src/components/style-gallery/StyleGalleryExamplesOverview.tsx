@@ -1,10 +1,18 @@
 import { ErrorBoundary, InlineErrorFallback } from '@components/common';
 import { Icon } from '@iconify/react';
+import {
+  createStyleGalleryCopyAction,
+  createStyleGalleryDeleteAction,
+  deleteStyleGalleryExample,
+  loadStyleGalleryPrompt,
+  STYLE_GALLERY_UPLOAD_TOKEN_STORAGE_KEY,
+  type StyleGalleryLightboxActionLabels,
+} from '@lib/style-gallery-lightbox-actions';
 import { STYLE_GALLERY_PLATFORMS } from '@lib/style-gallery-platforms';
 import { openModal } from '@store/modal';
 import { parseAsString, parseAsStringLiteral, useQueryState } from 'nuqs';
 import { NuqsAdapter } from 'nuqs/adapters/react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useProgressiveList } from '@/hooks/useProgressiveList';
 import type { StyleGalleryExampleOverviewItem } from '@/types/style-gallery';
 import {
@@ -20,6 +28,8 @@ interface Props {
   galleryBasePath: string;
   locale: string;
   labels: StyleGalleryExamplesOverviewLabels;
+  uploadsEnabled: boolean;
+  lightboxActionLabels: StyleGalleryLightboxActionLabels;
 }
 
 export interface StyleGalleryExamplesOverviewLabels {
@@ -56,7 +66,16 @@ function reportUrlStateError(error: unknown) {
  * 跨 item 的 Sub-gallery 总览。数据来自轻量示例索引，并采用固定比例卡片与渐进挂载，
  * 因此慢图片只会在预留区域内补齐，不会把已经显示的卡片重新排位。
  */
-function StyleGalleryExamplesOverviewContent({ examples, galleryBasePath, locale, labels }: Props) {
+function StyleGalleryExamplesOverviewContent({
+  examples: initialExamples,
+  galleryBasePath,
+  locale,
+  labels,
+  uploadsEnabled,
+  lightboxActionLabels,
+}: Props) {
+  const [examples, setExamples] = useState(initialExamples);
+  const [uploadToken, setUploadToken] = useState('');
   const [platform, setPlatform] = useQueryState('platform', parseAsString.withDefault('all'));
   const [query, setQuery] = useQueryState('q', parseAsString.withDefault(''));
   const [sortKey, setSortKey] = useQueryState('sort', parseAsStringLiteral(sortKeys).withDefault('default'));
@@ -65,6 +84,9 @@ function StyleGalleryExamplesOverviewContent({ examples, galleryBasePath, locale
   useEffect(() => {
     syncStyleGalleryLightboxLikes(likes);
   }, [likes]);
+  useEffect(() => {
+    setUploadToken(localStorage.getItem(STYLE_GALLERY_UPLOAD_TOKEN_STORAGE_KEY) ?? '');
+  }, []);
   // 点赞计数实时更新，但排序快照由用户主动刷新，避免连续浏览或 popup 点赞时网格在背景中跳位。
   const [likeSortCounts, setLikeSortCounts] = useState<Record<string, number>>(() =>
     Object.fromEntries(examples.map((example) => [example.id, example.likeCount])),
@@ -101,14 +123,33 @@ function StyleGalleryExamplesOverviewContent({ examples, galleryBasePath, locale
   }, [examples, likeSortCounts, platform, query, sortDirection, sortKey]);
   const hasPendingLikeSort =
     sortKey === 'likes' && examples.some((example) => (likeSortCounts[example.id] ?? 0) !== likes.getCount(example.id));
+  const deleteOverviewExample = useCallback(
+    async (sourceSlug: string, exampleId: string) => {
+      const token = uploadToken.trim();
+      if (!uploadsEnabled || !token) return false;
+      await deleteStyleGalleryExample(sourceSlug, exampleId, token);
+      setExamples((current) => current.filter((example) => example.id !== exampleId));
+      return true;
+    },
+    [uploadToken, uploadsEnabled],
+  );
   const lightboxImages = useMemo(
     () =>
       filtered.map((example) => ({
+        id: example.id,
         src: example.src,
         alt: `${example.sourceTitle} ${example.model}`,
         like: createStyleGalleryLightboxLikeAction(example.id, likes, labels.likes),
+        copy: createStyleGalleryCopyAction(() => loadStyleGalleryPrompt(example.sourceSlug), lightboxActionLabels),
+        delete: createStyleGalleryDeleteAction(
+          example.id,
+          `${example.sourceTitle} ${example.model}`,
+          uploadsEnabled && Boolean(uploadToken.trim()),
+          () => deleteOverviewExample(example.sourceSlug, example.id),
+          lightboxActionLabels,
+        ),
       })),
-    [filtered, labels.likes, likes],
+    [deleteOverviewExample, filtered, labels.likes, lightboxActionLabels, likes, uploadToken, uploadsEnabled],
   );
   const { hasMore, loadMore, loadMoreRef, visibleItems } = useProgressiveList(filtered, {
     initialCount: INITIAL_EXAMPLE_COUNT,
@@ -228,30 +269,32 @@ function StyleGalleryExamplesOverviewContent({ examples, galleryBasePath, locale
             {visibleItems.map((example, index) => (
               <figure
                 key={example.id}
-                className="relative flex h-full w-full min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-background shadow-sm"
+                className="flex h-full w-full min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-background shadow-sm"
               >
-                <button
-                  type="button"
-                  onClick={() => openLightbox(example)}
-                  className="group block w-full cursor-zoom-in overflow-hidden bg-muted text-left"
-                >
-                  <img
-                    src={example.src}
-                    alt={`${example.sourceTitle} ${example.model}`}
-                    width={4}
-                    height={5}
-                    loading={index < EAGER_EXAMPLE_COUNT ? 'eager' : 'lazy'}
-                    fetchPriority={index < 4 ? 'high' : 'auto'}
-                    decoding="async"
-                    className="aspect-[4/5] w-full object-cover transition duration-200 group-hover:scale-[1.02]"
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => openLightbox(example)}
+                    className="group block w-full cursor-zoom-in overflow-hidden bg-muted text-left"
+                  >
+                    <img
+                      src={example.src}
+                      alt={`${example.sourceTitle} ${example.model}`}
+                      width={4}
+                      height={5}
+                      loading={index < EAGER_EXAMPLE_COUNT ? 'eager' : 'lazy'}
+                      fetchPriority={index < 4 ? 'high' : 'auto'}
+                      decoding="async"
+                      className="aspect-[4/5] w-full object-cover transition duration-200 group-hover:scale-[1.02]"
+                    />
+                  </button>
+                  <StyleGalleryLikeButton
+                    exampleId={example.id}
+                    controller={likes}
+                    labels={labels.likes}
+                    className="absolute right-2 bottom-2 z-10"
                   />
-                </button>
-                <StyleGalleryLikeButton
-                  exampleId={example.id}
-                  controller={likes}
-                  labels={labels.likes}
-                  className="absolute top-2 right-2 z-10"
-                />
+                </div>
                 <figcaption className="flex flex-1 flex-col gap-3 p-3">
                   <div className="flex items-center justify-between gap-2">
                     <span className="rounded-full bg-sky-50 px-2 py-1 font-semibold text-sky-600 text-xs dark:bg-sky-950/50 dark:text-sky-200">

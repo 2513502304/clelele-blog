@@ -6,6 +6,7 @@ import {
   type ImageLightboxLikeAction,
   navigateImage,
   openModal,
+  removeImageFromLightbox,
   syncImageLightboxLikes,
   updateImageLightboxLike,
 } from '@store/modal';
@@ -80,4 +81,26 @@ test('synchronizes viewer hydration and external mutations into an open lightbox
   );
   assert.equal(synced?.toggle, action.toggle);
   closeModal();
+});
+
+test('removes an async-deleted image without losing the current lightbox focus', () => {
+  openModal('imageLightbox', {
+    src: '/second.webp',
+    alt: 'Second',
+    currentIndex: 1,
+    images: [
+      { id: 'first', src: '/first.webp', alt: 'First' },
+      { id: 'second', src: '/second.webp', alt: 'Second' },
+      { id: 'third', src: '/third.webp', alt: 'Third' },
+    ],
+  });
+
+  assert.equal(removeImageFromLightbox('first'), true);
+  assert.equal($imageLightboxData.get()?.src, '/second.webp');
+  assert.equal($imageLightboxData.get()?.currentIndex, 0);
+
+  assert.equal(removeImageFromLightbox('second'), true);
+  assert.equal($imageLightboxData.get()?.src, '/third.webp');
+  assert.equal(removeImageFromLightbox('third'), true);
+  assert.equal($imageLightboxData.get(), null);
 });

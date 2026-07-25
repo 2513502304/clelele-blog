@@ -122,6 +122,7 @@ Astro.response.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-re
         client:load
         slug={item.slug}
         title={data.title}
+        prompt={data.prompt}
         initialExamples={data.examples}
         uploadsEnabled={Boolean(process.env.STYLE_GALLERY_UPLOAD_TOKEN)}
         likeLabels={{
@@ -129,6 +130,16 @@ Astro.response.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-re
           unlike: t(locale, 'gallery.unlike'),
           loginRequired: t(locale, 'gallery.likeLoginRequired'),
           unavailable: t(locale, 'gallery.likeUnavailable'),
+        }}
+        lightboxActionLabels={{
+          copyPrompt: t(locale, 'image.copyPrompt'),
+          copiedPrompt: t(locale, 'image.copiedPrompt'),
+          copyFailed: t(locale, 'image.copyFailed'),
+          deleteImage: t(locale, 'image.deleteImage'),
+          deletingImage: t(locale, 'image.deletingImage'),
+          deleteFailed: t(locale, 'image.deleteFailed'),
+          deleteRequiresToken: t(locale, 'image.deleteRequiresToken'),
+          deleteConfirm: t(locale, 'image.deleteConfirm', { name: '{name}' }),
         }}
       />
     </div>
