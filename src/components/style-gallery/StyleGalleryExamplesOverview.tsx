@@ -1,12 +1,5 @@
 import { ErrorBoundary, InlineErrorFallback } from '@components/common';
 import { Icon } from '@iconify/react';
-import { STYLE_GALLERY_PLATFORMS } from '@lib/style-gallery-platforms';
-import { openModal } from '@store/modal';
-import { parseAsString, parseAsStringLiteral, useQueryState } from 'nuqs';
-import { NuqsAdapter } from 'nuqs/adapters/react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useProgressiveList } from '@/hooks/useProgressiveList';
-import type { StyleGalleryExampleOverviewItem } from '@/types/style-gallery';
 import {
   createStyleGalleryCopyAction,
   createStyleGalleryDeleteAction,
@@ -14,7 +7,14 @@ import {
   loadStyleGalleryPrompt,
   STYLE_GALLERY_UPLOAD_TOKEN_STORAGE_KEY,
   type StyleGalleryLightboxActionLabels,
-} from './StyleGalleryLightboxActions';
+} from '@lib/style-gallery-lightbox-actions';
+import { STYLE_GALLERY_PLATFORMS } from '@lib/style-gallery-platforms';
+import { openModal } from '@store/modal';
+import { parseAsString, parseAsStringLiteral, useQueryState } from 'nuqs';
+import { NuqsAdapter } from 'nuqs/adapters/react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useProgressiveList } from '@/hooks/useProgressiveList';
+import type { StyleGalleryExampleOverviewItem } from '@/types/style-gallery';
 import {
   createStyleGalleryLightboxLikeAction,
   StyleGalleryLikeButton,

@@ -47,6 +47,8 @@ export default function ImageLightbox() {
   const [showSensitivity, setShowSensitivity] = useState(false);
   const [copyState, setCopyState] = useState<{ key: string; status: 'copying' | 'copied' | 'failed' } | null>(null);
   const [deleteState, setDeleteState] = useState<{ key: string; status: 'deleting' | 'failed' } | null>(null);
+  const currentCopyStatus = copyState?.key === currentImageKey ? copyState.status : null;
+  const currentDeleteStatus = deleteState?.key === currentImageKey ? deleteState.status : null;
   const copyAttemptRef = useRef(0);
   const deleteAttemptRef = useRef(0);
   const copyTimerRef = useRef(0);
@@ -234,7 +236,12 @@ export default function ImageLightbox() {
   const updateZoomSensitivity = (value: number) => {
     const next = Math.min(MAX_ZOOM_SENSITIVITY, Math.max(MIN_ZOOM_SENSITIVITY, value));
     setZoomSensitivity(next);
-    localStorage.setItem(ZOOM_SENSITIVITY_STORAGE_KEY, next.toString());
+    try {
+      localStorage.setItem(ZOOM_SENSITIVITY_STORAGE_KEY, next.toString());
+    } catch (error) {
+      // 隐私模式或存储配额不足时仍保留本次会话中的灵敏度，不阻断 lightbox 操作。
+      console.warn('[image-lightbox] Failed to persist zoom sensitivity.', error);
+    }
   };
 
   // Lock page scroll while lightbox is open
@@ -348,47 +355,47 @@ export default function ImageLightbox() {
                   {currentCopy && (
                     <ToolbarButton
                       icon={
-                        copyState?.key === currentImageKey && copyState.status === 'copied'
+                        currentCopyStatus === 'copied'
                           ? 'ri:check-line'
-                          : copyState?.key === currentImageKey && copyState.status === 'failed'
+                          : currentCopyStatus === 'failed'
                             ? 'ri:error-warning-line'
-                            : copyState?.key === currentImageKey && copyState.status === 'copying'
+                            : currentCopyStatus === 'copying'
                               ? 'ri:loader-4-line'
                               : 'ri:file-copy-line'
                       }
                       label={
-                        copyState?.key === currentImageKey && copyState.status === 'copied'
+                        currentCopyStatus === 'copied'
                           ? currentCopy.copiedLabel
-                          : copyState?.key === currentImageKey && copyState.status === 'failed'
+                          : currentCopyStatus === 'failed'
                             ? currentCopy.failedLabel
                             : currentCopy.label
                       }
                       onClick={() => void handleCopy()}
-                      disabled={copyState?.key === currentImageKey && copyState.status === 'copying'}
-                      spinning={copyState?.key === currentImageKey && copyState.status === 'copying'}
+                      disabled={currentCopyStatus === 'copying'}
+                      spinning={currentCopyStatus === 'copying'}
                     />
                   )}
                   {currentDelete && (
                     <ToolbarButton
                       icon={
-                        deleteState?.key === currentImageKey && deleteState.status === 'deleting'
+                        currentDeleteStatus === 'deleting'
                           ? 'ri:loader-4-line'
-                          : deleteState?.key === currentImageKey && deleteState.status === 'failed'
+                          : currentDeleteStatus === 'failed'
                             ? 'ri:error-warning-line'
                             : 'ri:delete-bin-line'
                       }
                       label={
                         !currentDelete.enabled
                           ? currentDelete.unavailableLabel
-                          : deleteState?.key === currentImageKey && deleteState.status === 'deleting'
+                          : currentDeleteStatus === 'deleting'
                             ? currentDelete.deletingLabel
-                            : deleteState?.key === currentImageKey && deleteState.status === 'failed'
+                            : currentDeleteStatus === 'failed'
                               ? currentDelete.failedLabel
                               : currentDelete.label
                       }
                       onClick={() => void handleDelete()}
                       disabled={!currentDelete.enabled || isDeleting}
-                      spinning={deleteState?.key === currentImageKey && deleteState.status === 'deleting'}
+                      spinning={currentDeleteStatus === 'deleting'}
                       tone="danger"
                     />
                   )}

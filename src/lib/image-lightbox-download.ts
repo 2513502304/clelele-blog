@@ -5,6 +5,7 @@ export interface ImageLightboxDownloadAction {
 }
 
 function getFilename(src: string): string {
+  if (src.startsWith('blob:') || src.startsWith('data:')) return 'image';
   const filename = src.split(/[?#]/, 1)[0].split('/').at(-1);
   if (!filename) return 'image';
   try {

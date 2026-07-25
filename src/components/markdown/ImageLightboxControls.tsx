@@ -1,9 +1,38 @@
 import { useTranslation } from '@hooks/useTranslation';
 import { Icon } from '@iconify/react';
+import { cn } from '@lib/utils';
 import type { ImageLightboxLikeAction } from '@store/modal';
-import { motion } from 'motion/react';
+import { cva } from 'class-variance-authority';
+import { motion, useReducedMotion } from 'motion/react';
 import { useEffect, useState } from 'react';
 
+const likeButtonVariants = cva(
+  'flex h-10 min-w-10 shrink-0 items-center justify-center gap-1 rounded-full px-2 font-bold text-xs transition-colors hover:bg-white/15 disabled:pointer-events-none disabled:opacity-30',
+  {
+    variants: {
+      liked: {
+        true: 'text-rose-400',
+        false: 'text-white/80',
+      },
+    },
+  },
+);
+
+const toolbarButtonVariants = cva(
+  'flex size-10 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-white/15 disabled:pointer-events-none disabled:opacity-30',
+  {
+    variants: {
+      appearance: {
+        default: 'text-white/80',
+        danger: 'text-rose-300',
+        active: 'bg-white/15 text-rose-300',
+      },
+    },
+    defaultVariants: { appearance: 'default' },
+  },
+);
+
+/** 在 lightbox 工具栏中呈现当前示例的点赞状态与数量。 */
 export function LightboxLikeButton({ action, onClick }: { action: ImageLightboxLikeAction; onClick: () => void }) {
   const title = !action.authEnabled
     ? action.labels.unavailable
@@ -17,7 +46,7 @@ export function LightboxLikeButton({ action, onClick }: { action: ImageLightboxL
       type="button"
       onClick={onClick}
       disabled={!action.authEnabled || action.pending}
-      className={`flex h-10 min-w-10 shrink-0 items-center justify-center gap-1 rounded-full px-2 font-bold text-xs transition-colors hover:bg-white/15 disabled:pointer-events-none disabled:opacity-30 ${action.liked ? 'text-rose-400' : 'text-white/80'}`}
+      className={likeButtonVariants({ liked: action.liked })}
       whileTap={{ scale: 0.85 }}
       aria-label={`${title}: ${action.likeCount}`}
       aria-pressed={action.liked}
@@ -25,13 +54,14 @@ export function LightboxLikeButton({ action, onClick }: { action: ImageLightboxL
     >
       <Icon
         icon={action.pending ? 'ri:loader-4-line' : action.liked ? 'ri:heart-3-fill' : 'ri:heart-3-line'}
-        className={`size-5 ${action.pending ? 'animate-spin' : ''}`}
+        className={cn('size-5', action.pending && 'animate-spin')}
       />
       <span className="tabular-nums">{action.likeCount}</span>
     </motion.button>
   );
 }
 
+/** 渲染 lightbox 右侧工具栏中的统一图标按钮。 */
 export function ToolbarButton({
   icon,
   label,
@@ -54,17 +84,18 @@ export function ToolbarButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`flex size-10 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-white/15 disabled:pointer-events-none disabled:opacity-30 ${active ? 'bg-white/15 text-rose-300' : tone === 'danger' ? 'text-rose-300' : 'text-white/80'}`}
+      className={toolbarButtonVariants({ appearance: active ? 'active' : tone })}
       whileTap={{ scale: 0.85 }}
       aria-label={label}
       aria-pressed={active}
       title={label}
     >
-      <Icon icon={icon} className={`size-5 ${spinning ? 'animate-spin' : ''}`} />
+      <Icon icon={icon} className={cn('size-5', spinning && 'animate-spin')} />
     </motion.button>
   );
 }
 
+/** 渲染下载或打开原图等无需 React 状态的工具栏链接。 */
 export function ToolbarLink({
   href,
   download,
@@ -98,8 +129,10 @@ const BOUNCE_LEFT = { x: [0, -2.5, 0] };
 const BOUNCE_RIGHT = { x: [0, 2.5, 0] };
 const BOUNCE_NONE = { x: 0 };
 
+/** 渲染上一张或下一张按钮，并尊重系统的减少动态效果设置。 */
 export function NavButton({ direction, disabled, onClick }: { direction: 1 | -1; disabled: boolean; onClick: () => void }) {
   const { t } = useTranslation();
+  const prefersReducedMotion = useReducedMotion();
   const isLeft = direction === -1;
   return (
     <motion.button
@@ -111,8 +144,8 @@ export function NavButton({ direction, disabled, onClick }: { direction: 1 | -1;
       aria-label={isLeft ? t('image.prev') : t('image.next')}
     >
       <motion.span
-        animate={disabled ? BOUNCE_NONE : isLeft ? BOUNCE_LEFT : BOUNCE_RIGHT}
-        transition={{ duration: 1.6, repeat: 3, ease: 'easeInOut' }}
+        animate={disabled || prefersReducedMotion ? BOUNCE_NONE : isLeft ? BOUNCE_LEFT : BOUNCE_RIGHT}
+        transition={prefersReducedMotion ? { duration: 0 } : { duration: 1.6, repeat: 3, ease: 'easeInOut' }}
       >
         <Icon icon={isLeft ? 'ri:arrow-left-s-line' : 'ri:arrow-right-s-line'} className="size-5" />
       </motion.span>
@@ -120,6 +153,7 @@ export function NavButton({ direction, disabled, onClick }: { direction: 1 | -1;
   );
 }
 
+/** 短暂显示当前设备可用的缩放操作提示。 */
 export function ZoomHint() {
   const { t } = useTranslation();
   const [visible, setVisible] = useState(true);

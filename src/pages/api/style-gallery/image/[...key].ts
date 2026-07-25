@@ -16,10 +16,18 @@ const IMAGE_TRANSFER_TIMEOUT_MS = 60_000;
  * HF Bucket 会忽略签名 URL 的 Content-Disposition 覆盖参数；下载请求也必须流式代理并强制 attachment。
  */
 async function proxyImage(signedUrl: string, downloadFilename?: string): Promise<Response> {
-  const upstream = await fetch(signedUrl, {
-    cache: 'no-store',
-    signal: AbortSignal.timeout(IMAGE_TRANSFER_TIMEOUT_MS),
-  });
+  const controller = new AbortController();
+  const connectionTimeout = setTimeout(() => controller.abort(), IMAGE_TRANSFER_TIMEOUT_MS);
+  let upstream: Response;
+  try {
+    upstream = await fetch(signedUrl, {
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+  } finally {
+    // fetch() 返回后响应体仍在流式读取；此后继续计时会截断合法的慢速大文件下载。
+    clearTimeout(connectionTimeout);
+  }
   if (!upstream.ok) {
     return new Response(`Failed to load style gallery image: ${upstream.status}`, { status: upstream.status });
   }

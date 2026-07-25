@@ -67,6 +67,7 @@ export async function deleteStyleGalleryExample(sourceSlug: string, exampleId: s
   throw lastError instanceof Error ? lastError : new Error('Failed to delete generated example.');
 }
 
+/** 为任意 Gallery 图片构造可复制完整 prompt 的 lightbox 动作。 */
 export function createStyleGalleryCopyAction(
   getText: () => string | Promise<string>,
   labels: StyleGalleryLightboxActionLabels,
@@ -79,6 +80,7 @@ export function createStyleGalleryCopyAction(
   };
 }
 
+/** 复用详情页权限与确认文案，构造单张示例图的 lightbox 删除动作。 */
 export function createStyleGalleryDeleteAction(
   imageId: string,
   imageName: string,

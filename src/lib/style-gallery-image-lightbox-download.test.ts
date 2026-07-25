@@ -25,4 +25,9 @@ describe('image lightbox download actions', () => {
       opensExternally: true,
     });
   });
+
+  it('uses a stable filename for blob and data URLs', () => {
+    assert.equal(createImageLightboxDownloadAction('blob:https://blog.example/random-id').filename, 'image');
+    assert.equal(createImageLightboxDownloadAction('data:image/png;base64,AAAA').filename, 'image');
+  });
 });

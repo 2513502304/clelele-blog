@@ -1,5 +1,11 @@
 import { Icon } from '@iconify/react';
 import { getStyleGalleryUploadPartCount, STYLE_GALLERY_UPLOAD_CHUNK_SIZE } from '@lib/style-gallery-chunk-upload';
+import {
+  createStyleGalleryCopyAction,
+  createStyleGalleryDeleteAction,
+  STYLE_GALLERY_UPLOAD_TOKEN_STORAGE_KEY,
+  type StyleGalleryLightboxActionLabels,
+} from '@lib/style-gallery-lightbox-actions';
 import { groupStyleGalleryExamplesByPlatform, STYLE_GALLERY_PLATFORMS } from '@lib/style-gallery-platforms';
 import {
   chunkStyleGalleryRequestItems,
@@ -9,12 +15,6 @@ import {
 import { openModal } from '@store/modal';
 import { useEffect, useMemo, useState } from 'react';
 import type { StyleGalleryExample, StyleGalleryExampleView } from '@/types/style-gallery';
-import {
-  createStyleGalleryCopyAction,
-  createStyleGalleryDeleteAction,
-  STYLE_GALLERY_UPLOAD_TOKEN_STORAGE_KEY,
-  type StyleGalleryLightboxActionLabels,
-} from './StyleGalleryLightboxActions';
 import {
   createStyleGalleryLightboxLikeAction,
   StyleGalleryLikeButton,

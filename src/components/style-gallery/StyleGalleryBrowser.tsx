@@ -228,7 +228,13 @@ export default function StyleGalleryBrowser({ items, tags, galleryBasePath, labe
             </a>
             <div className="space-y-3 p-4">
               <div className="flex items-start justify-between gap-3">
-                <a href={`${galleryBasePath}/${item.slug}`} data-astro-prefetch="false" className="min-w-0">
+                <a
+                  href={`${galleryBasePath}/${item.slug}`}
+                  data-astro-prefetch="false"
+                  className="min-w-0"
+                  aria-label={item.title}
+                  title={item.title}
+                >
                   <h2 className="line-clamp-1 font-bold text-gray-900 text-lg transition group-hover:text-rose-600 dark:text-white">
                     {item.imageHash.slice(0, 12)}
                   </h2>
