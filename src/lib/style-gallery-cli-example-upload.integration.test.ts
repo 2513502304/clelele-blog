@@ -36,8 +36,19 @@ function runCli(args: string[], env: NodeJS.ProcessEnv): Promise<{ code: number 
     child.stderr.setEncoding('utf8').on('data', (chunk) => {
       stderr += chunk;
     });
-    child.once('error', reject);
-    child.once('close', (code) => resolve({ code, stderr, stdout }));
+    let settled = false;
+    const settle = (callback: () => void): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      callback();
+    };
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      settle(() => reject(new Error('Style gallery upload CLI timed out after 30 seconds.')));
+    }, 30_000);
+    child.once('error', (error) => settle(() => reject(error)));
+    child.once('close', (code) => settle(() => resolve({ code, stderr, stdout })));
   });
 }
 
@@ -55,9 +66,16 @@ describe('style gallery example upload CLI integration', () => {
     const uploaded = new Map<string, Buffer>();
     const mergedHashes: string[] = [];
     const cleanedHashes: string[] = [];
+    let catalogRequests = 0;
     const server = createServer(async (request, response) => {
       const requestUrl = new URL(request.url ?? '/', 'http://127.0.0.1');
       if (request.method === 'GET' && requestUrl.pathname === '/api/style-gallery/catalog') {
+        catalogRequests += 1;
+        if (catalogRequests === 1) {
+          response.writeHead(200, { 'content-type': 'application/json' });
+          response.end('{');
+          return;
+        }
         sendJson(response, {
           version: 3,
           updatedAt: '2026-07-26T00:00:00.000Z',
@@ -107,7 +125,8 @@ describe('style gallery example upload CLI integration', () => {
         }
         if (body.action === 'cleanup') {
           cleanedHashes.push(...body.examples.map((example: { imageHash: string }) => example.imageHash));
-          sendJson(response, { deleted: body.examples.length, retained: 0 });
+          response.writeHead(400);
+          response.end('simulated cleanup rejection');
           return;
         }
       }
@@ -136,7 +155,7 @@ describe('style gallery example upload CLI integration', () => {
     const baseUrl = `http://127.0.0.1:${address.port}`;
 
     try {
-      const result = await runCli(['--item', '2a256d37220e', '--platform', 'PixAI', '--attempts', '1', goodPath, failedPath], {
+      const result = await runCli(['--item', '2a256d37220e', '--platform', 'PixAI', '--attempts', '2', goodPath, failedPath], {
         ...process.env,
         STYLE_GALLERY_UPLOAD_TOKEN: 'test-upload-token',
         HF_S3_ACCESS_KEY_ID: 'HFAKTEST',
@@ -152,10 +171,12 @@ describe('style gallery example upload CLI integration', () => {
 
       assert.equal(result.code, 1, result.stdout + result.stderr);
       assert.deepEqual(uploaded.get(`${goodHash}.webp`), goodBytes);
+      assert.equal(catalogRequests, 2);
       assert.deepEqual(mergedHashes, [goodHash]);
       assert.deepEqual(cleanedHashes, [failedHash]);
       assert.match(result.stdout, /1 added/);
       assert.match(result.stderr, /failed\.webp/);
+      assert.match(result.stderr, /orphan cleanup failed/);
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
       await rm(directory, { recursive: true, force: true });

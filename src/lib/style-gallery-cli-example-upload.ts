@@ -22,8 +22,9 @@ export interface StyleGalleryExampleUploadCliOptions {
 
 function positiveInteger(value: string | undefined, fallback: number, name: string): number {
   if (value === undefined) return fallback;
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isInteger(parsed) || parsed < 1) throw new Error(`${name} must be a positive integer.`);
+  if (!/^[1-9]\d*$/.test(value)) throw new Error(`${name} must be a positive integer.`);
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed)) throw new Error(`${name} must be a positive integer.`);
   return parsed;
 }
 

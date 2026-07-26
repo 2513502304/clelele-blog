@@ -69,4 +69,18 @@ describe('style gallery example upload CLI', () => {
     assert.throws(() => parseStyleGalleryExampleUploadArgs(['--item', 'aaaaaa', './image.webp']), /--platform/);
     assert.throws(() => parseStyleGalleryExampleUploadArgs(['--platform', 'PixAI', './image.webp']), /--item/);
   });
+
+  it('rejects invalid optional values without partially parsing them', () => {
+    const requiredArgs = ['--item', 'aaaaaa', '--platform', 'PixAI'];
+    const parseWith = (...args: string[]) => parseStyleGalleryExampleUploadArgs([...requiredArgs, ...args, './image.webp']);
+
+    assert.throws(() => parseWith('--api-base-url', 'ftp://example.com'), /must use HTTP or HTTPS/);
+    assert.throws(() => parseWith('--note', 'x'.repeat(501)), /at most 500 characters/);
+    assert.throws(() => parseWith('--attempts', '0'), /--attempts must be a positive integer/);
+    assert.throws(() => parseWith('--attempts', '5x'), /--attempts must be a positive integer/);
+    assert.throws(() => parseWith('--concurrency=-1'), /--concurrency must be a positive integer/);
+    assert.throws(() => parseWith('--concurrency', 'many'), /--concurrency must be a positive integer/);
+    assert.throws(() => parseWith('--timeout-ms', '0'), /--timeout-ms must be a positive integer/);
+    assert.throws(() => parseWith('--timeout-ms', '12000ms'), /--timeout-ms must be a positive integer/);
+  });
 });

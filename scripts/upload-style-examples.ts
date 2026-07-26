@@ -112,13 +112,14 @@ async function requestJson(
   for (let attempt = 1; attempt <= options.attempts; attempt += 1) {
     try {
       const response = await fetch(url, { ...init, signal: AbortSignal.timeout(options.timeoutMs) });
-      if (response.ok) return response.json();
+      if (response.ok) return await response.json();
       const detail = await response.text().catch(() => '');
       const retryable = response.status === 408 || response.status === 429 || response.status >= 500;
       throw new HttpRequestError(`${response.status}${detail ? ` ${detail}` : ''}`, retryable);
     } catch (error) {
       lastError = error;
-      const retryable = error instanceof HttpRequestError ? error.retryable : isRetryableNetworkError(error);
+      const retryable =
+        error instanceof HttpRequestError ? error.retryable : error instanceof SyntaxError || isRetryableNetworkError(error);
       if (!retryable || attempt === options.attempts) break;
       await sleep(400 * 2 ** (attempt - 1) + Math.floor(Math.random() * 200));
     }
@@ -255,6 +256,19 @@ async function cleanupFailedUpload(
 }
 
 /**
+ * 清理失败与原上传/合并失败属于同一文件操作，合并错误原因可保持最终失败文件数准确，
+ * 同时确保 orphan 风险进入 allFailures 并令命令返回非零状态。
+ */
+function attachCleanupFailure(outcome: UploadOutcome, cleanupError: unknown): void {
+  const primaryError = outcome.error ?? new Error('Example upload did not complete.');
+  const normalizedCleanupError = cleanupError instanceof Error ? cleanupError : new Error(String(cleanupError));
+  outcome.error = new AggregateError(
+    [primaryError, normalizedCleanupError],
+    `${primaryError.message}; orphan cleanup failed: ${normalizedCleanupError.message}`,
+  );
+}
+
+/**
  * 正常路径按 128 条提交；失败路径递归二分，确保单条坏 metadata 不会拖累同批其他成功图片。
  */
 async function mergePreparedImages(
@@ -293,9 +307,8 @@ async function mergePreparedImages(
       failures.push(failed);
       if (failed.uploaded) {
         await cleanupFailedUpload(slug, token, failed.prepared.example, options).catch((cleanupError) => {
-          console.warn(
-            `Cleanup warning for ${failed.prepared.file.name}: ${cleanupError instanceof Error ? cleanupError.message : cleanupError}`,
-          );
+          attachCleanupFailure(failed, cleanupError);
+          console.warn(`Cleanup warning for ${failed.prepared.file.name}: ${failed.error?.message}`);
         });
       }
     }
@@ -382,9 +395,8 @@ async function main(): Promise<void> {
     options.concurrency,
     async (outcome) => {
       await cleanupFailedUpload(target.slug, token, outcome.prepared.example, options).catch((cleanupError) => {
-        console.warn(
-          `Cleanup warning for ${outcome.prepared.file.name}: ${cleanupError instanceof Error ? cleanupError.message : cleanupError}`,
-        );
+        attachCleanupFailure(outcome, cleanupError);
+        console.warn(`Cleanup warning for ${outcome.prepared.file.name}: ${outcome.error?.message}`);
       });
     },
   );

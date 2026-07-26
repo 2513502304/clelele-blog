@@ -2,6 +2,9 @@
   "name": "clelele-blog",
   "type": "module",
   "version": "4.1.0",
+  "engines": {
+    "node": ">=22.9.0"
+  },
   "scripts": {
     "dev": "astro dev",
     "generate:lqips": "tsx src/scripts/generateLqips.ts",
