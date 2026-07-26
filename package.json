@@ -11,6 +11,7 @@
     "generate:summaries:force": "tsx src/scripts/generateSummaries.ts --force",
     "generate:all": "npm run generate:lqips && npm run generate:summaries && npm run generate:similarities",
     "import:style-prompts": "node scripts/import-style-prompts.mjs",
+    "upload:style-examples": "node --env-file-if-exists=.env.local --import tsx scripts/upload-style-examples.ts",
     "build": "astro build",
     "preview": "astro preview",
     "astro": "astro",
