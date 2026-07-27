@@ -5,12 +5,13 @@ import { Live2DModelPicker } from '@components/live2d/Live2DModelPicker';
 import { Live2DSettings } from '@components/live2d/Live2DSettings';
 import { useTranslation } from '@hooks/useTranslation';
 import { Icon } from '@iconify/react';
-import { findLive2DCostume, live2dCatalog } from '@lib/live2d/catalog';
+import { fetchLive2DCatalog, findLive2DCostume, getLive2DCatalogSelections, live2dCatalog } from '@lib/live2d/catalog';
 import { markLive2DEscapeHandled, registerLive2DFocusNode } from '@lib/live2d/focus-scope';
 import { classifyLive2DPointerMovement } from '@lib/live2d/geometry';
 import { Live2DInteractionGeneration, resolveLive2DInteraction } from '@lib/live2d/interactions';
 import type { Live2DDisplayPolicy } from '@lib/live2d/preferences';
 import type { Live2DRenderer, Live2DRendererPhase } from '@lib/live2d/renderer';
+import type { Live2DCatalog } from '@lib/live2d/types';
 import { useStore } from '@nanostores/react';
 import { $live2dState, live2dActions } from '@store/live2d';
 import { $activeModal } from '@store/modal';
@@ -39,12 +40,6 @@ const Live2DCanvas = lazy(async () => {
   return { default: module.Live2DCanvas };
 });
 
-function catalogSelections() {
-  return live2dCatalog.characters.flatMap((character) =>
-    character.costumes.map((costume) => ({ characterId: character.id, costumeId: costume.id })),
-  );
-}
-
 function textLabel(values: Record<string, string>, locale: string): string {
   return values[locale] ?? values.zh ?? values.en ?? Object.values(values)[0] ?? '';
 }
@@ -71,7 +66,11 @@ function Live2DWidgetContent({
   const dialogueTimerRef = useRef<number | null>(null);
   const interactionGeneration = useRef(new Live2DInteractionGeneration());
   const interactionSelectionRef = useRef('');
-  const selectedMotionRef = useRef<{ group: string; index: number; priority?: number } | null>(null);
+  const selectedMotionRef = useRef<{
+    group: string;
+    index: number;
+    priority?: number;
+  } | null>(null);
   const selectedExpressionRef = useRef('');
   const effectsRef = useRef(state.preferences.effects);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
@@ -79,14 +78,18 @@ function Live2DWidgetContent({
   const [retryNonce, setRetryNonce] = useState(0);
   const [dialogue, setDialogue] = useState('');
   const [viewportWidth, setViewportWidth] = useState(1024);
-  const [modelControls, setModelControls] = useState<{ motions: Record<string, string[]>; expressions: string[] }>({
+  const [modelControls, setModelControls] = useState<{
+    motions: Record<string, string[]>;
+    expressions: string[];
+  }>({
     motions: {},
     expressions: [],
   });
   const [userPaused, setUserPaused] = useState(false);
   const [selectedMotion, setSelectedMotion] = useState('');
   const [selectedExpression, setSelectedExpression] = useState('');
-  const orderedSelections = useMemo(catalogSelections, []);
+  const [catalog, setCatalog] = useState<Live2DCatalog>(live2dCatalog);
+  const orderedSelections = useMemo(() => getLive2DCatalogSelections(catalog), [catalog]);
   effectsRef.current = state.preferences.effects;
 
   const stopAudio = useCallback(() => {
@@ -115,10 +118,10 @@ function Live2DWidgetContent({
   }, [activePlayerId, stopAudio]);
 
   const costume =
-    findLive2DCostume(state.preferences.selection.characterId, state.preferences.selection.costumeId) ??
-    findLive2DCostume(defaultCharacterId, defaultCostumeId) ??
-    live2dCatalog.characters[0]?.costumes[0];
-  const character = live2dCatalog.characters.find((candidate) => candidate.id === state.preferences.selection.characterId);
+    findLive2DCostume(state.preferences.selection.characterId, state.preferences.selection.costumeId, catalog) ??
+    findLive2DCostume(defaultCharacterId, defaultCostumeId, catalog) ??
+    catalog.characters[0]?.costumes[0];
+  const character = catalog.characters.find((candidate) => candidate.id === state.preferences.selection.characterId);
   const characterName = character ? textLabel(character.label, locale) : t('live2d.character');
   const rendererSelection = useMemo(
     () =>
@@ -135,19 +138,44 @@ function Live2DWidgetContent({
 
   useEffect(() => {
     live2dActions.initialize({
-      selection: { characterId: defaultCharacterId, costumeId: defaultCostumeId },
+      selection: {
+        characterId: defaultCharacterId,
+        costumeId: defaultCostumeId,
+      },
       displayPolicy,
       audioEnabled,
     });
-    live2dActions.reconcileSelection(orderedSelections, { characterId: defaultCharacterId, costumeId: defaultCostumeId });
-  }, [audioEnabled, defaultCharacterId, defaultCostumeId, displayPolicy, orderedSelections]);
+  }, [audioEnabled, defaultCharacterId, defaultCostumeId, displayPolicy]);
+
+  useEffect(() => {
+    live2dActions.reconcileSelection(orderedSelections, {
+      characterId: defaultCharacterId,
+      costumeId: defaultCostumeId,
+    });
+  }, [defaultCharacterId, defaultCostumeId, orderedSelections]);
+
+  useEffect(() => {
+    if (!rendererStarted) return;
+    const controller = new AbortController();
+    void fetchLive2DCatalog(fetch, controller.signal)
+      .then(setCatalog)
+      .catch(() => {
+        // 静态 bootstrap 已经可用；远程目录网络失败不应中断当前模型和页面交互。
+      });
+    return () => controller.abort();
+  }, [rendererStarted]);
 
   useEffect(() => {
     const update = () => {
       const root = rootRef.current;
       const exclusions = [...document.querySelectorAll<HTMLElement>('[data-live2d-exclusion]')].map((node) => {
         const rect = node.getBoundingClientRect();
-        return { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
+        return {
+          x: rect.left,
+          y: rect.top,
+          width: rect.width,
+          height: rect.height,
+        };
       });
       const mobile = window.innerWidth <= 768;
       live2dActions.setGeometry({
@@ -381,7 +409,11 @@ function Live2DWidgetContent({
   }, [state.preferences.selection.characterId, state.preferences.selection.costumeId]);
 
   const selectMotion = useCallback((group: string, index: number) => {
-    selectedMotionRef.current = { group, index, priority: USER_SELECTED_MOTION_PRIORITY };
+    selectedMotionRef.current = {
+      group,
+      index,
+      priority: USER_SELECTED_MOTION_PRIORITY,
+    };
     setSelectedMotion(`${group}\u0000${index}`);
     rendererRef.current?.playMotion(group, index, USER_SELECTED_MOTION_PRIORITY);
   }, []);
@@ -411,11 +443,17 @@ function Live2DWidgetContent({
     const point = state.renderedPlacement?.position;
     if (!point) return;
     event.currentTarget.setPointerCapture(event.pointerId);
-    pointerStart.current = { pointer: { x: event.clientX, y: event.clientY }, widget: point };
+    pointerStart.current = {
+      pointer: { x: event.clientX, y: event.clientY },
+      widget: point,
+    };
   };
   const onPointerMove = (event: React.PointerEvent<HTMLButtonElement>) => {
     if (!pointerStart.current) return;
-    setDragOffset({ x: event.clientX - pointerStart.current.pointer.x, y: event.clientY - pointerStart.current.pointer.y });
+    setDragOffset({
+      x: event.clientX - pointerStart.current.pointer.x,
+      y: event.clientY - pointerStart.current.pointer.y,
+    });
   };
   const onPointerUp = (event: React.PointerEvent<HTMLButtonElement>) => {
     const start = pointerStart.current;
@@ -588,7 +626,7 @@ function Live2DWidgetContent({
       />
       {state.activePanel === 'picker' && (
         <Live2DModelPicker
-          catalog={live2dCatalog}
+          catalog={catalog}
           locale={locale}
           selected={state.preferences.selection}
           title={t('live2d.characters')}

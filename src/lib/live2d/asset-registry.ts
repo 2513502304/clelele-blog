@@ -93,13 +93,31 @@ export function resolveLive2DAsset(value: string): Live2DAssetDescriptor {
   const [, releaseId, ...relativeSegments] = key.split('/');
   const manifest = manifestByRelease.get(releaseId);
   if (!manifest) throw new Live2DAssetPathError('unknown-release', 'Unknown Live2D release.');
-  const relativePath = relativeSegments.join('/');
+  return resolveManifestMember(key, releaseId, relativeSegments.join('/'), manifest);
+}
+
+function resolveManifestMember(
+  key: string,
+  releaseId: string,
+  relativePath: string,
+  manifest: Live2DPackageManifest,
+): Live2DAssetDescriptor {
   const object = manifest.objects.find((candidate) => candidate.path === relativePath);
   if (!object) throw new Live2DAssetPathError('not-in-manifest', 'Live2D asset is not present in the release manifest.');
   if (object.size > LIVE2D_MAX_ASSET_BYTES) {
     throw new Live2DAssetPathError('object-too-large', 'Live2D asset exceeds the streaming response limit.');
   }
   return { ...object, key, releaseId };
+}
+
+/** Async resolver used by the runtime route after loading an immutable manifest from HF. */
+export async function resolveLive2DAssetWithManifest(
+  value: string,
+  getManifest: (releaseId: string) => Promise<Live2DPackageManifest>,
+): Promise<Live2DAssetDescriptor> {
+  const key = normalizeLive2DAssetKey(value);
+  const [, releaseId, ...relativeSegments] = key.split('/');
+  return resolveManifestMember(key, releaseId, relativeSegments.join('/'), await getManifest(releaseId));
 }
 
 export function resolveLive2DPackageAsset(releaseId: string, relativePath: string): Live2DAssetDescriptor {

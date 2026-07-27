@@ -1,21 +1,16 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import { createHfS3Client, type HfS3Config, HfS3ConflictError } from '../../src/lib/hf-s3';
-import { getLive2DObjectKey } from '../../src/lib/live2d/catalog';
-import {
-  assertLive2DManifestReleaseId,
-  buildLive2DPackageManifest,
-  serializeLive2DManifest,
-} from '../../src/lib/live2d/package-manifest';
+import { getLive2DObjectKey, live2dCatalog } from '../../src/lib/live2d/catalog';
+import { LIVE2D_CATALOG_KEY } from '../../src/lib/live2d/metadata-store';
+import { buildLive2DPackageManifest, serializeLive2DManifest } from '../../src/lib/live2d/package-manifest';
 import {
   type Live2DCatalog,
   type Live2DCostume,
   type Live2DProvenance,
   live2dCatalogSchema,
-  live2dPackageManifestSchema,
   live2dProvenanceSchema,
 } from '../../src/lib/live2d/types';
 
@@ -39,11 +34,6 @@ export interface PublishOptions {
   dryRun: boolean;
   replace: boolean;
 }
-
-const repoRoot = path.resolve(import.meta.dirname, '../..');
-const catalogPath = path.join(repoRoot, 'src/data/live2d/catalog.json');
-const manifestDirectory = path.join(repoRoot, 'src/data/live2d/manifests');
-const provenanceDirectory = path.join(repoRoot, 'src/data/live2d/provenance');
 
 function requireValue(arguments_: string[], index: number, name: string): string {
   const value = arguments_[index + 1];
@@ -122,7 +112,7 @@ export function parseArguments(arguments_: string[]): PublishOptions {
   };
 }
 
-function getPublisherConfig(): HfS3Config {
+export function getPublisherConfig(): HfS3Config {
   const accessKeyId = process.env.LIVE2D_HF_S3_WRITE_ACCESS_KEY_ID;
   const secretAccessKey = process.env.LIVE2D_HF_S3_WRITE_SECRET_ACCESS_KEY;
   if (!accessKeyId || !secretAccessKey) {
@@ -163,7 +153,12 @@ async function publishObjects(
   client: ReturnType<typeof createHfS3Client>,
   releaseId: string,
   files: Map<string, Uint8Array>,
-  manifestObjects: Array<{ path: string; size: number; mime: string; sha256: string }>,
+  manifestObjects: Array<{
+    path: string;
+    size: number;
+    mime: string;
+    sha256: string;
+  }>,
 ): Promise<void> {
   let completed = 0;
   const concurrency = Math.min(6, manifestObjects.length);
@@ -187,16 +182,74 @@ async function publishObjects(
   );
 }
 
+export async function publishImmutableJson(
+  client: ReturnType<typeof createHfS3Client>,
+  key: string,
+  text: string,
+  validateExisting?: (value: unknown) => void,
+): Promise<void> {
+  const bytes = new TextEncoder().encode(text);
+  const existing = await client.get(key);
+  if (existing) {
+    if (existing.bytes.byteLength === bytes.byteLength && sha256(existing.bytes) === sha256(bytes)) return;
+    if (validateExisting) {
+      validateExisting(JSON.parse(new TextDecoder().decode(existing.bytes)));
+      return;
+    }
+    throw new Error(`Existing immutable metadata conflicts for ${key}.`);
+  }
+  try {
+    await client.put(key, bytes, 'application/json', { ifNoneMatch: '*' });
+  } catch (error) {
+    if (!(error instanceof HfS3ConflictError)) throw error;
+    const raced = await client.get(key);
+    if (!raced || raced.bytes.byteLength !== bytes.byteLength || sha256(raced.bytes) !== sha256(bytes)) throw error;
+  }
+}
+
+export async function updateRemoteCatalog(
+  client: ReturnType<typeof createHfS3Client>,
+  options: Pick<PublishOptions, 'characterId' | 'characterLabels' | 'replace'>,
+  costume: Live2DCostume,
+): Promise<void> {
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    const snapshot = await client.get(LIVE2D_CATALOG_KEY);
+    const catalog = snapshot ? live2dCatalogSchema.parse(JSON.parse(new TextDecoder().decode(snapshot.bytes))) : live2dCatalog;
+    const nextCatalog = upsertCatalog(catalog, options, costume);
+    if (isDeepStrictEqual(catalog, nextCatalog)) return;
+    if (snapshot && !snapshot.etag) throw new Error('Remote Live2D catalog response did not include an ETag.');
+    const bytes = new TextEncoder().encode(`${JSON.stringify(nextCatalog, null, 2)}\n`);
+    try {
+      await client.put(
+        LIVE2D_CATALOG_KEY,
+        bytes,
+        'application/json',
+        snapshot?.etag ? { ifMatch: snapshot.etag } : { ifNoneMatch: '*' },
+      );
+      return;
+    } catch (error) {
+      if (!(error instanceof HfS3ConflictError) || attempt === 5) throw error;
+    }
+  }
+}
+
 /** 默认只创建新 costume；显式 --replace 更新发布字段，但保留已有的手工交互配置。 */
 export function upsertCatalog(
   catalog: Live2DCatalog,
   options: Pick<PublishOptions, 'characterId' | 'characterLabels' | 'replace'>,
   costume: Live2DCostume,
 ): Live2DCatalog {
-  const characters = catalog.characters.map((character) => ({ ...character, costumes: [...character.costumes] }));
+  const characters = catalog.characters.map((character) => ({
+    ...character,
+    costumes: [...character.costumes],
+  }));
   let character = characters.find((candidate) => candidate.id === options.characterId);
   if (!character) {
-    character = { id: options.characterId, label: options.characterLabels, costumes: [] };
+    character = {
+      id: options.characterId,
+      label: options.characterLabels,
+      costumes: [],
+    };
     characters.push(character);
   }
   const existingIndex = character.costumes.findIndex((candidate) => candidate.id === costume.id);
@@ -243,7 +296,10 @@ async function main(): Promise<void> {
       repository: options.converterRepository,
       commit: options.converterCommit,
       version: options.converterVersion,
-      options: { coreAudioRemoved: true, approvedAudio: [...options.approvedAudio].sort() },
+      options: {
+        coreAudioRemoved: true,
+        approvedAudio: [...options.approvedAudio].sort(),
+      },
     },
     manifestSha256,
     licenseReferences: options.licenseReferences,
@@ -259,44 +315,22 @@ async function main(): Promise<void> {
     scale: options.scale,
     position: options.position,
     interactions: [{ area: 'head', motionGroup: 'smile01', lines: ['你好，很高兴见到你。'] }],
-    provenancePath: `src/data/live2d/provenance/${manifest.releaseId}.json`,
+    provenancePath: `provenance/${manifest.releaseId}.json`,
   };
-  const catalog = live2dCatalogSchema.parse(JSON.parse(await readFile(catalogPath, 'utf8')));
-  const nextCatalog = upsertCatalog(catalog, options, costume);
 
   if (!options.dryRun) {
-    await publishObjects(
-      createHfS3Client(getPublisherConfig(), { attempts: 5, transferTimeoutMs: 120_000 }),
-      manifest.releaseId,
-      transformedFiles,
-      manifest.objects,
-    );
-    await mkdir(manifestDirectory, { recursive: true });
-    await mkdir(provenanceDirectory, { recursive: true });
-    await writeFile(path.join(manifestDirectory, `${manifest.releaseId}.json`), manifestText, { flag: 'wx' }).catch(
-      async (error) => {
-        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-        const existing = live2dPackageManifestSchema.parse(
-          JSON.parse(await readFile(path.join(manifestDirectory, `${manifest.releaseId}.json`), 'utf8')),
-        );
-        assertLive2DManifestReleaseId(existing);
-        if (!isDeepStrictEqual(existing, manifest)) {
-          throw new Error(`Existing manifest for release ${manifest.releaseId} conflicts with immutable package metadata.`);
-        }
-      },
-    );
+    const client = createHfS3Client(getPublisherConfig(), {
+      attempts: 5,
+      transferTimeoutMs: 120_000,
+    });
+    await publishObjects(client, manifest.releaseId, transformedFiles, manifest.objects);
+    await publishImmutableJson(client, `manifests/${manifest.releaseId}.json`, manifestText);
     const provenanceText = `${JSON.stringify(provenance, null, 2)}\n`;
-    await writeFile(path.join(provenanceDirectory, `${manifest.releaseId}.json`), provenanceText, { flag: 'wx' }).catch(
-      async (error) => {
-        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-        const existing = live2dProvenanceSchema.parse(
-          JSON.parse(await readFile(path.join(provenanceDirectory, `${manifest.releaseId}.json`), 'utf8')),
-        );
-        assertImmutableProvenanceMatches(existing, provenance);
-      },
-    );
-    // --replace 只更新可变 catalog 指针，必须等远端对象和两份不可变记录全部验证完成。
-    await writeFile(catalogPath, `${JSON.stringify(nextCatalog, null, 2)}\n`);
+    await publishImmutableJson(client, `provenance/${manifest.releaseId}.json`, provenanceText, (value) => {
+      assertImmutableProvenanceMatches(live2dProvenanceSchema.parse(value), provenance);
+    });
+    // catalog 是唯一可变指针，必须在 release 与两份不可变元数据全部验证后以 CAS 更新。
+    await updateRemoteCatalog(client, options, costume);
   }
   console.log(
     `${options.dryRun ? 'Validated' : 'Published'} ${options.characterId}/${options.costumeId}: ${manifest.releaseId}`,

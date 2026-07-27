@@ -1,6 +1,8 @@
 import { live2dEnabled } from '@constants/site-config';
+import { resolveLive2DAssetWithManifest } from '@lib/live2d/asset-registry';
 import { createLive2DAssetRouteHandler } from '@lib/live2d/asset-route';
 import { createLive2DAssetOriginReader, getLive2DReadS3Config } from '@lib/live2d/assets';
+import { createLive2DRemoteMetadataStore } from '@lib/live2d/metadata-store';
 import type { APIRoute } from 'astro';
 
 export const prerender = false;
@@ -9,6 +11,7 @@ const originReader = createLive2DAssetOriginReader({
   // 凭证只在 allowlist 校验通过后的首次 GET 中读取，不进入客户端 bundle 或错误日志。
   config: () => getLive2DReadS3Config(process.env),
 });
+const metadata = createLive2DRemoteMetadataStore(() => getLive2DReadS3Config(process.env));
 
 type Live2DAssetDeliveryMode = 'auto' | 'enabled' | 'disabled';
 
@@ -21,7 +24,9 @@ function isLive2DAssetDeliveryEnabled(): boolean {
   return live2dEnabled;
 }
 
-const handle = createLive2DAssetRouteHandler(originReader, isLive2DAssetDeliveryEnabled);
+const handle = createLive2DAssetRouteHandler(originReader, isLive2DAssetDeliveryEnabled, (path) =>
+  resolveLive2DAssetWithManifest(path, metadata.getManifest),
+);
 
 const route: APIRoute = ({ params, request }) => handle(request, params.path);
 

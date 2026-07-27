@@ -1,13 +1,17 @@
 import { createHfS3PresignedUrl, type HfS3Config } from '../hf-s3';
 import type { Live2DAssetDescriptor } from './asset-registry';
 
-export type { Live2DAssetDescriptor, Live2DAssetPathErrorCode } from './asset-registry';
+export type {
+  Live2DAssetDescriptor,
+  Live2DAssetPathErrorCode,
+} from './asset-registry';
 export {
   getLive2DPackageManifest,
   LIVE2D_MAX_ASSET_BYTES,
   Live2DAssetPathError,
   normalizeLive2DAssetKey,
   resolveLive2DAsset,
+  resolveLive2DAssetWithManifest,
   resolveLive2DPackageAsset,
 } from './asset-registry';
 
@@ -141,7 +145,10 @@ function responseWithTransferDeadline(
 function createConcurrencyGate(
   limit: number,
   maxQueued: number,
-): { acquire: (signal?: AbortSignal) => Promise<() => void>; readonly pendingCount: number } {
+): {
+  acquire: (signal?: AbortSignal) => Promise<() => void>;
+  readonly pendingCount: number;
+} {
   let active = 0;
   const queue: Array<{
     resolve: () => void;

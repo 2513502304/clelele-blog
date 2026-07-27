@@ -1,3 +1,4 @@
+import type { Live2DAssetDescriptor } from './asset-registry';
 import {
   createLive2DAssetHeaders,
   type Live2DAssetOriginReader,
@@ -25,20 +26,29 @@ function errorResponse(error: unknown): Response {
   return new Response('Failed to load Live2D asset.', { status: 500 });
 }
 
-/** 与框架无关的路由核心；Astro 入口负责注入凭证读取器和独立回源开关。 */
-export function createLive2DAssetRouteHandler(reader: Live2DAssetOriginReader, enabled: () => boolean = () => true) {
+/** 与框架无关的路由核心；Astro 入口负责注入凭证读取器、manifest 解析器和独立回源开关。 */
+export function createLive2DAssetRouteHandler(
+  reader: Live2DAssetOriginReader,
+  enabled: () => boolean = () => true,
+  resolve: (path: string) => Live2DAssetDescriptor | Promise<Live2DAssetDescriptor> = resolveLive2DAsset,
+) {
   return async (request: Request, rawPath: string | undefined): Promise<Response> => {
     if (!enabled()) return new Response('Live2D asset not found.', { status: 404 });
     if (request.method !== 'GET' && request.method !== 'HEAD') {
-      return new Response('Method not allowed.', { status: 405, headers: { allow: 'GET, HEAD' } });
+      return new Response('Method not allowed.', {
+        status: 405,
+        headers: { allow: 'GET, HEAD' },
+      });
     }
     const url = new URL(request.url);
     if (url.search || forbiddenRequestHeaders.some((header) => request.headers.has(header))) {
-      return new Response('Unsupported Live2D asset request variant.', { status: 400 });
+      return new Response('Unsupported Live2D asset request variant.', {
+        status: 400,
+      });
     }
 
     try {
-      const asset = resolveLive2DAsset(rawPath ?? '');
+      const asset = await resolve(rawPath ?? '');
       const headers = createLive2DAssetHeaders(asset);
       if (request.method === 'HEAD') {
         await reader.verify(asset, request.signal);

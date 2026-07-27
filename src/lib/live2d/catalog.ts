@@ -3,9 +3,31 @@ import { type Live2DCatalog, type Live2DCostume, type Live2DPackageManifest, liv
 
 export const live2dCatalog: Live2DCatalog = live2dCatalogSchema.parse(catalogData);
 
-export function findLive2DCostume(characterId: string, costumeId: string): Live2DCostume | null {
-  const character = live2dCatalog.characters.find((candidate) => candidate.id === characterId);
+export function findLive2DCostume(
+  characterId: string,
+  costumeId: string,
+  catalog: Live2DCatalog = live2dCatalog,
+): Live2DCostume | null {
+  const character = catalog.characters.find((candidate) => candidate.id === characterId);
   return character?.costumes.find((candidate) => candidate.id === costumeId) ?? null;
+}
+
+export function getLive2DCatalogSelections(catalog: Live2DCatalog): Array<{ characterId: string; costumeId: string }> {
+  return catalog.characters.flatMap((character) =>
+    character.costumes.map((costume) => ({
+      characterId: character.id,
+      costumeId: costume.id,
+    })),
+  );
+}
+
+export async function fetchLive2DCatalog(fetchImpl: typeof fetch = fetch, signal?: AbortSignal): Promise<Live2DCatalog> {
+  const response = await fetchImpl('/api/live2d/catalog', {
+    headers: { accept: 'application/json' },
+    signal,
+  });
+  if (!response.ok) throw new Error(`Live2D catalog request failed with status ${response.status}.`);
+  return live2dCatalogSchema.parse(await response.json());
 }
 
 /** Ensures catalog metadata cannot drift from the immutable package manifest it names. */
