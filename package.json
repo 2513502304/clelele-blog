@@ -90,6 +90,7 @@
     "foxact": "^0.2.49",
     "hast-util-to-html": "^9.0.5",
     "js-yaml": "^4.1.1",
+    "l2d": "2.1.1",
     "marked": "^17.0.1",
     "mermaid": "^11.12.2",
     "metascraper": "^5.49.7",
@@ -136,6 +137,7 @@
     "@iconify/react": "^5.2.1",
     "@inkjs/ui": "^2.0.0",
     "@lint-md/cli": "^2.0.0",
+    "@playwright/test": "1.62.0",
     "@rollup/plugin-yaml": "^4.1.2",
     "@tailwindcss/container-queries": "^0.1.1",
     "@tailwindcss/typography": "^0.5.19",
@@ -173,5 +175,10 @@
     "*.{md,mdx}": [
       "lint-md --fix"
     ]
+  },
+  "pnpm": {
+    "patchedDependencies": {
+      "l2d@2.1.1": "patches/l2d@2.1.1.patch"
+    }
   }
 }
