@@ -334,7 +334,10 @@ export class Live2DRenderer {
     }
   }
 
-  /** Releases model resources while hidden; resume reloads the latest immutable package from cache. */
+  /**
+   * Explicit memory-pressure escape hatch. Normal visibility changes use setPlaybackPaused() so
+   * the persistent widget keeps its decoded model and WebGL state across routes and modals.
+   */
   suspend(): void {
     if (this.suspended || this.destroyed) return;
     this.suspended = true;

@@ -307,13 +307,10 @@ function Live2DWidgetContent({
 
   useEffect(() => {
     const syncRendererActivity = () => {
-      const shouldSuspend = document.hidden || state.preferences.hidden || state.avoidanceHidden;
-      if (shouldSuspend) {
-        rendererRef.current?.suspend();
-        return;
-      }
-      rendererRef.current?.resume();
-      rendererRef.current?.setPlaybackPaused(userPaused);
+      const temporarilyFrozen = document.hidden || state.preferences.hidden || state.avoidanceHidden;
+      // 智能避让和浏览器后台只冻结现有 WebGL 实例。suspend() 会销毁 core，恢复时即使
+      // 命中 HTTP 缓存也必须重新解析 moc/纹理，造成用户看到重复 loading。
+      rendererRef.current?.setPlaybackPaused(temporarilyFrozen || userPaused);
     };
     syncRendererActivity();
     document.addEventListener('visibilitychange', syncRendererActivity);

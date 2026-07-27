@@ -42,3 +42,14 @@ export function live2dRequests(page: Page): string[] {
   });
   return requests;
 }
+
+/** Optional motion/audio warming may continue across navigation; only these files prove a core model reload. */
+export function isLive2DCoreModelRequest(rawUrl: string): boolean {
+  const pathname = new URL(rawUrl).pathname;
+  return (
+    isLive2DTransferUrl(rawUrl) &&
+    !pathname.includes('/data/motions/') &&
+    !pathname.includes('/audio/') &&
+    !pathname.endsWith('/dialogues.json')
+  );
+}

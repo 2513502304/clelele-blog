@@ -1,11 +1,11 @@
 import { expect, test } from '@playwright/test';
-import { live2dRequests, waitForLive2DReady } from './helpers';
+import { isLive2DCoreModelRequest, live2dRequests, waitForLive2DReady } from './helpers';
 
 test('Astro navigation preserves one widget and reuses browser-cached immutable assets', async ({ page }) => {
   const requests = live2dRequests(page);
   await page.goto('/');
   await waitForLive2DReady(page);
-  const initialRequests = requests.length;
+  const initialCoreRequests = requests.filter(isLive2DCoreModelRequest).length;
   await page.locator('#site-header').getByRole('link', { name: '关于', exact: true }).click();
   await expect(page).toHaveURL(/\/about$/);
   await waitForLive2DReady(page);
@@ -13,5 +13,5 @@ test('Astro navigation preserves one widget and reuses browser-cached immutable 
   await expect(page).toHaveURL(/\/$/);
   await waitForLive2DReady(page);
   await expect(page.locator('.live2d-root')).toHaveCount(1);
-  expect(requests.length).toBeLessThanOrEqual(initialRequests + 2);
+  expect(requests.filter(isLive2DCoreModelRequest)).toHaveLength(initialCoreRequests);
 });

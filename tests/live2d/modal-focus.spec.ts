@@ -1,5 +1,5 @@
 import { expect, type Page, test } from '@playwright/test';
-import { waitForLive2DReady } from './helpers';
+import { isLive2DCoreModelRequest, live2dRequests, waitForLive2DReady } from './helpers';
 
 type ImmersiveModal = 'code' | 'image' | 'diagram';
 
@@ -24,7 +24,12 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('smart policy hides for each immersive modal and restores without a duplicate island', async ({ page }) => {
+  const requests = live2dRequests(page);
+  await page.reload();
+  await waitForLive2DReady(page);
+  const coreRequestCount = () => requests.filter(isLive2DCoreModelRequest).length;
   for (const modal of immersiveModals) {
+    const requestsBeforeModal = coreRequestCount();
     await openImmersiveModal(page, modal);
     await expect(page.getByRole('dialog')).toBeVisible();
     await expect(page.locator('.live2d-root')).not.toBeVisible();
@@ -32,6 +37,7 @@ test('smart policy hides for each immersive modal and restores without a duplica
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await waitForLive2DReady(page);
     await expect(page.locator('.live2d-root')).toHaveCount(1);
+    expect(coreRequestCount()).toBe(requestsBeforeModal);
   }
 });
 
