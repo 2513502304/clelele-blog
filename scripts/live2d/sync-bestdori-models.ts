@@ -365,6 +365,11 @@ export function cardDialogueText(card: BestdoriCardDetail, summary: SourceIndex[
   );
 }
 
+/** Bestdori only exposes a matching gacha MP3 when the card has localized gacha dialogue text. */
+export function cardHasVoiceText(card: BestdoriCardDetail): boolean {
+  return Boolean(card.gachaText?.[0]?.trim() || card.gachaText?.[1]?.trim());
+}
+
 function modelFallbackInteractions(
   model: string,
   costumeEntry: [string, SourceIndex['costumes'][string]] | undefined,
@@ -406,7 +411,7 @@ async function buildAndPublishCharacterVoice(
       if (!text) return;
       const resourceSetName = card.resourceSetName ?? summary?.resourceSetName;
       const relativeAudio = `audio/gacha-${cardId}.mp3`;
-      if (!options.skipAudio && resourceSetName) {
+      if (!options.skipAudio && resourceSetName && cardHasVoiceText(card)) {
         const destination = path.join(packageRoot, relativeAudio);
         if (
           (await fileExists(destination)) ||
@@ -417,9 +422,7 @@ async function buildAndPublishCharacterVoice(
               true,
             );
             if (!response) return false;
-            if (response.headers.get('content-type')?.startsWith('text/html')) {
-              throw new Error(`Bestdori returned HTML for character voice ${cardId}.`);
-            }
+            if (response.headers.get('content-type')?.startsWith('text/html')) return false;
             await mkdir(path.dirname(destination), { recursive: true });
             await writeFile(destination, new Uint8Array(await response.arrayBuffer()));
             return true;
