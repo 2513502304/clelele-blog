@@ -12,9 +12,9 @@
         {
           "id": "default",
           "label": {
-            "zh": "默认",
-            "en": "Default",
-            "ja": "デフォルト"
+            "zh": "开始吧，一辈子的约定",
+            "en": "Let's Start a Lifetime",
+            "ja": "一生を、はじめよう"
           },
           "releaseId": "9e95d66201f07e339bd5542b1dd0d67ae1bd0b0f9b14a7335ca0bad6bd5916ad",
           "entryPath": "releases/9e95d66201f07e339bd5542b1dd0d67ae1bd0b0f9b14a7335ca0bad6bd5916ad/model.json",
@@ -38,9 +38,9 @@
         {
           "id": "live-sr-01",
           "label": {
-            "zh": "SR 服装",
-            "en": "SR Costume",
-            "ja": "SR衣装"
+            "zh": "要搞好关系的是……",
+            "en": "Someone Who Gets Along Well With",
+            "ja": "仲良くする相手は…"
           },
           "releaseId": "63efa2f7902818e27ad2c3ec71b3cbcc6c83ee4b4c8c4176b2e7f764422f3e85",
           "entryPath": "releases/63efa2f7902818e27ad2c3ec71b3cbcc6c83ee4b4c8c4176b2e7f764422f3e85/model.json",
@@ -74,9 +74,9 @@
         {
           "id": "default",
           "label": {
-            "zh": "默认",
-            "en": "Default",
-            "ja": "デフォルト"
+            "zh": "开始吧，一辈子的约定",
+            "en": "Let's Start a Lifetime",
+            "ja": "一生を、はじめよう"
           },
           "releaseId": "c282ced11b66f7f30488ba356deab4bffa3e27a734478b929093140b69ffe349",
           "entryPath": "releases/c282ced11b66f7f30488ba356deab4bffa3e27a734478b929093140b69ffe349/model.json",
@@ -100,9 +100,9 @@
         {
           "id": "live-sr-01",
           "label": {
-            "zh": "SR 服装",
-            "en": "SR Costume",
-            "ja": "SR衣装"
+            "zh": "不可思议的小动物",
+            "en": "Mysterious Little Animal",
+            "ja": "不思議な小動物"
           },
           "releaseId": "d5628c18018a77031a8df09e24002c5b76c3de65378464a755b75a52327b56a0",
           "entryPath": "releases/d5628c18018a77031a8df09e24002c5b76c3de65378464a755b75a52327b56a0/model.json",
