@@ -262,6 +262,47 @@ test('selected-package prefetch is bounded and later renderer reads reuse memory
   assert.equal(fetchCount, manifest.objects.length);
 });
 
+test('selected-package prefetch retries only the object whose response body was interrupted', async () => {
+  const manifest = getLive2DPackageManifest(releaseId);
+  assert.ok(manifest);
+  const interruptedKey = resolveLive2DPackageAsset(releaseId, manifest.objects[0].path).key;
+  const attemptsByKey = new Map<string, number>();
+  const hook = createLive2DAssetRequestHook({
+    releaseId,
+    directBaseUrl: new URL('https://direct.example/bestdori/'),
+    fallbackBaseUrl: new URL('https://blog.example/api/live2d-assets/'),
+    directEnabled: false,
+    prefetchAttempts: 2,
+    prefetchRetryDelay: async () => undefined,
+    fetch: async (input) => {
+      const key = decodeURIComponent(new URL(String(input)).pathname.split('/api/live2d-assets/')[1] ?? '');
+      const requestedAsset = resolveLive2DAsset(key);
+      const attempt = (attemptsByKey.get(key) ?? 0) + 1;
+      attemptsByKey.set(key, attempt);
+      if (key === interruptedKey && attempt === 1) {
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.error(new TypeError('origin body interrupted'));
+            },
+          }),
+          { headers: { 'content-length': String(requestedAsset.size), 'content-type': requestedAsset.mime } },
+        );
+      }
+      return assetResponse(new Uint8Array(requestedAsset.size), {
+        headers: { 'content-length': String(requestedAsset.size), 'content-type': requestedAsset.mime },
+      });
+    },
+  });
+
+  await hook.prefetch(new AbortController().signal);
+  assert.equal(attemptsByKey.get(interruptedKey), 2);
+  assert.equal(
+    [...attemptsByKey.values()].reduce((total, attempts) => total + attempts, 0),
+    manifest.objects.length + 1,
+  );
+});
+
 test('origin retries transient failures with a fresh signal and streams exact bytes', async () => {
   const signals: AbortSignal[] = [];
   const redirects: RequestRedirect[] = [];

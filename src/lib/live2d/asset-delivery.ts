@@ -115,6 +115,8 @@ export interface CreateLive2DAssetRequestHookOptions {
   directTimeoutMs?: number;
   circuitBreaker?: Live2DAssetSessionCircuitBreaker;
   prefetchConcurrency?: number;
+  prefetchAttempts?: number;
+  prefetchRetryDelay?: (attempt: number) => Promise<void>;
 }
 
 export interface Live2DAssetRequestHook {
@@ -128,6 +130,10 @@ export function createLive2DAssetRequestHook(options: CreateLive2DAssetRequestHo
   const fetchImpl = options.fetch ?? fetch;
   const circuit = options.circuitBreaker ?? live2DAssetSessionCircuitBreaker;
   const directTimeoutMs = options.directTimeoutMs ?? 10_000;
+  const prefetchAttempts = Math.max(1, options.prefetchAttempts ?? 3);
+  const prefetchRetryDelay =
+    options.prefetchRetryDelay ??
+    ((attempt: number) => new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt + Math.random() * 150)));
   const cachedBytes = new Map<string, Promise<Uint8Array>>();
 
   const fetchAsset = async (asset: Live2DAssetDescriptor, requestSignal: AbortSignal): Promise<Response> => {
@@ -209,12 +215,25 @@ export function createLive2DAssetRequestHook(options: CreateLive2DAssetRequestHo
         return;
       }
       const pending = (async () => {
-        const response = await fetchAsset(asset, controller.signal);
-        const buffer = await response.arrayBuffer();
-        if (buffer.byteLength !== asset.size) {
-          throw new Live2DAssetDeliveryError('integrity', 'Live2D prefetched asset size does not match its manifest.');
+        let lastError: unknown;
+        for (let attempt = 0; attempt < prefetchAttempts; attempt += 1) {
+          try {
+            const response = await fetchAsset(asset, controller.signal);
+            const buffer = await response.arrayBuffer();
+            if (buffer.byteLength !== asset.size) {
+              throw new Live2DAssetDeliveryError('integrity', 'Live2D prefetched asset size does not match its manifest.');
+            }
+            return new Uint8Array(buffer);
+          } catch (error) {
+            lastError = error;
+            if (controller.signal.aborted) throw controller.signal.reason ?? error;
+            const permanent =
+              error instanceof Live2DAssetDeliveryError && (error.reason === 'aborted' || error.reason === 'integrity');
+            if (permanent || attempt + 1 >= prefetchAttempts) throw error;
+            await prefetchRetryDelay(attempt);
+          }
         }
-        return new Uint8Array(buffer);
+        throw lastError;
       })();
       cachedBytes.set(asset.key, pending);
       try {

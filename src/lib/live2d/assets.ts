@@ -13,7 +13,9 @@ export {
 
 const IMMUTABLE_CACHE_CONTROL = 'public, max-age=31536000, immutable';
 const DEFAULT_ORIGIN_ATTEMPTS = 3;
-const DEFAULT_ORIGIN_TIMEOUT_MS = 60_000;
+// A single object must fail early enough for the existing retry loop to recover before the
+// renderer's whole-package deadline. Published package members are capped and currently < 1 MB.
+const DEFAULT_ORIGIN_TIMEOUT_MS = 20_000;
 const DEFAULT_MAX_CONCURRENT_READS = 6;
 const DEFAULT_MAX_QUEUED_READS = 24;
 

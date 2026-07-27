@@ -75,7 +75,9 @@ export class Live2DRenderer {
   private lastResources: Live2DRendererLoadResources | undefined;
 
   constructor(options: Live2DRendererOptions) {
-    this.options = { ...options, timeoutMs: options.timeoutMs ?? 30_000 };
+    // This outer deadline covers a cold package prefetch plus at least one timed-out origin
+    // attempt and retry; it must remain longer than the server-side per-object deadline.
+    this.options = { ...options, timeoutMs: options.timeoutMs ?? 75_000 };
     this.installResizeObserver();
     this.options.canvas.addEventListener('webglcontextlost', this.handleContextLost);
     this.options.canvas.addEventListener('webglcontextrestored', this.handleContextRestored);

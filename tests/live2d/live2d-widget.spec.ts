@@ -2,6 +2,9 @@ import { expect, test } from '@playwright/test';
 import { expectNonBlankCanvas, live2dRequests, releaseIds, waitForLive2DReady } from './helpers';
 
 test('desktop defers the real model, renders nonblank pixels, and switches all four releases', async ({ page }) => {
+  // This release gate intentionally cold-loads four remote packages in sequence; each individual
+  // generation keeps its normal 90-second readiness assertion, while the aggregate gets headroom.
+  test.setTimeout(300_000);
   const requests = live2dRequests(page);
   await page.goto('/');
   await expect(page.locator('main')).toBeVisible();
