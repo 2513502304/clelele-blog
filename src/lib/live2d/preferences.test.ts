@@ -41,7 +41,7 @@ describe('Live2D preferences', () => {
       displayPolicy: 'unknown',
     });
     assert.deepEqual(partial.selection, { characterId: 'tomori', costumeId: 'default' });
-    assert.deepEqual(partial.placement, { kind: 'sidebar' });
+    assert.deepEqual(partial.placement, { kind: 'preset', preset: 'bottom-left' });
     assert.equal(partial.hidden, false);
     assert.equal(partial.audioEnabled, true);
     assert.equal(partial.displayPolicy, 'smart');

@@ -1,41 +1,45 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { ResourceRequestHook } from 'l2d';
 import { type Live2DCore, Live2DRenderer } from './renderer';
 
 class FakeCore implements Live2DCore {
-  readonly loads: Array<{ path: string; signal?: AbortSignal }> = [];
+  readonly loads: string[] = [];
   active = 0;
   maxActive = 0;
   destroyed = 0;
+  ready = true;
   resolveCurrent: (() => void) | null = null;
-  tap: ((area: string) => void) | null = null;
+  private readonly listeners = new Map<'tap' | 'loaded', Array<(value?: string) => void>>();
 
-  async load(options: { path: string; signal?: AbortSignal }): Promise<void> {
-    this.loads.push(options);
+  async load({ path }: { path: string }): Promise<void> {
+    this.loads.push(path);
     this.active += 1;
     this.maxActive = Math.max(this.maxActive, this.active);
     try {
-      await new Promise<void>((resolve, reject) => {
+      await new Promise<void>((resolve) => {
         this.resolveCurrent = resolve;
-        options.signal?.addEventListener('abort', () => reject(options.signal?.reason), { once: true });
       });
+      if (this.ready) this.emit('loaded');
     } finally {
       this.active -= 1;
     }
   }
 
   resize() {}
-  suspend() {}
-  resume() {}
   destroy() {
     this.destroyed += 1;
   }
+  getParams() {
+    return this.ready ? [{}] : [];
+  }
   playMotion() {}
   setExpression() {}
-  on(_event: 'tap', listener: (areaName: string) => void) {
-    this.tap = listener;
+  on(event: 'tap' | 'loaded', listener: (value?: string) => void) {
+    this.listeners.set(event, [...(this.listeners.get(event) ?? []), listener]);
     return this;
+  }
+  private emit(event: 'tap' | 'loaded', value?: string) {
+    for (const listener of this.listeners.get(event) ?? []) listener(value);
   }
 }
 
@@ -45,25 +49,20 @@ const selection = (key: string) => ({
   scale: 1,
   position: [0, 0] as [number, number],
 });
-const request = (async () => new Response()) as ResourceRequestHook;
 const canvas = () => new EventTarget() as HTMLCanvasElement;
 
-test('serializes mutations and keeps only the latest queued selection', async () => {
+test('serializes upstream mutations and skips superseded queued selections', async () => {
   const core = new FakeCore();
-  const renderer = new Live2DRenderer({
-    canvas: canvas(),
-    request,
-    ownsInput: () => true,
-    createCore: async () => core,
-  });
+  const renderer = new Live2DRenderer({ canvas: canvas(), createCore: async () => core });
   const first = renderer.load(selection('first'));
   await new Promise((resolve) => setImmediate(resolve));
   const second = renderer.load(selection('second'));
   const third = renderer.load(selection('third'));
+  core.resolveCurrent?.();
   await assert.rejects(first, { name: 'AbortError' });
   await assert.rejects(second, { name: 'AbortError' });
   await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(core.loads.at(-1)?.path, '/models/third/model.json');
+  assert.deepEqual(core.loads, ['/models/first/model.json', '/models/third/model.json']);
   core.resolveCurrent?.();
   await third;
   assert.equal(core.maxActive, 1);
@@ -71,45 +70,35 @@ test('serializes mutations and keeps only the latest queued selection', async ()
   renderer.destroy();
 });
 
-test('times out each attempt independently and permits a later retry', async () => {
+test('treats an upstream silent initialization failure as recoverable', async () => {
   const core = new FakeCore();
-  const renderer = new Live2DRenderer({
-    canvas: canvas(),
-    request,
-    ownsInput: () => true,
-    createCore: async () => core,
-    timeoutMs: 10,
-  });
-  await assert.rejects(renderer.load(selection('slow')), { name: 'AbortError' });
-  assert.equal(renderer.getPhase(), 'recoverable');
-  const retry = renderer.load(selection('retry'));
+  core.ready = false;
+  const renderer = new Live2DRenderer({ canvas: canvas(), createCore: async () => core });
+  const loading = renderer.load(selection('broken'));
   await new Promise((resolve) => setImmediate(resolve));
   core.resolveCurrent?.();
-  await retry;
-  assert.equal(renderer.getPhase(), 'ready');
+  await assert.rejects(loading, /did not finish loading/);
+  assert.equal(renderer.getPhase(), 'recoverable');
   renderer.destroy();
 });
 
-test('prepares package bytes inside the same generation timeout before core loading', async () => {
+test('suspend releases the model and resume reloads the latest selection', async () => {
   const core = new FakeCore();
-  const order: string[] = [];
-  const renderer = new Live2DRenderer({
-    canvas: canvas(),
-    request,
-    ownsInput: () => true,
-    prepare: async (signal) => {
-      assert.equal(signal.aborted, false);
-      order.push('prepare');
-    },
-    createCore: async () => {
-      order.push('core');
-      return core;
-    },
-  });
-  const loading = renderer.load(selection('prepared'));
+  const renderer = new Live2DRenderer({ canvas: canvas(), createCore: async () => core });
+  const initial = renderer.load(selection('one'));
   await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(order, ['prepare', 'core']);
   core.resolveCurrent?.();
-  await loading;
+  await initial;
+
+  renderer.suspend();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(renderer.getPhase(), 'dormant');
+  assert.equal(core.destroyed, 1);
+  renderer.resume();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(core.loads, ['/models/one/model.json', '/models/one/model.json']);
+  core.resolveCurrent?.();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(renderer.getPhase(), 'ready');
   renderer.destroy();
 });

@@ -3,7 +3,6 @@ import { SeriesNavigation } from '@components/post/SeriesNavigation';
 import { SeriesPostList } from '@components/post/SeriesPostList';
 import HomeSiderSegmented from '@components/ui/segmented/HomeSiderSegmented';
 import { HomeSiderSegmentType, HomeSiderType } from '@constants/enum';
-import { live2dEnabled } from '@constants/site-config';
 import { getPostSlug } from '@lib/content/locale';
 import { getAdjacentSeriesPosts, getSeriesPosts } from '@lib/content/posts';
 import { toPostRef, toPostRefs } from '@lib/content/transforms';
@@ -94,7 +93,6 @@ const nextPost = adjacentPosts.nextPost ? toPostRef(adjacentPosts.nextPost) : nu
   }
 
   <ScrollProgress client:only="react" className="mt-auto w-full rounded-full pt-4" />
-  {live2dEnabled && !isDrawer && <div data-live2d-sidebar-anchor aria-hidden="true" class="pointer-events-none h-64 shrink-0" />}
 </div>
 
 <script>

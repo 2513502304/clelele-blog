@@ -131,12 +131,10 @@ function Live2DWidgetContent({
   useEffect(() => {
     const update = () => {
       const root = rootRef.current;
-      const anchor = document.querySelector<HTMLElement>('[data-live2d-sidebar-anchor]');
       const exclusions = [...document.querySelectorAll<HTMLElement>('[data-live2d-exclusion]')].map((node) => {
         const rect = node.getBoundingClientRect();
         return { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
       });
-      const anchorRect = anchor?.getBoundingClientRect();
       const mobile = window.innerWidth <= 768;
       live2dActions.setGeometry({
         viewport: { width: window.innerWidth, height: window.innerHeight },
@@ -144,9 +142,7 @@ function Live2DWidgetContent({
           width: root?.offsetWidth || (mobile ? 192 : 280),
           height: root?.offsetHeight || (mobile ? 300 : 390),
         },
-        sidebarAnchor: anchorRect
-          ? { x: anchorRect.left, y: anchorRect.top, width: anchorRect.width, height: anchorRect.height }
-          : null,
+        sidebarAnchor: null,
         exclusionZones: exclusions,
         mobile,
       });
@@ -201,15 +197,14 @@ function Live2DWidgetContent({
 
   useEffect(() => {
     const syncRendererActivity = () => {
-      const shouldPause =
-        document.hidden || state.preferences.hidden || state.avoidanceHidden || state.rendererStatus === 'recoverable';
+      const shouldPause = document.hidden || state.preferences.hidden || state.avoidanceHidden;
       if (shouldPause) rendererRef.current?.suspend();
       else rendererRef.current?.resume();
     };
     syncRendererActivity();
     document.addEventListener('visibilitychange', syncRendererActivity);
     return () => document.removeEventListener('visibilitychange', syncRendererActivity);
-  }, [state.avoidanceHidden, state.preferences.hidden, state.rendererStatus]);
+  }, [state.avoidanceHidden, state.preferences.hidden]);
 
   useEffect(() => {
     if (!state.preferences.audioEnabled) stopAudio();
@@ -302,7 +297,6 @@ function Live2DWidgetContent({
     },
     [costume, state.preferences.audioEnabled, state.rendererStatus, stopAudio],
   );
-  const getInteractionRoot = useCallback(() => surfaceRef.current, []);
   const keepRenderer = useCallback((renderer: Live2DRenderer | null) => {
     rendererRef.current = renderer;
   }, []);
@@ -406,10 +400,8 @@ function Live2DWidgetContent({
           <Suspense fallback={null}>
             <Live2DCanvas
               selection={rendererSelection}
-              releaseId={costume.releaseId}
               active
               retryNonce={retryNonce}
-              getInteractionRoot={getInteractionRoot}
               onPhase={handlePhase}
               onTap={interact}
               onRenderer={keepRenderer}

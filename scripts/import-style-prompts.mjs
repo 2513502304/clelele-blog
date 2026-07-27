@@ -351,6 +351,9 @@ npm exec --yes --package=node@24 --package=vercel -- vercel env pull .env.local 
 set -a
 source .env.local
 set +a
+# 本地开发可复用 Gallery 的 HF 凭证读取 Live2D；Vercel 仍应配置独立只读凭证。
+export LIVE2D_HF_S3_READ_ACCESS_KEY_ID="${LIVE2D_HF_S3_READ_ACCESS_KEY_ID:-$HF_S3_ACCESS_KEY_ID}"
+export LIVE2D_HF_S3_READ_SECRET_ACCESS_KEY="${LIVE2D_HF_S3_READ_SECRET_ACCESS_KEY:-$HF_S3_SECRET_ACCESS_KEY}"
 NODE_USE_ENV_PROXY=1 \
 NODE_OPTIONS=--use-env-proxy \
 HTTP_PROXY=http://127.0.0.1:7897 \

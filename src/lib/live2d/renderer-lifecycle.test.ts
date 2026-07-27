@@ -1,36 +1,43 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { ResourceRequestHook } from 'l2d';
 import { type Live2DCore, Live2DRenderer } from './renderer';
 
-const request = (async () => new Response()) as ResourceRequestHook;
+function createCore(overrides: Partial<Live2DCore> = {}): Live2DCore {
+  const listeners = new Map<'tap' | 'loaded', Array<(value?: string) => void>>();
+  return {
+    async load() {
+      for (const listener of listeners.get('loaded') ?? []) listener();
+    },
+    resize() {},
+    destroy() {},
+    getParams() {
+      return [{}];
+    },
+    playMotion() {},
+    setExpression() {},
+    on(event, listener) {
+      listeners.set(event, [...(listeners.get(event) ?? []), listener]);
+      return this;
+    },
+    ...overrides,
+  };
+}
 
 test('destroy is idempotent during an active load and suppresses late readiness', async () => {
   let destroyCount = 0;
   let resolveLoad: (() => void) | undefined;
   const phases: string[] = [];
-  const core: Live2DCore = {
-    load: ({ signal }) =>
-      new Promise<void>((resolve, reject) => {
+  const core = createCore({
+    load: () =>
+      new Promise<void>((resolve) => {
         resolveLoad = resolve;
-        signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
       }),
-    resize() {},
-    suspend() {},
-    resume() {},
-    destroy() {
+    destroy: () => {
       destroyCount += 1;
     },
-    playMotion() {},
-    setExpression() {},
-    on() {
-      return this;
-    },
-  };
+  });
   const renderer = new Live2DRenderer({
     canvas: new EventTarget() as HTMLCanvasElement,
-    request,
-    ownsInput: () => true,
     createCore: async () => core,
     onPhase: (phase) => phases.push(phase),
   });
@@ -40,6 +47,7 @@ test('destroy is idempotent during an active load and suppresses late readiness'
   renderer.destroy();
   resolveLoad?.();
   await assert.rejects(loading, { name: 'AbortError' });
+  await new Promise((resolve) => setImmediate(resolve));
   assert.equal(destroyCount, 1);
   assert.equal(renderer.getPhase(), 'destroyed');
   assert.equal(phases.includes('ready'), false);
@@ -48,24 +56,13 @@ test('destroy is idempotent during an active load and suppresses late readiness'
 test('destroys a core that finishes construction after final teardown', async () => {
   let resolveCore: ((core: Live2DCore) => void) | undefined;
   let destroyCount = 0;
-  const core: Live2DCore = {
-    async load() {},
-    resize() {},
-    suspend() {},
-    resume() {},
-    destroy() {
+  const core = createCore({
+    destroy: () => {
       destroyCount += 1;
     },
-    playMotion() {},
-    setExpression() {},
-    on() {
-      return this;
-    },
-  };
+  });
   const renderer = new Live2DRenderer({
     canvas: new EventTarget() as HTMLCanvasElement,
-    request,
-    ownsInput: () => true,
     createCore: () =>
       new Promise((resolve) => {
         resolveCore = resolve;
@@ -81,41 +78,36 @@ test('destroys a core that finishes construction after final teardown', async ()
 
 test('reloads the latest selection after WebGL context restoration', async () => {
   const canvas = new EventTarget() as HTMLCanvasElement;
+  const loadedPaths: string[] = [];
   let createCount = 0;
   let destroyCount = 0;
-  const loadedPaths: string[] = [];
-  const suspendCounts: number[] = [];
-  const resumeCounts: number[] = [];
-  const createCore = async (): Promise<Live2DCore> => {
-    const coreIndex = createCount;
-    createCount += 1;
-    suspendCounts[coreIndex] = 0;
-    resumeCounts[coreIndex] = 0;
-    const restoredCore: Live2DCore = {
-      async load({ path }) {
+  const renderer = new Live2DRenderer({
+    canvas,
+    createCore: async () => {
+      createCount += 1;
+      const core = createCore({
+        async load({ path }) {
+          loadedPaths.push(path);
+          // The helper's loaded listener is private, so expose one successful parameter after load.
+        },
+        destroy() {
+          destroyCount += 1;
+        },
+      });
+      // Override `on` so each load emits success through the registered callback.
+      const listeners = new Map<'tap' | 'loaded', Array<(value?: string) => void>>();
+      core.on = (event, listener) => {
+        listeners.set(event, [...(listeners.get(event) ?? []), listener]);
+        return core;
+      };
+      core.load = async ({ path }) => {
         loadedPaths.push(path);
-      },
-      resize() {},
-      suspend() {
-        suspendCounts[coreIndex] += 1;
-      },
-      resume() {
-        resumeCounts[coreIndex] += 1;
-      },
-      destroy() {
-        destroyCount += 1;
-      },
-      playMotion() {},
-      setExpression() {},
-      on() {
-        return restoredCore;
-      },
-    };
-    return restoredCore;
-  };
-  const renderer = new Live2DRenderer({ canvas, request, ownsInput: () => true, createCore });
+        for (const listener of listeners.get('loaded') ?? []) listener();
+      };
+      return core;
+    },
+  });
   await renderer.load({ key: 'restored', entryPath: '/restored/model.json', scale: 1, position: [0, 0] });
-  renderer.suspend();
   const lost = new Event('webglcontextlost', { cancelable: true });
   canvas.dispatchEvent(lost);
   assert.equal(lost.defaultPrevented, true);
@@ -126,7 +118,5 @@ test('reloads the latest selection after WebGL context restoration', async () =>
   assert.deepEqual(loadedPaths, ['/restored/model.json', '/restored/model.json']);
   assert.equal(createCount, 2);
   assert.equal(destroyCount, 1);
-  assert.deepEqual(suspendCounts, [1, 1]);
-  assert.deepEqual(resumeCounts, [0, 0]);
   renderer.destroy();
 });

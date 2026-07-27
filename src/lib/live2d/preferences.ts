@@ -34,7 +34,7 @@ export type Live2DPreferenceDiagnosticHandler = (diagnostic: Live2DPreferenceDia
 export const DEFAULT_LIVE2D_PREFERENCES: Readonly<Live2DPreferences> = Object.freeze({
   version: LIVE2D_PREFERENCES_VERSION,
   selection: Object.freeze({ characterId: 'chihaya-anon', costumeId: 'default' }),
-  placement: Object.freeze({ kind: 'sidebar' }),
+  placement: Object.freeze({ kind: 'preset', preset: 'bottom-left' }),
   hidden: false,
   audioEnabled: false,
   displayPolicy: 'smart',
@@ -59,7 +59,9 @@ function parseSelection(value: unknown, fallback: Live2DSelection): Live2DSelect
 function parsePlacement(value: unknown, fallback: Live2DPlacement): Live2DPlacement {
   if (!isRecord(value)) return { ...fallback };
 
-  if (value.kind === 'sidebar') return { kind: 'sidebar' };
+  // The first release stored `sidebar`, which required a real layout spacer. Preserve
+  // visitor intent by migrating it to the equivalent floating corner without changing page flow.
+  if (value.kind === 'sidebar') return { kind: 'preset', preset: 'bottom-left' };
   if (
     value.kind === 'preset' &&
     (value.preset === 'bottom-left' || value.preset === 'bottom-center' || value.preset === 'bottom-right')

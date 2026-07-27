@@ -177,10 +177,5 @@
     "*.{md,mdx}": [
       "lint-md --fix"
     ]
-  },
-  "pnpm": {
-    "patchedDependencies": {
-      "l2d@2.1.1": "patches/l2d@2.1.1.patch"
-    }
   }
 }
