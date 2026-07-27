@@ -25,7 +25,7 @@ import { atom, computed } from 'nanostores';
 
 export type Live2DRendererStatus = 'dormant' | 'loading' | 'ready' | 'recoverable';
 export type Live2DLoadIntent = 'none' | 'desktop-idle' | 'visitor';
-export type Live2DPanel = 'picker' | 'settings' | null;
+export type Live2DPanel = 'picker' | 'animations' | 'settings' | null;
 export type Live2DViewportMode = 'desktop' | 'mobile';
 
 export interface Live2DState {
@@ -134,11 +134,8 @@ export function createLive2DStore(options: CreateLive2DStoreOptions = {}) {
     },
 
     setPlacement(placement: Live2DPlacement): void {
-      updatePreferences((current) => ({ ...current, placement: { ...placement } }));
-    },
-
-    restoreToSidebar(): void {
-      actions.setPlacement({ kind: 'sidebar' });
+      const floatingPlacement = placement.kind === 'sidebar' ? ({ kind: 'preset', preset: 'bottom-left' } as const) : placement;
+      updatePreferences((current) => ({ ...current, placement: { ...floatingPlacement } }));
     },
 
     setPreset(preset: Extract<Live2DPlacement, { kind: 'preset' }>['preset']): void {

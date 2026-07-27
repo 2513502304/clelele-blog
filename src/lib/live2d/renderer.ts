@@ -20,6 +20,8 @@ export interface Live2DCore {
   resize(): void;
   destroy(): void;
   getParams(): unknown[];
+  getMotions(): Record<string, string[]>;
+  getExpressions(): string[];
   playMotion(group: string, index?: number, priority?: number): void;
   setExpression(id?: string): void;
   on(event: Live2DCoreEvent, listener: (value?: string) => void): Live2DCore;
@@ -144,6 +146,24 @@ export class Live2DRenderer {
 
   setExpression(id?: string): void {
     if (this.phase === 'ready') this.core?.setExpression(id);
+  }
+
+  getMotions(): Record<string, string[]> {
+    return this.phase === 'ready' ? (this.core?.getMotions() ?? {}) : {};
+  }
+
+  getExpressions(): string[] {
+    return this.phase === 'ready' ? (this.core?.getExpressions() ?? []) : [];
+  }
+
+  /** Captures the transparent canvas before pause or user download without another network read. */
+  captureFrame(): string | null {
+    if (this.phase !== 'ready' || typeof this.options.canvas.toDataURL !== 'function') return null;
+    try {
+      return this.options.canvas.toDataURL('image/png');
+    } catch {
+      return null;
+    }
   }
 
   /** Releases model resources while hidden; resume reloads the latest immutable package from cache. */

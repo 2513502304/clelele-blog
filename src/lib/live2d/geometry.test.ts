@@ -129,6 +129,21 @@ describe('Live2D placement geometry', () => {
     });
   });
 
+  it('keeps legacy sidebar placement visible when no desktop anchor exists', () => {
+    const result = resolveLive2DPlacement({
+      ...baseGeometry,
+      placement: { kind: 'sidebar' },
+      sidebarAnchor: null,
+      viewport: { width: 1280, height: 720 },
+    });
+    assert.deepEqual(result, {
+      mode: 'widget',
+      position: { x: 16, y: 444 },
+      residency: 'preset',
+      fallback: 'none',
+    });
+  });
+
   it('discriminates click interactions from drags and detaches above the threshold', () => {
     assert.equal(classifyLive2DPointerMovement({ x: 10, y: 10 }, { x: 10 + LIVE2D_DRAG_THRESHOLD, y: 10 }), 'interaction');
     assert.equal(classifyLive2DPointerMovement({ x: 10, y: 10 }, { x: 17, y: 10 }), 'drag');

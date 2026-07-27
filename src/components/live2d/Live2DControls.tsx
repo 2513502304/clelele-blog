@@ -6,6 +6,7 @@ interface Props {
     previous: string;
     next: string;
     characters: string;
+    animations: string;
     settings: string;
     hide: string;
     restore: string;
@@ -13,17 +14,17 @@ interface Props {
   onPrevious: () => void;
   onNext: () => void;
   onCharacters: () => void;
+  onAnimations: () => void;
   onSettings: () => void;
   onHide: () => void;
-  onRestore: () => void;
 }
 
 const buttons = [
   ['previous', 'ri:arrow-left-s-line'],
   ['next', 'ri:arrow-right-s-line'],
   ['characters', 'ri:user-smile-line'],
+  ['animations', 'ri:movie-line'],
   ['settings', 'ri:settings-3-line'],
-  ['restore', 'ri:map-pin-line'],
   ['hide', 'ri:eye-off-line'],
 ] as const;
 
@@ -32,9 +33,9 @@ export function Live2DControls(props: Props) {
     previous: props.onPrevious,
     next: props.onNext,
     characters: props.onCharacters,
+    animations: props.onAnimations,
     settings: props.onSettings,
     hide: props.onHide,
-    restore: props.onRestore,
   };
   return (
     <div className="live2d-controls" role="toolbar" aria-label={props.labels.toolbar}>

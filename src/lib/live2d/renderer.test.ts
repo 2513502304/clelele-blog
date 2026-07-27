@@ -32,6 +32,12 @@ class FakeCore implements Live2DCore {
   getParams() {
     return this.ready ? [{}] : [];
   }
+  getMotions() {
+    return { idle: ['idle.mtn'] };
+  }
+  getExpressions() {
+    return ['smile'];
+  }
   playMotion() {}
   setExpression() {}
   on(event: 'tap' | 'loaded', listener: (value?: string) => void) {
@@ -79,6 +85,20 @@ test('treats an upstream silent initialization failure as recoverable', async ()
   core.resolveCurrent?.();
   await assert.rejects(loading, /did not finish loading/);
   assert.equal(renderer.getPhase(), 'recoverable');
+  renderer.destroy();
+});
+
+test('exposes model-authored controls only after the renderer is ready', async () => {
+  const core = new FakeCore();
+  const renderer = new Live2DRenderer({ canvas: canvas(), createCore: async () => core });
+  assert.deepEqual(renderer.getMotions(), {});
+  assert.deepEqual(renderer.getExpressions(), []);
+  const loading = renderer.load(selection('controls'));
+  await new Promise((resolve) => setImmediate(resolve));
+  core.resolveCurrent?.();
+  await loading;
+  assert.deepEqual(renderer.getMotions(), { idle: ['idle.mtn'] });
+  assert.deepEqual(renderer.getExpressions(), ['smile']);
   renderer.destroy();
 });
 

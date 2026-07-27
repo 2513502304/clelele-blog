@@ -169,8 +169,8 @@ export function resolveLive2DPlacement(options: ResolveLive2DPlacementOptions): 
   // Mobile drawers do not expose a usable desktop sidebar slot. Keep the saved preference unchanged,
   // but render an explicitly awakened character in the least disruptive corner for this viewport.
   const renderedPlacement =
-    mobile && options.placement.kind === 'sidebar' && !hasSidebarAnchor
-      ? ({ kind: 'preset', preset: 'bottom-right' } as const)
+    options.placement.kind === 'sidebar' && !hasSidebarAnchor
+      ? ({ kind: 'preset', preset: mobile ? 'bottom-right' : 'bottom-left' } as const)
       : options.placement;
   const desired = pointForPlacement(renderedPlacement, options.viewport, options.widget, options.sidebarAnchor, margin);
   // Detached and preset placements must leave the active sidebar slot available.

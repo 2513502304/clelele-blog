@@ -13,6 +13,12 @@ function createCore(overrides: Partial<Live2DCore> = {}): Live2DCore {
     getParams() {
       return [{}];
     },
+    getMotions() {
+      return {};
+    },
+    getExpressions() {
+      return [];
+    },
     playMotion() {},
     setExpression() {},
     on(event, listener) {

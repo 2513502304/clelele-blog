@@ -1,0 +1,104 @@
+import { Live2DPanel } from '@components/live2d/Live2DPanel';
+import { Icon } from '@iconify/react';
+import { useMemo } from 'react';
+
+interface MotionOption {
+  value: string;
+  label: string;
+}
+
+interface Props {
+  labels: Record<string, string>;
+  motions: Record<string, string[]>;
+  expressions: string[];
+  selectedMotion: string;
+  selectedExpression: string;
+  paused: boolean;
+  onPlayMotion: (group: string, index: number) => void;
+  onExpression: (expression?: string) => void;
+  onPause: () => void;
+  onScreenshot: () => void;
+  onClose: () => void;
+}
+
+function motionValue(group: string, index: number): string {
+  return `${group}\u0000${index}`;
+}
+
+/** Compact visitor controls for model-authored motions and expressions. */
+export function Live2DAnimationPanel({
+  labels,
+  motions,
+  expressions,
+  selectedMotion,
+  selectedExpression,
+  paused,
+  onPlayMotion,
+  onExpression,
+  onPause,
+  onScreenshot,
+  onClose,
+}: Props) {
+  const motionOptions = useMemo<MotionOption[]>(
+    () =>
+      Object.entries(motions).flatMap(([group, files]) =>
+        files.map((file, index) => ({
+          value: motionValue(group, index),
+          label: files.length > 1 ? `${group} ${index + 1}` : group || file,
+        })),
+      ),
+    [motions],
+  );
+  const selectMotion = (value: string) => {
+    const [group, rawIndex] = value.split('\u0000');
+    const index = Number(rawIndex);
+    if (group && Number.isInteger(index)) onPlayMotion(group, index);
+  };
+
+  return (
+    <Live2DPanel title={labels.animations} closeLabel={labels.close} onClose={onClose}>
+      <div className="live2d-action-strip" role="toolbar" aria-label={labels.playbackTools}>
+        <button type="button" aria-pressed={paused} onClick={onPause} title={paused ? labels.resume : labels.pause}>
+          <Icon icon={paused ? 'ri:play-fill' : 'ri:pause-fill'} aria-hidden="true" />
+          <span>{paused ? labels.resume : labels.pause}</span>
+        </button>
+        <button type="button" onClick={onScreenshot} title={labels.screenshot}>
+          <Icon icon="ri:camera-line" aria-hidden="true" />
+          <span>{labels.screenshot}</span>
+        </button>
+      </div>
+
+      <label className="live2d-select-field">
+        <span>{labels.motion}</span>
+        <select
+          value={selectedMotion}
+          disabled={motionOptions.length === 0 || paused}
+          onChange={(event) => selectMotion(event.currentTarget.value)}
+        >
+          <option value="">{motionOptions.length === 0 ? labels.unavailable : labels.selectMotion}</option>
+          {motionOptions.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label className="live2d-select-field">
+        <span>{labels.expression}</span>
+        <select
+          value={selectedExpression}
+          disabled={expressions.length === 0 || paused}
+          onChange={(event) => onExpression(event.currentTarget.value || undefined)}
+        >
+          <option value="">{expressions.length === 0 ? labels.unavailable : labels.randomExpression}</option>
+          {expressions.map((expression) => (
+            <option key={expression} value={expression}>
+              {expression}
+            </option>
+          ))}
+        </select>
+      </label>
+    </Live2DPanel>
+  );
+}
