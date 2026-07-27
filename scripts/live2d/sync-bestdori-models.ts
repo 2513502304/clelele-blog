@@ -32,6 +32,7 @@ interface Options {
   planOnly: boolean;
   refreshIndex: boolean;
   republish: boolean;
+  republishVoices: boolean;
 }
 
 interface BundleFile {
@@ -81,7 +82,11 @@ function parseArguments(arguments_: string[]): Options {
   const flags = new Set<string>();
   for (let index = 0; index < arguments_.length; index += 1) {
     const argument = arguments_[index];
-    if (['--keep-packages', '--skip-audio', '--plan-only', '--refresh-index', '--republish'].includes(argument)) {
+    if (
+      ['--keep-packages', '--skip-audio', '--plan-only', '--refresh-index', '--republish', '--republish-voices'].includes(
+        argument,
+      )
+    ) {
       flags.add(argument);
       continue;
     }
@@ -105,6 +110,7 @@ function parseArguments(arguments_: string[]): Options {
     planOnly: flags.has('--plan-only'),
     refreshIndex: flags.has('--refresh-index'),
     republish: flags.has('--republish'),
+    republishVoices: flags.has('--republish-voices'),
   };
 }
 
@@ -341,6 +347,7 @@ interface BestdoriCardDetail {
   resourceSetName?: string;
   gachaText?: Array<string | null>;
   prefix?: Array<string | null>;
+  type?: string;
 }
 
 /** Card summaries provide the complete character relation; costume records alone omit cards from other outfits. */
@@ -368,6 +375,23 @@ export function cardDialogueText(card: BestdoriCardDetail, summary: SourceIndex[
 /** Bestdori only exposes a matching gacha MP3 when the card has localized gacha dialogue text. */
 export function cardHasVoiceText(card: BestdoriCardDetail): boolean {
   return Boolean(card.gachaText?.[0]?.trim() || card.gachaText?.[1]?.trim());
+}
+
+const GACHA_VOICE_DIRECTORIES = ['operationspin', 'limitedspin', 'birthdayspin', 'spin', 'newsituationintroduction'] as const;
+
+/** Type-based ordering avoids predictable HTML misses while fallbacks cover new or historic card categories. */
+export function cardVoiceDirectories(type: string | undefined): readonly string[] {
+  const preferred =
+    type === 'birthday'
+      ? 'birthdayspin'
+      : type === 'limited' || type === 'dreamfes'
+        ? 'limitedspin'
+        : type === 'permanent'
+          ? 'operationspin'
+          : null;
+  return preferred
+    ? [preferred, ...GACHA_VOICE_DIRECTORIES.filter((directory) => directory !== preferred)]
+    : GACHA_VOICE_DIRECTORIES;
 }
 
 function modelFallbackInteractions(
@@ -416,16 +440,18 @@ async function buildAndPublishCharacterVoice(
         if (
           (await fileExists(destination)) ||
           (await (async () => {
-            const response = await request(
-              `${BESTDORI_ASSETS}/jp/sound/voice/gacha/operationspin_rip/${resourceSetName}.mp3`,
-              options,
-              true,
-            );
-            if (!response) return false;
-            if (response.headers.get('content-type')?.startsWith('text/html')) return false;
-            await mkdir(path.dirname(destination), { recursive: true });
-            await writeFile(destination, new Uint8Array(await response.arrayBuffer()));
-            return true;
+            for (const directory of cardVoiceDirectories(card.type)) {
+              const response = await request(
+                `${BESTDORI_ASSETS}/jp/sound/voice/gacha/${directory}_rip/${resourceSetName}.mp3`,
+                options,
+                true,
+              );
+              if (!response || response.headers.get('content-type')?.startsWith('text/html')) continue;
+              await mkdir(path.dirname(destination), { recursive: true });
+              await writeFile(destination, new Uint8Array(await response.arrayBuffer()));
+              return true;
+            }
+            return false;
           })())
         ) {
           approvedAudio.add(relativeAudio);
@@ -587,6 +613,7 @@ async function main(): Promise<void> {
     const characterId = catalogCharacterId(numericCharacterId);
     return (
       options.republish ||
+      options.republishVoices ||
       (!voiceCheckpointSnapshot.completed.has(characterId) && !voiceCheckpointSnapshot.pendingCatalog.has(characterId))
     );
   });

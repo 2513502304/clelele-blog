@@ -6,6 +6,7 @@ import test from 'node:test';
 import {
   cardDialogueText,
   cardHasVoiceText,
+  cardVoiceDirectories,
   characterCardIds,
   checkpointState,
   voiceCheckpointState,
@@ -71,6 +72,11 @@ test('character card aggregation includes every rarity and prefers Japanese dial
   assert.equal(cardDialogueText({}, cards['100']), 'R');
   assert.equal(cardHasVoiceText({ gachaText: ['日本語', null] }), true);
   assert.equal(cardHasVoiceText({ gachaText: [null, null], prefix: ['文字のみ'] }), false);
+  assert.equal(cardVoiceDirectories('permanent')[0], 'operationspin');
+  assert.equal(cardVoiceDirectories('limited')[0], 'limitedspin');
+  assert.equal(cardVoiceDirectories('dreamfes')[0], 'limitedspin');
+  assert.equal(cardVoiceDirectories('birthday')[0], 'birthdayspin');
+  assert.equal(new Set(cardVoiceDirectories('future-type')).size, cardVoiceDirectories('future-type').length);
 });
 
 test('voice checkpoint recovery keeps uploaded character packs pending until cataloged', async () => {
