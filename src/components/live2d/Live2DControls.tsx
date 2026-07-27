@@ -2,6 +2,7 @@ import { Icon } from '@iconify/react';
 
 interface Props {
   labels: {
+    toolbar: string;
     previous: string;
     next: string;
     characters: string;
@@ -36,7 +37,7 @@ export function Live2DControls(props: Props) {
     restore: props.onRestore,
   };
   return (
-    <div className="live2d-controls" role="toolbar" aria-label={props.labels.settings}>
+    <div className="live2d-controls" role="toolbar" aria-label={props.labels.toolbar}>
       {buttons.map(([key, icon]) => (
         <button
           key={key}

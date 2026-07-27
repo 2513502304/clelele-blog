@@ -162,6 +162,7 @@ export const uiStrings = {
 
   // ── Live2D ────────────────────────────────────────────────
   'live2d.character': '角色',
+  'live2d.toolbar': 'Live2D 角色工具栏',
   'live2d.interact': '与{name}互动',
   'live2d.wake': '显示 Live2D 角色',
   'live2d.hide': '隐藏角色',

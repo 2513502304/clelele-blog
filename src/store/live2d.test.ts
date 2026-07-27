@@ -94,6 +94,18 @@ describe('Live2D store', () => {
     assert.equal(store.$state.get().loadIntent, 'visitor');
   });
 
+  it('wake requests a recoverable renderer load', () => {
+    const store = createLive2DStore({ storage: memoryStorage() });
+    store.actions.initialize();
+    store.actions.setManualHidden(true);
+    store.actions.setRendererStatus('recoverable');
+
+    store.actions.wake();
+
+    assert.equal(store.$state.get().preferences.hidden, false);
+    assert.equal(store.$state.get().loadIntent, 'visitor');
+  });
+
   it('preserves current-session actions after storage write failure', () => {
     const diagnostics: Live2DPreferenceDiagnostic[] = [];
     const store = createLive2DStore({

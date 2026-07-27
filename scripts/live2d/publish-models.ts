@@ -187,7 +187,7 @@ async function publishObjects(
   );
 }
 
-/** 默认只创建新 costume；只有显式 --replace 才替换已存在的同名项。 */
+/** 默认只创建新 costume；显式 --replace 更新发布字段，但保留已有的手工交互配置。 */
 export function upsertCatalog(
   catalog: Live2DCatalog,
   options: Pick<PublishOptions, 'characterId' | 'characterLabels' | 'replace'>,
@@ -201,14 +201,17 @@ export function upsertCatalog(
   }
   const existingIndex = character.costumes.findIndex((candidate) => candidate.id === costume.id);
   const existing = character.costumes[existingIndex];
-  if (existing && isDeepStrictEqual(existing, costume)) return live2dCatalogSchema.parse({ version: 1, characters });
+  const nextCostume = existing ? { ...costume, interactions: existing.interactions } : costume;
+  if (existing && isDeepStrictEqual(existing, nextCostume)) {
+    return live2dCatalogSchema.parse({ version: 1, characters });
+  }
   if (existingIndex !== -1 && !options.replace) {
     throw new Error(
       `Catalog costume ${options.characterId}/${costume.id} already exists; pass --replace to replace it after verification.`,
     );
   }
   if (existingIndex === -1) character.costumes.push(costume);
-  else character.costumes[existingIndex] = costume;
+  else character.costumes[existingIndex] = nextCostume;
   return live2dCatalogSchema.parse({ version: 1, characters });
 }
 

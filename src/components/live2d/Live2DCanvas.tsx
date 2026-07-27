@@ -1,4 +1,9 @@
 import { createLive2DAssetRequestHook } from '@lib/live2d/asset-delivery';
+import {
+  LIVE2D_DIRECT_ASSET_BASE_URL,
+  LIVE2D_DIRECT_ASSET_DELIVERY_ENABLED,
+  LIVE2D_FALLBACK_ASSET_BASE_PATH,
+} from '@lib/live2d/client-asset-config';
 import type { Live2DRendererPhase, Live2DRendererSelection } from '@lib/live2d/renderer';
 import { Live2DRenderer } from '@lib/live2d/renderer';
 import { useEffect, useMemo, useRef } from 'react';
@@ -29,16 +34,17 @@ export function Live2DCanvas({
   const rendererRef = useRef<Live2DRenderer | null>(null);
   const onPhaseRef = useRef(onPhase);
   const onTapRef = useRef(onTap);
-  onPhaseRef.current = onPhase;
-  onTapRef.current = onTap;
+  useEffect(() => {
+    onPhaseRef.current = onPhase;
+    onTapRef.current = onTap;
+  }, [onPhase, onTap]);
   const request = useMemo(
     () =>
       createLive2DAssetRequestHook({
         releaseId,
-        directBaseUrl: new URL('https://s3.hf.co/clelele0722/raw-datasets/bestdori/'),
-        fallbackBaseUrl: new URL('/api/live2d-assets/', window.location.origin),
-        // 当前 HF endpoint 未通过浏览器 CORS canary；部署验证通过后只需切换这一策略。
-        directEnabled: false,
+        directBaseUrl: new URL(LIVE2D_DIRECT_ASSET_BASE_URL),
+        fallbackBaseUrl: new URL(LIVE2D_FALLBACK_ASSET_BASE_PATH, window.location.origin),
+        directEnabled: LIVE2D_DIRECT_ASSET_DELIVERY_ENABLED,
       }),
     [releaseId],
   );

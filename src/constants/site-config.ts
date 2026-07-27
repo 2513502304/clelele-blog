@@ -345,8 +345,12 @@ function normalizeLive2DConfig(config: Live2DConfig | undefined): Required<Live2
   };
 }
 
-/** Build-time normalized Live2D defaults. The distributed theme remains disabled. */
+/** Build-time normalized Live2D defaults. */
 export const live2dConfig = normalizeLive2DConfig(yamlConfig.live2d);
+
+/** Shared feature gate for the widget shell, sidebar anchor, and asset API. */
+export const live2dEnabled =
+  live2dConfig.enabled || (import.meta.env.DEV && typeof process !== 'undefined' && process.env.LIVE2D_E2E === '1');
 
 const styleGalleryRouter = baseRouters.find((router) => router.path === '/image-style-prompt-gallery');
 const routersWithoutStyleGallery = baseRouters.filter((router) => router.path !== '/image-style-prompt-gallery');

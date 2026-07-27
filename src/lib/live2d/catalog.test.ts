@@ -34,5 +34,17 @@ test('catalog costume must match its manifest', () => {
     objects: [{ path: 'model.json', size: 12, mime: 'application/json', sha256: 'b'.repeat(64) }],
   };
   assert.doesNotThrow(() => assertCostumeMatchesManifest(costume, manifest));
+  assert.throws(
+    () => assertCostumeMatchesManifest({ ...costume, entryPath: `releases/${releaseId}/other.json` }, manifest),
+    /Entry path mismatch/,
+  );
+  assert.throws(
+    () =>
+      assertCostumeMatchesManifest(
+        { ...costume, entryPath: `releases/${releaseId}/missing.json` },
+        { ...manifest, entryPath: 'missing.json' },
+      ),
+    /Entry path is not present in manifest/,
+  );
   assert.throws(() => assertCostumeMatchesManifest({ ...costume, packageBytes: 13 }, manifest), /Package size mismatch/);
 });

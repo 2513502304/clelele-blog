@@ -1,4 +1,4 @@
-import type { L2D, ResourceRequestHook } from 'l2d';
+import type { ResourceRequestHook } from 'l2d';
 
 export type Live2DRendererPhase = 'dormant' | 'loading' | 'ready' | 'recoverable' | 'destroyed';
 
@@ -52,7 +52,7 @@ async function defaultCreateCore(canvas: HTMLCanvasElement): Promise<Live2DCore>
   const { init } = await import('l2d');
   const core = init(canvas);
   if (!core) throw new Error('Live2D renderer could not initialize the canvas.');
-  return core as L2D;
+  return core;
 }
 
 /**

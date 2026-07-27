@@ -163,8 +163,7 @@ export function createLive2DStore(options: CreateLive2DStoreOptions = {}) {
 
     wake(): void {
       actions.setManualHidden(false);
-      const current = $state.get();
-      if (current.rendererStatus === 'dormant') $state.set({ ...current, loadIntent: 'visitor' });
+      actions.requestVisitorLoad();
     },
 
     setAudioEnabled(audioEnabled: boolean): void {

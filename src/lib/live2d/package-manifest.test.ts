@@ -44,6 +44,25 @@ test('creates a deterministic manifest and strips core-owned sound bindings', as
   );
 });
 
+test('approved audio controls package inclusion without retaining core-owned sound bindings', async () => {
+  const root = await createPackage(validModel);
+  await mkdir(path.join(root, 'voice'), { recursive: true });
+  await writeFile(path.join(root, 'voice', 'idle.wav'), 'voice');
+
+  const withoutApproval = await buildLive2DPackageManifest(root);
+  assert.equal(
+    withoutApproval.manifest.objects.some((object) => object.path === 'voice/idle.wav'),
+    false,
+  );
+
+  const withApproval = await buildLive2DPackageManifest(root, { approvedAudio: new Set(['voice/idle.wav']) });
+  assert.equal(
+    withApproval.manifest.objects.some((object) => object.path === 'voice/idle.wav'),
+    true,
+  );
+  assert.doesNotMatch(new TextDecoder().decode(withApproval.transformedFiles.get('model.json')), /sound/);
+});
+
 test('rejects duplicate paths after normalization', async () => {
   const root = await createPackage({ model: 'data/model.moc', textures: ['data/./model.moc'] });
   await assert.rejects(buildLive2DPackageManifest(root), /Duplicate package paths after normalization/);

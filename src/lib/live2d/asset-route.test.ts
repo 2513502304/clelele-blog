@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createLive2DAssetRouteHandler } from './asset-route';
-import { type Live2DAssetOriginReader, resolveLive2DPackageAsset } from './assets';
+import { type Live2DAssetOriginReader, Live2DReadCredentialsError, resolveLive2DPackageAsset } from './assets';
 
 const releaseId = '9e95d66201f07e339bd5542b1dd0d67ae1bd0b0f9b14a7335ca0bad6bd5916ad';
 const relativePath = 'data/expressions/default.exp.json';
@@ -46,6 +46,23 @@ test('delivery kill switch returns 404 before resolving a manifest member', asyn
   );
   assert.equal(response.status, 404);
   assert.equal(reader.reads, 0);
+});
+
+test('missing read credentials are classified as service unavailable', async () => {
+  const reader: Live2DAssetOriginReader = {
+    inFlightCount: 0,
+    async read() {
+      throw new Live2DReadCredentialsError();
+    },
+    async verify() {
+      throw new Live2DReadCredentialsError();
+    },
+  };
+  const handle = createLive2DAssetRouteHandler(reader);
+  for (const method of ['GET', 'HEAD']) {
+    const response = await handle(new Request(`https://blog.example/api/live2d-assets/${key}`, { method }), key);
+    assert.equal(response.status, 503);
+  }
 });
 
 test('GET streams the allowlisted object with authoritative headers', async () => {

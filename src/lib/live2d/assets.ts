@@ -20,6 +20,13 @@ const DEFAULT_MAX_QUEUED_READS = 24;
 export const LIVE2D_BROWSER_CACHE_CONTROL = IMMUTABLE_CACHE_CONTROL;
 export const LIVE2D_CDN_CACHE_CONTROL = IMMUTABLE_CACHE_CONTROL;
 
+export class Live2DReadCredentialsError extends Error {
+  constructor() {
+    super('Live2D HF read credentials are not configured.');
+    this.name = 'Live2DReadCredentialsError';
+  }
+}
+
 export function createLive2DAssetHeaders(asset: Live2DAssetDescriptor): Headers {
   return new Headers({
     'cache-control': LIVE2D_BROWSER_CACHE_CONTROL,
@@ -35,7 +42,7 @@ export function createLive2DAssetHeaders(asset: Live2DAssetDescriptor): Headers 
 export function getLive2DReadS3Config(env: Record<string, string | undefined>): HfS3Config {
   const accessKeyId = env.LIVE2D_HF_S3_READ_ACCESS_KEY_ID;
   const secretAccessKey = env.LIVE2D_HF_S3_READ_SECRET_ACCESS_KEY;
-  if (!accessKeyId || !secretAccessKey) throw new Error('Live2D HF read credentials are not configured.');
+  if (!accessKeyId || !secretAccessKey) throw new Live2DReadCredentialsError();
   return {
     accessKeyId,
     secretAccessKey,
@@ -140,9 +147,21 @@ function createConcurrencyGate(
     signal?: AbortSignal;
     abort?: () => void;
   }> = [];
+
+  function handOff(): void {
+    const next = queue.shift();
+    if (!next) {
+      active -= 1;
+      return;
+    }
+    if (next.abort) next.signal?.removeEventListener('abort', next.abort);
+    next.resolve();
+  }
+
   return {
     async acquire(signal) {
       signal?.throwIfAborted();
+      let inherited = false;
       if (active >= limit) {
         if (queue.length >= maxQueued) {
           throw new Live2DOriginError('Live2D origin read queue is full.', true, 503);
@@ -158,19 +177,18 @@ function createConcurrencyGate(
           signal?.addEventListener('abort', abort, { once: true });
           queue.push(entry);
         });
+        inherited = true;
       }
-      signal?.throwIfAborted();
-      active += 1;
+      if (signal?.aborted) {
+        if (inherited) handOff();
+        signal.throwIfAborted();
+      }
+      if (!inherited) active += 1;
       let released = false;
       return () => {
         if (released) return;
         released = true;
-        active -= 1;
-        const next = queue.shift();
-        if (next) {
-          if (next.abort) next.signal?.removeEventListener('abort', next.abort);
-          next.resolve();
-        }
+        handOff();
       };
     },
     get pendingCount() {
@@ -267,7 +285,7 @@ export function createLive2DAssetOriginReader(options: Live2DAssetOriginReaderOp
         await retryDelay(attempt);
       }
     }
-    if (lastError instanceof Live2DOriginError) throw lastError;
+    if (lastError instanceof Live2DOriginError || lastError instanceof Live2DReadCredentialsError) throw lastError;
     throw new Live2DOriginError('Live2D origin request failed.', false, 502);
   }
 

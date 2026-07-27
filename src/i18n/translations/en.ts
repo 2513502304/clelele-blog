@@ -164,6 +164,7 @@ export const uiStrings: UIStrings = {
 
   // ── Live2D ────────────────────────────────────────────────
   'live2d.character': 'Character',
+  'live2d.toolbar': 'Live2D character toolbar',
   'live2d.interact': 'Interact with {name}',
   'live2d.wake': 'Show Live2D character',
   'live2d.hide': 'Hide character',

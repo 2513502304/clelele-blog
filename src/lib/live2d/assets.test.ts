@@ -13,7 +13,7 @@ import {
   resolveLive2DAsset,
   resolveLive2DPackageAsset,
 } from './asset-registry';
-import { createLive2DAssetOriginReader } from './assets';
+import { createLive2DAssetOriginReader, getLive2DReadS3Config, Live2DReadCredentialsError } from './assets';
 
 const releaseId = '9e95d66201f07e339bd5542b1dd0d67ae1bd0b0f9b14a7335ca0bad6bd5916ad';
 const relativePath = 'data/expressions/default.exp.json';
@@ -38,6 +38,23 @@ function resourceRequest(path = relativePath, signal = new AbortController().sig
     referrerPolicy: 'no-referrer' as const,
   };
 }
+
+test('read configuration rejects missing credentials with a typed error', async () => {
+  for (const env of [{}, { LIVE2D_HF_S3_READ_ACCESS_KEY_ID: 'HFAKTEST' }, { LIVE2D_HF_S3_READ_SECRET_ACCESS_KEY: 'secret' }]) {
+    assert.throws(() => getLive2DReadS3Config(env), Live2DReadCredentialsError);
+  }
+
+  let fetchCount = 0;
+  const reader = createLive2DAssetOriginReader({
+    config: () => getLive2DReadS3Config({}),
+    fetch: async () => {
+      fetchCount += 1;
+      return assetResponse();
+    },
+  });
+  await assert.rejects(reader.read(asset), Live2DReadCredentialsError);
+  assert.equal(fetchCount, 0);
+});
 
 test('normalizes one immutable key and resolves exact manifest membership', () => {
   const key = `releases/${releaseId}/${relativePath}`;
@@ -368,6 +385,44 @@ test('origin reads enforce a bounded abort-aware queue', async () => {
   await assert.rejects(queued, { name: 'AbortError' });
   assert.equal(reader.inFlightCount, 1);
   await first.body?.cancel();
+  assert.equal(reader.inFlightCount, 0);
+});
+
+test('origin read slots are handed to queued readers before a new acquisition can race in', async () => {
+  let fetchCount = 0;
+  const reader = createLive2DAssetOriginReader({
+    config: () => ({
+      accessKeyId: 'HFAKTEST',
+      secretAccessKey: 'secret',
+      endpoint: new URL('https://s3.hf.co/clelele0722'),
+      bucket: 'raw-datasets',
+      prefix: 'bestdori',
+      region: 'us-east-1',
+    }),
+    maxConcurrentReads: 1,
+    maxQueuedReads: 2,
+    fetch: async () => {
+      fetchCount += 1;
+      return assetResponse();
+    },
+  });
+  const first = await reader.read(asset);
+  const second = reader.read(asset);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  const firstCancellation = first.body?.cancel();
+  const third = reader.read(asset);
+  await new Promise((resolve) => setImmediate(resolve));
+  const fetchCountDuringHandoff = fetchCount;
+
+  await firstCancellation;
+  const secondResponse = await second;
+  await secondResponse.body?.cancel();
+  const thirdResponse = await third;
+  await thirdResponse.body?.cancel();
+
+  assert.equal(fetchCountDuringHandoff, 2);
+  assert.equal(fetchCount, 3);
   assert.equal(reader.inFlightCount, 0);
 });
 

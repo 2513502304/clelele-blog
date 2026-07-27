@@ -54,14 +54,14 @@ function collectReferences(value: unknown, references: Map<string, string>, pare
   for (const [key, child] of Object.entries(value)) collectReferences(child, references, key.toLowerCase());
 }
 
-function stripCoreAudio(value: unknown, approvedAudio: ReadonlySet<string>): unknown {
-  if (Array.isArray(value)) return value.map((item) => stripCoreAudio(item, approvedAudio));
+/** Always removes core sound bindings; approved audio is packaged separately for catalog interactions. */
+function stripCoreAudio(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map((item) => stripCoreAudio(item));
   if (!value || typeof value !== 'object') return value;
   return Object.fromEntries(
     Object.entries(value).flatMap(([key, child]) => {
-      if (key.toLowerCase() !== 'sound') return [[key, stripCoreAudio(child, approvedAudio)]];
-      if (typeof child === 'string' && approvedAudio.has(normalizeRelativePath(child))) return [];
-      return [];
+      if (key.toLowerCase() === 'sound') return [];
+      return [[key, stripCoreAudio(child)]];
     }),
   );
 }
@@ -155,6 +155,7 @@ export async function buildLive2DPackageManifest(
   const references = new Map<string, string>();
   collectReferences(sourceEntry, references);
   addReference(references, entryPath);
+  // Approval controls package inclusion only; model-level sound bindings are always stripped below.
   for (const audioPath of approvedAudio) addReference(references, audioPath);
 
   const availableFiles = await listFiles(rootRealPath);
@@ -169,7 +170,7 @@ export async function buildLive2DPackageManifest(
 
   const transformedFiles = new Map<string, Uint8Array>();
   const objects: Live2DManifestObject[] = [];
-  const sanitizedEntry = new TextEncoder().encode(`${JSON.stringify(stripCoreAudio(sourceEntry, approvedAudio), null, 2)}\n`);
+  const sanitizedEntry = new TextEncoder().encode(`${JSON.stringify(stripCoreAudio(sourceEntry), null, 2)}\n`);
   for (const relativePath of [...references.keys()].sort((left, right) => left.localeCompare(right))) {
     const absolutePath = path.join(rootRealPath, ...relativePath.split('/'));
     await assertRegularContainedFile(rootRealPath, absolutePath);

@@ -3,6 +3,7 @@ import {
   type Live2DAssetOriginReader,
   Live2DAssetPathError,
   Live2DOriginError,
+  Live2DReadCredentialsError,
   resolveLive2DAsset,
 } from './assets';
 
@@ -17,6 +18,9 @@ function errorResponse(error: unknown): Response {
     return new Response(error.status === 404 ? 'Live2D asset not found.' : 'Failed to load Live2D asset.', {
       status: error.status,
     });
+  }
+  if (error instanceof Live2DReadCredentialsError) {
+    return new Response('Failed to load Live2D asset.', { status: 503 });
   }
   return new Response('Failed to load Live2D asset.', { status: 500 });
 }

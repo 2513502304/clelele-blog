@@ -10,7 +10,7 @@ index 76e9add8326f01918d786142bf3fec0421db2b32..7cf1d5d0118600c24815d496294a049d
 +export type { L2DEventMap, Options, ParamInfo, ResourceKind, ResourceRequest, ResourceRequestHook } from './types.js';
  export type { L2D };
 diff --git a/dist/index.js b/dist/index.js
-index 3d813a9fd7d6965a94ed1cc813d13bb92314aaca..2a23153e3a3ed772137fc552e7e44b1e735b06fa 100644
+index 3d813a9fd7d6965a94ed1cc813d13bb92314aaca..e5412264d00e414ee1799dc056d4c583d9cde381 100644
 --- a/dist/index.js
 +++ b/dist/index.js
 @@ -320,7 +320,7 @@ var n = /* @__PURE__ */ e(((e, t) => {
@@ -750,7 +750,7 @@ index 3d813a9fd7d6965a94ed1cc813d13bb92314aaca..2a23153e3a3ed772137fc552e7e44b1e
  				file: r
  			}), this.setFadeInFadeOut(e, t, n, i);
 -		});
-+		}).catch(() => {});
++		}).catch((e) => e?.name !== "AbortError" && console.warn("[l2d] motion load failed:", e));
  		else {
  			let a = this.motions[i]?.getDurationMSec?.(), o = a != null && a >= 0 ? a / 1e3 : -1;
  			this.onMotionStart?.({

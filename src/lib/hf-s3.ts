@@ -26,7 +26,7 @@ export class HfS3ConflictError extends Error {
   }
 }
 
-class HfS3RequestError extends Error {
+export class HfS3RequestError extends Error {
   constructor(
     message: string,
     readonly retryable: boolean,
@@ -39,6 +39,10 @@ class HfS3RequestError extends Error {
 
 function rfc3986Encode(value: string): string {
   return encodeURIComponent(value).replace(/[!'()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+}
+
+function compareUtf8Bytes(left: string, right: string): number {
+  return Buffer.compare(Buffer.from(left, 'utf8'), Buffer.from(right, 'utf8'));
 }
 
 function encodePath(pathname: string): string {
@@ -97,8 +101,12 @@ export function createHfS3PresignedUrl(
     'X-Amz-SignedHeaders': 'host',
   });
   const canonicalQuery = [...query]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([name, value]) => `${rfc3986Encode(name)}=${rfc3986Encode(value)}`)
+    .map(([name, value]) => [rfc3986Encode(name), rfc3986Encode(value)] as const)
+    .sort(
+      ([leftName, leftValue], [rightName, rightValue]) =>
+        compareUtf8Bytes(leftName, rightName) || compareUtf8Bytes(leftValue, rightValue),
+    )
+    .map(([name, value]) => `${name}=${value}`)
     .join('&');
   const canonicalRequest = [
     method,
@@ -137,11 +145,9 @@ export function createHfS3SignedHeaders(
   if (method === 'PUT') headers['content-type'] = contentType;
   if (conditions.ifMatch) headers['if-match'] = conditions.ifMatch;
   if (conditions.ifNoneMatch) headers['if-none-match'] = conditions.ifNoneMatch;
-  const signedHeaders = Object.keys(headers).sort().join(';');
-  const canonicalHeaders = Object.entries(headers)
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([name, value]) => `${name}:${value}\n`)
-    .join('');
+  const sortedHeaders = Object.entries(headers).sort(([left], [right]) => compareUtf8Bytes(left, right));
+  const signedHeaders = sortedHeaders.map(([name]) => name).join(';');
+  const canonicalHeaders = sortedHeaders.map(([name, value]) => `${name}:${value}\n`).join('');
   const canonicalRequest = [method, canonicalUri, '', canonicalHeaders, signedHeaders, payloadHash].join('\n');
   const requestHash = createHash('sha256').update(canonicalRequest).digest('hex');
   const stringToSign = ['AWS4-HMAC-SHA256', amzDate, scope, requestHash].join('\n');
@@ -182,7 +188,7 @@ async function retry<T>(label: string, operation: () => Promise<T>, attempts = D
       await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** (attempt - 1) + Math.floor(Math.random() * 150)));
     }
   }
-  if (lastError instanceof HfS3ConflictError) throw lastError;
+  if (lastError instanceof HfS3ConflictError || lastError instanceof HfS3RequestError) throw lastError;
   throw new Error(`${label} failed after ${attempts} attempt(s).`, { cause: lastError });
 }
 

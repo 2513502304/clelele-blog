@@ -13,7 +13,7 @@ import type { Live2DRenderer, Live2DRendererPhase } from '@lib/live2d/renderer';
 import { useStore } from '@nanostores/react';
 import { $live2dState, live2dActions } from '@store/live2d';
 import { $activeModal } from '@store/modal';
-import { claimActivePlayer, releaseActivePlayer } from '@store/player';
+import { $activePlayerId, claimActivePlayer, releaseActivePlayer } from '@store/player';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 export interface Live2DWidgetConfig {
@@ -58,6 +58,7 @@ function Live2DWidgetContent({
   const { t, locale } = useTranslation();
   const state = useStore($live2dState);
   const modal = useStore($activeModal);
+  const activePlayerId = useStore($activePlayerId);
   const rootRef = useRef<HTMLDivElement>(null);
   const surfaceRef = useRef<HTMLButtonElement>(null);
   const rendererRef = useRef<Live2DRenderer | null>(null);
@@ -93,6 +94,11 @@ function Live2DWidgetContent({
     setDialogue('');
     stopAudio();
   }, [stopAudio]);
+
+  useEffect(() => {
+    // stopAudio uses compare-and-clear release, so it cannot clear the newer owner's claim.
+    if (activePlayerId !== null && activePlayerId !== LIVE2D_PLAYER_ID) stopAudio();
+  }, [activePlayerId, stopAudio]);
 
   const costume =
     findLive2DCostume(state.preferences.selection.characterId, state.preferences.selection.costumeId) ??
@@ -363,6 +369,7 @@ function Live2DWidgetContent({
 
   const transform = `translate3d(${placement.x + dragOffset.x}px, ${placement.y + dragOffset.y}px, 0)`;
   const labels = {
+    toolbar: t('live2d.toolbar'),
     previous: t('live2d.previous'),
     next: t('live2d.next'),
     characters: t('live2d.characters'),

@@ -84,15 +84,24 @@ test('reloads the latest selection after WebGL context restoration', async () =>
   let createCount = 0;
   let destroyCount = 0;
   const loadedPaths: string[] = [];
+  const suspendCounts: number[] = [];
+  const resumeCounts: number[] = [];
   const createCore = async (): Promise<Live2DCore> => {
+    const coreIndex = createCount;
     createCount += 1;
+    suspendCounts[coreIndex] = 0;
+    resumeCounts[coreIndex] = 0;
     const restoredCore: Live2DCore = {
       async load({ path }) {
         loadedPaths.push(path);
       },
       resize() {},
-      suspend() {},
-      resume() {},
+      suspend() {
+        suspendCounts[coreIndex] += 1;
+      },
+      resume() {
+        resumeCounts[coreIndex] += 1;
+      },
       destroy() {
         destroyCount += 1;
       },
@@ -106,6 +115,7 @@ test('reloads the latest selection after WebGL context restoration', async () =>
   };
   const renderer = new Live2DRenderer({ canvas, request, ownsInput: () => true, createCore });
   await renderer.load({ key: 'restored', entryPath: '/restored/model.json', scale: 1, position: [0, 0] });
+  renderer.suspend();
   const lost = new Event('webglcontextlost', { cancelable: true });
   canvas.dispatchEvent(lost);
   assert.equal(lost.defaultPrevented, true);
@@ -116,5 +126,7 @@ test('reloads the latest selection after WebGL context restoration', async () =>
   assert.deepEqual(loadedPaths, ['/restored/model.json', '/restored/model.json']);
   assert.equal(createCount, 2);
   assert.equal(destroyCount, 1);
+  assert.deepEqual(suspendCounts, [1, 1]);
+  assert.deepEqual(resumeCounts, [0, 0]);
   renderer.destroy();
 });

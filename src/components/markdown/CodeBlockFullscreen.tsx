@@ -7,8 +7,8 @@
 
 import { CopyButton } from '@components/markdown/shared/CopyButton';
 import { MacToolbar } from '@components/markdown/shared/MacToolbar';
-import { FloatingFocusManager, FloatingPortal, useDismiss, useFloating, useInteractions, useRole } from '@floating-ui/react';
-import { getLive2DFocusNodes, isLive2DOwnedTarget } from '@lib/live2d/focus-scope';
+import { FloatingFocusManager, FloatingPortal, useFloating, useInteractions, useRole } from '@floating-ui/react';
+import { useLive2DAwareDismiss } from '@hooks/useLive2DAwareDismiss';
 import { cn } from '@lib/utils';
 import { useStore } from '@nanostores/react';
 import { $codeFullscreenData, type CodeBlockData, closeModal, openModal } from '@store/modal';
@@ -49,10 +49,7 @@ export default function CodeBlockFullscreen() {
       if (!open) closeModal();
     },
   });
-  const dismiss = useDismiss(context, {
-    outsidePressEvent: 'mousedown',
-    outsidePress: (event) => !isLive2DOwnedTarget(event.target),
-  });
+  const { dismiss, getInsideElements } = useLive2DAwareDismiss(context);
   const role = useRole(context, { role: 'dialog' });
   const { getFloatingProps } = useInteractions([dismiss, role]);
 
@@ -88,7 +85,7 @@ export default function CodeBlockFullscreen() {
             transition={{ duration: 0.2 }}
           >
             <div className="fixed inset-0 bg-black/80 backdrop-blur-sm" />
-            <FloatingFocusManager context={context} getInsideElements={getLive2DFocusNodes}>
+            <FloatingFocusManager context={context} getInsideElements={getInsideElements}>
               <div className="fixed inset-0 z-50 grid place-items-center px-4">
                 <motion.div
                   ref={refs.setFloating}

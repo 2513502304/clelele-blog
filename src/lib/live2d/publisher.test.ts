@@ -98,20 +98,40 @@ test('publisher is idempotent but requires explicit --replace for changed existi
   assert.deepEqual(catalog, createCatalog(), 'create-only validation must not mutate the source catalog');
 });
 
-test('--replace updates only the matching catalog costume', () => {
+test('--replace updates only the matching costume and preserves its hand-tuned interactions', () => {
   const catalog = createCatalog();
+  const curatedInteractions = [{ area: 'head', motionGroup: 'custom-smile', lines: ['欢迎回来。'] }];
+  catalog.characters[0].costumes[0].interactions = curatedInteractions;
   const second = createCostume('summer', 'd'.repeat(64));
   catalog.characters[0].costumes.push(second);
-  const replacement = { ...createCostume('default', replacementReleaseId), scale: 0.9 };
+  const replacement = {
+    ...createCostume('default', replacementReleaseId),
+    scale: 0.9,
+    interactions: [{ area: 'head', motionGroup: 'smile01', lines: ['你好，很高兴见到你。'] }],
+  };
   const next = upsertCatalog(
     catalog,
     { characterId: 'anon', characterLabels: { zh: '不会覆盖现有角色名' }, replace: true },
     replacement,
   );
 
-  assert.deepEqual(next.characters[0].costumes, [replacement, second]);
+  assert.deepEqual(next.characters[0].costumes, [{ ...replacement, interactions: curatedInteractions }, second]);
   assert.deepEqual(next.characters[0].label, { zh: '爱音' });
   assert.equal(catalog.characters[0].costumes[0].releaseId, releaseId);
+});
+
+test('new costumes retain their default interactions', () => {
+  const costume = {
+    ...createCostume('summer', replacementReleaseId),
+    interactions: [{ area: 'head', motionGroup: 'smile01', lines: ['你好，很高兴见到你。'] }],
+  };
+  const next = upsertCatalog(
+    createCatalog(),
+    { characterId: 'anon', characterLabels: { zh: '爱音' }, replace: false },
+    costume,
+  );
+
+  assert.deepEqual(next.characters[0].costumes[1], costume);
 });
 
 test('existing provenance may differ only in publishedAt', () => {

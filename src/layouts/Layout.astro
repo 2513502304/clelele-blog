@@ -26,7 +26,7 @@ import CodeBlockFullscreen from '@components/markdown/CodeBlockFullscreen';
 import DiagramFullscreen from '@components/markdown/DiagramFullscreen';
 import ImageLightbox from '@components/markdown/ImageLightbox';
 import { Toaster } from '@components/ui/sonner';
-import { bgmConfig, christmasConfig, live2dConfig, seoConfig, siteConfig } from '@constants/site-config';
+import { bgmConfig, christmasConfig, live2dConfig, live2dEnabled, seoConfig, siteConfig } from '@constants/site-config';
 import { getOgImageUrl } from '@lib/seo/og-image';
 import LoadingIndicator from 'astro-loading-indicator/component';
 import { SEO } from 'astro-seo';
@@ -75,9 +75,6 @@ const xDefaultHref = new URL(getAlternateUrl(Astro.url.pathname, defaultLocale),
 const canonicalHref = canonicalOverride ?? Astro.url.href;
 
 const keywords = keywordsOverride || siteConfig.keywords || [siteConfig.title];
-// Browser canaries need the production integration path while the distributed theme remains disabled.
-// `import.meta.env.DEV` makes the override unreachable in production builds.
-const live2dEnabled = live2dConfig.enabled || (import.meta.env.DEV && process.env.LIVE2D_E2E === '1');
 ---
 
 <!doctype html>

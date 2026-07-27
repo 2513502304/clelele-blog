@@ -644,10 +644,10 @@ hpoi:
 
 # =============================================================================
 # Live2D Character Widget
-# 主题默认关闭；启用前需先发布并验证 catalog 中的默认模型。
+# 站点已启用；默认模型需与已发布并验证的 catalog 保持一致。
 # =============================================================================
 live2d:
-  enabled: false
+  enabled: true
   # enabled 为 true 时，下面两个 ID 必须与 src/lib/live2d/catalog.ts 一致。
   defaultCharacterId: chihaya-anon
   defaultCostumeId: default

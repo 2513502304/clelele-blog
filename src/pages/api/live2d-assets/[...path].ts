@@ -1,4 +1,4 @@
-import { live2dConfig } from '@constants/site-config';
+import { live2dEnabled } from '@constants/site-config';
 import { createLive2DAssetRouteHandler } from '@lib/live2d/asset-route';
 import { createLive2DAssetOriginReader, getLive2DReadS3Config } from '@lib/live2d/assets';
 import type { APIRoute } from 'astro';
@@ -18,7 +18,7 @@ function isLive2DAssetDeliveryEnabled(): boolean {
     configuredMode === 'auto' || configuredMode === 'enabled' || configuredMode === 'disabled' ? configuredMode : 'disabled';
   if (mode === 'disabled') return false;
   if (mode === 'enabled') return true;
-  return live2dConfig.enabled || (import.meta.env.DEV && process.env.LIVE2D_E2E === '1');
+  return live2dEnabled;
 }
 
 const handle = createLive2DAssetRouteHandler(originReader, isLive2DAssetDeliveryEnabled);

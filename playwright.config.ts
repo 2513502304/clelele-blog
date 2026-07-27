@@ -6,6 +6,7 @@ export default defineConfig({
   testDir: './tests/live2d',
   fullyParallel: false,
   workers: 1,
+  retries: process.env.CI ? 2 : 0,
   timeout: 120_000,
   expect: { timeout: 15_000 },
   outputDir: 'test-results/live2d',
