@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 import {
   assertImmutableProvenanceMatches,
@@ -6,6 +7,7 @@ import {
   removeCatalogCharacters,
   upsertCatalog,
   upsertCatalogBatch,
+  verifyRemoteObject,
 } from '../../../scripts/live2d/publish-models';
 import type { Live2DCatalog, Live2DCostume, Live2DProvenance, Live2DVoicePack } from './types';
 
@@ -237,4 +239,49 @@ test('existing provenance may differ only in publishedAt', () => {
   for (const conflict of conflicts) {
     assert.throws(() => assertImmutableProvenanceMatches(existing, conflict), /conflicts with immutable publication fields/);
   }
+});
+
+test('remote object verification tolerates a transient stale read without weakening immutable conflicts', async () => {
+  const expectedBytes = new TextEncoder().encode('current release bytes');
+  const expectedSha256 = createHash('sha256').update(expectedBytes).digest('hex');
+  let reads = 0;
+  const client = {
+    async head() {
+      return { exists: true, size: expectedBytes.byteLength, etag: null };
+    },
+    async get() {
+      reads += 1;
+      const bytes = reads === 1 ? new TextEncoder().encode('stale release bytes!!') : expectedBytes;
+      return { bytes, etag: null, contentType: null, contentLength: bytes.byteLength };
+    },
+  };
+
+  assert.equal(
+    await verifyRemoteObject(
+      client,
+      'releases/current/model.json',
+      { size: expectedBytes.byteLength, sha256: expectedSha256 },
+      { delayMs: 0 },
+    ),
+    true,
+  );
+  assert.equal(reads, 2);
+
+  await assert.rejects(
+    verifyRemoteObject(
+      {
+        ...client,
+        get: async () => ({
+          bytes: new Uint8Array(expectedBytes.byteLength),
+          etag: null,
+          contentType: null,
+          contentLength: expectedBytes.byteLength,
+        }),
+      },
+      'releases/conflict/model.json',
+      { size: expectedBytes.byteLength, sha256: expectedSha256 },
+      { attempts: 2, delayMs: 0 },
+    ),
+    /Remote bytes conflict/,
+  );
 });

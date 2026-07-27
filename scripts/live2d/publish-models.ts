@@ -177,19 +177,33 @@ function sha256(bytes: Uint8Array | string): string {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
-async function verifyRemoteObject(
-  client: ReturnType<typeof createHfS3Client>,
+type RemoteObjectVerifier = Pick<ReturnType<typeof createHfS3Client>, 'get' | 'head'>;
+
+/**
+ * HF 新对象写入后，HEAD 与 GET 偶尔会在很短的时间内看到不同快照。
+ * 校验层允许这种瞬时不一致收敛，但绝不覆盖持续冲突的不可变 release。
+ */
+export async function verifyRemoteObject(
+  client: RemoteObjectVerifier,
   key: string,
   expected: { size: number; sha256: string },
+  options: { attempts?: number; delayMs?: number } = {},
 ): Promise<boolean> {
-  const head = await client.head(key);
-  if (!head.exists) return false;
-  if (head.size !== null && head.size !== expected.size) throw new Error(`Remote size conflicts for ${key}.`);
-  const snapshot = await client.get(key);
-  if (!snapshot || snapshot.bytes.byteLength !== expected.size || sha256(snapshot.bytes) !== expected.sha256) {
-    throw new Error(`Remote bytes conflict for ${key}.`);
+  const attempts = options.attempts ?? 4;
+  const delayMs = options.delayMs ?? 500;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const head = await client.head(key);
+    if (!head.exists) return false;
+    const snapshot = await client.get(key);
+    const sizeMatches = head.size === null || head.size === expected.size;
+    const bytesMatch =
+      snapshot !== null && snapshot.bytes.byteLength === expected.size && sha256(snapshot.bytes) === expected.sha256;
+    if (sizeMatches && bytesMatch) return true;
+    if (attempt < attempts) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs * 2 ** (attempt - 1)));
+    }
   }
-  return true;
+  throw new Error(`Remote bytes conflict for ${key}.`);
 }
 
 async function publishObjects(
