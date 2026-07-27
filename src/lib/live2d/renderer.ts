@@ -24,6 +24,7 @@ export interface Live2DCore {
   getExpressions(): string[];
   playMotion(group: string, index?: number, priority?: number): void;
   setExpression(id?: string): void;
+  setEffects?(effects: { sway: boolean; breathe: boolean; blink: boolean }): void;
   pauseRendering?(): void;
   resumeRendering?(): void;
   on(event: Live2DCoreEvent, listener: (value?: string) => void): Live2DCore;
@@ -183,6 +184,10 @@ export class Live2DRenderer {
 
   setExpression(id?: string): void {
     if (this.phase === 'ready') this.core?.setExpression(id);
+  }
+
+  setEffects(effects: { sway: boolean; breathe: boolean; blink: boolean }): void {
+    if (this.phase === 'ready') this.core?.setEffects?.(effects);
   }
 
   getMotions(): Record<string, string[]> {

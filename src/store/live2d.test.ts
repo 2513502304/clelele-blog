@@ -90,6 +90,7 @@ describe('Live2D store', () => {
       hidden: false,
       audioEnabled: true,
       displayPolicy: 'smart',
+      effects: { sway: true, breathe: true, blink: true },
     });
     assert.equal(store.$state.get().loadIntent, 'visitor');
   });
@@ -173,6 +174,7 @@ describe('Live2D store', () => {
       hidden: false,
       audioEnabled: true,
       displayPolicy: 'smart',
+      effects: { sway: true, breathe: true, blink: true },
     });
   });
 

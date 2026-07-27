@@ -29,6 +29,7 @@ describe('Live2D preferences', () => {
         hidden: true,
         audioEnabled: true,
         displayPolicy: 'always-visible',
+        effects: { sway: true, breathe: true, blink: true },
       },
     );
 
@@ -45,6 +46,13 @@ describe('Live2D preferences', () => {
     assert.equal(partial.hidden, false);
     assert.equal(partial.audioEnabled, true);
     assert.equal(partial.displayPolicy, 'smart');
+    assert.deepEqual(partial.effects, { sway: true, breathe: true, blink: true });
+
+    const customized = parseLive2DPreferences({
+      ...DEFAULT_LIVE2D_PREFERENCES,
+      effects: { sway: false, breathe: true, blink: false },
+    });
+    assert.deepEqual(customized.effects, { sway: false, breathe: true, blink: false });
   });
 
   it('falls back safely for corrupt and unknown-version data', () => {

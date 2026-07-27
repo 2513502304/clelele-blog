@@ -1,5 +1,6 @@
 import { Live2DPanel } from '@components/live2d/Live2DPanel';
 import { Icon } from '@iconify/react';
+import type { Live2DEffects } from '@lib/live2d/preferences';
 import { useMemo } from 'react';
 
 interface MotionOption {
@@ -14,9 +15,11 @@ interface Props {
   selectedMotion: string;
   selectedExpression: string;
   paused: boolean;
+  effects: Live2DEffects;
   onPlayMotion: (group: string, index: number) => void;
   onExpression: (expression?: string) => void;
   onPause: () => void;
+  onEffect: (effect: keyof Live2DEffects, enabled: boolean) => void;
   onScreenshot: () => void;
   onClose: () => void;
 }
@@ -33,9 +36,11 @@ export function Live2DAnimationPanel({
   selectedMotion,
   selectedExpression,
   paused,
+  effects,
   onPlayMotion,
   onExpression,
   onPause,
+  onEffect,
   onScreenshot,
   onClose,
 }: Props) {
@@ -99,6 +104,25 @@ export function Live2DAnimationPanel({
           ))}
         </select>
       </label>
+
+      <fieldset className="live2d-effect-grid" disabled={paused}>
+        <legend>{labels.automaticEffects}</legend>
+        {(['sway', 'breathe', 'blink'] as const).map((effect) => (
+          <div className="live2d-effect-row" key={effect}>
+            <span>{labels[effect]}</span>
+            <button
+              type="button"
+              className="live2d-switch"
+              role="switch"
+              aria-checked={effects[effect]}
+              aria-label={labels[effect]}
+              onClick={() => onEffect(effect, !effects[effect])}
+            >
+              <span />
+            </button>
+          </div>
+        ))}
+      </fieldset>
     </Live2DPanel>
   );
 }

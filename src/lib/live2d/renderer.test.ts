@@ -10,6 +10,7 @@ class FakeCore implements Live2DCore {
   paused = 0;
   resumed = 0;
   playedMotions: Array<[string, number | undefined, number | undefined]> = [];
+  effects: Array<{ sway: boolean; breathe: boolean; blink: boolean }> = [];
   ready = true;
   resolveCurrent: (() => void) | null = null;
   private readonly listeners = new Map<'tap' | 'loaded', Array<(value?: string) => void>>();
@@ -45,6 +46,9 @@ class FakeCore implements Live2DCore {
     this.playedMotions.push([group, index, priority]);
   }
   setExpression() {}
+  setEffects(effects: { sway: boolean; breathe: boolean; blink: boolean }) {
+    this.effects.push(effects);
+  }
   pauseRendering() {
     this.paused += 1;
   }
@@ -131,6 +135,19 @@ test('soft pause preserves the loaded model and blocks motion mutations until re
   renderer.playMotion('angry', 1, 3);
   assert.equal(core.resumed, 1);
   assert.deepEqual(core.playedMotions, [['angry', 1, 3]]);
+  renderer.destroy();
+});
+
+test('forwards automatic effect preferences to the ready renderer', async () => {
+  const core = new FakeCore();
+  const renderer = new Live2DRenderer({ canvas: canvas(), createCore: async () => core });
+  const loading = renderer.load(selection('effects'));
+  await new Promise((resolve) => setImmediate(resolve));
+  core.resolveCurrent?.();
+  await loading;
+
+  renderer.setEffects({ sway: false, breathe: true, blink: false });
+  assert.deepEqual(core.effects, [{ sway: false, breathe: true, blink: false }]);
   renderer.destroy();
 });
 

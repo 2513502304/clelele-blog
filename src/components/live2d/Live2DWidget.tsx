@@ -73,6 +73,7 @@ function Live2DWidgetContent({
   const interactionSelectionRef = useRef('');
   const selectedMotionRef = useRef<{ group: string; index: number; priority?: number } | null>(null);
   const selectedExpressionRef = useRef('');
+  const effectsRef = useRef(state.preferences.effects);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [rendererStarted, setRendererStarted] = useState(false);
   const [retryNonce, setRetryNonce] = useState(0);
@@ -86,6 +87,7 @@ function Live2DWidgetContent({
   const [selectedMotion, setSelectedMotion] = useState('');
   const [selectedExpression, setSelectedExpression] = useState('');
   const orderedSelections = useMemo(catalogSelections, []);
+  effectsRef.current = state.preferences.effects;
 
   const stopAudio = useCallback(() => {
     const audio = audioRef.current;
@@ -300,6 +302,7 @@ function Live2DWidgetContent({
         live2dActions.setRendererStatus(phase);
       }
       if (phase === 'ready') {
+        rendererRef.current?.setEffects(effectsRef.current);
         setModelControls({
           motions: rendererRef.current?.getMotions() ?? {},
           expressions: rendererRef.current?.getExpressions() ?? [],
@@ -389,6 +392,10 @@ function Live2DWidgetContent({
     setSelectedExpression(next);
     rendererRef.current?.setExpression(expression);
   }, []);
+
+  useEffect(() => {
+    rendererRef.current?.setEffects(state.preferences.effects);
+  }, [state.preferences.effects]);
 
   const cycle = (direction: -1 | 1) => {
     const current = orderedSelections.findIndex(
@@ -493,6 +500,10 @@ function Live2DWidgetContent({
     expression: t('live2d.expression'),
     randomExpression: t('live2d.randomExpression'),
     unavailable: t('live2d.unavailable'),
+    automaticEffects: t('live2d.automaticEffects'),
+    sway: t('live2d.sway'),
+    breathe: t('live2d.breathe'),
+    blink: t('live2d.blink'),
     pagination: t('live2d.pagination'),
     previousPage: t('live2d.previousPage'),
     nextPage: t('live2d.nextPage'),
@@ -594,9 +605,11 @@ function Live2DWidgetContent({
           selectedMotion={selectedMotion}
           selectedExpression={selectedExpression}
           paused={userPaused}
+          effects={state.preferences.effects}
           onPlayMotion={selectMotion}
           onExpression={selectExpression}
           onPause={togglePause}
+          onEffect={live2dActions.setEffect}
           onScreenshot={downloadScreenshot}
           onClose={() => live2dActions.setActivePanel(null)}
         />

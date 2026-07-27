@@ -13,6 +13,7 @@ import {
   DEFAULT_LIVE2D_PREFERENCES,
   type Live2DCatalogSelection,
   type Live2DDisplayPolicy,
+  type Live2DEffects,
   type Live2DPreferenceDiagnosticHandler,
   type Live2DPreferenceStorage,
   type Live2DPreferences,
@@ -170,6 +171,13 @@ export function createLive2DStore(options: CreateLive2DStoreOptions = {}) {
     setDisplayPolicy(displayPolicy: Live2DDisplayPolicy): void {
       updatePreferences((current) => ({ ...current, displayPolicy }));
       if (displayPolicy === 'always-visible') $state.set({ ...$state.get(), avoidanceHidden: false });
+    },
+
+    setEffect(effect: keyof Live2DEffects, enabled: boolean): void {
+      updatePreferences((current) => ({
+        ...current,
+        effects: { ...current.effects, [effect]: enabled },
+      }));
     },
 
     setAvoidanceHidden(hidden: boolean): void {

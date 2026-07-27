@@ -78,3 +78,24 @@ test('manual motion selection interrupts immediately and pause preserves the cur
   expect(resumedFrame).not.toBe(frozenFrame);
   await expect(motion).toHaveValue('angry04\u00000');
 });
+
+test('automatic effect preferences persist without reloading the model', async ({ page }) => {
+  const requests = live2dRequests(page);
+  await page.goto('/');
+  await waitForLive2DReady(page);
+  const requestsBeforeToggle = requests.length;
+  await page.getByRole('button', { name: '动作与表情' }).click();
+
+  const sway = page.getByRole('switch', { name: '摇摆' });
+  await expect(sway).toHaveAttribute('aria-checked', 'true');
+  await sway.click();
+  await expect(sway).toHaveAttribute('aria-checked', 'false');
+  expect(requests).toHaveLength(requestsBeforeToggle);
+  const storedEffects = await page.evaluate(() => JSON.parse(localStorage.getItem('live2d-preferences') ?? '{}').effects);
+  expect(storedEffects).toEqual({ sway: false, breathe: true, blink: true });
+
+  await page.reload();
+  await waitForLive2DReady(page);
+  await page.getByRole('button', { name: '动作与表情' }).click();
+  await expect(page.getByRole('switch', { name: '摇摆' })).toHaveAttribute('aria-checked', 'false');
+});

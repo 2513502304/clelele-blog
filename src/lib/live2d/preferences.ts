@@ -10,6 +10,12 @@ export interface Live2DSelection {
   costumeId: string;
 }
 
+export interface Live2DEffects {
+  sway: boolean;
+  breathe: boolean;
+  blink: boolean;
+}
+
 export interface Live2DPreferences {
   version: typeof LIVE2D_PREFERENCES_VERSION;
   selection: Live2DSelection;
@@ -17,6 +23,7 @@ export interface Live2DPreferences {
   hidden: boolean;
   audioEnabled: boolean;
   displayPolicy: Live2DDisplayPolicy;
+  effects: Live2DEffects;
 }
 
 export interface Live2DPreferenceStorage {
@@ -38,6 +45,7 @@ export const DEFAULT_LIVE2D_PREFERENCES: Readonly<Live2DPreferences> = Object.fr
   hidden: false,
   audioEnabled: false,
   displayPolicy: 'smart',
+  effects: Object.freeze({ sway: true, breathe: true, blink: true }),
 });
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -75,6 +83,15 @@ function parsePlacement(value: unknown, fallback: Live2DPlacement): Live2DPlacem
   return { ...fallback };
 }
 
+function parseEffects(value: unknown, fallback: Live2DEffects): Live2DEffects {
+  if (!isRecord(value)) return { ...fallback };
+  return {
+    sway: typeof value.sway === 'boolean' ? value.sway : fallback.sway,
+    breathe: typeof value.breathe === 'boolean' ? value.breathe : fallback.breathe,
+    blink: typeof value.blink === 'boolean' ? value.blink : fallback.blink,
+  };
+}
+
 function parseCurrentRecord(record: Record<string, unknown>, defaults: Live2DPreferences): Live2DPreferences {
   return {
     version: LIVE2D_PREFERENCES_VERSION,
@@ -86,6 +103,7 @@ function parseCurrentRecord(record: Record<string, unknown>, defaults: Live2DPre
       record.displayPolicy === 'smart' || record.displayPolicy === 'always-visible'
         ? record.displayPolicy
         : defaults.displayPolicy,
+    effects: parseEffects(record.effects, defaults.effects),
   };
 }
 
@@ -106,6 +124,7 @@ function migrateLegacyRecord(record: Record<string, unknown>, defaults: Live2DPr
       hidden: record.hidden,
       audioEnabled: record.audioEnabled,
       displayPolicy: record.displayPolicy,
+      effects: record.effects,
     },
     defaults,
   );
@@ -136,6 +155,7 @@ export function cloneLive2DPreferences(preferences: Live2DPreferences): Live2DPr
     ...preferences,
     selection: { ...preferences.selection },
     placement: { ...preferences.placement },
+    effects: { ...preferences.effects },
   };
 }
 
