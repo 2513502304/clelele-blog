@@ -14,6 +14,18 @@ export type PlayMode = 'order' | 'random' | 'loop';
 /** The ID of the currently playing player instance (audio or video), or null if none. */
 export const $activePlayerId = atom<string | null>(null);
 
+/** Claims the global media mutex. Existing players observe the atom and pause themselves. */
+export function claimActivePlayer(playerId: string): void {
+  $activePlayerId.set(playerId);
+}
+
+/** Compare-and-clear prevents a stale player from releasing a newer owner's claim. */
+export function releaseActivePlayer(playerId: string): boolean {
+  if ($activePlayerId.get() !== playerId) return false;
+  $activePlayerId.set(null);
+  return true;
+}
+
 const STORAGE_KEY_MODE = 'audio-player-mode';
 const STORAGE_KEY_VOLUME = 'audio-player-volume';
 

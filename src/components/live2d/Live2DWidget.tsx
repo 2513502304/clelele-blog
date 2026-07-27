@@ -1,0 +1,432 @@
+import { Live2DCanvas } from '@components/live2d/Live2DCanvas';
+import { Live2DControls } from '@components/live2d/Live2DControls';
+import { Live2DModelPicker } from '@components/live2d/Live2DModelPicker';
+import { Live2DSettings } from '@components/live2d/Live2DSettings';
+import { useTranslation } from '@hooks/useTranslation';
+import { Icon } from '@iconify/react';
+import { findLive2DCostume, live2dCatalog } from '@lib/live2d/catalog';
+import { markLive2DEscapeHandled, registerLive2DFocusNode } from '@lib/live2d/focus-scope';
+import { classifyLive2DPointerMovement } from '@lib/live2d/geometry';
+import { Live2DInteractionGeneration, resolveLive2DInteraction } from '@lib/live2d/interactions';
+import type { Live2DRenderer, Live2DRendererPhase } from '@lib/live2d/renderer';
+import { useStore } from '@nanostores/react';
+import { $live2dState, live2dActions } from '@store/live2d';
+import { $activeModal } from '@store/modal';
+import { claimActivePlayer, releaseActivePlayer } from '@store/player';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
+export interface Live2DWidgetConfig {
+  defaultCharacterId: string;
+  defaultCostumeId: string;
+  desktopIdleDelayMs: number;
+}
+
+interface PointerStart {
+  pointer: { x: number; y: number };
+  widget: { x: number; y: number };
+}
+
+const immersiveModals = new Set(['imageLightbox', 'codeFullscreen', 'diagramFullscreen']);
+const LIVE2D_PLAYER_ID = 'live2d-character-audio';
+const DIALOGUE_DURATION_MS = 6_000;
+
+function catalogSelections() {
+  return live2dCatalog.characters.flatMap((character) =>
+    character.costumes.map((costume) => ({ characterId: character.id, costumeId: costume.id })),
+  );
+}
+
+function textLabel(values: Record<string, string>, locale: string): string {
+  return values[locale] ?? values.zh ?? values.en ?? Object.values(values)[0] ?? '';
+}
+
+/** Persistent shell: all visual, preference, asset and renderer work stays behind this single island. */
+export default function Live2DWidget({ defaultCharacterId, defaultCostumeId, desktopIdleDelayMs }: Live2DWidgetConfig) {
+  const { t, locale } = useTranslation();
+  const state = useStore($live2dState);
+  const modal = useStore($activeModal);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const surfaceRef = useRef<HTMLButtonElement>(null);
+  const rendererRef = useRef<Live2DRenderer | null>(null);
+  const rootFocusCleanup = useRef<(() => void) | null>(null);
+  const wakeFocusCleanup = useRef<(() => void) | null>(null);
+  const pointerStart = useRef<PointerStart | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const dialogueTimerRef = useRef<number | null>(null);
+  const interactionGeneration = useRef(new Live2DInteractionGeneration());
+  const interactionSelectionRef = useRef('');
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [rendererStarted, setRendererStarted] = useState(false);
+  const [retryNonce, setRetryNonce] = useState(0);
+  const [dialogue, setDialogue] = useState('');
+  const orderedSelections = useMemo(catalogSelections, []);
+
+  const stopAudio = useCallback(() => {
+    const audio = audioRef.current;
+    if (audio) {
+      audio.onended = null;
+      audio.onerror = null;
+      audio.pause();
+      audio.removeAttribute('src');
+      audio.load();
+    }
+    releaseActivePlayer(LIVE2D_PLAYER_ID);
+  }, []);
+
+  const stopTransientInteraction = useCallback(() => {
+    interactionGeneration.current.invalidate();
+    if (dialogueTimerRef.current !== null) window.clearTimeout(dialogueTimerRef.current);
+    dialogueTimerRef.current = null;
+    setDialogue('');
+    stopAudio();
+  }, [stopAudio]);
+
+  const costume =
+    findLive2DCostume(state.preferences.selection.characterId, state.preferences.selection.costumeId) ??
+    findLive2DCostume(defaultCharacterId, defaultCostumeId) ??
+    live2dCatalog.characters[0]?.costumes[0];
+  const character = live2dCatalog.characters.find((candidate) => candidate.id === state.preferences.selection.characterId);
+  const characterName = character ? textLabel(character.label, locale) : t('live2d.character');
+  const rendererSelection = useMemo(
+    () =>
+      costume
+        ? {
+            key: `${state.preferences.selection.characterId}/${state.preferences.selection.costumeId}`,
+            entryPath: `/api/live2d-assets/${costume.entryPath}`,
+            scale: costume.scale,
+            position: costume.position,
+          }
+        : null,
+    [costume, state.preferences.selection.characterId, state.preferences.selection.costumeId],
+  );
+
+  useEffect(() => {
+    live2dActions.initialize();
+    live2dActions.reconcileSelection(orderedSelections, { characterId: defaultCharacterId, costumeId: defaultCostumeId });
+  }, [defaultCharacterId, defaultCostumeId, orderedSelections]);
+
+  useEffect(() => {
+    const update = () => {
+      const root = rootRef.current;
+      const anchor = document.querySelector<HTMLElement>('[data-live2d-sidebar-anchor]');
+      const exclusions = [...document.querySelectorAll<HTMLElement>('[data-live2d-exclusion]')].map((node) => {
+        const rect = node.getBoundingClientRect();
+        return { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
+      });
+      const anchorRect = anchor?.getBoundingClientRect();
+      live2dActions.setGeometry({
+        viewport: { width: window.innerWidth, height: window.innerHeight },
+        widget: { width: root?.offsetWidth || 280, height: root?.offsetHeight || 390 },
+        sidebarAnchor: anchorRect
+          ? { x: anchorRect.left, y: anchorRect.top, width: anchorRect.width, height: anchorRect.height }
+          : null,
+        exclusionZones: exclusions,
+        mobile: window.innerWidth <= 768,
+      });
+      live2dActions.setViewportWidth(window.innerWidth);
+    };
+    update();
+    window.addEventListener('resize', update, { passive: true });
+    return () => {
+      window.removeEventListener('resize', update);
+      live2dActions.clearGeometry();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (state.viewportMode !== 'desktop' || rendererStarted) return;
+    let cancelled = false;
+    const start = () => {
+      if (!cancelled && live2dActions.scheduleDesktopIdleLoad()) setRendererStarted(true);
+    };
+    const timeout = window.setTimeout(() => {
+      if ('requestIdleCallback' in window) window.requestIdleCallback(start, { timeout: 1200 });
+      else start();
+    }, desktopIdleDelayMs);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, [desktopIdleDelayMs, rendererStarted, state.viewportMode]);
+
+  useEffect(() => {
+    if (state.loadIntent !== 'none') setRendererStarted(true);
+  }, [state.loadIntent]);
+
+  useEffect(() => {
+    live2dActions.setAvoidanceHidden(state.preferences.displayPolicy === 'smart' && immersiveModals.has(modal.type ?? ''));
+  }, [modal.type, state.preferences.displayPolicy]);
+
+  useEffect(() => {
+    const selectionKey = rendererSelection?.key ?? '';
+    if (interactionSelectionRef.current === selectionKey) return;
+    interactionSelectionRef.current = selectionKey;
+    stopTransientInteraction();
+  }, [rendererSelection?.key, stopTransientInteraction]);
+
+  useEffect(() => {
+    if (state.preferences.hidden || state.avoidanceHidden || state.rendererStatus === 'recoverable') {
+      stopTransientInteraction();
+    }
+  }, [state.avoidanceHidden, state.preferences.hidden, state.rendererStatus, stopTransientInteraction]);
+
+  useEffect(() => {
+    if (!state.preferences.audioEnabled) stopAudio();
+  }, [state.preferences.audioEnabled, stopAudio]);
+
+  useEffect(() => {
+    const stopWhenHidden = () => {
+      if (document.hidden) stopTransientInteraction();
+    };
+    document.addEventListener('visibilitychange', stopWhenHidden);
+    document.addEventListener('astro:before-preparation', stopTransientInteraction);
+    return () => {
+      document.removeEventListener('visibilitychange', stopWhenHidden);
+      document.removeEventListener('astro:before-preparation', stopTransientInteraction);
+      stopTransientInteraction();
+    };
+  }, [stopTransientInteraction]);
+
+  const setRootNode = useCallback((node: HTMLDivElement | null) => {
+    rootFocusCleanup.current?.();
+    rootFocusCleanup.current = null;
+    rootRef.current = node;
+    if (node) rootFocusCleanup.current = registerLive2DFocusNode(node);
+  }, []);
+  const setWakeNode = useCallback((node: HTMLButtonElement | null) => {
+    wakeFocusCleanup.current?.();
+    wakeFocusCleanup.current = null;
+    if (node) wakeFocusCleanup.current = registerLive2DFocusNode(node);
+  }, []);
+  useEffect(
+    () => () => {
+      rootFocusCleanup.current?.();
+      wakeFocusCleanup.current?.();
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || !state.activePanel || !rootRef.current?.contains(document.activeElement)) return;
+      live2dActions.setActivePanel(null);
+      markLive2DEscapeHandled(event);
+      event.stopImmediatePropagation();
+    };
+    document.addEventListener('keydown', handleEscape, true);
+    return () => document.removeEventListener('keydown', handleEscape, true);
+  }, [state.activePanel]);
+
+  const handlePhase = useCallback(
+    (phase: Live2DRendererPhase) => {
+      if (phase === 'recoverable') stopTransientInteraction();
+      if (phase === 'loading' || phase === 'ready' || phase === 'recoverable' || phase === 'dormant') {
+        live2dActions.setRendererStatus(phase);
+      }
+    },
+    [stopTransientInteraction],
+  );
+
+  const interact = useCallback(
+    (area = 'head') => {
+      if (!costume || state.rendererStatus !== 'ready') return;
+      const resolved = resolveLive2DInteraction(costume.interactions, area);
+      if (!resolved) return;
+      const { mapping, line } = resolved;
+      const generation = interactionGeneration.current.next();
+      if (dialogueTimerRef.current !== null) window.clearTimeout(dialogueTimerRef.current);
+      if (mapping.expression) rendererRef.current?.setExpression(mapping.expression);
+      if (mapping.motionGroup) rendererRef.current?.playMotion(mapping.motionGroup, mapping.motionIndex);
+      setDialogue(line);
+      dialogueTimerRef.current = window.setTimeout(() => {
+        if (interactionGeneration.current.isCurrent(generation)) setDialogue('');
+        dialogueTimerRef.current = null;
+      }, DIALOGUE_DURATION_MS);
+
+      stopAudio();
+      if (!state.preferences.audioEnabled || !mapping.audio) return;
+      const audio = audioRef.current ?? new Audio();
+      audioRef.current = audio;
+      const releaseIfCurrent = () => {
+        if (interactionGeneration.current.isCurrent(generation)) releaseActivePlayer(LIVE2D_PLAYER_ID);
+      };
+      audio.onended = releaseIfCurrent;
+      audio.onerror = releaseIfCurrent;
+      audio.src = `/api/live2d-assets/releases/${costume.releaseId}/${mapping.audio
+        .split('/')
+        .map((segment) => encodeURIComponent(segment))
+        .join('/')}`;
+      claimActivePlayer(LIVE2D_PLAYER_ID);
+      void audio.play().catch(() => releaseIfCurrent());
+    },
+    [costume, state.preferences.audioEnabled, state.rendererStatus, stopAudio],
+  );
+  const getInteractionRoot = useCallback(() => surfaceRef.current, []);
+  const keepRenderer = useCallback((renderer: Live2DRenderer | null) => {
+    rendererRef.current = renderer;
+  }, []);
+
+  const cycle = (direction: -1 | 1) => {
+    const current = orderedSelections.findIndex(
+      (entry) =>
+        entry.characterId === state.preferences.selection.characterId &&
+        entry.costumeId === state.preferences.selection.costumeId,
+    );
+    const next = orderedSelections[(Math.max(current, 0) + direction + orderedSelections.length) % orderedSelections.length];
+    if (next) live2dActions.select(next);
+  };
+
+  const onPointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const point = state.renderedPlacement?.position;
+    if (!point) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    pointerStart.current = { pointer: { x: event.clientX, y: event.clientY }, widget: point };
+  };
+  const onPointerMove = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (!pointerStart.current) return;
+    setDragOffset({ x: event.clientX - pointerStart.current.pointer.x, y: event.clientY - pointerStart.current.pointer.y });
+  };
+  const onPointerUp = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const start = pointerStart.current;
+    pointerStart.current = null;
+    if (!start) return;
+    const current = { x: event.clientX, y: event.clientY };
+    if (classifyLive2DPointerMovement(start.pointer, current) === 'drag') {
+      live2dActions.moveTo({
+        x: start.widget.x + current.x - start.pointer.x,
+        y: start.widget.y + current.y - start.pointer.y,
+      });
+    } else {
+      interact(event.nativeEvent.offsetY < event.currentTarget.clientHeight * 0.55 ? 'head' : 'body');
+    }
+    setDragOffset({ x: 0, y: 0 });
+  };
+
+  const placement = state.renderedPlacement?.position;
+  const manuallyHidden = state.preferences.hidden;
+  if ((manuallyHidden || state.renderedPlacement?.mode === 'collapsed') && !state.avoidanceHidden) {
+    return (
+      <button
+        ref={setWakeNode}
+        type="button"
+        className="live2d-wake"
+        data-live2d-policy={state.preferences.displayPolicy}
+        onClick={() => {
+          live2dActions.wake();
+          setRendererStarted(true);
+        }}
+        aria-label={t('live2d.wake')}
+        title={t('live2d.wake')}
+      >
+        <Icon icon="ri:user-smile-line" aria-hidden="true" />
+      </button>
+    );
+  }
+
+  if (state.avoidanceHidden || !placement || !costume || !rendererSelection) return null;
+
+  const transform = `translate3d(${placement.x + dragOffset.x}px, ${placement.y + dragOffset.y}px, 0)`;
+  const labels = {
+    previous: t('live2d.previous'),
+    next: t('live2d.next'),
+    characters: t('live2d.characters'),
+    settings: t('live2d.settings'),
+    hide: t('live2d.hide'),
+    restore: t('live2d.restore'),
+    audio: t('live2d.audio'),
+    displayPolicy: t('live2d.displayPolicy'),
+    smart: t('live2d.smart'),
+    alwaysVisible: t('live2d.alwaysVisible'),
+    position: t('live2d.position'),
+    nudge: t('live2d.nudge'),
+    up: t('live2d.up'),
+    right: t('live2d.right'),
+    down: t('live2d.down'),
+    left: t('live2d.left'),
+    'bottom-left': t('live2d.bottomLeft'),
+    'bottom-center': t('live2d.bottomCenter'),
+    'bottom-right': t('live2d.bottomRight'),
+  };
+  return (
+    <div
+      ref={setRootNode}
+      className="live2d-root"
+      style={{ transform }}
+      data-phase={state.rendererStatus}
+      data-live2d-policy={state.preferences.displayPolicy}
+    >
+      <div className="live2d-stage">
+        <Live2DCanvas
+          selection={rendererSelection}
+          releaseId={costume.releaseId}
+          active={rendererStarted}
+          retryNonce={retryNonce}
+          getInteractionRoot={getInteractionRoot}
+          onPhase={handlePhase}
+          onTap={interact}
+          onRenderer={keepRenderer}
+        />
+        <button
+          ref={surfaceRef}
+          type="button"
+          className="live2d-interaction-surface"
+          aria-label={t('live2d.interact', { name: characterName })}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') interact();
+          }}
+        />
+        {state.rendererStatus === 'loading' && <div className="live2d-status">{t('live2d.loading')}</div>}
+        {state.rendererStatus === 'recoverable' && (
+          <div className="live2d-status live2d-error" role="alert">
+            <span>{t('live2d.failed')}</span>
+            <button
+              type="button"
+              onClick={() => {
+                live2dActions.requestVisitorLoad();
+                setRetryNonce((value) => value + 1);
+              }}
+            >
+              {t('live2d.retry')}
+            </button>
+          </div>
+        )}
+        {dialogue && <output className="live2d-dialogue">{dialogue}</output>}
+      </div>
+      <Live2DControls
+        labels={labels}
+        onPrevious={() => cycle(-1)}
+        onNext={() => cycle(1)}
+        onCharacters={() => live2dActions.setActivePanel(state.activePanel === 'picker' ? null : 'picker')}
+        onSettings={() => live2dActions.setActivePanel(state.activePanel === 'settings' ? null : 'settings')}
+        onHide={() => live2dActions.setManualHidden(true)}
+        onRestore={() => live2dActions.restoreToSidebar()}
+      />
+      {state.activePanel === 'picker' && (
+        <Live2DModelPicker
+          catalog={live2dCatalog}
+          locale={locale}
+          selected={state.preferences.selection}
+          title={t('live2d.characters')}
+          onSelect={live2dActions.select}
+        />
+      )}
+      {state.activePanel === 'settings' && (
+        <Live2DSettings
+          labels={labels}
+          audioEnabled={state.preferences.audioEnabled}
+          displayPolicy={state.preferences.displayPolicy}
+          onAudio={live2dActions.setAudioEnabled}
+          onPolicy={live2dActions.setDisplayPolicy}
+          onPreset={live2dActions.setPreset}
+          onNudge={live2dActions.nudge}
+        />
+      )}
+      <span className="sr-only" aria-live="polite">
+        {state.rendererStatus === 'ready' ? t('live2d.ready', { name: characterName }) : ''}
+      </span>
+    </div>
+  );
+}

@@ -94,6 +94,7 @@ const nextPost = adjacentPosts.nextPost ? toPostRef(adjacentPosts.nextPost) : nu
   }
 
   <ScrollProgress client:only="react" className="mt-auto w-full rounded-full pt-4" />
+  {!isDrawer && <div data-live2d-sidebar-anchor aria-hidden="true" class="pointer-events-none h-64 shrink-0" />}
 </div>
 
 <script>
