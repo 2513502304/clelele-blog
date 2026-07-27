@@ -6,6 +6,24 @@ export interface ResolvedLive2DInteraction {
   audio?: string;
 }
 
+export interface ResolvedLive2DPlayback extends Omit<ResolvedLive2DInteraction, 'audio'> {
+  audio?: {
+    path: string;
+    releaseId: string;
+  };
+}
+
+export interface ResolveLive2DPlaybackOptions {
+  mappingInteractions: readonly Live2DInteraction[];
+  mappingReleaseId: string;
+  dialogueSource?: {
+    interactions: readonly Live2DInteraction[];
+    releaseId: string;
+  };
+  /** A declared character voice pack is loading, so legacy costume audio must not leak into the result. */
+  suppressMappingAudio?: boolean;
+}
+
 function normalizedArea(value: string): string {
   return value.trim().toLocaleLowerCase('en-US');
 }
@@ -34,6 +52,27 @@ export function resolveLive2DInteraction(
   if (visibleChoices.length === 0) return null;
   const index = Math.min(visibleChoices.length - 1, Math.max(0, Math.floor(random() * visibleChoices.length)));
   return visibleChoices[index] ?? visibleChoices[0];
+}
+
+/**
+ * Resolves visible text and its audio release in one operation. This prevents a character-wide
+ * dialogue from being played against the currently selected costume's unrelated audio package.
+ */
+export function resolveLive2DPlayback(
+  options: ResolveLive2DPlaybackOptions,
+  area: string,
+  random: () => number = Math.random,
+): ResolvedLive2DPlayback | null {
+  const resolved = resolveLive2DInteraction(options.mappingInteractions, area, random, options.dialogueSource?.interactions);
+  if (!resolved) return null;
+  const releaseId = options.dialogueSource?.releaseId ?? options.mappingReleaseId;
+  return {
+    mapping: resolved.mapping,
+    line: resolved.line,
+    ...(!resolved.audio || (options.suppressMappingAudio && !options.dialogueSource)
+      ? {}
+      : { audio: { path: resolved.audio, releaseId } }),
+  };
 }
 
 /**

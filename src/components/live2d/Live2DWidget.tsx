@@ -5,10 +5,10 @@ import { Live2DModelPicker } from '@components/live2d/Live2DModelPicker';
 import { Live2DSettings } from '@components/live2d/Live2DSettings';
 import { useTranslation } from '@hooks/useTranslation';
 import { Icon } from '@iconify/react';
-import { fetchLive2DCatalog, findLive2DCostume, getLive2DCatalogSelections, live2dCatalog } from '@lib/live2d/catalog';
+import { fetchLive2DCatalog, findLive2DSelection, getLive2DCatalogSelections, live2dCatalog } from '@lib/live2d/catalog';
 import { markLive2DEscapeHandled, registerLive2DFocusNode } from '@lib/live2d/focus-scope';
 import { classifyLive2DPointerMovement } from '@lib/live2d/geometry';
-import { Live2DInteractionGeneration, resolveLive2DInteraction } from '@lib/live2d/interactions';
+import { Live2DInteractionGeneration, resolveLive2DPlayback } from '@lib/live2d/interactions';
 import type { Live2DDisplayPolicy } from '@lib/live2d/preferences';
 import type { Live2DRenderer, Live2DRendererPhase } from '@lib/live2d/renderer';
 import type { Live2DCatalog, Live2DVoiceIndex } from '@lib/live2d/types';
@@ -122,24 +122,27 @@ function Live2DWidgetContent({
     if (activePlayerId !== null && activePlayerId !== LIVE2D_PLAYER_ID) stopAudio();
   }, [activePlayerId, stopAudio]);
 
-  const costume =
-    findLive2DCostume(state.preferences.selection.characterId, state.preferences.selection.costumeId, catalog) ??
-    findLive2DCostume(defaultCharacterId, defaultCostumeId, catalog) ??
-    catalog.characters[0]?.costumes[0];
-  const character = catalog.characters.find((candidate) => candidate.id === state.preferences.selection.characterId);
+  const resolvedSelection =
+    findLive2DSelection(state.preferences.selection.characterId, state.preferences.selection.costumeId, catalog) ??
+    findLive2DSelection(defaultCharacterId, defaultCostumeId, catalog) ??
+    (catalog.characters[0]?.costumes[0]
+      ? { character: catalog.characters[0], costume: catalog.characters[0].costumes[0] }
+      : null);
+  const character = resolvedSelection?.character;
+  const costume = resolvedSelection?.costume;
   const characterName = character ? textLabel(character.label, locale) : t('live2d.character');
   const activeVoiceIndex = voiceIndex && character?.voice?.releaseId === voiceIndex.releaseId ? voiceIndex.value : null;
   const rendererSelection = useMemo(
     () =>
       costume
         ? {
-            key: `${state.preferences.selection.characterId}/${state.preferences.selection.costumeId}`,
+            key: `${character?.id}/${costume.id}`,
             entryPath: `/api/live2d-assets/${costume.entryPath}`,
             scale: costume.scale,
             position: costume.position,
           }
         : null,
-    [costume, state.preferences.selection.characterId, state.preferences.selection.costumeId],
+    [character?.id, costume],
   );
 
   useEffect(() => {
@@ -171,10 +174,11 @@ function Live2DWidgetContent({
     return () => controller.abort();
   }, [rendererStarted]);
 
+  const characterVoice = character?.voice;
   useEffect(() => {
-    const voice = character?.voice;
+    const voice = characterVoice;
     let active = true;
-    setVoiceIndex(null);
+    setVoiceIndex((current) => (voice && current?.releaseId === voice.releaseId ? current : null));
     if (voice) {
       void live2dVoiceIndexCache
         .get(voice)
@@ -188,7 +192,7 @@ function Live2DWidgetContent({
     return () => {
       active = false;
     };
-  }, [character?.voice]);
+  }, [characterVoice]);
 
   useEffect(() => {
     const update = () => {
@@ -376,7 +380,19 @@ function Live2DWidgetContent({
   const interact = useCallback(
     (area = 'head') => {
       if (!costume || state.rendererStatus !== 'ready' || userPaused) return;
-      const resolved = resolveLive2DInteraction(costume.interactions, area, Math.random, activeVoiceIndex?.interactions);
+      const resolved = resolveLive2DPlayback(
+        {
+          mappingInteractions: costume.interactions,
+          mappingReleaseId: costume.releaseId,
+          dialogueSource:
+            activeVoiceIndex && characterVoice
+              ? { interactions: activeVoiceIndex.interactions, releaseId: characterVoice.releaseId }
+              : undefined,
+          suppressMappingAudio: Boolean(characterVoice && !activeVoiceIndex),
+        },
+        area,
+        Math.random,
+      );
       if (!resolved) return;
       const { mapping, line, audio: interactionAudio } = resolved;
       const generation = interactionGeneration.current.next();
@@ -414,9 +430,7 @@ function Live2DWidgetContent({
       };
       audio.onended = releaseIfCurrent;
       audio.onerror = releaseIfCurrent;
-      const audioReleaseId = activeVoiceIndex ? character?.voice?.releaseId : costume.releaseId;
-      if (!audioReleaseId) return;
-      audio.src = `/api/live2d-assets/releases/${audioReleaseId}/${interactionAudio
+      audio.src = `/api/live2d-assets/releases/${interactionAudio.releaseId}/${interactionAudio.path
         .split('/')
         .map((segment) => encodeURIComponent(segment))
         .join('/')}`;
@@ -429,15 +443,7 @@ function Live2DWidgetContent({
         })
         .catch(() => releaseIfCurrent());
     },
-    [
-      activeVoiceIndex,
-      character?.voice?.releaseId,
-      costume,
-      state.preferences.audioEnabled,
-      state.rendererStatus,
-      stopAudio,
-      userPaused,
-    ],
+    [activeVoiceIndex, characterVoice, costume, state.preferences.audioEnabled, state.rendererStatus, stopAudio, userPaused],
   );
   const keepRenderer = useCallback((renderer: Live2DRenderer | null) => {
     rendererRef.current = renderer;

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { assertCostumeMatchesManifest, live2dCatalog } from './catalog';
+import { assertCostumeMatchesManifest, findLive2DSelection, live2dCatalog } from './catalog';
 import type { Live2DCostume, Live2DPackageManifest } from './types';
 
 test('published catalog remains lightweight and validates at import time', () => {
@@ -47,4 +47,12 @@ test('catalog costume must match its manifest', () => {
     /Entry path is not present in manifest/,
   );
   assert.throws(() => assertCostumeMatchesManifest({ ...costume, packageBytes: 13 }, manifest), /Package size mismatch/);
+});
+
+test('resolves a costume together with its owning character', () => {
+  const selection = findLive2DSelection('chihaya-anon', 'live-sr-01');
+  assert.equal(selection?.character.id, 'chihaya-anon');
+  assert.equal(selection?.costume.id, 'live-sr-01');
+  assert.equal(findLive2DSelection('takamatsu-tomori', 'live-sr-01')?.character.id, 'takamatsu-tomori');
+  assert.equal(findLive2DSelection('chihaya-anon', 'missing'), null);
 });

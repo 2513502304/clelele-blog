@@ -1,15 +1,36 @@
 import catalogData from '../../data/live2d/catalog.json';
-import { type Live2DCatalog, type Live2DCostume, type Live2DPackageManifest, live2dCatalogSchema } from './types';
+import {
+  type Live2DCatalog,
+  type Live2DCharacter,
+  type Live2DCostume,
+  type Live2DPackageManifest,
+  live2dCatalogSchema,
+} from './types';
 
 export const live2dCatalog: Live2DCatalog = live2dCatalogSchema.parse(catalogData);
+
+export interface Live2DCatalogSelectionResult {
+  character: Live2DCharacter;
+  costume: Live2DCostume;
+}
+
+/** Resolves both records together so a fallback costume can never retain a stale character owner. */
+export function findLive2DSelection(
+  characterId: string,
+  costumeId: string,
+  catalog: Live2DCatalog = live2dCatalog,
+): Live2DCatalogSelectionResult | null {
+  const character = catalog.characters.find((candidate) => candidate.id === characterId);
+  const costume = character?.costumes.find((candidate) => candidate.id === costumeId);
+  return character && costume ? { character, costume } : null;
+}
 
 export function findLive2DCostume(
   characterId: string,
   costumeId: string,
   catalog: Live2DCatalog = live2dCatalog,
 ): Live2DCostume | null {
-  const character = catalog.characters.find((candidate) => candidate.id === characterId);
-  return character?.costumes.find((candidate) => candidate.id === costumeId) ?? null;
+  return findLive2DSelection(characterId, costumeId, catalog)?.costume ?? null;
 }
 
 export function getLive2DCatalogSelections(catalog: Live2DCatalog): Array<{ characterId: string; costumeId: string }> {

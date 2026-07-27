@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { Live2DInteractionGeneration, resolveLive2DInteraction } from './interactions';
+import { Live2DInteractionGeneration, resolveLive2DInteraction, resolveLive2DPlayback } from './interactions';
 
 const interactions = [
   { area: 'head', motionGroup: 'tap', lines: ['one', 'two'] },
@@ -50,6 +50,44 @@ test('combines costume animation mapping with the character-wide dialogue pool',
       audio: 'audio/gacha-42.mp3',
     },
   );
+});
+
+test('binds a character-wide dialogue and audio to the character voice release for every costume', () => {
+  const voiceReleaseId = 'a'.repeat(64);
+  const voice = [{ area: 'head', dialogues: [{ text: 'shared line', audio: 'audio/gacha-1819.mp3' }] }];
+  const costumes = [
+    { area: 'head', motionGroup: 'default-tap', lines: ['default fallback'], audio: 'audio/default.mp3' },
+    { area: 'head', motionGroup: 'sr-tap', lines: ['sr fallback'], audio: 'audio/sr.mp3' },
+  ];
+
+  for (const costume of costumes) {
+    const resolved = resolveLive2DPlayback(
+      {
+        mappingInteractions: [costume],
+        mappingReleaseId: 'b'.repeat(64),
+        dialogueSource: { interactions: voice, releaseId: voiceReleaseId },
+      },
+      'head',
+      () => 0,
+    );
+    assert.equal(resolved?.line, 'shared line');
+    assert.deepEqual(resolved?.audio, { path: 'audio/gacha-1819.mp3', releaseId: voiceReleaseId });
+    assert.equal(resolved?.mapping.motionGroup, costume.motionGroup);
+  }
+});
+
+test('does not play costume audio while a declared character voice index is loading', () => {
+  const resolved = resolveLive2DPlayback(
+    {
+      mappingInteractions: [{ area: 'head', lines: ['fallback'], audio: 'audio/costume.mp3' }],
+      mappingReleaseId: 'c'.repeat(64),
+      suppressMappingAudio: true,
+    },
+    'head',
+    () => 0,
+  );
+  assert.equal(resolved?.line, 'fallback');
+  assert.equal(resolved?.audio, undefined);
 });
 
 test('invalidating an interaction generation makes late work stale', () => {
