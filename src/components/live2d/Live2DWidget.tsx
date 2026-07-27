@@ -8,11 +8,11 @@ import { Icon } from '@iconify/react';
 import { fetchLive2DCatalog, findLive2DSelection, getLive2DCatalogSelections, live2dCatalog } from '@lib/live2d/catalog';
 import { markLive2DEscapeHandled, registerLive2DFocusNode } from '@lib/live2d/focus-scope';
 import { classifyLive2DPointerMovement } from '@lib/live2d/geometry';
-import { Live2DInteractionGeneration, resolveLive2DPlayback } from '@lib/live2d/interactions';
+import { Live2DInteractionGeneration, resolveLive2DPlayback, textDialogueDuration } from '@lib/live2d/interactions';
 import type { Live2DDisplayPolicy } from '@lib/live2d/preferences';
 import type { Live2DRenderer, Live2DRendererPhase } from '@lib/live2d/renderer';
 import type { Live2DCatalog, Live2DVoiceIndex } from '@lib/live2d/types';
-import { live2dVoiceIndexCache } from '@lib/live2d/voice-index';
+import { live2dVoiceAudioPreloader, live2dVoiceIndexCache } from '@lib/live2d/voice-index';
 import { useStore } from '@nanostores/react';
 import { $live2dState, live2dActions } from '@store/live2d';
 import { $activeModal } from '@store/modal';
@@ -34,7 +34,7 @@ interface PointerStart {
 
 const immersiveModals = new Set(['imageLightbox', 'codeFullscreen', 'diagramFullscreen']);
 const LIVE2D_PLAYER_ID = 'live2d-character-audio';
-const DIALOGUE_DURATION_MS = 6_000;
+const AUDIO_START_TIMEOUT_MS = 15_000;
 const USER_SELECTED_MOTION_PRIORITY = 3;
 type AudioStatus = 'none' | 'loading' | 'playing';
 const Live2DCanvas = lazy(async () => {
@@ -179,7 +179,8 @@ function Live2DWidgetContent({
     const voice = characterVoice;
     let active = true;
     setVoiceIndex((current) => (voice && current?.releaseId === voice.releaseId ? current : null));
-    if (voice) {
+    // 语音目录不参与首帧渲染；等模型 ready 后再读取，避免与 moc、纹理竞争连接。
+    if (voice && state.rendererStatus === 'ready') {
       void live2dVoiceIndexCache
         .get(voice)
         .then((value) => {
@@ -192,7 +193,33 @@ function Live2DWidgetContent({
     return () => {
       active = false;
     };
-  }, [characterVoice]);
+  }, [characterVoice, state.rendererStatus]);
+
+  useEffect(() => {
+    if (!activeVoiceIndex || !characterVoice || !state.preferences.audioEnabled) return;
+    const controller = new AbortController();
+    let cancelled = false;
+    let idleHandle: number | null = null;
+    const prefetch = () => {
+      idleHandle = null;
+      if (!cancelled) {
+        void live2dVoiceAudioPreloader.prefetch(activeVoiceIndex, characterVoice.releaseId, {
+          signal: controller.signal,
+        });
+      }
+    };
+    if (typeof window.requestIdleCallback === 'function') {
+      idleHandle = window.requestIdleCallback(prefetch, { timeout: 3_000 });
+    } else idleHandle = globalThis.setTimeout(prefetch, 0) as unknown as number;
+    return () => {
+      cancelled = true;
+      if (idleHandle !== null) {
+        if (typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(idleHandle);
+        else globalThis.clearTimeout(idleHandle);
+      }
+      controller.abort();
+    };
+  }, [activeVoiceIndex, characterVoice, state.preferences.audioEnabled]);
 
   useEffect(() => {
     const update = () => {
@@ -397,6 +424,15 @@ function Live2DWidgetContent({
       const { mapping, line, audio: interactionAudio } = resolved;
       const generation = interactionGeneration.current.next();
       if (dialogueTimerRef.current !== null) window.clearTimeout(dialogueTimerRef.current);
+      const clearDialogue = () => {
+        if (dialogueTimerRef.current !== null) window.clearTimeout(dialogueTimerRef.current);
+        dialogueTimerRef.current = null;
+        if (interactionGeneration.current.isCurrent(generation)) setDialogue('');
+      };
+      const scheduleDialogueClear = (delay: number) => {
+        if (dialogueTimerRef.current !== null) window.clearTimeout(dialogueTimerRef.current);
+        dialogueTimerRef.current = window.setTimeout(clearDialogue, delay);
+      };
       if (mapping.expression) {
         selectedExpressionRef.current = mapping.expression;
         setSelectedExpression(mapping.expression);
@@ -413,35 +449,46 @@ function Live2DWidgetContent({
         rendererRef.current?.playMotion(mapping.motionGroup, mapping.motionIndex, USER_SELECTED_MOTION_PRIORITY);
       }
       setDialogue(line);
-      dialogueTimerRef.current = window.setTimeout(() => {
-        if (interactionGeneration.current.isCurrent(generation)) setDialogue('');
-        dialogueTimerRef.current = null;
-      }, DIALOGUE_DURATION_MS);
 
       stopAudio();
-      if (!state.preferences.audioEnabled || !interactionAudio) return;
+      if (!state.preferences.audioEnabled || !interactionAudio) {
+        scheduleDialogueClear(textDialogueDuration(line));
+        return;
+      }
       const audio = audioRef.current ?? new Audio();
       audioRef.current = audio;
-      const releaseIfCurrent = () => {
+      const finishAudio = (clearImmediately: boolean) => {
         if (interactionGeneration.current.isCurrent(generation)) {
           setAudioStatus('none');
           releaseActivePlayer(LIVE2D_PLAYER_ID);
+          if (clearImmediately) clearDialogue();
+          else scheduleDialogueClear(textDialogueDuration(line));
         }
       };
-      audio.onended = releaseIfCurrent;
-      audio.onerror = releaseIfCurrent;
+      audio.onended = () => finishAudio(true);
+      audio.onerror = () => finishAudio(false);
       audio.src = `/api/live2d-assets/releases/${interactionAudio.releaseId}/${interactionAudio.path
         .split('/')
         .map((segment) => encodeURIComponent(segment))
         .join('/')}`;
       claimActivePlayer(LIVE2D_PLAYER_ID);
       setAudioStatus('loading');
+      dialogueTimerRef.current = window.setTimeout(() => {
+        if (interactionGeneration.current.isCurrent(generation)) {
+          stopAudio();
+          clearDialogue();
+        }
+      }, AUDIO_START_TIMEOUT_MS);
       void audio
         .play()
         .then(() => {
-          if (interactionGeneration.current.isCurrent(generation)) setAudioStatus('playing');
+          if (interactionGeneration.current.isCurrent(generation)) {
+            if (dialogueTimerRef.current !== null) window.clearTimeout(dialogueTimerRef.current);
+            dialogueTimerRef.current = null;
+            setAudioStatus('playing');
+          }
         })
-        .catch(() => releaseIfCurrent());
+        .catch(() => finishAudio(false));
     },
     [activeVoiceIndex, characterVoice, costume, state.preferences.audioEnabled, state.rendererStatus, stopAudio, userPaused],
   );

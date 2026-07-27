@@ -164,7 +164,7 @@ test('prefetches unique lazy motions after readiness with bounded concurrency', 
   await new Promise((resolve) => setImmediate(resolve));
   core.resolveCurrent?.();
   await loading;
-  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setTimeout(resolve, 10));
 
   assert.deepEqual(urls, ['/models/prefetch/motions/idle.mtn', '/models/prefetch/motions/tap.mtn']);
   assert.equal(maxActive, 2);
@@ -195,7 +195,7 @@ test('aborts current motion prefetch when the renderer is suspended', async () =
   await new Promise((resolve) => setImmediate(resolve));
   core.resolveCurrent?.();
   await loading;
-  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setTimeout(resolve, 10));
   assert.equal(observed.signal?.aborted, false);
 
   renderer.suspend();

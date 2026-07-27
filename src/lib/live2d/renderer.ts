@@ -41,6 +41,7 @@ export interface Live2DRendererOptions {
 
 const DEFAULT_MOTION_PREFETCH_CONCURRENCY = 4;
 const MAX_MOTION_PREFETCH_CONCURRENCY = 8;
+const MOTION_PREFETCH_IDLE_TIMEOUT_MS = 2_000;
 
 function abortError(message: string): DOMException {
   return new DOMException(message, 'AbortError');
@@ -116,6 +117,15 @@ function resolveMotionUrl(entryPath: string, motionPath: string): string {
   return new URL(motionPath, new URL(entryPath, baseHref)).href;
 }
 
+function scheduleIdleTask(task: () => void): () => void {
+  if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+    const handle = window.requestIdleCallback(task, { timeout: MOTION_PREFETCH_IDLE_TIMEOUT_MS });
+    return () => window.cancelIdleCallback(handle);
+  }
+  const handle = setTimeout(task, 0);
+  return () => clearTimeout(handle);
+}
+
 /**
  * Serializes model mutations around the unmodified upstream renderer.
  *
@@ -139,6 +149,7 @@ export class Live2DRenderer {
   private contextLost = false;
   private lastSelection: Live2DRendererSelection | null = null;
   private motionPrefetchController: AbortController | null = null;
+  private cancelScheduledMotionPrefetch: (() => void) | null = null;
 
   constructor(options: Live2DRendererOptions) {
     this.options = options;
@@ -209,7 +220,7 @@ export class Live2DRenderer {
         }
         if (this.playbackPaused) core.pauseRendering?.();
         this.setPhase('ready');
-        this.startMotionPrefetch(core, selection, generation);
+        this.scheduleMotionPrefetch(core, selection, generation);
       } catch (error) {
         if (!this.destroyed && !this.suspended && generation === this.generation) {
           this.setPhase('recoverable', error);
@@ -226,7 +237,7 @@ export class Live2DRenderer {
    * 首帧完成后只预热当前模型按需加载的动作。基础模型和表情已由 l2d 主动加载，重复请求
    * 不会改善切换延迟，反而会增加流量和 Vercel Function 压力。
    */
-  private startMotionPrefetch(core: Live2DCore, selection: Live2DRendererSelection, generation: number): void {
+  private scheduleMotionPrefetch(core: Live2DCore, selection: Live2DRendererSelection, generation: number): void {
     this.cancelMotionPrefetch();
     const urls = [
       ...new Set(
@@ -238,6 +249,15 @@ export class Live2DRenderer {
     ];
     if (urls.length === 0) return;
 
+    this.cancelScheduledMotionPrefetch = scheduleIdleTask(() => {
+      this.cancelScheduledMotionPrefetch = null;
+      if (!this.destroyed && !this.suspended && generation === this.generation) {
+        this.startMotionPrefetch(urls, generation);
+      }
+    });
+  }
+
+  private startMotionPrefetch(urls: readonly string[], generation: number): void {
     const controller = new AbortController();
     this.motionPrefetchController = controller;
     const concurrency = Math.max(
@@ -269,6 +289,8 @@ export class Live2DRenderer {
   }
 
   private cancelMotionPrefetch(): void {
+    this.cancelScheduledMotionPrefetch?.();
+    this.cancelScheduledMotionPrefetch = null;
     this.motionPrefetchController?.abort();
     this.motionPrefetchController = null;
   }

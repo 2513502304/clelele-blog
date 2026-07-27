@@ -1,5 +1,8 @@
 import type { Live2DInteraction } from './types';
 
+const MIN_TEXT_DIALOGUE_DURATION_MS = 5_000;
+const MAX_TEXT_DIALOGUE_DURATION_MS = 10_000;
+
 export interface ResolvedLive2DInteraction {
   mapping: Live2DInteraction;
   line: string;
@@ -26,6 +29,12 @@ export interface ResolveLive2DPlaybackOptions {
 
 function normalizedArea(value: string): string {
   return value.trim().toLocaleLowerCase('en-US');
+}
+
+/** Text-only bubbles get a bounded reading window; voiced bubbles are closed by audio.onended instead. */
+export function textDialogueDuration(text: string): number {
+  const visibleCharacters = [...text.replace(/\s/g, '')].length;
+  return Math.min(MAX_TEXT_DIALOGUE_DURATION_MS, Math.max(MIN_TEXT_DIALOGUE_DURATION_MS, 2_500 + visibleCharacters * 120));
 }
 
 /** Unknown hit areas degrade to the first mapping; dialogue text and audio remain an atomic pair. */

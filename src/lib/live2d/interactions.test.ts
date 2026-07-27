@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { Live2DInteractionGeneration, resolveLive2DInteraction, resolveLive2DPlayback } from './interactions';
+import {
+  Live2DInteractionGeneration,
+  resolveLive2DInteraction,
+  resolveLive2DPlayback,
+  textDialogueDuration,
+} from './interactions';
 
 const interactions = [
   { area: 'head', motionGroup: 'tap', lines: ['one', 'two'] },
@@ -88,6 +93,13 @@ test('does not play costume audio while a declared character voice index is load
   );
   assert.equal(resolved?.line, 'fallback');
   assert.equal(resolved?.audio, undefined);
+});
+
+test('bounds text-only dialogue reading time while allowing longer copy more time', () => {
+  assert.equal(textDialogueDuration('短句'), 5_000);
+  assert.ok(textDialogueDuration('这是一条长度适中的纯文字台词，会比短句保留更久。') > 5_000);
+  assert.equal(textDialogueDuration('很长的台词'.repeat(100)), 10_000);
+  assert.equal(textDialogueDuration('空 格\n不 计'), 5_000);
 });
 
 test('invalidating an interaction generation makes late work stale', () => {
