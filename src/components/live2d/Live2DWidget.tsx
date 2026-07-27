@@ -118,9 +118,9 @@ function Live2DWidgetContent({
   }, [stopAudio]);
 
   useEffect(() => {
-    // stopAudio uses compare-and-clear release, so it cannot clear the newer owner's claim.
-    if (activePlayerId !== null && activePlayerId !== LIVE2D_PLAYER_ID) stopAudio();
-  }, [activePlayerId, stopAudio]);
+    // The nested stopAudio uses compare-and-clear release, so it cannot clear the newer owner's claim.
+    if (activePlayerId !== null && activePlayerId !== LIVE2D_PLAYER_ID) stopTransientInteraction();
+  }, [activePlayerId, stopTransientInteraction]);
 
   const resolvedSelection =
     findLive2DSelection(state.preferences.selection.characterId, state.preferences.selection.costumeId, catalog) ??
@@ -318,8 +318,8 @@ function Live2DWidgetContent({
   }, [state.avoidanceHidden, state.preferences.hidden, userPaused]);
 
   useEffect(() => {
-    if (!state.preferences.audioEnabled) stopAudio();
-  }, [state.preferences.audioEnabled, stopAudio]);
+    if (!state.preferences.audioEnabled) stopTransientInteraction();
+  }, [state.preferences.audioEnabled, stopTransientInteraction]);
 
   useEffect(() => {
     const stopWhenHidden = () => {
@@ -472,8 +472,9 @@ function Live2DWidgetContent({
       setAudioStatus('loading');
       dialogueTimerRef.current = window.setTimeout(() => {
         if (interactionGeneration.current.isCurrent(generation)) {
-          stopAudio();
           clearDialogue();
+          interactionGeneration.current.invalidate();
+          stopAudio();
         }
       }, AUDIO_START_TIMEOUT_MS);
       void audio
