@@ -117,7 +117,13 @@ export class Live2DRenderer {
 
   private setPhase(phase: Live2DRendererPhase, error?: unknown): void {
     this.phase = phase;
-    this.options.onPhase?.(phase, error);
+    try {
+      this.options.onPhase?.(phase, error);
+    } catch (callbackError) {
+      // UI observers are outside the rendering state machine. Their failures must not turn a
+      // successfully loaded model into a recoverable renderer failure.
+      console.error('[Live2D] Renderer phase observer failed.', callbackError);
+    }
   }
 
   private async ensureCore(): Promise<Live2DCore> {

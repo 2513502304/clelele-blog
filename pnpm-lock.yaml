@@ -6,7 +6,7 @@ settings:
 
 patchedDependencies:
   l2d@2.1.1:
-    hash: xyemsgvvnnq6jhgledx6tkutui
+    hash: 77ljd4qofcepiqzgemewo5pu2i
     path: patches/l2d@2.1.1.patch
 
 importers:
@@ -150,7 +150,7 @@ importers:
         version: 4.1.1
       l2d:
         specifier: 2.1.1
-        version: 2.1.1(patch_hash=xyemsgvvnnq6jhgledx6tkutui)
+        version: 2.1.1(patch_hash=77ljd4qofcepiqzgemewo5pu2i)
       marked:
         specifier: ^17.0.1
         version: 17.0.1
@@ -16062,7 +16062,7 @@ snapshots:
 
   kuler@2.0.0: {}
 
-  l2d@2.1.1(patch_hash=xyemsgvvnnq6jhgledx6tkutui): {}
+  l2d@2.1.1(patch_hash=77ljd4qofcepiqzgemewo5pu2i): {}
 
   lambda-local@2.2.0:
     dependencies:

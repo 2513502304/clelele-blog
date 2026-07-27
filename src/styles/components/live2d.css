@@ -68,15 +68,20 @@
   outline-offset: 2px;
 }
 
-.live2d-controls {
-  display: flex;
+.live2d-controls-shell {
+  position: relative;
   width: max-content;
   max-width: 100%;
   margin: -0.25rem auto 0;
+  pointer-events: auto;
+}
+
+.live2d-controls {
+  display: flex;
+  max-width: 100%;
   padding: 0.25rem;
   gap: 0.2rem;
   overflow-x: auto;
-  pointer-events: auto;
   border: 1px solid color-mix(in srgb, hsl(var(--primary)) 24%, transparent);
   border-radius: 0.5rem;
   background: color-mix(in srgb, hsl(var(--background)) 88%, transparent);
@@ -98,6 +103,37 @@
   height: 2rem;
   flex: 0 0 2rem;
   border-radius: 0.35rem;
+}
+
+.live2d-controls-tooltip {
+  position: absolute;
+  z-index: 6;
+  bottom: calc(100% + 0.45rem);
+  left: 50%;
+  width: max-content;
+  max-width: 10rem;
+  padding: 0.3rem 0.45rem;
+  transform: translate(-50%, 0.2rem);
+  pointer-events: none;
+  border: 1px solid color-mix(in srgb, hsl(var(--primary)) 20%, transparent);
+  border-radius: 0.35rem;
+  color: hsl(var(--foreground));
+  background: color-mix(in srgb, hsl(var(--background)) 94%, transparent);
+  box-shadow: 0 5px 16px rgb(0 0 0 / 12%);
+  opacity: 0;
+  font-size: 0.68rem;
+  line-height: 1.35;
+  text-align: center;
+  white-space: normal;
+  backdrop-filter: blur(10px);
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease;
+}
+
+.live2d-controls-tooltip[data-visible="true"] {
+  transform: translate(-50%, 0);
+  opacity: 1;
 }
 
 .live2d-icon-button:hover {
@@ -572,7 +608,7 @@
     flex-basis: 2.5rem;
   }
 
-  .live2d-controls {
+  .live2d-controls-shell {
     max-width: 12rem;
   }
 }

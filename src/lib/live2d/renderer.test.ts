@@ -103,6 +103,23 @@ test('treats an upstream silent initialization failure as recoverable', async ()
   renderer.destroy();
 });
 
+test('does not let a phase observer misclassify a successful model load', async () => {
+  const core = new FakeCore();
+  const renderer = new Live2DRenderer({
+    canvas: canvas(),
+    createCore: async () => core,
+    onPhase: (phase) => {
+      if (phase === 'ready') throw new Error('UI observer failed');
+    },
+  });
+  const loading = renderer.load(selection('observer-error'));
+  await new Promise((resolve) => setImmediate(resolve));
+  core.resolveCurrent?.();
+  await loading;
+  assert.equal(renderer.getPhase(), 'ready');
+  renderer.destroy();
+});
+
 test('exposes model-authored controls only after the renderer is ready', async () => {
   const core = new FakeCore();
   const renderer = new Live2DRenderer({ canvas: canvas(), createCore: async () => core });

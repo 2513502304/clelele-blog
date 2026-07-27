@@ -30,7 +30,7 @@ index 3d813a9fd7d6965a94ed1cc813d13bb92314aaca..72a56f2bb9368aef4f10095100aea8d7
  		this._exprCtrl.setExpression(e);
  	}
 +	setEffects(e) {
-+		this._state.currentVersion === 2 && this._state.l2d2Model?.setEffects(e);
++		this._state.currentVersion === 2 && this._state.l2d2Model?.live2DMgr?.getModel?.()?.setEffects?.(e);
 +	}
  	setVolume(e) {
  		this._state.currentVersion === 2 && this._state.l2d2Model ? this._state.l2d2Model.setVolume(e) : this._state.currentVersion !== null && this._state.l2d6Model && this._state.l2d6Model.setVolume(e);
