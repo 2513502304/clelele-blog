@@ -181,6 +181,8 @@ export const uiStrings: UIStrings = {
   'live2d.retry': 'Retry',
   'live2d.audio': 'Character voice',
   'live2d.audioDescription': 'Play the matching Japanese voice on interaction',
+  'live2d.voiceLoading': 'Loading character voice',
+  'live2d.voicePlaying': 'Playing character voice',
   'live2d.displayPolicy': 'Immersive modal behavior',
   'live2d.smart': 'Smart avoidance',
   'live2d.alwaysVisible': 'Always visible',

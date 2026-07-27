@@ -179,6 +179,8 @@ export const uiStrings = {
   'live2d.retry': '重试',
   'live2d.audio': '角色语音',
   'live2d.audioDescription': '互动时播放对应日文语音',
+  'live2d.voiceLoading': '正在载入角色语音',
+  'live2d.voicePlaying': '正在播放角色语音',
   'live2d.displayPolicy': '沉浸式弹窗显示策略',
   'live2d.smart': '智能避让',
   'live2d.alwaysVisible': '始终显示',

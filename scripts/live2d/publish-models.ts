@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
@@ -11,8 +12,10 @@ import {
   type Live2DCostume,
   type Live2DInteraction,
   type Live2DProvenance,
+  type Live2DVoicePack,
   live2dCatalogSchema,
   live2dProvenanceSchema,
+  live2dVoiceIndexSchema,
 } from '../../src/lib/live2d/types';
 
 export interface PublishOptions {
@@ -35,6 +38,38 @@ export interface PublishOptions {
   dryRun: boolean;
   replace: boolean;
   replaceInteractions?: boolean;
+}
+
+export interface Live2DCatalogUpdate {
+  options: Pick<PublishOptions, 'characterId' | 'characterLabels' | 'replace' | 'replaceInteractions'>;
+  costume: Live2DCostume;
+}
+
+export interface Live2DVoiceCatalogUpdate {
+  characterId: string;
+  characterLabels: Record<string, string>;
+  voice: Live2DVoicePack;
+}
+
+export interface PublishVoiceOptions {
+  packageRoot: string;
+  characterId: string;
+  characterLabels: Record<string, string>;
+  sourceUrl: string;
+  sourceRevision: string;
+  acquiredAt: string;
+  converterRepository: string;
+  converterCommit: string;
+  converterVersion?: string;
+  licenseReferences: string[];
+  publisher: string;
+  approvedAudio: Set<string>;
+  dryRun: boolean;
+}
+
+export interface PublishBehavior {
+  /** 批量迁移时先发布不可变对象，随后由调用方一次性 CAS 合并目录。 */
+  deferCatalog?: boolean;
 }
 
 function requireValue(arguments_: string[], index: number, name: string): string {
@@ -220,10 +255,23 @@ export async function updateRemoteCatalog(
   options: Pick<PublishOptions, 'characterId' | 'characterLabels' | 'replace' | 'replaceInteractions'>,
   costume: Live2DCostume,
 ): Promise<void> {
+  await updateRemoteCatalogBatch(client, [{ options, costume }], []);
+}
+
+/**
+ * 一批 costume 只重写一次可变 catalog。CAS 冲突时基于最新快照重新合并，避免全量迁移
+ * 随目录增长退化为逐模型 O(n²) 的元数据传输。
+ */
+export async function updateRemoteCatalogBatch(
+  client: ReturnType<typeof createHfS3Client>,
+  updates: readonly Live2DCatalogUpdate[],
+  voiceUpdates: readonly Live2DVoiceCatalogUpdate[] = [],
+): Promise<void> {
+  if (updates.length === 0 && voiceUpdates.length === 0) return;
   for (let attempt = 1; attempt <= 5; attempt += 1) {
     const snapshot = await client.get(LIVE2D_CATALOG_KEY);
     const catalog = snapshot ? live2dCatalogSchema.parse(JSON.parse(new TextDecoder().decode(snapshot.bytes))) : live2dCatalog;
-    const nextCatalog = upsertCatalog(catalog, options, costume);
+    const nextCatalog = upsertCatalogBatch(catalog, updates, voiceUpdates);
     if (isDeepStrictEqual(catalog, nextCatalog)) return;
     if (snapshot && !snapshot.etag) throw new Error('Remote Live2D catalog response did not include an ETag.');
     const bytes = new TextEncoder().encode(`${JSON.stringify(nextCatalog, null, 2)}\n`);
@@ -239,6 +287,19 @@ export async function updateRemoteCatalog(
       if (!(error instanceof HfS3ConflictError) || attempt === 5) throw error;
     }
   }
+}
+
+/** 为批量同步器创建一次短生命周期客户端并原子提交一批目录更新。 */
+export async function commitRemoteCatalogUpdates(
+  updates: readonly Live2DCatalogUpdate[],
+  voiceUpdates: readonly Live2DVoiceCatalogUpdate[] = [],
+): Promise<void> {
+  if (updates.length === 0 && voiceUpdates.length === 0) return;
+  const client = createHfS3Client(getPublisherConfig(), {
+    attempts: 5,
+    transferTimeoutMs: 120_000,
+  });
+  await updateRemoteCatalogBatch(client, updates, voiceUpdates);
 }
 
 /** Removes superseded character aliases with the same optimistic concurrency contract as catalog publishing. */
@@ -283,32 +344,53 @@ export function upsertCatalog(
   options: Pick<PublishOptions, 'characterId' | 'characterLabels' | 'replace' | 'replaceInteractions'>,
   costume: Live2DCostume,
 ): Live2DCatalog {
+  return upsertCatalogBatch(catalog, [{ options, costume }]);
+}
+
+/** 克隆一次目录并合并一批发布结果；源目录和调用方传入的 costume 均保持不变。 */
+export function upsertCatalogBatch(
+  catalog: Live2DCatalog,
+  updates: readonly Live2DCatalogUpdate[],
+  voiceUpdates: readonly Live2DVoiceCatalogUpdate[] = [],
+): Live2DCatalog {
   const characters = catalog.characters.map((character) => ({
     ...character,
     costumes: [...character.costumes],
   }));
-  let character = characters.find((candidate) => candidate.id === options.characterId);
-  if (!character) {
-    character = {
-      id: options.characterId,
-      label: options.characterLabels,
-      costumes: [],
-    };
-    characters.push(character);
+  const charactersById = new Map(characters.map((character) => [character.id, character]));
+  for (const { options, costume } of updates) {
+    let character = charactersById.get(options.characterId);
+    if (!character) {
+      character = {
+        id: options.characterId,
+        label: { ...options.characterLabels },
+        costumes: [],
+      };
+      characters.push(character);
+      charactersById.set(character.id, character);
+    }
+    const existingIndex = character.costumes.findIndex((candidate) => candidate.id === costume.id);
+    const existing = character.costumes[existingIndex];
+    const nextCostume =
+      existing && !options.replaceInteractions
+        ? { ...costume, interactions: existing.interactions }
+        : { ...costume, interactions: [...costume.interactions] };
+    if (existing && isDeepStrictEqual(existing, nextCostume)) continue;
+    if (existingIndex !== -1 && !options.replace) {
+      throw new Error(
+        `Catalog costume ${options.characterId}/${costume.id} already exists; pass --replace to replace it after verification.`,
+      );
+    }
+    if (existingIndex === -1) character.costumes.push(nextCostume);
+    else character.costumes[existingIndex] = nextCostume;
   }
-  const existingIndex = character.costumes.findIndex((candidate) => candidate.id === costume.id);
-  const existing = character.costumes[existingIndex];
-  const nextCostume = existing && !options.replaceInteractions ? { ...costume, interactions: existing.interactions } : costume;
-  if (existing && isDeepStrictEqual(existing, nextCostume)) {
-    return live2dCatalogSchema.parse({ version: 1, characters });
+  for (const update of voiceUpdates) {
+    const character = charactersById.get(update.characterId);
+    if (!character) {
+      throw new Error(`Cannot attach a voice pack before character ${update.characterId} has a published costume.`);
+    }
+    character.voice = { ...update.voice };
   }
-  if (existingIndex !== -1 && !options.replace) {
-    throw new Error(
-      `Catalog costume ${options.characterId}/${costume.id} already exists; pass --replace to replace it after verification.`,
-    );
-  }
-  if (existingIndex === -1) character.costumes.push(costume);
-  else character.costumes[existingIndex] = nextCostume;
   return live2dCatalogSchema.parse({ version: 1, characters });
 }
 
@@ -321,15 +403,32 @@ export function assertImmutableProvenanceMatches(existing: Live2DProvenance, nex
   }
 }
 
-export async function publishLive2DModel(
-  options: PublishOptions,
-  interactions: Live2DInteraction[] = [{ area: 'head', motionGroup: 'smile01', lines: ['你好，很高兴见到你。'] }],
-): Promise<{ releaseId: string; objectCount: number; totalBytes: number }> {
+interface ImmutablePackageOptions {
+  packageRoot: string;
+  entryPath: string;
+  sourceUrl: string;
+  sourceRevision: string;
+  acquiredAt: string;
+  converterRepository: string;
+  converterCommit: string;
+  converterVersion?: string;
+  licenseReferences: string[];
+  publisher: string;
+  approvedAudio: Set<string>;
+  dryRun: boolean;
+  converterOptions: Record<string, unknown>;
+}
+
+/**
+ * Publishes one content-addressed package before any mutable catalog pointer is changed.
+ * Both model and character-voice releases use this path so verification and CAS invariants stay identical.
+ */
+async function publishImmutablePackage(options: ImmutablePackageOptions) {
   const { manifest, transformedFiles } = await buildLive2DPackageManifest(options.packageRoot, {
+    entryPath: options.entryPath,
     approvedAudio: options.approvedAudio,
   });
   const manifestText = serializeLive2DManifest(manifest);
-  const manifestSha256 = sha256(manifestText);
   const provenance: Live2DProvenance = live2dProvenanceSchema.parse({
     version: 1,
     releaseId: manifest.releaseId,
@@ -342,15 +441,44 @@ export async function publishLive2DModel(
       repository: options.converterRepository,
       commit: options.converterCommit,
       version: options.converterVersion,
-      options: {
-        coreAudioRemoved: true,
-        approvedAudio: [...options.approvedAudio].sort(),
-      },
+      options: options.converterOptions,
     },
-    manifestSha256,
+    manifestSha256: sha256(manifestText),
     licenseReferences: options.licenseReferences,
     publisher: options.publisher,
     publishedAt: new Date().toISOString(),
+  });
+
+  let client: ReturnType<typeof createHfS3Client> | null = null;
+  if (!options.dryRun) {
+    client = createHfS3Client(getPublisherConfig(), {
+      attempts: 5,
+      transferTimeoutMs: 120_000,
+    });
+    await publishObjects(client, manifest.releaseId, transformedFiles, manifest.objects);
+    await publishImmutableJson(client, `manifests/${manifest.releaseId}.json`, manifestText);
+    await publishImmutableJson(
+      client,
+      `provenance/${manifest.releaseId}.json`,
+      `${JSON.stringify(provenance, null, 2)}\n`,
+      (value) => assertImmutableProvenanceMatches(live2dProvenanceSchema.parse(value), provenance),
+    );
+  }
+  return { client, manifest };
+}
+
+export async function publishLive2DModel(
+  options: PublishOptions,
+  interactions: Live2DInteraction[] = [{ area: 'head', motionGroup: 'smile01', lines: ['你好，很高兴见到你。'] }],
+  behavior: PublishBehavior = {},
+): Promise<{ releaseId: string; objectCount: number; totalBytes: number; costume: Live2DCostume }> {
+  const { client, manifest } = await publishImmutablePackage({
+    ...options,
+    entryPath: 'model.json',
+    converterOptions: {
+      coreAudioRemoved: true,
+      approvedAudio: [...options.approvedAudio].sort(),
+    },
   });
   const costume: Live2DCostume = {
     id: options.costumeId,
@@ -364,25 +492,47 @@ export async function publishLive2DModel(
     provenancePath: `provenance/${manifest.releaseId}.json`,
   };
 
-  if (!options.dryRun) {
-    const client = createHfS3Client(getPublisherConfig(), {
-      attempts: 5,
-      transferTimeoutMs: 120_000,
-    });
-    await publishObjects(client, manifest.releaseId, transformedFiles, manifest.objects);
-    await publishImmutableJson(client, `manifests/${manifest.releaseId}.json`, manifestText);
-    const provenanceText = `${JSON.stringify(provenance, null, 2)}\n`;
-    await publishImmutableJson(client, `provenance/${manifest.releaseId}.json`, provenanceText, (value) => {
-      assertImmutableProvenanceMatches(live2dProvenanceSchema.parse(value), provenance);
-    });
+  if (client) {
     // catalog 是唯一可变指针，必须在 release 与两份不可变元数据全部验证后以 CAS 更新。
-    await updateRemoteCatalog(client, options, costume);
+    if (!behavior.deferCatalog) await updateRemoteCatalog(client, options, costume);
   }
   console.log(
     `${options.dryRun ? 'Validated' : 'Published'} ${options.characterId}/${options.costumeId}: ${manifest.releaseId}`,
   );
   console.log(`${manifest.objects.length} immutable object(s), ${manifest.totalBytes} byte(s).`);
-  return { releaseId: manifest.releaseId, objectCount: manifest.objects.length, totalBytes: manifest.totalBytes };
+  return { releaseId: manifest.releaseId, objectCount: manifest.objects.length, totalBytes: manifest.totalBytes, costume };
+}
+
+/** Publishes one character-wide dialogue/audio pool without duplicating it into every costume release. */
+export async function publishLive2DVoicePack(
+  options: PublishVoiceOptions,
+  interactions: Live2DInteraction[],
+): Promise<{ releaseId: string; objectCount: number; totalBytes: number; voice: Live2DVoicePack }> {
+  const index = live2dVoiceIndexSchema.parse({ version: 1, interactions });
+  await writeFile(path.join(options.packageRoot, 'dialogues.json'), `${JSON.stringify(index, null, 2)}\n`);
+  const { manifest } = await publishImmutablePackage({
+    ...options,
+    entryPath: 'dialogues.json',
+    converterOptions: {
+      aggregation: 'character',
+      localePriority: ['ja', 'en'],
+      approvedAudio: [...options.approvedAudio].sort(),
+    },
+  });
+  const voice: Live2DVoicePack = {
+    releaseId: manifest.releaseId,
+    entryPath: getLive2DObjectKey(manifest.releaseId, manifest.entryPath),
+    packageBytes: manifest.totalBytes,
+    dialogueCount: index.interactions.reduce(
+      (total, interaction) => total + (interaction.dialogues?.length ?? interaction.lines?.length ?? 0),
+      0,
+    ),
+    provenancePath: `provenance/${manifest.releaseId}.json`,
+  };
+  console.log(
+    `${options.dryRun ? 'Validated' : 'Published'} ${options.characterId}/voice: ${manifest.releaseId} (${voice.dialogueCount} dialogues)`,
+  );
+  return { releaseId: manifest.releaseId, objectCount: manifest.objects.length, totalBytes: manifest.totalBytes, voice };
 }
 
 async function main(): Promise<void> {

@@ -33,6 +33,25 @@ test('keeps each migrated dialogue paired with its own audio', () => {
   );
 });
 
+test('combines costume animation mapping with the character-wide dialogue pool', () => {
+  const costumeMappings = [{ area: 'head', motionGroup: 'tap-head', lines: ['costume fallback'] }];
+  const characterDialogues = [
+    {
+      area: 'head',
+      dialogues: [{ text: 'shared card line', audio: 'audio/gacha-42.mp3' }],
+    },
+  ];
+
+  assert.deepEqual(
+    resolveLive2DInteraction(costumeMappings, 'head', () => 0, characterDialogues),
+    {
+      mapping: costumeMappings[0],
+      line: 'shared card line',
+      audio: 'audio/gacha-42.mp3',
+    },
+  );
+});
+
 test('invalidating an interaction generation makes late work stale', () => {
   const generations = new Live2DInteractionGeneration();
   const first = generations.next();

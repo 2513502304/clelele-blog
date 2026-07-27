@@ -144,3 +144,34 @@ test('rejects a remote manifest whose key and immutable release id disagree', as
   });
   await assert.rejects(store.getManifest(wrongReleaseId), /does not match release/);
 });
+
+test('allows immutable manifests referenced only by a character voice pack', async () => {
+  const { catalog } = remoteFixture();
+  const objects = [{ path: 'dialogues.json', size: 2, mime: 'application/json', sha256: 'd'.repeat(64) }];
+  const releaseId = calculateLive2DReleaseId('dialogues.json', objects);
+  const manifest: Live2DPackageManifest = {
+    version: 1,
+    releaseId,
+    entryPath: 'dialogues.json',
+    totalBytes: 2,
+    objects,
+  };
+  catalog.characters[0].voice = {
+    releaseId,
+    entryPath: getLive2DObjectKey(releaseId, 'dialogues.json'),
+    packageBytes: 2,
+    dialogueCount: 1,
+    provenancePath: `provenance/${releaseId}.json`,
+  };
+  const store = createLive2DMetadataStore({
+    client: {
+      async get(key) {
+        if (key === 'catalog.json') return snapshot(catalog);
+        if (key === `manifests/${releaseId}.json`) return snapshot(manifest);
+        return null;
+      },
+    },
+  });
+
+  assert.deepEqual(await store.getManifest(releaseId), manifest);
+});

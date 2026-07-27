@@ -11,7 +11,8 @@ import { classifyLive2DPointerMovement } from '@lib/live2d/geometry';
 import { Live2DInteractionGeneration, resolveLive2DInteraction } from '@lib/live2d/interactions';
 import type { Live2DDisplayPolicy } from '@lib/live2d/preferences';
 import type { Live2DRenderer, Live2DRendererPhase } from '@lib/live2d/renderer';
-import type { Live2DCatalog } from '@lib/live2d/types';
+import type { Live2DCatalog, Live2DVoiceIndex } from '@lib/live2d/types';
+import { live2dVoiceIndexCache } from '@lib/live2d/voice-index';
 import { useStore } from '@nanostores/react';
 import { $live2dState, live2dActions } from '@store/live2d';
 import { $activeModal } from '@store/modal';
@@ -35,6 +36,7 @@ const immersiveModals = new Set(['imageLightbox', 'codeFullscreen', 'diagramFull
 const LIVE2D_PLAYER_ID = 'live2d-character-audio';
 const DIALOGUE_DURATION_MS = 6_000;
 const USER_SELECTED_MOTION_PRIORITY = 3;
+type AudioStatus = 'none' | 'loading' | 'playing';
 const Live2DCanvas = lazy(async () => {
   const module = await import('./Live2DCanvas');
   return { default: module.Live2DCanvas };
@@ -77,6 +79,7 @@ function Live2DWidgetContent({
   const [rendererStarted, setRendererStarted] = useState(false);
   const [retryNonce, setRetryNonce] = useState(0);
   const [dialogue, setDialogue] = useState('');
+  const [audioStatus, setAudioStatus] = useState<AudioStatus>('none');
   const [viewportWidth, setViewportWidth] = useState(1024);
   const [modelControls, setModelControls] = useState<{
     motions: Record<string, string[]>;
@@ -89,6 +92,7 @@ function Live2DWidgetContent({
   const [selectedMotion, setSelectedMotion] = useState('');
   const [selectedExpression, setSelectedExpression] = useState('');
   const [catalog, setCatalog] = useState<Live2DCatalog>(live2dCatalog);
+  const [voiceIndex, setVoiceIndex] = useState<{ releaseId: string; value: Live2DVoiceIndex } | null>(null);
   const orderedSelections = useMemo(() => getLive2DCatalogSelections(catalog), [catalog]);
   effectsRef.current = state.preferences.effects;
 
@@ -101,6 +105,7 @@ function Live2DWidgetContent({
       audio.removeAttribute('src');
       audio.load();
     }
+    setAudioStatus('none');
     releaseActivePlayer(LIVE2D_PLAYER_ID);
   }, []);
 
@@ -123,6 +128,7 @@ function Live2DWidgetContent({
     catalog.characters[0]?.costumes[0];
   const character = catalog.characters.find((candidate) => candidate.id === state.preferences.selection.characterId);
   const characterName = character ? textLabel(character.label, locale) : t('live2d.character');
+  const activeVoiceIndex = voiceIndex && character?.voice?.releaseId === voiceIndex.releaseId ? voiceIndex.value : null;
   const rendererSelection = useMemo(
     () =>
       costume
@@ -164,6 +170,25 @@ function Live2DWidgetContent({
       });
     return () => controller.abort();
   }, [rendererStarted]);
+
+  useEffect(() => {
+    const voice = character?.voice;
+    let active = true;
+    setVoiceIndex(null);
+    if (voice) {
+      void live2dVoiceIndexCache
+        .get(voice)
+        .then((value) => {
+          if (active) setVoiceIndex({ releaseId: voice.releaseId, value });
+        })
+        .catch(() => {
+          // 语音目录失败时继续使用服装内的兼容台词，不影响模型渲染和互动。
+        });
+    }
+    return () => {
+      active = false;
+    };
+  }, [character?.voice]);
 
   useEffect(() => {
     const update = () => {
@@ -351,7 +376,7 @@ function Live2DWidgetContent({
   const interact = useCallback(
     (area = 'head') => {
       if (!costume || state.rendererStatus !== 'ready' || userPaused) return;
-      const resolved = resolveLive2DInteraction(costume.interactions, area);
+      const resolved = resolveLive2DInteraction(costume.interactions, area, Math.random, activeVoiceIndex?.interactions);
       if (!resolved) return;
       const { mapping, line, audio: interactionAudio } = resolved;
       const generation = interactionGeneration.current.next();
@@ -382,18 +407,37 @@ function Live2DWidgetContent({
       const audio = audioRef.current ?? new Audio();
       audioRef.current = audio;
       const releaseIfCurrent = () => {
-        if (interactionGeneration.current.isCurrent(generation)) releaseActivePlayer(LIVE2D_PLAYER_ID);
+        if (interactionGeneration.current.isCurrent(generation)) {
+          setAudioStatus('none');
+          releaseActivePlayer(LIVE2D_PLAYER_ID);
+        }
       };
       audio.onended = releaseIfCurrent;
       audio.onerror = releaseIfCurrent;
-      audio.src = `/api/live2d-assets/releases/${costume.releaseId}/${interactionAudio
+      const audioReleaseId = activeVoiceIndex ? character?.voice?.releaseId : costume.releaseId;
+      if (!audioReleaseId) return;
+      audio.src = `/api/live2d-assets/releases/${audioReleaseId}/${interactionAudio
         .split('/')
         .map((segment) => encodeURIComponent(segment))
         .join('/')}`;
       claimActivePlayer(LIVE2D_PLAYER_ID);
-      void audio.play().catch(() => releaseIfCurrent());
+      setAudioStatus('loading');
+      void audio
+        .play()
+        .then(() => {
+          if (interactionGeneration.current.isCurrent(generation)) setAudioStatus('playing');
+        })
+        .catch(() => releaseIfCurrent());
     },
-    [costume, state.preferences.audioEnabled, state.rendererStatus, stopAudio, userPaused],
+    [
+      activeVoiceIndex,
+      character?.voice?.releaseId,
+      costume,
+      state.preferences.audioEnabled,
+      state.rendererStatus,
+      stopAudio,
+      userPaused,
+    ],
   );
   const keepRenderer = useCallback((renderer: Live2DRenderer | null) => {
     rendererRef.current = renderer;
@@ -620,7 +664,18 @@ function Live2DWidgetContent({
             </button>
           </div>
         )}
-        {dialogue && <output className="live2d-dialogue">{dialogue}</output>}
+        {dialogue && (
+          <output className="live2d-dialogue">
+            {audioStatus !== 'none' && (
+              <Icon
+                className={audioStatus === 'loading' ? 'live2d-dialogue-audio is-loading' : 'live2d-dialogue-audio'}
+                icon={audioStatus === 'loading' ? 'ri:loader-4-line' : 'ri:volume-up-line'}
+                aria-label={audioStatus === 'loading' ? t('live2d.voiceLoading') : t('live2d.voicePlaying')}
+              />
+            )}
+            <span>{dialogue}</span>
+          </output>
+        )}
       </div>
       <Live2DControls
         labels={labels}

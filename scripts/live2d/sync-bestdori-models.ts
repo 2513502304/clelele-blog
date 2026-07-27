@@ -1,8 +1,17 @@
+import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { appendFile, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Live2DInteraction } from '../../src/lib/live2d/types';
-import { publishLive2DModel, removeRemoteCatalogCharacters } from './publish-models';
+import type { Live2DCostume, Live2DInteraction, Live2DVoicePack } from '../../src/lib/live2d/types';
+import {
+  commitRemoteCatalogUpdates,
+  type Live2DCatalogUpdate,
+  type Live2DVoiceCatalogUpdate,
+  publishLive2DModel,
+  publishLive2DVoicePack,
+  removeRemoteCatalogCharacters,
+} from './publish-models';
 
 const BESTDORI_API = 'https://bestdori.com/api';
 const BESTDORI_ASSETS = 'https://bestdori.com/assets';
@@ -13,6 +22,7 @@ interface Options {
   workspace: string;
   modelConcurrency: number;
   fileConcurrency: number;
+  catalogBatchSize: number;
   attempts: number;
   timeoutMs: number;
   limit?: number;
@@ -39,6 +49,7 @@ interface BuildData {
 
 interface SourceIndex {
   acquiredAt: string;
+  cardsAcquiredAt?: string;
   assets: Array<{ model: string; server: string }>;
   characters: Record<string, { characterName?: Array<string | null> }>;
   costumes: Record<
@@ -47,6 +58,14 @@ interface SourceIndex {
       characterId: number;
       assetBundleName: string;
       description?: Array<string | null>;
+    }
+  >;
+  cards: Record<
+    string,
+    {
+      characterId: number;
+      resourceSetName?: string;
+      prefix?: Array<string | null>;
     }
   >;
 }
@@ -76,6 +95,7 @@ function parseArguments(arguments_: string[]): Options {
     workspace: path.resolve(values.get('--workspace') ?? '.cache/live2d-bestdori'),
     modelConcurrency: integer(values.get('--model-concurrency') ?? '3', '--model-concurrency'),
     fileConcurrency: integer(values.get('--file-concurrency') ?? '16', '--file-concurrency'),
+    catalogBatchSize: integer(values.get('--catalog-batch-size') ?? '100', '--catalog-batch-size'),
     attempts: integer(values.get('--attempts') ?? '5', '--attempts'),
     timeoutMs: integer(values.get('--timeout-ms') ?? '60000', '--timeout-ms'),
     limit: limit ? integer(limit, '--limit') : undefined,
@@ -136,11 +156,18 @@ async function loadSourceIndex(options: Options): Promise<SourceIndex> {
   const file = path.join(options.workspace, 'source-index.json');
   if (!options.refreshIndex) {
     const cached = await readJsonIfExists<SourceIndex>(file);
-    if (cached) return cached;
+    if (cached?.cards) return cached;
+    if (cached) {
+      const cards = await fetchJson<SourceIndex['cards']>(`${BESTDORI_API}/cards/all.5.json`, options);
+      const upgraded = { ...cached, cards, cardsAcquiredAt: new Date().toISOString() };
+      await writeFile(file, `${JSON.stringify(upgraded, null, 2)}\n`);
+      return upgraded;
+    }
   }
-  const [characters, costumes, ...assetIndexes] = await Promise.all([
+  const [characters, costumes, cards, ...assetIndexes] = await Promise.all([
     fetchJson<SourceIndex['characters']>(`${BESTDORI_API}/characters/all.2.json`, options),
     fetchJson<SourceIndex['costumes']>(`${BESTDORI_API}/costumes/all.5.json`, options),
+    fetchJson<SourceIndex['cards']>(`${BESTDORI_API}/cards/all.5.json`, options),
     ...DEFAULT_SERVERS.map((server) =>
       fetchJson<{ live2d?: { chara?: Record<string, unknown> } }>(
         `${BESTDORI_API}/explorer/${server}/assets/_info.json`,
@@ -157,11 +184,13 @@ async function loadSourceIndex(options: Options): Promise<SourceIndex> {
   });
   const source: SourceIndex = {
     acquiredAt: new Date().toISOString(),
+    cardsAcquiredAt: new Date().toISOString(),
     assets: [...assets]
       .map(([model, server]) => ({ model, server }))
       .sort((left, right) => left.model.localeCompare(right.model)),
     characters,
     costumes,
+    cards,
   };
   await mkdir(options.workspace, { recursive: true });
   await writeFile(file, `${JSON.stringify(source, null, 2)}\n`);
@@ -308,151 +337,389 @@ function costumeId(model: string): string {
   );
 }
 
-async function attachDialogues(
-  model: string,
-  costumeEntry: [string, SourceIndex['costumes'][string]] | undefined,
-  packageRoot: string,
-  options: Options,
-): Promise<{ interactions: Live2DInteraction[]; approvedAudio: Set<string> }> {
-  const fallback = localized(costumeEntry?.[1].description, model).ja;
-  if (!costumeEntry || options.skipAudio) {
-    return { interactions: [{ area: 'head', dialogues: [{ text: fallback }] }], approvedAudio: new Set() };
-  }
-  const [costumeNumber] = costumeEntry;
-  const apiCache = path.join(options.workspace, 'api-cache');
-  const costume = await cachedJson<{ cards?: number[] }>(
-    path.join(apiCache, 'costumes', `${costumeNumber}.json`),
-    `${BESTDORI_API}/costumes/${costumeNumber}.json`,
-    options,
-  );
-  const dialogues: Array<{ text: string; audio?: string }> = [];
-  const approvedAudio = new Set<string>();
-  for (const cardId of costume.cards ?? []) {
-    const card = await cachedJson<{
-      resourceSetName?: string;
-      gachaText?: Array<string | null>;
-      prefix?: Array<string | null>;
-    }>(path.join(apiCache, 'cards', `${cardId}.json`), `${BESTDORI_API}/cards/${cardId}.json`, options);
-    const text =
-      card.gachaText?.[0]?.trim() || card.gachaText?.[1]?.trim() || card.prefix?.[0]?.trim() || card.prefix?.[1]?.trim();
-    if (!text) continue;
-    const relativeAudio = `audio/gacha-${cardId}.mp3`;
-    if (card.resourceSetName) {
-      const destination = path.join(packageRoot, relativeAudio);
-      const response = await request(
-        `${BESTDORI_ASSETS}/jp/sound/voice/gacha/operationspin_rip/${card.resourceSetName}.mp3`,
-        options,
-        true,
-      );
-      if (response) {
-        await mkdir(path.dirname(destination), { recursive: true });
-        await writeFile(destination, new Uint8Array(await response.arrayBuffer()));
-        approvedAudio.add(relativeAudio);
-        dialogues.push({ text, audio: relativeAudio });
-        continue;
-      }
-    }
-    dialogues.push({ text });
-  }
-  if (dialogues.length === 0) dialogues.push({ text: fallback });
-  return { interactions: [{ area: 'head', dialogues }], approvedAudio };
+interface BestdoriCardDetail {
+  resourceSetName?: string;
+  gachaText?: Array<string | null>;
+  prefix?: Array<string | null>;
 }
 
-async function completedModels(file: string): Promise<Set<string>> {
+/** Card summaries provide the complete character relation; costume records alone omit cards from other outfits. */
+export function characterCardIds(cards: SourceIndex['cards'], numericCharacterId: string): string[] {
+  const characterId = Number.parseInt(numericCharacterId, 10);
+  return Object.entries(cards)
+    .filter(([, card]) => card.characterId === characterId)
+    .map(([cardId]) => cardId)
+    .sort((left, right) => Number.parseInt(left, 10) - Number.parseInt(right, 10));
+}
+
+/** Japanese gacha text is authoritative; English and card-prefix text are explicit fallbacks. */
+export function cardDialogueText(card: BestdoriCardDetail, summary: SourceIndex['cards'][string] | undefined): string | null {
+  return (
+    card.gachaText?.[0]?.trim() ||
+    card.gachaText?.[1]?.trim() ||
+    card.prefix?.[0]?.trim() ||
+    card.prefix?.[1]?.trim() ||
+    summary?.prefix?.[0]?.trim() ||
+    summary?.prefix?.[1]?.trim() ||
+    null
+  );
+}
+
+function modelFallbackInteractions(
+  model: string,
+  costumeEntry: [string, SourceIndex['costumes'][string]] | undefined,
+): Live2DInteraction[] {
+  return [{ area: 'head', dialogues: [{ text: localized(costumeEntry?.[1].description, model).ja }] }];
+}
+
+function currentGitCommit(): string {
+  return (
+    process.env.GITHUB_SHA ||
+    process.env.VERCEL_GIT_COMMIT_SHA ||
+    execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
+  );
+}
+
+async function buildAndPublishCharacterVoice(
+  numericCharacterId: string,
+  source: SourceIndex,
+  options: Options,
+): Promise<{ characterId: string; characterLabels: Record<string, string>; voice: Live2DVoicePack }> {
+  const cardIds = characterCardIds(source.cards, numericCharacterId);
+  const packageRoot = path.join(options.workspace, 'voices', numericCharacterId);
+  const apiCache = path.join(options.workspace, 'api-cache', 'cards');
+  const dialogues = new Array<{ text: string; audio?: string } | null>(cardIds.length).fill(null);
+  const approvedAudio = new Set<string>();
+  await mkdir(packageRoot, { recursive: true });
+
+  await runPool(
+    cardIds.map((cardId, index) => ({ cardId, index })),
+    options.fileConcurrency,
+    async ({ cardId, index }) => {
+      const summary = source.cards[cardId];
+      const card = await cachedJson<BestdoriCardDetail>(
+        path.join(apiCache, `${cardId}.json`),
+        `${BESTDORI_API}/cards/${cardId}.json`,
+        options,
+      );
+      const text = cardDialogueText(card, summary);
+      if (!text) return;
+      const resourceSetName = card.resourceSetName ?? summary?.resourceSetName;
+      const relativeAudio = `audio/gacha-${cardId}.mp3`;
+      if (!options.skipAudio && resourceSetName) {
+        const destination = path.join(packageRoot, relativeAudio);
+        if (
+          (await fileExists(destination)) ||
+          (await (async () => {
+            const response = await request(
+              `${BESTDORI_ASSETS}/jp/sound/voice/gacha/operationspin_rip/${resourceSetName}.mp3`,
+              options,
+              true,
+            );
+            if (!response) return false;
+            if (response.headers.get('content-type')?.startsWith('text/html')) {
+              throw new Error(`Bestdori returned HTML for character voice ${cardId}.`);
+            }
+            await mkdir(path.dirname(destination), { recursive: true });
+            await writeFile(destination, new Uint8Array(await response.arrayBuffer()));
+            return true;
+          })())
+        ) {
+          approvedAudio.add(relativeAudio);
+          dialogues[index] = { text, audio: relativeAudio };
+          return;
+        }
+      }
+      dialogues[index] = { text };
+    },
+  );
+
+  const characterLabels = localized(source.characters[numericCharacterId]?.characterName, `Bestdori ${numericCharacterId}`);
+  const visibleDialogues = dialogues.filter((dialogue): dialogue is { text: string; audio?: string } => dialogue !== null);
+  if (visibleDialogues.length === 0) visibleDialogues.push({ text: characterLabels.ja });
+  const interactions: Live2DInteraction[] = [{ area: 'head', dialogues: visibleDialogues }];
+  const result = await publishLive2DVoicePack(
+    {
+      packageRoot,
+      characterId: catalogCharacterId(numericCharacterId),
+      characterLabels,
+      sourceUrl: `${BESTDORI_API}/cards/all.5.json`,
+      sourceRevision: createHash('sha256').update(cardIds.join(',')).digest('hex'),
+      acquiredAt: source.cardsAcquiredAt ?? source.acquiredAt,
+      converterRepository: 'https://github.com/2513502304/clelele-blog',
+      converterCommit: currentGitCommit(),
+      converterVersion: 'Bestdori character voice pack v1',
+      licenseReferences: ['https://bestdori.com/info/terms'],
+      publisher: 'clelele',
+      approvedAudio,
+      dryRun: false,
+    },
+    interactions,
+  );
+  if (!options.keepPackages) await rm(packageRoot, { recursive: true, force: true });
+  return { characterId: catalogCharacterId(numericCharacterId), characterLabels, voice: result.voice };
+}
+
+interface CheckpointRecord {
+  model: string;
+  server: string;
+  status: 'uploaded' | 'cataloged' | 'published';
+  releaseId: string;
+  publishedAt: string;
+  characterId?: string;
+  characterLabels?: Record<string, string>;
+  costume?: Live2DCostume;
+}
+
+interface CheckpointState {
+  completed: Set<string>;
+  pendingCatalog: Map<string, UploadedCheckpointRecord>;
+}
+
+type UploadedCheckpointRecord = CheckpointRecord &
+  Required<Pick<CheckpointRecord, 'characterId' | 'characterLabels' | 'costume'>>;
+
+interface VoiceCheckpointRecord {
+  characterId: string;
+  characterLabels: Record<string, string>;
+  status: 'uploaded' | 'cataloged';
+  voice: Live2DVoicePack;
+  publishedAt: string;
+}
+
+interface VoiceCheckpointState {
+  completed: Set<string>;
+  pendingCatalog: Map<string, VoiceCheckpointRecord>;
+}
+
+export async function checkpointState(file: string): Promise<CheckpointState> {
   const text = await readFile(file, 'utf8').catch((error: NodeJS.ErrnoException) => {
     if (error.code === 'ENOENT') return '';
     throw error;
   });
-  return new Set(
-    text
-      .split('\n')
-      .filter(Boolean)
-      .map((line) => JSON.parse(line) as { model: string; status: string })
-      .filter((entry) => entry.status === 'published')
-      .map((entry) => entry.model),
-  );
+  const completed = new Set<string>();
+  const pendingCatalog = new Map<string, UploadedCheckpointRecord>();
+  for (const line of text.split('\n').filter(Boolean)) {
+    const entry = JSON.parse(line) as CheckpointRecord;
+    if (entry.status === 'cataloged' || entry.status === 'published') {
+      completed.add(entry.model);
+      pendingCatalog.delete(entry.model);
+      continue;
+    }
+    if (entry.status === 'uploaded' && entry.characterId && entry.characterLabels && entry.costume) {
+      pendingCatalog.set(entry.model, {
+        ...entry,
+        characterId: entry.characterId,
+        characterLabels: entry.characterLabels,
+        costume: entry.costume,
+      });
+    }
+  }
+  return { completed, pendingCatalog };
+}
+
+export async function voiceCheckpointState(file: string): Promise<VoiceCheckpointState> {
+  const text = await readFile(file, 'utf8').catch((error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT') return '';
+    throw error;
+  });
+  const completed = new Set<string>();
+  const pendingCatalog = new Map<string, VoiceCheckpointRecord>();
+  for (const line of text.split('\n').filter(Boolean)) {
+    const entry = JSON.parse(line) as VoiceCheckpointRecord;
+    if (entry.status === 'cataloged') {
+      completed.add(entry.characterId);
+      pendingCatalog.delete(entry.characterId);
+    } else if (entry.status === 'uploaded') {
+      pendingCatalog.set(entry.characterId, entry);
+    }
+  }
+  return { completed, pendingCatalog };
+}
+
+function catalogUpdate(record: UploadedCheckpointRecord) {
+  return {
+    options: {
+      characterId: record.characterId,
+      characterLabels: record.characterLabels,
+      replace: true,
+      replaceInteractions: true,
+    },
+    costume: record.costume,
+  } satisfies Live2DCatalogUpdate;
+}
+
+function voiceCatalogUpdate(record: VoiceCheckpointRecord): Live2DVoiceCatalogUpdate {
+  return {
+    characterId: record.characterId,
+    characterLabels: record.characterLabels,
+    voice: record.voice,
+  };
 }
 
 async function main(): Promise<void> {
   const options = parseArguments(process.argv.slice(2));
   const source = await loadSourceIndex(options);
   const checkpoint = path.join(options.workspace, 'manifest.jsonl');
-  const completed = await completedModels(checkpoint);
+  const voiceCheckpoint = path.join(options.workspace, 'voice-manifest.jsonl');
+  const checkpointSnapshot = await checkpointState(checkpoint);
+  const voiceCheckpointSnapshot = await voiceCheckpointState(voiceCheckpoint);
+  const completed = checkpointSnapshot.completed;
   const costumesByAsset = new Map(
     Object.entries(source.costumes)
       .filter((entry) => entry[1].assetBundleName)
       .map((entry) => [entry[1].assetBundleName, entry] as const),
   );
-  let tasks = source.assets.filter(({ model }) => {
-    const requested = options.models.size === 0 || options.models.has(model);
-    return requested && (options.republish || !completed.has(model));
+  const requestedAssets = source.assets.filter(({ model }) => options.models.size === 0 || options.models.has(model));
+  let tasks = requestedAssets.filter(({ model }) => {
+    const alreadyUploaded = checkpointSnapshot.pendingCatalog.has(model);
+    return options.republish || (!completed.has(model) && !alreadyUploaded);
   });
   if (options.limit) tasks = tasks.slice(0, options.limit);
-  console.log(`Bestdori index: ${source.assets.length} renderable model(s); ${tasks.length} pending in this run.`);
-  if (options.planOnly || tasks.length === 0) return;
+  const voiceScope = options.limit ? tasks : requestedAssets;
+  const targetVoiceCharacterIds = new Set(
+    voiceScope.map(({ model }) => characterIdForModel(model)).filter((value): value is string => value !== null),
+  );
+  const voiceTasks = [...targetVoiceCharacterIds].filter((numericCharacterId) => {
+    const characterId = catalogCharacterId(numericCharacterId);
+    return (
+      options.republish ||
+      (!voiceCheckpointSnapshot.completed.has(characterId) && !voiceCheckpointSnapshot.pendingCatalog.has(characterId))
+    );
+  });
+  console.log(
+    `Bestdori index: ${source.assets.length} renderable model(s); ${tasks.length} model package(s) pending; ${voiceTasks.length} character voice package(s) pending; ${checkpointSnapshot.pendingCatalog.size + voiceCheckpointSnapshot.pendingCatalog.size} catalog update(s) recovering.`,
+  );
+  if (options.planOnly) return;
 
   await mkdir(path.dirname(checkpoint), { recursive: true });
-  const failures: Array<{ model: string; error: unknown }> = [];
+  const failures: Array<{ asset: string; error: unknown }> = [];
   const supersededCharacterIds = new Set<string>();
   let finished = 0;
   let checkpointTail = Promise.resolve();
-  await runPool(tasks, options.modelConcurrency, async ({ model, server }) => {
-    const numericCharacterId = characterIdForModel(model);
-    if (!numericCharacterId) {
-      failures.push({ model, error: new Error('Model name does not contain a Bestdori character id.') });
-      return;
+  const appendCheckpoint = (record: CheckpointRecord) => {
+    checkpointTail = checkpointTail.then(() => appendFile(checkpoint, `${JSON.stringify(record)}\n`));
+    return checkpointTail;
+  };
+  const appendVoiceCheckpoint = (record: VoiceCheckpointRecord) => {
+    checkpointTail = checkpointTail.then(() => appendFile(voiceCheckpoint, `${JSON.stringify(record)}\n`));
+    return checkpointTail;
+  };
+  const pendingVoices = new Map(voiceCheckpointSnapshot.pendingCatalog);
+  const commitCatalogBatch = async (
+    records: UploadedCheckpointRecord[],
+    voiceRecords = [...pendingVoices.values()].filter((voice) =>
+      records.some((record) => record.characterId === voice.characterId),
+    ),
+  ) => {
+    if (records.length === 0 && voiceRecords.length === 0) return;
+    await commitRemoteCatalogUpdates(records.map(catalogUpdate), voiceRecords.map(voiceCatalogUpdate));
+    for (const record of records) {
+      await appendCheckpoint({ ...record, status: 'cataloged' });
+      completed.add(record.model);
     }
-    const packageRoot = path.join(options.workspace, 'packages', model);
+    for (const record of voiceRecords) {
+      await appendVoiceCheckpoint({ ...record, status: 'cataloged' });
+      voiceCheckpointSnapshot.completed.add(record.characterId);
+      pendingVoices.delete(record.characterId);
+    }
+    console.log(`Cataloged ${records.length} model(s) and ${voiceRecords.length} character voice pack(s) in one atomic batch.`);
+  };
+
+  await runPool(voiceTasks, options.modelConcurrency, async (numericCharacterId) => {
     try {
-      await buildPackage(model, server, packageRoot, options);
-      const costumeEntry = costumesByAsset.get(model);
-      const { interactions, approvedAudio } = await attachDialogues(model, costumeEntry, packageRoot, options);
-      const character = source.characters[numericCharacterId];
-      const result = await publishLive2DModel(
-        {
-          packageRoot,
-          characterId: catalogCharacterId(numericCharacterId),
-          characterLabels: localized(character?.characterName, `Bestdori ${numericCharacterId}`),
-          costumeId: costumeId(model),
-          costumeLabels: localized(costumeEntry?.[1].description, model),
-          sourceUrl: `https://bestdori.com/tool/explorer/asset/${server}/live2d/chara/${model}`,
-          sourceRevision: model,
-          acquiredAt: source.acquiredAt,
-          converterRepository: 'https://github.com/A-kirami/bestdori-live2d-downloader',
-          converterCommit: CONVERTER_COMMIT,
-          converterVersion: 'TypeScript headless port',
-          licenseReferences: [
-            'https://bestdori.com/info/terms',
-            'https://www.live2d.com/eula/live2d-proprietary-software-license-agreement_en.html',
-          ],
-          publisher: 'clelele',
-          scale: 0.9,
-          position: [0, -0.1],
-          approvedAudio,
-          dryRun: false,
-          replace: true,
-          replaceInteractions: true,
-        },
-        interactions,
-      );
-      checkpointTail = checkpointTail.then(() =>
-        appendFile(
-          checkpoint,
-          `${JSON.stringify({ model, server, status: 'published', releaseId: result.releaseId, publishedAt: new Date().toISOString() })}\n`,
-        ),
-      );
-      await checkpointTail;
-      if (bootstrapCharacterIds.has(numericCharacterId)) supersededCharacterIds.add(`bestdori-${numericCharacterId}`);
-      if (!options.keepPackages) await rm(packageRoot, { recursive: true, force: true });
-      finished += 1;
-      console.log(`[${finished}/${tasks.length}] completed ${model}`);
+      const result = await buildAndPublishCharacterVoice(numericCharacterId, source, options);
+      const record: VoiceCheckpointRecord = {
+        ...result,
+        status: 'uploaded',
+        publishedAt: new Date().toISOString(),
+      };
+      await appendVoiceCheckpoint(record);
+      pendingVoices.set(record.characterId, record);
+      console.log(`Uploaded character voice pack ${record.characterId} (${record.voice.dialogueCount} dialogues).`);
     } catch (error) {
-      failures.push({ model, error });
-      console.error(`Failed ${model}:`, error instanceof Error ? error.message : error);
+      failures.push({ asset: `voice:${numericCharacterId}`, error });
+      console.error(`Failed voice:${numericCharacterId}:`, error instanceof Error ? error.message : error);
     }
   });
+
+  await commitCatalogBatch([...checkpointSnapshot.pendingCatalog.values()]);
+
+  for (let offset = 0; offset < tasks.length; offset += options.catalogBatchSize) {
+    const batch = tasks.slice(offset, offset + options.catalogBatchSize);
+    const uploaded: UploadedCheckpointRecord[] = [];
+    await runPool(batch, options.modelConcurrency, async ({ model, server }) => {
+      const numericCharacterId = characterIdForModel(model);
+      if (!numericCharacterId) {
+        failures.push({ asset: model, error: new Error('Model name does not contain a Bestdori character id.') });
+        return;
+      }
+      const packageRoot = path.join(options.workspace, 'packages', model);
+      try {
+        await buildPackage(model, server, packageRoot, options);
+        const costumeEntry = costumesByAsset.get(model);
+        const interactions = modelFallbackInteractions(model, costumeEntry);
+        const characterId = catalogCharacterId(numericCharacterId);
+        const characterLabels = localized(
+          source.characters[numericCharacterId]?.characterName,
+          `Bestdori ${numericCharacterId}`,
+        );
+        const result = await publishLive2DModel(
+          {
+            packageRoot,
+            characterId,
+            characterLabels,
+            costumeId: costumeId(model),
+            costumeLabels: localized(costumeEntry?.[1].description, model),
+            sourceUrl: `https://bestdori.com/tool/explorer/asset/${server}/live2d/chara/${model}`,
+            sourceRevision: model,
+            acquiredAt: source.acquiredAt,
+            converterRepository: 'https://github.com/A-kirami/bestdori-live2d-downloader',
+            converterCommit: CONVERTER_COMMIT,
+            converterVersion: 'TypeScript headless port',
+            licenseReferences: [
+              'https://bestdori.com/info/terms',
+              'https://www.live2d.com/eula/live2d-proprietary-software-license-agreement_en.html',
+            ],
+            publisher: 'clelele',
+            scale: 0.9,
+            position: [0, -0.1],
+            approvedAudio: new Set(),
+            dryRun: false,
+            replace: true,
+            replaceInteractions: true,
+          },
+          interactions,
+          { deferCatalog: true },
+        );
+        const record = {
+          model,
+          server,
+          status: 'uploaded' as const,
+          releaseId: result.releaseId,
+          publishedAt: new Date().toISOString(),
+          characterId,
+          characterLabels,
+          costume: result.costume,
+        };
+        await appendCheckpoint(record);
+        uploaded.push(record);
+        if (bootstrapCharacterIds.has(numericCharacterId)) supersededCharacterIds.add(`bestdori-${numericCharacterId}`);
+        if (!options.keepPackages) await rm(packageRoot, { recursive: true, force: true });
+        finished += 1;
+        console.log(`[${finished}/${tasks.length}] uploaded ${model}`);
+      } catch (error) {
+        failures.push({ asset: model, error });
+        console.error(`Failed ${model}:`, error instanceof Error ? error.message : error);
+      }
+    });
+    await commitCatalogBatch(uploaded);
+  }
+  if (!failures.some(({ asset }) => !asset.startsWith('voice:'))) {
+    await commitCatalogBatch([], [...pendingVoices.values()]);
+  }
   if (failures.length > 0) {
-    throw new Error(`${failures.length} model(s) failed; rerun the same command to resume.`);
+    throw new Error(`${failures.length} model or voice package(s) failed; rerun the same command to resume.`);
   }
   await removeRemoteCatalogCharacters(supersededCharacterIds);
 }

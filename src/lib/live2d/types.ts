@@ -32,9 +32,24 @@ export const live2dCostumeSchema = z.object({
   provenancePath: z.string().min(1),
 });
 
+export const live2dVoicePackSchema = z.object({
+  releaseId: z.string().regex(/^[a-f0-9]{64}$/),
+  entryPath: z.string().min(1),
+  packageBytes: z.number().int().positive(),
+  dialogueCount: z.number().int().positive(),
+  provenancePath: z.string().min(1),
+});
+
+export const live2dVoiceIndexSchema = z.object({
+  version: z.literal(1),
+  interactions: z.array(live2dInteractionSchema).min(1),
+});
+
 export const live2dCharacterSchema = z.object({
   id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/),
   label: z.record(z.string(), z.string().min(1)),
+  // 角色语音独立于服装发布；同一人物的所有造型共享完整卡片台词池。
+  voice: live2dVoicePackSchema.optional(),
   costumes: z.array(live2dCostumeSchema).min(1),
 });
 
@@ -46,6 +61,8 @@ export const live2dCatalogSchema = z.object({
 export type Live2DInteraction = z.infer<typeof live2dInteractionSchema>;
 export type Live2DDialogue = z.infer<typeof live2dDialogueSchema>;
 export type Live2DCostume = z.infer<typeof live2dCostumeSchema>;
+export type Live2DVoicePack = z.infer<typeof live2dVoicePackSchema>;
+export type Live2DVoiceIndex = z.infer<typeof live2dVoiceIndexSchema>;
 export type Live2DCharacter = z.infer<typeof live2dCharacterSchema>;
 export type Live2DCatalog = z.infer<typeof live2dCatalogSchema>;
 

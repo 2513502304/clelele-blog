@@ -5,8 +5,9 @@ import {
   parseArguments,
   removeCatalogCharacters,
   upsertCatalog,
+  upsertCatalogBatch,
 } from '../../../scripts/live2d/publish-models';
-import type { Live2DCatalog, Live2DCostume, Live2DProvenance } from './types';
+import type { Live2DCatalog, Live2DCostume, Live2DProvenance, Live2DVoicePack } from './types';
 
 const releaseId = 'a'.repeat(64);
 const replacementReleaseId = 'b'.repeat(64);
@@ -157,6 +158,51 @@ test('new costumes retain their default interactions', () => {
   );
 
   assert.deepEqual(next.characters[0].costumes[1], costume);
+});
+
+test('batch upsert merges multiple characters and costumes without mutating inputs', () => {
+  const catalog = createCatalog();
+  const summer = createCostume('summer', replacementReleaseId);
+  const tomori = createCostume('default', 'c'.repeat(64));
+  const next = upsertCatalogBatch(catalog, [
+    {
+      options: { characterId: 'anon', characterLabels: { zh: '爱音' }, replace: false },
+      costume: summer,
+    },
+    {
+      options: { characterId: 'tomori', characterLabels: { zh: '灯' }, replace: false },
+      costume: tomori,
+    },
+  ]);
+
+  assert.deepEqual(
+    next.characters.map((character) => [character.id, character.costumes.map((costume) => costume.id)]),
+    [
+      ['anon', ['default', 'summer']],
+      ['tomori', ['default']],
+    ],
+  );
+  assert.deepEqual(catalog, createCatalog());
+  assert.deepEqual(summer.interactions, []);
+  assert.deepEqual(tomori.interactions, []);
+});
+
+test('character voice pointers attach after costume updates without duplicating dialogues in the catalog', () => {
+  const voice: Live2DVoicePack = {
+    releaseId: 'e'.repeat(64),
+    entryPath: `releases/${'e'.repeat(64)}/dialogues.json`,
+    packageBytes: 100,
+    dialogueCount: 20,
+    provenancePath: `provenance/${'e'.repeat(64)}.json`,
+  };
+  const next = upsertCatalogBatch(createCatalog(), [], [{ characterId: 'anon', characterLabels: { zh: '爱音' }, voice }]);
+
+  assert.deepEqual(next.characters[0].voice, voice);
+  assert.equal('interactions' in (next.characters[0].voice ?? {}), false);
+  assert.throws(
+    () => upsertCatalogBatch(createCatalog(), [], [{ characterId: 'missing', characterLabels: { zh: '缺失角色' }, voice }]),
+    /before character missing has a published costume/,
+  );
 });
 
 test('catalog alias cleanup removes only the superseded character without mutating the source', () => {

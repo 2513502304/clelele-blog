@@ -574,7 +574,28 @@
 
 .live2d-dialogue {
   bottom: 0.5rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
   padding: 0.5rem 0.65rem;
+}
+
+.live2d-dialogue-audio {
+  flex: 0 0 auto;
+  width: 1rem;
+  height: 1rem;
+  margin-top: 0.05rem;
+  color: hsl(var(--primary));
+}
+
+.live2d-dialogue-audio.is-loading {
+  animation: live2d-spin 0.8s linear infinite;
+}
+
+@keyframes live2d-spin {
+  to {
+    transform: rotate(1turn);
+  }
 }
 
 .live2d-wake {

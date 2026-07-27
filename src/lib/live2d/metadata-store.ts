@@ -31,7 +31,10 @@ function parseJsonSnapshot<T>(
 }
 
 function releaseExists(catalog: Live2DCatalog, releaseId: string): boolean {
-  return catalog.characters.some((character) => character.costumes.some((costume) => costume.releaseId === releaseId));
+  return catalog.characters.some(
+    (character) =>
+      character.voice?.releaseId === releaseId || character.costumes.some((costume) => costume.releaseId === releaseId),
+  );
 }
 
 /**
