@@ -425,8 +425,12 @@ main().catch((error) => {
 });
 
 /*
+运行示例：
 NODE_OPTIONS=--use-env-proxy \
 HTTP_PROXY=http://127.0.0.1:7897 \
 HTTPS_PROXY=http://127.0.0.1:7897 \
 npm run upload:style-examples -- --item 2a256d37220e --platform PixAI /path/to/first.webp /path/to/second.webp
+
+获取帮助：
+npm run upload:style-examples -- --help
 */
