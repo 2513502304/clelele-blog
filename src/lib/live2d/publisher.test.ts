@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { assertImmutableProvenanceMatches, parseArguments, upsertCatalog } from '../../../scripts/live2d/publish-models';
+import {
+  assertImmutableProvenanceMatches,
+  parseArguments,
+  removeCatalogCharacters,
+  upsertCatalog,
+} from '../../../scripts/live2d/publish-models';
 import type { Live2DCatalog, Live2DCostume, Live2DProvenance } from './types';
 
 const releaseId = 'a'.repeat(64);
@@ -120,6 +125,26 @@ test('--replace updates only the matching costume and preserves its hand-tuned i
   assert.equal(catalog.characters[0].costumes[0].releaseId, releaseId);
 });
 
+test('--replace-interactions lets a verified migration update paired dialogue audio', () => {
+  const catalog = createCatalog();
+  const replacement = {
+    ...createCostume('default', replacementReleaseId),
+    interactions: [{ area: 'head', dialogues: [{ text: '台词', audio: 'audio/card.mp3' }] }],
+  };
+  const next = upsertCatalog(
+    catalog,
+    {
+      characterId: 'anon',
+      characterLabels: { zh: '爱音' },
+      replace: true,
+      replaceInteractions: true,
+    },
+    replacement,
+  );
+
+  assert.deepEqual(next.characters[0].costumes[0].interactions, replacement.interactions);
+});
+
 test('new costumes retain their default interactions', () => {
   const costume = {
     ...createCostume('summer', replacementReleaseId),
@@ -132,6 +157,22 @@ test('new costumes retain their default interactions', () => {
   );
 
   assert.deepEqual(next.characters[0].costumes[1], costume);
+});
+
+test('catalog alias cleanup removes only the superseded character without mutating the source', () => {
+  const catalog = createCatalog();
+  catalog.characters.push({ id: 'bestdori-37', label: { zh: '爱音旧别名' }, costumes: [createCostume()] });
+
+  const next = removeCatalogCharacters(catalog, new Set(['bestdori-37']));
+
+  assert.deepEqual(
+    next.characters.map((character) => character.id),
+    ['anon'],
+  );
+  assert.deepEqual(
+    catalog.characters.map((character) => character.id),
+    ['anon', 'bestdori-37'],
+  );
 });
 
 test('existing provenance may differ only in publishedAt', () => {

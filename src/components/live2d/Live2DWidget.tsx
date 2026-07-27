@@ -324,7 +324,10 @@ function Live2DWidgetContent({
   }, [state.activePanel]);
 
   const handlePhase = useCallback(
-    (phase: Live2DRendererPhase) => {
+    (phase: Live2DRendererPhase, error?: unknown) => {
+      if (phase === 'recoverable' && import.meta.env.DEV) {
+        console.error('[Live2D] Renderer entered a recoverable state.', error);
+      }
       if (phase === 'recoverable') stopTransientInteraction();
       if (phase === 'loading' || phase === 'ready' || phase === 'recoverable' || phase === 'dormant') {
         live2dActions.setRendererStatus(phase);
@@ -350,7 +353,7 @@ function Live2DWidgetContent({
       if (!costume || state.rendererStatus !== 'ready' || userPaused) return;
       const resolved = resolveLive2DInteraction(costume.interactions, area);
       if (!resolved) return;
-      const { mapping, line } = resolved;
+      const { mapping, line, audio: interactionAudio } = resolved;
       const generation = interactionGeneration.current.next();
       if (dialogueTimerRef.current !== null) window.clearTimeout(dialogueTimerRef.current);
       if (mapping.expression) {
@@ -360,9 +363,13 @@ function Live2DWidgetContent({
       }
       if (mapping.motionGroup) {
         const index = mapping.motionIndex ?? 0;
-        selectedMotionRef.current = { group: mapping.motionGroup, index };
+        selectedMotionRef.current = {
+          group: mapping.motionGroup,
+          index,
+          priority: USER_SELECTED_MOTION_PRIORITY,
+        };
         setSelectedMotion(`${mapping.motionGroup}\u0000${index}`);
-        rendererRef.current?.playMotion(mapping.motionGroup, mapping.motionIndex);
+        rendererRef.current?.playMotion(mapping.motionGroup, mapping.motionIndex, USER_SELECTED_MOTION_PRIORITY);
       }
       setDialogue(line);
       dialogueTimerRef.current = window.setTimeout(() => {
@@ -371,7 +378,7 @@ function Live2DWidgetContent({
       }, DIALOGUE_DURATION_MS);
 
       stopAudio();
-      if (!state.preferences.audioEnabled || !mapping.audio) return;
+      if (!state.preferences.audioEnabled || !interactionAudio) return;
       const audio = audioRef.current ?? new Audio();
       audioRef.current = audio;
       const releaseIfCurrent = () => {
@@ -379,7 +386,7 @@ function Live2DWidgetContent({
       };
       audio.onended = releaseIfCurrent;
       audio.onerror = releaseIfCurrent;
-      audio.src = `/api/live2d-assets/releases/${costume.releaseId}/${mapping.audio
+      audio.src = `/api/live2d-assets/releases/${costume.releaseId}/${interactionAudio
         .split('/')
         .map((segment) => encodeURIComponent(segment))
         .join('/')}`;

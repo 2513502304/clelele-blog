@@ -18,6 +18,7 @@
     "upload:style-examples": "node --env-file-if-exists=.env.local --import tsx scripts/upload-style-examples.ts",
     "publish:live2d-models": "node --env-file-if-exists=.env.local --import tsx scripts/live2d/publish-models.ts",
     "publish:live2d-bootstrap": "node --env-file-if-exists=.env.local --import tsx scripts/live2d/publish-bootstrap-metadata.ts",
+    "sync:live2d-bestdori": "node --env-file-if-exists=.env.local --import tsx scripts/live2d/sync-bestdori-models.ts",
     "build": "astro build",
     "preview": "astro preview",
     "astro": "astro",

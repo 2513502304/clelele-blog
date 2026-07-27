@@ -35,6 +35,7 @@ export class Live2DReadCredentialsError extends Error {
 
 export function createLive2DAssetHeaders(asset: Live2DAssetDescriptor): Headers {
   return new Headers({
+    'accept-ranges': 'bytes',
     'cache-control': LIVE2D_BROWSER_CACHE_CONTROL,
     'content-length': String(asset.size),
     'content-type': asset.mime,

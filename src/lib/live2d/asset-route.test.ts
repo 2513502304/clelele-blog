@@ -76,20 +76,68 @@ test('GET streams the allowlisted object with authoritative headers', async () =
   assert.equal((await response.arrayBuffer()).byteLength, asset.size);
   assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
   assert.equal(response.headers.get('referrer-policy'), 'no-referrer');
+  assert.equal(response.headers.get('accept-ranges'), 'bytes');
 });
 
-test('rejects non-read methods, query variants, authorization and ranges before origin access', async () => {
+test('streams valid browser media ranges with partial-content metadata', async () => {
+  const bytes = Uint8Array.from({ length: asset.size }, (_, index) => index % 251);
+  const reader: Live2DAssetOriginReader & { reads: number } = {
+    reads: 0,
+    inFlightCount: 0,
+    async read() {
+      this.reads += 1;
+      return new Response(bytes);
+    },
+    async verify() {
+      this.reads += 1;
+    },
+  };
+  const response = await createLive2DAssetRouteHandler(reader)(
+    new Request(`https://blog.example/api/live2d-assets/${key}`, { headers: { range: 'bytes=2-5' } }),
+    key,
+  );
+
+  assert.equal(response.status, 206);
+  assert.equal(response.headers.get('content-range'), `bytes 2-5/${asset.size}`);
+  assert.equal(response.headers.get('content-length'), '4');
+  assert.deepEqual(new Uint8Array(await response.arrayBuffer()), bytes.subarray(2, 6));
+  assert.equal(reader.reads, 1);
+});
+
+test('supports the open-ended range Chromium uses for character audio', async () => {
+  const reader = createReader();
+  const response = await createLive2DAssetRouteHandler(reader)(
+    new Request(`https://blog.example/api/live2d-assets/${key}`, { headers: { range: 'bytes=0-' } }),
+    key,
+  );
+
+  assert.equal(response.status, 206);
+  assert.equal(response.headers.get('content-range'), `bytes 0-${asset.size - 1}/${asset.size}`);
+  assert.equal((await response.arrayBuffer()).byteLength, asset.size);
+});
+
+test('rejects non-read methods, query variants and authorization before origin access', async () => {
   const reader = createReader();
   const handle = createLive2DAssetRouteHandler(reader);
   const requests = [
     new Request(`https://blog.example/api/live2d-assets/${key}`, { method: 'POST' }),
     new Request(`https://blog.example/api/live2d-assets/${key}?download=1`),
     new Request(`https://blog.example/api/live2d-assets/${key}`, { headers: { authorization: 'Bearer secret' } }),
-    new Request(`https://blog.example/api/live2d-assets/${key}`, { headers: { range: 'bytes=0-10' } }),
   ];
   for (const request of requests) {
     const response = await handle(request, key);
     assert.ok(response.status === 400 || response.status === 405);
+  }
+  assert.equal(reader.reads, 0);
+});
+
+test('rejects invalid and multi-range requests before origin access', async () => {
+  const reader = createReader();
+  const handle = createLive2DAssetRouteHandler(reader);
+  for (const range of [`bytes=${asset.size}-`, 'bytes=0-1,4-5', 'items=0-1']) {
+    const response = await handle(new Request(`https://blog.example/api/live2d-assets/${key}`, { headers: { range } }), key);
+    assert.equal(response.status, 416);
+    assert.equal(response.headers.get('content-range'), `bytes */${asset.size}`);
   }
   assert.equal(reader.reads, 0);
 });

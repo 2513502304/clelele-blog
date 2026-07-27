@@ -1,13 +1,24 @@
 import { z } from 'zod';
 
-export const live2dInteractionSchema = z.object({
-  area: z.string().min(1),
-  motionGroup: z.string().min(1).optional(),
-  motionIndex: z.number().int().nonnegative().optional(),
-  expression: z.string().min(1).optional(),
-  lines: z.array(z.string().min(1)).min(1),
+export const live2dDialogueSchema = z.object({
+  text: z.string().min(1),
   audio: z.string().min(1).optional(),
 });
+
+export const live2dInteractionSchema = z
+  .object({
+    area: z.string().min(1),
+    motionGroup: z.string().min(1).optional(),
+    motionIndex: z.number().int().nonnegative().optional(),
+    expression: z.string().min(1).optional(),
+    // lines/audio 保留为旧 catalog 的兼容格式；新发布数据使用一一对应的 dialogues。
+    lines: z.array(z.string().min(1)).min(1).optional(),
+    audio: z.string().min(1).optional(),
+    dialogues: z.array(live2dDialogueSchema).min(1).optional(),
+  })
+  .refine((value) => value.lines !== undefined || value.dialogues !== undefined, {
+    message: 'Live2D interaction requires lines or dialogues.',
+  });
 
 export const live2dCostumeSchema = z.object({
   id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/),
@@ -33,6 +44,7 @@ export const live2dCatalogSchema = z.object({
 });
 
 export type Live2DInteraction = z.infer<typeof live2dInteractionSchema>;
+export type Live2DDialogue = z.infer<typeof live2dDialogueSchema>;
 export type Live2DCostume = z.infer<typeof live2dCostumeSchema>;
 export type Live2DCharacter = z.infer<typeof live2dCharacterSchema>;
 export type Live2DCatalog = z.infer<typeof live2dCatalogSchema>;

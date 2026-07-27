@@ -3,23 +3,31 @@ import type { Live2DInteraction } from './types';
 export interface ResolvedLive2DInteraction {
   mapping: Live2DInteraction;
   line: string;
+  audio?: string;
 }
 
 function normalizedArea(value: string): string {
   return value.trim().toLocaleLowerCase('en-US');
 }
 
-/** Unknown or absent hit-area names degrade to the first configured interaction. */
+/** Unknown hit areas degrade to the first mapping; dialogue text and audio remain an atomic pair. */
 export function resolveLive2DInteraction(
   interactions: readonly Live2DInteraction[],
   area: string,
   random: () => number = Math.random,
 ): ResolvedLive2DInteraction | null {
   const requested = normalizedArea(area);
-  const mapping = interactions.find((candidate) => normalizedArea(candidate.area) === requested) ?? interactions[0];
-  if (!mapping) return null;
-  const index = Math.min(mapping.lines.length - 1, Math.max(0, Math.floor(random() * mapping.lines.length)));
-  return { mapping, line: mapping.lines[index] ?? mapping.lines[0] };
+  const exact = interactions.filter((candidate) => normalizedArea(candidate.area) === requested);
+  const mappings = exact.length > 0 ? exact : interactions.slice(0, 1);
+  const choices = mappings.flatMap((mapping) =>
+    mapping.dialogues
+      ? mapping.dialogues.map((dialogue) => ({ mapping, line: dialogue.text.trim(), audio: dialogue.audio }))
+      : (mapping.lines ?? []).map((line) => ({ mapping, line: line.trim(), audio: mapping.audio })),
+  );
+  const visibleChoices = choices.filter((choice) => choice.line.length > 0);
+  if (visibleChoices.length === 0) return null;
+  const index = Math.min(visibleChoices.length - 1, Math.max(0, Math.floor(random() * visibleChoices.length)));
+  return visibleChoices[index] ?? visibleChoices[0];
 }
 
 /**

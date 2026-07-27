@@ -13,10 +13,41 @@ test('resolves exact areas, deterministic lines, and unknown-area fallback', () 
   assert.equal(resolveLive2DInteraction([], 'head'), null);
 });
 
+test('keeps each migrated dialogue paired with its own audio', () => {
+  const migrated = [
+    {
+      area: 'head',
+      dialogues: [
+        { text: 'first', audio: 'audio/first.mp3' },
+        { text: 'second', audio: 'audio/second.mp3' },
+      ],
+    },
+  ];
+  assert.deepEqual(
+    resolveLive2DInteraction(migrated, 'head', () => 0.99),
+    {
+      mapping: migrated[0],
+      line: 'second',
+      audio: 'audio/second.mp3',
+    },
+  );
+});
+
 test('invalidating an interaction generation makes late work stale', () => {
   const generations = new Live2DInteractionGeneration();
   const first = generations.next();
   assert.equal(generations.isCurrent(first), true);
   generations.invalidate();
   assert.equal(generations.isCurrent(first), false);
+});
+
+test('ignores whitespace-only dialogue instead of rendering an empty speech bubble', () => {
+  const result = resolveLive2DInteraction(
+    [
+      { area: 'head', lines: ['   '] },
+      { area: 'body', dialogues: [{ text: '\n\t' }] },
+    ],
+    'head',
+  );
+  assert.equal(result, null);
 });
