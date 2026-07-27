@@ -98,9 +98,14 @@ export function createLive2DStore(options: CreateLive2DStoreOptions = {}) {
   };
 
   const actions = {
-    initialize(): void {
+    initialize(runtimeDefaults: Partial<Pick<Live2DPreferences, 'selection' | 'audioEnabled' | 'displayPolicy'>> = {}): void {
       const current = $state.get();
-      const preferences = loadLive2DPreferences(getStorage(), defaults, options.onDiagnostic);
+      const configuredDefaults: Live2DPreferences = {
+        ...defaults,
+        ...runtimeDefaults,
+        selection: runtimeDefaults.selection ? { ...runtimeDefaults.selection } : { ...defaults.selection },
+      };
+      const preferences = loadLive2DPreferences(getStorage(), configuredDefaults, options.onDiagnostic);
       $state.set({
         ...current,
         preferences,

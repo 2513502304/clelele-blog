@@ -25,6 +25,7 @@
     "test:character-quote": "node --import tsx --test src/lib/character-quote.test.ts",
     "test:style-gallery": "node --import tsx --test src/lib/style-gallery*.test.ts",
     "test:live2d": "node --import tsx --test src/lib/hf-s3.test.ts src/lib/live2d/*.test.ts src/store/live2d.test.ts src/store/player.test.ts",
+    "test:live2d:browser": "playwright test tests/live2d",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "lint:fix:unssafe": "biome check --write --unsafe",

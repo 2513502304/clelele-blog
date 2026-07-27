@@ -86,3 +86,27 @@ test('times out each attempt independently and permits a later retry', async () 
   assert.equal(renderer.getPhase(), 'ready');
   renderer.destroy();
 });
+
+test('prepares package bytes inside the same generation timeout before core loading', async () => {
+  const core = new FakeCore();
+  const order: string[] = [];
+  const renderer = new Live2DRenderer({
+    canvas: {} as HTMLCanvasElement,
+    request,
+    ownsInput: () => true,
+    prepare: async (signal) => {
+      assert.equal(signal.aborted, false);
+      order.push('prepare');
+    },
+    createCore: async () => {
+      order.push('core');
+      return core;
+    },
+  });
+  const loading = renderer.load(selection('prepared'));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(order, ['prepare', 'core']);
+  core.resolveCurrent?.();
+  await loading;
+  renderer.destroy();
+});

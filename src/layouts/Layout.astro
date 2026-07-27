@@ -75,6 +75,9 @@ const xDefaultHref = new URL(getAlternateUrl(Astro.url.pathname, defaultLocale),
 const canonicalHref = canonicalOverride ?? Astro.url.href;
 
 const keywords = keywordsOverride || siteConfig.keywords || [siteConfig.title];
+// Browser canaries need the production integration path while the distributed theme remains disabled.
+// `import.meta.env.DEV` makes the override unreachable in production builds.
+const live2dEnabled = live2dConfig.enabled || (import.meta.env.DEV && process.env.LIVE2D_E2E === '1');
 ---
 
 <!doctype html>
@@ -353,13 +356,15 @@ const keywords = keywordsOverride || siteConfig.keywords || [siteConfig.title];
           <GlobalBGMPlayer client:only="react" audioGroups={bgmConfig.audio} metingApi={bgmConfig.metingApi} />
         </div>
       )}
-      {live2dConfig.enabled && (
+      {live2dEnabled && (
         <div transition:persist="live2d-character-widget">
           <Live2DWidget
             client:only="react"
             defaultCharacterId={live2dConfig.defaultCharacterId}
             defaultCostumeId={live2dConfig.defaultCostumeId}
             desktopIdleDelayMs={live2dConfig.desktopIdleDelayMs}
+            displayPolicy={live2dConfig.displayPolicy}
+            audioEnabled={live2dConfig.audioEnabled}
           />
         </div>
       )}

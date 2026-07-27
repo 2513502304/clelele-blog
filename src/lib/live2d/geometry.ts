@@ -162,11 +162,21 @@ export function resolveLive2DPlacement(options: ResolveLive2DPlacementOptions): 
   const margin = options.margin ?? LIVE2D_VIEWPORT_MARGIN;
   const exclusionGap = options.exclusionGap ?? LIVE2D_EXCLUSION_GAP;
   const safeArea = { ...ZERO_INSETS, ...options.safeArea };
-  const desired = pointForPlacement(options.placement, options.viewport, options.widget, options.sidebarAnchor, margin);
+  const mobile = options.mobile ?? isLive2DMobileViewport(options.viewport.width);
+  const hasSidebarAnchor = Boolean(
+    options.sidebarAnchor && options.sidebarAnchor.width > 0 && options.sidebarAnchor.height > 0,
+  );
+  // Mobile drawers do not expose a usable desktop sidebar slot. Keep the saved preference unchanged,
+  // but render an explicitly awakened character in the least disruptive corner for this viewport.
+  const renderedPlacement =
+    mobile && options.placement.kind === 'sidebar' && !hasSidebarAnchor
+      ? ({ kind: 'preset', preset: 'bottom-right' } as const)
+      : options.placement;
+  const desired = pointForPlacement(renderedPlacement, options.viewport, options.widget, options.sidebarAnchor, margin);
   // Detached and preset placements must leave the active sidebar slot available.
   // Sidebar residency may occupy that slot, including when it is the safest fallback.
   const primaryExclusions =
-    options.placement.kind === 'sidebar' || !options.sidebarAnchor
+    renderedPlacement.kind === 'sidebar' || !options.sidebarAnchor
       ? (options.exclusionZones ?? [])
       : [...(options.exclusionZones ?? []), options.sidebarAnchor];
   const resolved = desired
@@ -174,10 +184,9 @@ export function resolveLive2DPlacement(options: ResolveLive2DPlacementOptions): 
     : null;
 
   if (resolved) {
-    return { mode: 'widget', position: resolved, residency: options.placement.kind, fallback: 'none' };
+    return { mode: 'widget', position: resolved, residency: renderedPlacement.kind, fallback: 'none' };
   }
 
-  const mobile = options.mobile ?? isLive2DMobileViewport(options.viewport.width);
   if (!mobile && options.placement.kind !== 'sidebar') {
     const sidebar = resolveSidebarFallback(options, safeArea, margin, exclusionGap);
     if (sidebar) return { mode: 'widget', position: sidebar, residency: 'sidebar', fallback: 'sidebar' };

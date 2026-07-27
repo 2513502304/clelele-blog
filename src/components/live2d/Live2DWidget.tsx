@@ -8,6 +8,7 @@ import { findLive2DCostume, live2dCatalog } from '@lib/live2d/catalog';
 import { markLive2DEscapeHandled, registerLive2DFocusNode } from '@lib/live2d/focus-scope';
 import { classifyLive2DPointerMovement } from '@lib/live2d/geometry';
 import { Live2DInteractionGeneration, resolveLive2DInteraction } from '@lib/live2d/interactions';
+import type { Live2DDisplayPolicy } from '@lib/live2d/preferences';
 import type { Live2DRenderer, Live2DRendererPhase } from '@lib/live2d/renderer';
 import { useStore } from '@nanostores/react';
 import { $live2dState, live2dActions } from '@store/live2d';
@@ -19,6 +20,8 @@ export interface Live2DWidgetConfig {
   defaultCharacterId: string;
   defaultCostumeId: string;
   desktopIdleDelayMs: number;
+  displayPolicy: Live2DDisplayPolicy;
+  audioEnabled: boolean;
 }
 
 interface PointerStart {
@@ -41,7 +44,13 @@ function textLabel(values: Record<string, string>, locale: string): string {
 }
 
 /** Persistent shell: all visual, preference, asset and renderer work stays behind this single island. */
-export default function Live2DWidget({ defaultCharacterId, defaultCostumeId, desktopIdleDelayMs }: Live2DWidgetConfig) {
+export default function Live2DWidget({
+  defaultCharacterId,
+  defaultCostumeId,
+  desktopIdleDelayMs,
+  displayPolicy,
+  audioEnabled,
+}: Live2DWidgetConfig) {
   const { t, locale } = useTranslation();
   const state = useStore($live2dState);
   const modal = useStore($activeModal);
@@ -101,9 +110,13 @@ export default function Live2DWidget({ defaultCharacterId, defaultCostumeId, des
   );
 
   useEffect(() => {
-    live2dActions.initialize();
+    live2dActions.initialize({
+      selection: { characterId: defaultCharacterId, costumeId: defaultCostumeId },
+      displayPolicy,
+      audioEnabled,
+    });
     live2dActions.reconcileSelection(orderedSelections, { characterId: defaultCharacterId, costumeId: defaultCostumeId });
-  }, [defaultCharacterId, defaultCostumeId, orderedSelections]);
+  }, [audioEnabled, defaultCharacterId, defaultCostumeId, displayPolicy, orderedSelections]);
 
   useEffect(() => {
     const update = () => {
@@ -114,14 +127,18 @@ export default function Live2DWidget({ defaultCharacterId, defaultCostumeId, des
         return { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
       });
       const anchorRect = anchor?.getBoundingClientRect();
+      const mobile = window.innerWidth <= 768;
       live2dActions.setGeometry({
         viewport: { width: window.innerWidth, height: window.innerHeight },
-        widget: { width: root?.offsetWidth || 280, height: root?.offsetHeight || 390 },
+        widget: {
+          width: root?.offsetWidth || (mobile ? 192 : 280),
+          height: root?.offsetHeight || (mobile ? 300 : 390),
+        },
         sidebarAnchor: anchorRect
           ? { x: anchorRect.left, y: anchorRect.top, width: anchorRect.width, height: anchorRect.height }
           : null,
         exclusionZones: exclusions,
-        mobile: window.innerWidth <= 768,
+        mobile,
       });
       live2dActions.setViewportWidth(window.innerWidth);
     };
@@ -304,7 +321,8 @@ export default function Live2DWidget({ defaultCharacterId, defaultCostumeId, des
 
   const placement = state.renderedPlacement?.position;
   const manuallyHidden = state.preferences.hidden;
-  if ((manuallyHidden || state.renderedPlacement?.mode === 'collapsed') && !state.avoidanceHidden) {
+  const dormantMobile = state.viewportMode === 'mobile' && !rendererStarted && state.loadIntent === 'none';
+  if ((manuallyHidden || dormantMobile || state.renderedPlacement?.mode === 'collapsed') && !state.avoidanceHidden) {
     return (
       <button
         ref={setWakeNode}
@@ -323,7 +341,7 @@ export default function Live2DWidget({ defaultCharacterId, defaultCostumeId, des
     );
   }
 
-  if (state.avoidanceHidden || !placement || !costume || !rendererSelection) return null;
+  if (!placement || !costume || !rendererSelection) return null;
 
   const transform = `translate3d(${placement.x + dragOffset.x}px, ${placement.y + dragOffset.y}px, 0)`;
   const labels = {
@@ -354,6 +372,9 @@ export default function Live2DWidget({ defaultCharacterId, defaultCostumeId, des
       style={{ transform }}
       data-phase={state.rendererStatus}
       data-live2d-policy={state.preferences.displayPolicy}
+      data-avoidance-hidden={state.avoidanceHidden || undefined}
+      aria-hidden={state.avoidanceHidden || undefined}
+      inert={state.avoidanceHidden}
     >
       <div className="live2d-stage">
         <Live2DCanvas

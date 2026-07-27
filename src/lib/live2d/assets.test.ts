@@ -1,17 +1,19 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  createLive2DAssetOriginReader,
   createLive2DAssetRequestHook,
-  getLive2DPackageManifest,
   Live2DAssetDeliveryError,
-  Live2DAssetPathError,
   Live2DAssetSessionCircuitBreaker,
+  runLive2DDirectCanary,
+} from './asset-delivery';
+import {
+  getLive2DPackageManifest,
+  Live2DAssetPathError,
   normalizeLive2DAssetKey,
   resolveLive2DAsset,
   resolveLive2DPackageAsset,
-  runLive2DDirectCanary,
-} from './assets';
+} from './asset-registry';
+import { createLive2DAssetOriginReader } from './assets';
 
 const releaseId = '9e95d66201f07e339bd5542b1dd0d67ae1bd0b0f9b14a7335ca0bad6bd5916ad';
 const relativePath = 'data/expressions/default.exp.json';
@@ -208,8 +210,44 @@ test('generation abort and integrity failures never fall back', async () => {
   }
 });
 
+test('selected-package prefetch is bounded and later renderer reads reuse memory', async () => {
+  let active = 0;
+  let maxActive = 0;
+  let fetchCount = 0;
+  const manifest = getLive2DPackageManifest(releaseId);
+  assert.ok(manifest);
+  const hook = createLive2DAssetRequestHook({
+    releaseId,
+    directBaseUrl: new URL('https://direct.example/bestdori/'),
+    fallbackBaseUrl: new URL('https://blog.example/api/live2d-assets/'),
+    directEnabled: false,
+    prefetchConcurrency: 3,
+    fetch: async (input) => {
+      fetchCount += 1;
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((resolve) => setImmediate(resolve));
+      active -= 1;
+      const key = decodeURIComponent(new URL(String(input)).pathname.split('/api/live2d-assets/')[1] ?? '');
+      const requestedAsset = resolveLive2DAsset(key);
+      return new Response(new Uint8Array(requestedAsset.size), {
+        headers: {
+          'content-length': String(requestedAsset.size),
+          'content-type': requestedAsset.mime,
+        },
+      });
+    },
+  });
+  await hook.prefetch(new AbortController().signal);
+  assert.equal(fetchCount, manifest.objects.length);
+  assert.ok(maxActive > 1 && maxActive <= 3);
+  assert.equal((await (await hook(resourceRequest())).arrayBuffer()).byteLength, asset.size);
+  assert.equal(fetchCount, manifest.objects.length);
+});
+
 test('origin retries transient failures with a fresh signal and streams exact bytes', async () => {
   const signals: AbortSignal[] = [];
+  const redirects: RequestRedirect[] = [];
   const reader = createLive2DAssetOriginReader({
     config: () => ({
       accessKeyId: 'HFAKTEST',
@@ -223,6 +261,7 @@ test('origin retries transient failures with a fresh signal and streams exact by
     retryDelay: async () => undefined,
     fetch: async (_input, init) => {
       signals.push(init?.signal as AbortSignal);
+      redirects.push(init?.redirect ?? 'follow');
       if (signals.length === 1) throw new TypeError('temporary network failure');
       return assetResponse();
     },
@@ -231,6 +270,7 @@ test('origin retries transient failures with a fresh signal and streams exact by
   assert.equal((await response.arrayBuffer()).byteLength, asset.size);
   assert.equal(signals.length, 2);
   assert.notEqual(signals[0], signals[1]);
+  assert.deepEqual(redirects, ['follow', 'follow']);
 });
 
 test('origin does not retry a permanent missing object', async () => {
@@ -252,6 +292,25 @@ test('origin does not retry a permanent missing object', async () => {
   });
   await assert.rejects(reader.read(asset));
   assert.equal(fetchCount, 1);
+});
+
+test('origin accepts a missing CAS content type and serves the manifest MIME separately', async () => {
+  const reader = createLive2DAssetOriginReader({
+    config: () => ({
+      accessKeyId: 'HFAKTEST',
+      secretAccessKey: 'secret',
+      endpoint: new URL('https://s3.hf.co/clelele0722'),
+      bucket: 'raw-datasets',
+      prefix: 'bestdori',
+      region: 'us-east-1',
+    }),
+    fetch: async () =>
+      new Response(new Uint8Array(asset.size), {
+        headers: { 'content-length': String(asset.size) },
+      }),
+  });
+  const response = await reader.read(asset);
+  assert.equal((await response.arrayBuffer()).byteLength, asset.size);
 });
 
 test('concurrent cold reads for one immutable key share one origin request', async () => {

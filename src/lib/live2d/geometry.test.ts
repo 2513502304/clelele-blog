@@ -113,6 +113,22 @@ describe('Live2D placement geometry', () => {
     assert.equal(mobileWithDesktopAnchor.fallback, 'collapsed');
   });
 
+  it('uses a render-only mobile corner when the desktop sidebar anchor is unavailable', () => {
+    const result = resolveLive2DPlacement({
+      placement: { kind: 'sidebar' },
+      viewport: { width: 390, height: 844 },
+      widget: { width: 192, height: 300 },
+      sidebarAnchor: { x: 0, y: 0, width: 0, height: 0 },
+      mobile: true,
+    });
+    assert.deepEqual(result, {
+      mode: 'widget',
+      position: { x: 182, y: 528 },
+      residency: 'preset',
+      fallback: 'none',
+    });
+  });
+
   it('discriminates click interactions from drags and detaches above the threshold', () => {
     assert.equal(classifyLive2DPointerMovement({ x: 10, y: 10 }, { x: 10 + LIVE2D_DRAG_THRESHOLD, y: 10 }), 'interaction');
     assert.equal(classifyLive2DPointerMovement({ x: 10, y: 10 }, { x: 17, y: 10 }), 'drag');

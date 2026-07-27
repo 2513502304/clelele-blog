@@ -29,6 +29,7 @@ export interface Live2DCore {
 export interface Live2DRendererOptions {
   canvas: HTMLCanvasElement;
   request: ResourceRequestHook;
+  prepare?: (signal: AbortSignal) => Promise<void>;
   ownsInput: (event: Event) => boolean;
   createCore?: (canvas: HTMLCanvasElement) => Promise<Live2DCore>;
   timeoutMs?: number;
@@ -96,6 +97,7 @@ export class Live2DRenderer {
       this.setPhase('loading');
       const timeout = setTimeout(() => controller.abort(abortError('Live2D model load timed out.')), this.options.timeoutMs);
       try {
+        await this.options.prepare?.(controller.signal);
         const core = await this.ensureCore();
         await core.load({
           path: selection.entryPath,

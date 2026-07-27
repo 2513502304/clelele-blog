@@ -1,4 +1,4 @@
-import { createLive2DAssetRequestHook } from '@lib/live2d/assets';
+import { createLive2DAssetRequestHook } from '@lib/live2d/asset-delivery';
 import type { Live2DRendererPhase, Live2DRendererSelection } from '@lib/live2d/renderer';
 import { Live2DRenderer } from '@lib/live2d/renderer';
 import { useEffect, useMemo, useRef } from 'react';
@@ -49,6 +49,7 @@ export function Live2DCanvas({
     const renderer = new Live2DRenderer({
       canvas,
       request,
+      prepare: request.prefetch,
       ownsInput: (event) => Boolean(getInteractionRoot()?.contains(event.target as Node)),
       onPhase: (phase, error) => onPhaseRef.current(phase, error),
       onTap: (area) => onTapRef.current(area),

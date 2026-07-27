@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { LIVE2D_PREFERENCES_STORAGE_KEY, type Live2DPreferenceDiagnostic } from '@lib/live2d/preferences';
+import {
+  DEFAULT_LIVE2D_PREFERENCES,
+  LIVE2D_PREFERENCES_STORAGE_KEY,
+  type Live2DPreferenceDiagnostic,
+} from '@lib/live2d/preferences';
 import { createLive2DStore } from './live2d';
 
 function memoryStorage(initial?: string) {
@@ -44,6 +48,25 @@ describe('Live2D store', () => {
 
     store.actions.setAvoidanceHidden(false);
     assert.equal(store.$visible.get(), true);
+  });
+
+  it('uses site defaults only when no visitor preference has been stored', () => {
+    const emptyStorage = memoryStorage();
+    const empty = createLive2DStore({ storage: emptyStorage });
+    empty.actions.initialize({
+      selection: { characterId: 'tomori', costumeId: 'live-sr-01' },
+      audioEnabled: true,
+      displayPolicy: 'always-visible',
+    });
+    assert.deepEqual(empty.$state.get().preferences.selection, { characterId: 'tomori', costumeId: 'live-sr-01' });
+    assert.equal(empty.$state.get().preferences.audioEnabled, true);
+    assert.equal(empty.$state.get().preferences.displayPolicy, 'always-visible');
+
+    const stored = memoryStorage(JSON.stringify(DEFAULT_LIVE2D_PREFERENCES));
+    const returning = createLive2DStore({ storage: stored });
+    returning.actions.initialize({ audioEnabled: true, displayPolicy: 'always-visible' });
+    assert.equal(returning.$state.get().preferences.audioEnabled, false);
+    assert.equal(returning.$state.get().preferences.displayPolicy, 'smart');
   });
 
   it('manual hide survives modal avoidance and wake preserves every other preference', () => {
