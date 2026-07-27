@@ -119,7 +119,10 @@ async function request(url: string, options: Options, allowMissing = false): Pro
   for (let attempt = 1; attempt <= options.attempts; attempt += 1) {
     try {
       const response = await fetch(url, { signal: AbortSignal.timeout(options.timeoutMs) });
-      if (allowMissing && response.status === 404) return null;
+      if (allowMissing && response.status === 404) {
+        await response.body?.cancel();
+        return null;
+      }
       if (!response.ok) {
         const retryable = response.status === 408 || response.status === 429 || response.status >= 500;
         if (!retryable) throw new Error(`${url} returned ${response.status}.`);
@@ -446,7 +449,12 @@ async function buildAndPublishCharacterVoice(
                 options,
                 true,
               );
-              if (!response || response.headers.get('content-type')?.startsWith('text/html')) continue;
+              if (!response) continue;
+              if (response.headers.get('content-type')?.startsWith('text/html')) {
+                // 未消费的 fallback body 会让 Undici 连接保持活跃，并阻止批量同步进程退出。
+                await response.body?.cancel();
+                continue;
+              }
               await mkdir(path.dirname(destination), { recursive: true });
               await writeFile(destination, new Uint8Array(await response.arrayBuffer()));
               return true;
