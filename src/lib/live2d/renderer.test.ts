@@ -7,6 +7,9 @@ class FakeCore implements Live2DCore {
   active = 0;
   maxActive = 0;
   destroyed = 0;
+  paused = 0;
+  resumed = 0;
+  playedMotions: Array<[string, number | undefined, number | undefined]> = [];
   ready = true;
   resolveCurrent: (() => void) | null = null;
   private readonly listeners = new Map<'tap' | 'loaded', Array<(value?: string) => void>>();
@@ -38,8 +41,16 @@ class FakeCore implements Live2DCore {
   getExpressions() {
     return ['smile'];
   }
-  playMotion() {}
+  playMotion(group: string, index?: number, priority?: number) {
+    this.playedMotions.push([group, index, priority]);
+  }
   setExpression() {}
+  pauseRendering() {
+    this.paused += 1;
+  }
+  resumeRendering() {
+    this.resumed += 1;
+  }
   on(event: 'tap' | 'loaded', listener: (value?: string) => void) {
     this.listeners.set(event, [...(this.listeners.get(event) ?? []), listener]);
     return this;
@@ -99,6 +110,27 @@ test('exposes model-authored controls only after the renderer is ready', async (
   await loading;
   assert.deepEqual(renderer.getMotions(), { idle: ['idle.mtn'] });
   assert.deepEqual(renderer.getExpressions(), ['smile']);
+  renderer.destroy();
+});
+
+test('soft pause preserves the loaded model and blocks motion mutations until resumed', async () => {
+  const core = new FakeCore();
+  const renderer = new Live2DRenderer({ canvas: canvas(), createCore: async () => core });
+  const loading = renderer.load(selection('playback'));
+  await new Promise((resolve) => setImmediate(resolve));
+  core.resolveCurrent?.();
+  await loading;
+
+  renderer.setPlaybackPaused(true);
+  renderer.playMotion('angry', 1, 3);
+  assert.equal(core.paused, 1);
+  assert.equal(core.destroyed, 0);
+  assert.deepEqual(core.playedMotions, []);
+
+  renderer.setPlaybackPaused(false);
+  renderer.playMotion('angry', 1, 3);
+  assert.equal(core.resumed, 1);
+  assert.deepEqual(core.playedMotions, [['angry', 1, 3]]);
   renderer.destroy();
 });
 

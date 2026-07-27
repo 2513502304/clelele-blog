@@ -48,3 +48,33 @@ test('mobile transfers no model bytes until the visitor wakes the widget', async
   await expectNonBlankCanvas(page);
   expect(requests.length).toBeGreaterThan(0);
 });
+
+test('manual motion selection interrupts immediately and pause preserves the current model state', async ({ page }) => {
+  await page.goto('/');
+  await waitForLive2DReady(page);
+  await page.getByRole('button', { name: '动作与表情' }).click();
+
+  const motion = page.locator('.live2d-select-field select').first();
+  await motion.selectOption({ label: 'angry04' });
+  await expect(motion).toHaveValue('angry04\u00000');
+
+  await page.getByRole('button', { name: '暂停', exact: true }).click();
+  await expect(page.locator('.live2d-root')).toHaveAttribute('data-phase', 'ready');
+  const frozenFrame = await page
+    .locator('.live2d-canvas')
+    .evaluate((canvas) => (canvas as HTMLCanvasElement).toDataURL('image/png'));
+  await page.waitForTimeout(350);
+  const laterFrozenFrame = await page
+    .locator('.live2d-canvas')
+    .evaluate((canvas) => (canvas as HTMLCanvasElement).toDataURL('image/png'));
+  expect(laterFrozenFrame).toBe(frozenFrame);
+  await expect(motion).toHaveValue('angry04\u00000');
+
+  await page.getByRole('button', { name: '继续', exact: true }).click();
+  await page.waitForTimeout(200);
+  const resumedFrame = await page
+    .locator('.live2d-canvas')
+    .evaluate((canvas) => (canvas as HTMLCanvasElement).toDataURL('image/png'));
+  expect(resumedFrame).not.toBe(frozenFrame);
+  await expect(motion).toHaveValue('angry04\u00000');
+});

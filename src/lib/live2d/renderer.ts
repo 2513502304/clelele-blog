@@ -24,6 +24,8 @@ export interface Live2DCore {
   getExpressions(): string[];
   playMotion(group: string, index?: number, priority?: number): void;
   setExpression(id?: string): void;
+  pauseRendering?(): void;
+  resumeRendering?(): void;
   on(event: Live2DCoreEvent, listener: (value?: string) => void): Live2DCore;
 }
 
@@ -40,8 +42,41 @@ function abortError(message: string): DOMException {
 
 async function defaultCreateCore(canvas: HTMLCanvasElement): Promise<Live2DCore> {
   const { init } = await import('l2d');
-  const core = init(canvas) as Live2DCore | null;
+  const core = init(canvas) as unknown as
+    | (Live2DCore & {
+        _state?: {
+          l2d2Model?: {
+            _drawFrameId?: number | null;
+            isDrawStart?: boolean;
+            startDraw?: () => void;
+          } | null;
+          l2d6Model?: { stop?: () => void; run?: () => void } | null;
+        };
+      })
+    | null;
   if (!core) throw new Error('Live2D renderer could not initialize the canvas.');
+
+  // l2d 2.1.1 只公开模型销毁能力，没有公开暂停接口。锁定版本的 Cubism
+  // 适配层保留了 RAF 控制器，因此可在不重载资产、不重置状态的情况下冻结模型。
+  // 升级 l2d 时必须用真实 Cubism 2/6 模型重新验证这些内部字段。
+  let renderingPaused = false;
+  core.pauseRendering = () => {
+    if (renderingPaused) return;
+    renderingPaused = true;
+    const cubism2 = core._state?.l2d2Model;
+    if (cubism2?._drawFrameId != null) cancelAnimationFrame(cubism2._drawFrameId);
+    if (cubism2) {
+      cubism2._drawFrameId = null;
+      cubism2.isDrawStart = false;
+    }
+    core._state?.l2d6Model?.stop?.();
+  };
+  core.resumeRendering = () => {
+    if (!renderingPaused) return;
+    renderingPaused = false;
+    core._state?.l2d2Model?.startDraw?.();
+    core._state?.l2d6Model?.run?.();
+  };
   return core;
 }
 
@@ -64,6 +99,7 @@ export class Live2DRenderer {
   private resizeFrame: number | null = null;
   private destroyed = false;
   private suspended = false;
+  private playbackPaused = false;
   private contextLost = false;
   private lastSelection: Live2DRendererSelection | null = null;
 
@@ -127,6 +163,7 @@ export class Live2DRenderer {
         if (this.loadedEvents === loadedBefore || core.getParams().length === 0) {
           throw new Error(`Live2D model did not finish loading: ${selection.entryPath}`);
         }
+        if (this.playbackPaused) core.pauseRendering?.();
         this.setPhase('ready');
       } catch (error) {
         if (!this.destroyed && !this.suspended && generation === this.generation) {
@@ -140,8 +177,8 @@ export class Live2DRenderer {
     return result;
   }
 
-  playMotion(group: string, index?: number): void {
-    if (this.phase === 'ready') this.core?.playMotion(group, index);
+  playMotion(group: string, index?: number, priority?: number): void {
+    if (this.phase === 'ready' && !this.playbackPaused) this.core?.playMotion(group, index, priority);
   }
 
   setExpression(id?: string): void {
@@ -154,6 +191,15 @@ export class Live2DRenderer {
 
   getExpressions(): string[] {
     return this.phase === 'ready' ? (this.core?.getExpressions() ?? []) : [];
+  }
+
+  /** Freezes the current model instance; unlike suspend(), this preserves animation and expression state. */
+  setPlaybackPaused(paused: boolean): void {
+    if (this.playbackPaused === paused) return;
+    this.playbackPaused = paused;
+    if (this.phase !== 'ready') return;
+    if (paused) this.core?.pauseRendering?.();
+    else this.core?.resumeRendering?.();
   }
 
   /** Captures the transparent canvas before pause or user download without another network read. */
@@ -175,7 +221,10 @@ export class Live2DRenderer {
     this.tail = this.tail
       .catch(() => undefined)
       .then(() => {
-        if (this.suspended && !this.destroyed) this.core?.destroy();
+        if (this.suspended && !this.destroyed) {
+          this.core?.destroy();
+          this.core = null;
+        }
       });
   }
 

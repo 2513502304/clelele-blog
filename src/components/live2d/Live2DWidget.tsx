@@ -33,6 +33,7 @@ interface PointerStart {
 const immersiveModals = new Set(['imageLightbox', 'codeFullscreen', 'diagramFullscreen']);
 const LIVE2D_PLAYER_ID = 'live2d-character-audio';
 const DIALOGUE_DURATION_MS = 6_000;
+const USER_SELECTED_MOTION_PRIORITY = 3;
 const Live2DCanvas = lazy(async () => {
   const module = await import('./Live2DCanvas');
   return { default: module.Live2DCanvas };
@@ -70,7 +71,7 @@ function Live2DWidgetContent({
   const dialogueTimerRef = useRef<number | null>(null);
   const interactionGeneration = useRef(new Live2DInteractionGeneration());
   const interactionSelectionRef = useRef('');
-  const selectedMotionRef = useRef<{ group: string; index: number } | null>(null);
+  const selectedMotionRef = useRef<{ group: string; index: number; priority?: number } | null>(null);
   const selectedExpressionRef = useRef('');
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [rendererStarted, setRendererStarted] = useState(false);
@@ -82,7 +83,6 @@ function Live2DWidgetContent({
     expressions: [],
   });
   const [userPaused, setUserPaused] = useState(false);
-  const [pausedFrame, setPausedFrame] = useState<string | null>(null);
   const [selectedMotion, setSelectedMotion] = useState('');
   const [selectedExpression, setSelectedExpression] = useState('');
   const orderedSelections = useMemo(catalogSelections, []);
@@ -204,7 +204,7 @@ function Live2DWidgetContent({
     if (interactionSelectionRef.current === selectionKey) return;
     interactionSelectionRef.current = selectionKey;
     setUserPaused(false);
-    setPausedFrame(null);
+    rendererRef.current?.setPlaybackPaused(false);
     selectedMotionRef.current = null;
     selectedExpressionRef.current = '';
     setSelectedMotion('');
@@ -221,9 +221,13 @@ function Live2DWidgetContent({
 
   useEffect(() => {
     const syncRendererActivity = () => {
-      const shouldPause = document.hidden || state.preferences.hidden || state.avoidanceHidden || userPaused;
-      if (shouldPause) rendererRef.current?.suspend();
-      else rendererRef.current?.resume();
+      const shouldSuspend = document.hidden || state.preferences.hidden || state.avoidanceHidden;
+      if (shouldSuspend) {
+        rendererRef.current?.suspend();
+        return;
+      }
+      rendererRef.current?.resume();
+      rendererRef.current?.setPlaybackPaused(userPaused);
     };
     syncRendererActivity();
     document.addEventListener('visibilitychange', syncRendererActivity);
@@ -302,7 +306,9 @@ function Live2DWidgetContent({
         });
         const rememberedMotion = selectedMotionRef.current;
         if (selectedExpressionRef.current) rendererRef.current?.setExpression(selectedExpressionRef.current);
-        if (rememberedMotion) rendererRef.current?.playMotion(rememberedMotion.group, rememberedMotion.index);
+        if (rememberedMotion) {
+          rendererRef.current?.playMotion(rememberedMotion.group, rememberedMotion.index, rememberedMotion.priority);
+        }
       }
     },
     [stopTransientInteraction],
@@ -310,7 +316,7 @@ function Live2DWidgetContent({
 
   const interact = useCallback(
     (area = 'head') => {
-      if (!costume || state.rendererStatus !== 'ready') return;
+      if (!costume || state.rendererStatus !== 'ready' || userPaused) return;
       const resolved = resolveLive2DInteraction(costume.interactions, area);
       if (!resolved) return;
       const { mapping, line } = resolved;
@@ -349,7 +355,7 @@ function Live2DWidgetContent({
       claimActivePlayer(LIVE2D_PLAYER_ID);
       void audio.play().catch(() => releaseIfCurrent());
     },
-    [costume, state.preferences.audioEnabled, state.rendererStatus, stopAudio],
+    [costume, state.preferences.audioEnabled, state.rendererStatus, stopAudio, userPaused],
   );
   const keepRenderer = useCallback((renderer: Live2DRenderer | null) => {
     rendererRef.current = renderer;
@@ -357,30 +363,24 @@ function Live2DWidgetContent({
   }, []);
 
   const togglePause = useCallback(() => {
-    if (userPaused) {
-      setPausedFrame(null);
-      setUserPaused(false);
-      return;
-    }
-    const frame = rendererRef.current?.captureFrame();
-    if (!frame) return;
-    setPausedFrame(frame);
-    setUserPaused(true);
+    const next = !userPaused;
+    rendererRef.current?.setPlaybackPaused(next);
+    setUserPaused(next);
   }, [userPaused]);
 
   const downloadScreenshot = useCallback(() => {
-    const frame = pausedFrame ?? rendererRef.current?.captureFrame();
+    const frame = rendererRef.current?.captureFrame();
     if (!frame) return;
     const anchor = document.createElement('a');
     anchor.href = frame;
     anchor.download = `${state.preferences.selection.characterId}-${state.preferences.selection.costumeId}.png`;
     anchor.click();
-  }, [pausedFrame, state.preferences.selection.characterId, state.preferences.selection.costumeId]);
+  }, [state.preferences.selection.characterId, state.preferences.selection.costumeId]);
 
   const selectMotion = useCallback((group: string, index: number) => {
-    selectedMotionRef.current = { group, index };
+    selectedMotionRef.current = { group, index, priority: USER_SELECTED_MOTION_PRIORITY };
     setSelectedMotion(`${group}\u0000${index}`);
-    rendererRef.current?.playMotion(group, index);
+    rendererRef.current?.playMotion(group, index, USER_SELECTED_MOTION_PRIORITY);
   }, []);
 
   const selectExpression = useCallback((expression?: string) => {
@@ -565,7 +565,6 @@ function Live2DWidgetContent({
           </div>
         )}
         {dialogue && <output className="live2d-dialogue">{dialogue}</output>}
-        {pausedFrame && <img className="live2d-paused-frame" src={pausedFrame} alt="" aria-hidden="true" />}
       </div>
       <Live2DControls
         labels={labels}
