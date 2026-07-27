@@ -12,6 +12,7 @@ import { useKeyboardShortcut } from '@hooks/useKeyboardShortcut';
 import { useTranslation } from '@hooks/useTranslation';
 import { useZoomPan } from '@hooks/useZoomPan';
 import { createImageLightboxDownloadAction } from '@lib/image-lightbox-download';
+import { getLive2DFocusNodes, isLive2DOwnedTarget } from '@lib/live2d/focus-scope';
 import { useStore } from '@nanostores/react';
 import {
   $imageLightboxData,
@@ -145,6 +146,7 @@ export default function ImageLightbox() {
 
   const navigateTo = useCallback(
     (dir: 1 | -1) => {
+      if (isLive2DOwnedTarget(document.activeElement)) return;
       if (isDeleting) return;
       if (!navigateImage(dir)) return;
       reset();
@@ -278,7 +280,7 @@ export default function ImageLightbox() {
             {/* Backdrop */}
             <div className="fixed inset-0 bg-black/90 backdrop-blur-sm" />
             {/* Content */}
-            <FloatingFocusManager context={context}>
+            <FloatingFocusManager context={context} getInsideElements={getLive2DFocusNodes}>
               <div ref={refs.setFloating} className="fixed inset-0 flex items-center justify-center" {...getFloatingProps()}>
                 {/* Toolbar: vertical right on desktop, horizontal top on tablet */}
                 <motion.div
