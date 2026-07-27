@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "characters": [
+    {
+      "id": "chihaya-anon",
+      "label": {
+        "zh": "千早爱音",
+        "en": "Chihaya Anon",
+        "ja": "千早愛音"
+      },
+      "costumes": [
+        {
+          "id": "default",
+          "label": {
+            "zh": "默认",
+            "en": "Default",
+            "ja": "デフォルト"
+          },
+          "releaseId": "9e95d66201f07e339bd5542b1dd0d67ae1bd0b0f9b14a7335ca0bad6bd5916ad",
+          "entryPath": "releases/9e95d66201f07e339bd5542b1dd0d67ae1bd0b0f9b14a7335ca0bad6bd5916ad/model.json",
+          "packageBytes": 2396808,
+          "scale": 0.9,
+          "position": [0, -0.1],
+          "interactions": [
+            {
+              "area": "head",
+              "motionGroup": "smile01",
+              "lines": ["你好，很高兴见到你。"]
+            }
+          ],
+          "provenancePath": "src/data/live2d/provenance/9e95d66201f07e339bd5542b1dd0d67ae1bd0b0f9b14a7335ca0bad6bd5916ad.json"
+        }
+      ]
+    }
+  ]
+}

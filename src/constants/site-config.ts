@@ -10,6 +10,7 @@ import type {
   FeaturedSeriesItem,
   HpoiConfig,
   I18nConfig,
+  Live2DConfig,
   RouterItem,
   SiteBasicConfig,
 } from '@lib/config/types';
@@ -322,6 +323,30 @@ export const bangumiConfig: BangumiConfig | null = yamlConfig.bangumi ?? null;
 export const hpoiConfig: HpoiConfig | null = yamlConfig.hpoi
   ? { ...yamlConfig.hpoi, userId: String(yamlConfig.hpoi.userId) }
   : null;
+
+function normalizeLive2DConfig(config: Live2DConfig | undefined): Required<Live2DConfig> {
+  const enabled = config?.enabled ?? false;
+  const defaultCharacterId = config?.defaultCharacterId?.trim() ?? '';
+  const defaultCostumeId = config?.defaultCostumeId?.trim() ?? '';
+  if (enabled && (!defaultCharacterId || !defaultCostumeId)) {
+    throw new Error('Live2D requires defaultCharacterId and defaultCostumeId when enabled.');
+  }
+  const desktopIdleDelayMs = config?.desktopIdleDelayMs ?? 1200;
+  if (!Number.isFinite(desktopIdleDelayMs) || desktopIdleDelayMs < 0 || desktopIdleDelayMs > 30_000) {
+    throw new Error('Live2D desktopIdleDelayMs must be between 0 and 30000.');
+  }
+  return {
+    enabled,
+    defaultCharacterId,
+    defaultCostumeId,
+    displayPolicy: config?.displayPolicy === 'always-visible' ? 'always-visible' : 'smart',
+    audioEnabled: config?.audioEnabled ?? false,
+    desktopIdleDelayMs,
+  };
+}
+
+/** Build-time normalized Live2D defaults. The distributed theme remains disabled. */
+export const live2dConfig = normalizeLive2DConfig(yamlConfig.live2d);
 
 const styleGalleryRouter = baseRouters.find((router) => router.path === '/image-style-prompt-gallery');
 const routersWithoutStyleGallery = baseRouters.filter((router) => router.path !== '/image-style-prompt-gallery');

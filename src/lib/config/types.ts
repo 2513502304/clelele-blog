@@ -575,6 +575,24 @@ export interface HpoiConfig {
 }
 
 // =============================================================================
+// Live2D Character Widget
+// =============================================================================
+
+export interface Live2DConfig {
+  /** Global feature gate. Disabled themes perform no renderer or model requests. */
+  enabled?: boolean;
+  /** Catalog IDs used when no valid visitor selection exists. */
+  defaultCharacterId?: string;
+  defaultCostumeId?: string;
+  /** Initial immersive-modal policy. Visitors may override it locally. */
+  displayPolicy?: 'smart' | 'always-visible';
+  /** Shell audio is opt-in and the core renderer remains muted. */
+  audioEnabled?: boolean;
+  /** Desktop renderer work starts after this idle delay. */
+  desktopIdleDelayMs?: number;
+}
+
+// =============================================================================
 // i18n Configuration
 // =============================================================================
 
@@ -620,6 +638,8 @@ export interface SiteYamlConfig {
   bangumi?: BangumiConfig;
   /** Hpoi figure collection page — comment out to disable */
   hpoi?: HpoiConfig;
+  /** Optional persistent Live2D character widget. */
+  live2d?: Live2DConfig;
   christmas?: ChristmasConfig;
   /** Development tools configuration (dev only) */
   dev?: DevConfig;
