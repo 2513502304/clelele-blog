@@ -48,6 +48,13 @@ interface BuildData {
   expressions: BundleFile[];
 }
 
+export class BestdoriAssetUnavailableError extends Error {
+  constructor(readonly url: string) {
+    super(`Bestdori indexed asset is no longer downloadable: ${url}`);
+    this.name = 'BestdoriAssetUnavailableError';
+  }
+}
+
 interface SourceIndex {
   acquiredAt: string;
   cardsAcquiredAt?: string;
@@ -140,6 +147,15 @@ async function request(url: string, options: Options, allowMissing = false): Pro
 
 async function fetchJson<T>(url: string, options: Options): Promise<T> {
   const response = await request(url, options);
+  return (await response?.json()) as T;
+}
+
+async function fetchAssetJson<T>(url: string, options: Options): Promise<T> {
+  const response = await request(url, options);
+  if (response?.headers.get('content-type')?.startsWith('text/html')) {
+    await response.body?.cancel();
+    throw new BestdoriAssetUnavailableError(url);
+  }
   return (await response?.json()) as T;
 }
 
@@ -253,7 +269,7 @@ async function runPool<T>(items: readonly T[], concurrency: number, worker: (ite
 }
 
 async function buildPackage(model: string, server: string, root: string, options: Options): Promise<void> {
-  const build = await fetchJson<{ Base: BuildData }>(
+  const build = await fetchAssetJson<{ Base: BuildData }>(
     `${BESTDORI_ASSETS}/${server}/live2d/chara/${model}_rip/buildData.asset`,
     options,
   );
@@ -500,9 +516,10 @@ async function buildAndPublishCharacterVoice(
 interface CheckpointRecord {
   model: string;
   server: string;
-  status: 'uploaded' | 'cataloged' | 'published';
-  releaseId: string;
+  status: 'uploaded' | 'cataloged' | 'published' | 'skipped';
+  releaseId?: string;
   publishedAt: string;
+  reason?: string;
   characterId?: string;
   characterLabels?: Record<string, string>;
   costume?: Live2DCostume;
@@ -514,7 +531,7 @@ interface CheckpointState {
 }
 
 type UploadedCheckpointRecord = CheckpointRecord &
-  Required<Pick<CheckpointRecord, 'characterId' | 'characterLabels' | 'costume'>>;
+  Required<Pick<CheckpointRecord, 'releaseId' | 'characterId' | 'characterLabels' | 'costume'>>;
 
 interface VoiceCheckpointRecord {
   characterId: string;
@@ -538,14 +555,15 @@ export async function checkpointState(file: string): Promise<CheckpointState> {
   const pendingCatalog = new Map<string, UploadedCheckpointRecord>();
   for (const line of text.split('\n').filter(Boolean)) {
     const entry = JSON.parse(line) as CheckpointRecord;
-    if (entry.status === 'cataloged' || entry.status === 'published') {
+    if (entry.status === 'cataloged' || entry.status === 'published' || entry.status === 'skipped') {
       completed.add(entry.model);
       pendingCatalog.delete(entry.model);
       continue;
     }
-    if (entry.status === 'uploaded' && entry.characterId && entry.characterLabels && entry.costume) {
+    if (entry.status === 'uploaded' && entry.releaseId && entry.characterId && entry.characterLabels && entry.costume) {
       pendingCatalog.set(entry.model, {
         ...entry,
+        releaseId: entry.releaseId,
         characterId: entry.characterId,
         characterLabels: entry.characterLabels,
         costume: entry.costume,
@@ -747,6 +765,20 @@ async function main(): Promise<void> {
         finished += 1;
         console.log(`[${finished}/${tasks.length}] uploaded ${model}`);
       } catch (error) {
+        if (error instanceof BestdoriAssetUnavailableError) {
+          await appendCheckpoint({
+            model,
+            server,
+            status: 'skipped',
+            publishedAt: new Date().toISOString(),
+            reason: 'Bestdori returned its HTML shell instead of buildData.asset.',
+          });
+          completed.add(model);
+          await rm(packageRoot, { recursive: true, force: true });
+          finished += 1;
+          console.warn(`[${finished}/${tasks.length}] skipped unavailable ${model}`);
+          return;
+        }
         failures.push({ asset: model, error });
         console.error(`Failed ${model}:`, error instanceof Error ? error.message : error);
       }

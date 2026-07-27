@@ -60,6 +60,29 @@ test('checkpoint recovery distinguishes uploaded assets from cataloged models', 
   }
 });
 
+test('checkpoint recovery does not retry source assets confirmed unavailable', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'live2d-skipped-'));
+  const file = path.join(root, 'manifest.jsonl');
+  await writeFile(
+    file,
+    `${JSON.stringify({
+      model: '001_missing',
+      server: 'jp',
+      status: 'skipped',
+      publishedAt: '2026-07-27T00:00:00.000Z',
+      reason: 'source unavailable',
+    })}\n`,
+  );
+
+  try {
+    const state = await checkpointState(file);
+    assert.equal(state.completed.has('001_missing'), true);
+    assert.equal(state.pendingCatalog.size, 0);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('character card aggregation includes every rarity and prefers Japanese dialogue text', () => {
   const cards = {
     '200': { characterId: 37, resourceSetName: 'ssr', prefix: ['SSR', 'SSR en'] },
