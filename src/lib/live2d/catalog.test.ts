@@ -5,7 +5,11 @@ import type { Live2DCostume, Live2DPackageManifest } from './types';
 
 test('published catalog remains lightweight and validates at import time', () => {
   assert.equal(live2dCatalog.version, 1);
-  assert.ok(live2dCatalog.characters.length > 0);
+  assert.equal(live2dCatalog.characters.length, 2);
+  assert.equal(
+    live2dCatalog.characters.reduce((total, character) => total + character.costumes.length, 0),
+    4,
+  );
   assert.equal('model' in live2dCatalog.characters[0].costumes[0], false);
 });
 

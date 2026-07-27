@@ -1,6 +1,9 @@
 import anonManifestData from '../../data/live2d/manifests/9e95d66201f07e339bd5542b1dd0d67ae1bd0b0f9b14a7335ca0bad6bd5916ad.json';
+import anonSrManifestData from '../../data/live2d/manifests/63efa2f7902818e27ad2c3ec71b3cbcc6c83ee4b4c8c4176b2e7f764422f3e85.json';
+import tomoriManifestData from '../../data/live2d/manifests/c282ced11b66f7f30488ba356deab4bffa3e27a734478b929093140b69ffe349.json';
+import tomoriSrManifestData from '../../data/live2d/manifests/d5628c18018a77031a8df09e24002c5b76c3de65378464a755b75a52327b56a0.json';
 import { createHfS3PresignedUrl, type HfS3Config } from '../hf-s3';
-import { live2dCatalog } from './catalog';
+import { assertCostumeMatchesManifest, live2dCatalog } from './catalog';
 import { type Live2DManifestObject, type Live2DPackageManifest, live2dPackageManifestSchema } from './types';
 
 const IMMUTABLE_CACHE_CONTROL = 'public, max-age=31536000, immutable';
@@ -14,16 +17,18 @@ export const LIVE2D_MAX_ASSET_BYTES = 20_000_000;
 export const LIVE2D_BROWSER_CACHE_CONTROL = IMMUTABLE_CACHE_CONTROL;
 export const LIVE2D_CDN_CACHE_CONTROL = IMMUTABLE_CACHE_CONTROL;
 
-const packageManifests = [live2dPackageManifestSchema.parse(anonManifestData)] as const;
+const packageManifests = [anonManifestData, anonSrManifestData, tomoriManifestData, tomoriSrManifestData].map((manifest) =>
+  live2dPackageManifestSchema.parse(manifest),
+);
 const manifestByRelease = new Map<string, Live2DPackageManifest>(
   packageManifests.map((manifest) => [manifest.releaseId, manifest]),
 );
 
 for (const character of live2dCatalog.characters) {
   for (const costume of character.costumes) {
-    if (!manifestByRelease.has(costume.releaseId)) {
-      throw new Error(`Live2D catalog release has no checked-in manifest: ${costume.releaseId}`);
-    }
+    const manifest = manifestByRelease.get(costume.releaseId);
+    if (!manifest) throw new Error(`Live2D catalog release has no checked-in manifest: ${costume.releaseId}`);
+    assertCostumeMatchesManifest(costume, manifest);
   }
 }
 
