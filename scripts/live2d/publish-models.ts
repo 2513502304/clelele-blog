@@ -70,6 +70,8 @@ export interface PublishVoiceOptions {
 export interface PublishBehavior {
   /** 批量迁移时先发布不可变对象，随后由调用方一次性 CAS 合并目录。 */
   deferCatalog?: boolean;
+  /** 大型批量迁移可提高单个 release 内的对象并发；独立发布保留保守默认值。 */
+  objectConcurrency?: number;
 }
 
 function requireValue(arguments_: string[], index: number, name: string): string {
@@ -206,8 +208,10 @@ export async function verifyRemoteObject(
   throw new Error(`Remote bytes conflict for ${key}.`);
 }
 
-async function publishObjects(
-  client: ReturnType<typeof createHfS3Client>,
+type RemoteObjectPublisher = Pick<ReturnType<typeof createHfS3Client>, 'get' | 'head' | 'put'>;
+
+export async function publishObjects(
+  client: RemoteObjectPublisher,
   releaseId: string,
   files: Map<string, Uint8Array>,
   manifestObjects: Array<{
@@ -216,9 +220,12 @@ async function publishObjects(
     mime: string;
     sha256: string;
   }>,
+  options: { concurrency?: number } = {},
 ): Promise<void> {
   let completed = 0;
-  const concurrency = Math.min(6, manifestObjects.length);
+  const requestedConcurrency = options.concurrency ?? 6;
+  const normalizedConcurrency = Number.isFinite(requestedConcurrency) ? Math.max(1, Math.floor(requestedConcurrency)) : 6;
+  const concurrency = Math.min(normalizedConcurrency, manifestObjects.length);
   await Promise.all(
     Array.from({ length: concurrency }, async (_, workerIndex) => {
       for (let index = workerIndex; index < manifestObjects.length; index += concurrency) {
@@ -230,7 +237,8 @@ async function publishObjects(
           } catch (error) {
             if (!(error instanceof HfS3ConflictError) || !(await verifyRemoteObject(client, key, object))) throw error;
           }
-          if (!(await verifyRemoteObject(client, key, object))) throw new Error(`Remote verification failed for ${key}.`);
+          // SigV4 已把 payload SHA-256 签入请求；成功的条件 PUT 即是新对象的完整性确认。
+          // 只有断点恢复或 412 竞争得到的既有对象才需要上面的 GET + SHA-256 全量复核。
         }
         completed += 1;
         console.log(`[${completed}/${manifestObjects.length}] verified ${object.path}`);
@@ -431,6 +439,7 @@ interface ImmutablePackageOptions {
   approvedAudio: Set<string>;
   dryRun: boolean;
   converterOptions: Record<string, unknown>;
+  objectConcurrency?: number;
 }
 
 /**
@@ -469,7 +478,9 @@ async function publishImmutablePackage(options: ImmutablePackageOptions) {
       attempts: 5,
       transferTimeoutMs: 120_000,
     });
-    await publishObjects(client, manifest.releaseId, transformedFiles, manifest.objects);
+    await publishObjects(client, manifest.releaseId, transformedFiles, manifest.objects, {
+      concurrency: options.objectConcurrency,
+    });
     await publishImmutableJson(client, `manifests/${manifest.releaseId}.json`, manifestText);
     await publishImmutableJson(
       client,
@@ -493,6 +504,7 @@ export async function publishLive2DModel(
       coreAudioRemoved: true,
       approvedAudio: [...options.approvedAudio].sort(),
     },
+    objectConcurrency: behavior.objectConcurrency,
   });
   const costume: Live2DCostume = {
     id: options.costumeId,

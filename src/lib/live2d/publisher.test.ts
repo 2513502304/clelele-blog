@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   assertImmutableProvenanceMatches,
   parseArguments,
+  publishObjects,
   removeCatalogCharacters,
   upsertCatalog,
   upsertCatalogBatch,
@@ -284,4 +285,34 @@ test('remote object verification tolerates a transient stale read without weaken
     ),
     /Remote bytes conflict/,
   );
+});
+
+test('new immutable objects trust a successful signed PUT without downloading the payload again', async () => {
+  const bytes = new TextEncoder().encode('new immutable bytes');
+  let putCalls = 0;
+  let getCalls = 0;
+  const client = {
+    async head() {
+      return { exists: false, size: null, etag: null };
+    },
+    async get() {
+      getCalls += 1;
+      return null;
+    },
+    async put() {
+      putCalls += 1;
+    },
+  };
+
+  await publishObjects(client, 'a'.repeat(64), new Map([['model.json', bytes]]), [
+    {
+      path: 'model.json',
+      size: bytes.byteLength,
+      mime: 'application/json',
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+    },
+  ]);
+
+  assert.equal(putCalls, 1);
+  assert.equal(getCalls, 0);
 });

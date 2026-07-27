@@ -746,7 +746,7 @@ async function main(): Promise<void> {
             replaceInteractions: true,
           },
           interactions,
-          { deferCatalog: true },
+          { deferCatalog: true, objectConcurrency: options.fileConcurrency },
         );
         const record = {
           model,
