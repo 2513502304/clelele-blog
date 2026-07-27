@@ -345,12 +345,16 @@ function normalizeLive2DConfig(config: Live2DConfig | undefined): Required<Live2
   };
 }
 
-/** Build-time normalized Live2D defaults. */
-export const live2dConfig = normalizeLive2DConfig(yamlConfig.live2d);
+const live2dE2EOverride = import.meta.env.DEV && typeof process !== 'undefined' && process.env.LIVE2D_E2E === '1';
+
+/** Build-time normalized Live2D defaults, including the development-only browser-test gate. */
+export const live2dConfig = normalizeLive2DConfig({
+  ...yamlConfig.live2d,
+  enabled: (yamlConfig.live2d?.enabled ?? false) || live2dE2EOverride,
+});
 
 /** Shared feature gate for the widget shell, sidebar anchor, and asset API. */
-export const live2dEnabled =
-  live2dConfig.enabled || (import.meta.env.DEV && typeof process !== 'undefined' && process.env.LIVE2D_E2E === '1');
+export const live2dEnabled = live2dConfig.enabled;
 
 const styleGalleryRouter = baseRouters.find((router) => router.path === '/image-style-prompt-gallery');
 const routersWithoutStyleGallery = baseRouters.filter((router) => router.path !== '/image-style-prompt-gallery');
