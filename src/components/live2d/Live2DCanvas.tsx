@@ -42,14 +42,16 @@ export function Live2DCanvas({
       }),
     [releaseId],
   );
+  // 构造参数只作兜底；每次 release 加载都传入自己的请求钩子，因此切换服装不会重建 canvas 唯一 renderer。
+  const initialRequestRef = useRef(request);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const renderer = new Live2DRenderer({
       canvas,
-      request,
-      prepare: request.prefetch,
+      request: initialRequestRef.current,
+      prepare: initialRequestRef.current.prefetch,
       ownsInput: (event) => Boolean(getInteractionRoot()?.contains(event.target as Node)),
       onPhase: (phase, error) => onPhaseRef.current(phase, error),
       onTap: (area) => onTapRef.current(area),
@@ -61,14 +63,22 @@ export function Live2DCanvas({
       renderer.destroy();
       rendererRef.current = null;
     };
-  }, [getInteractionRoot, onRenderer, request]);
+  }, [getInteractionRoot, onRenderer]);
 
   useEffect(() => {
     if (!active || !rendererRef.current) return;
-    void rendererRef.current.load({ ...selection, key: `${selection.key}:${retryNonce}` }).catch(() => {
-      // Recoverable state and retry controls are published through onPhase.
-    });
-  }, [active, retryNonce, selection]);
+    void rendererRef.current
+      .load(
+        { ...selection, key: `${selection.key}:${retryNonce}` },
+        {
+          request,
+          prepare: request.prefetch,
+        },
+      )
+      .catch(() => {
+        // Recoverable state and retry controls are published through onPhase.
+      });
+  }, [active, request, retryNonce, selection]);
 
   return <canvas ref={canvasRef} className="live2d-canvas" />;
 }

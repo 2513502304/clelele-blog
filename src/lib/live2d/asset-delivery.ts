@@ -198,6 +198,10 @@ export function createLive2DAssetRequestHook(options: CreateLive2DAssetRequestHo
     const manifest = getLive2DPackageManifest(options.releaseId);
     if (!manifest) throw new Live2DAssetPathError('unknown-release', 'Unknown Live2D release.');
     const assets = manifest.objects.map((object) => resolveLive2DPackageAsset(options.releaseId, object.path));
+    const controller = new AbortController();
+    const abortFromParent = () => controller.abort(signal.reason);
+    if (signal.aborted) abortFromParent();
+    else signal.addEventListener('abort', abortFromParent, { once: true });
     let cursor = 0;
     const warm = async (asset: Live2DAssetDescriptor): Promise<void> => {
       if (cachedBytes.has(asset.key)) {
@@ -205,7 +209,7 @@ export function createLive2DAssetRequestHook(options: CreateLive2DAssetRequestHo
         return;
       }
       const pending = (async () => {
-        const response = await fetchAsset(asset, signal);
+        const response = await fetchAsset(asset, controller.signal);
         const buffer = await response.arrayBuffer();
         if (buffer.byteLength !== asset.size) {
           throw new Live2DAssetDeliveryError('integrity', 'Live2D prefetched asset size does not match its manifest.');
@@ -222,14 +226,25 @@ export function createLive2DAssetRequestHook(options: CreateLive2DAssetRequestHo
     };
     const worker = async () => {
       while (cursor < assets.length) {
-        signal.throwIfAborted();
+        controller.signal.throwIfAborted();
         const asset = assets[cursor];
         cursor += 1;
-        if (asset) await warm(asset);
+        if (asset) {
+          try {
+            await warm(asset);
+          } catch (error) {
+            controller.abort(error);
+            throw error;
+          }
+        }
       }
     };
     const concurrency = Math.max(1, Math.min(options.prefetchConcurrency ?? 6, assets.length));
-    await Promise.all(Array.from({ length: concurrency }, () => worker()));
+    const workers = Array.from({ length: concurrency }, () => worker());
+    const results = await Promise.allSettled(workers);
+    signal.removeEventListener('abort', abortFromParent);
+    const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+    if (failure) throw failure.reason;
   };
 
   return hook;

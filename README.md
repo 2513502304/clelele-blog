@@ -316,12 +316,13 @@ manifest，后续由博客自己的媒体互斥逻辑播放。每个对象都写
 更新 catalog 前回读校验 SHA-256，因此中断后可安全重跑，既不会覆盖已有 release，也不会推广不完整模型。
 
 仓库只保留 `src/data/live2d/catalog.json`、逐对象 manifest 和 provenance。provenance 记录来源、转换器版本、
-许可参考和发布时间；正式启用前应人工核对模型再分发授权及 Live2D Cubism SDK 条款。浏览器直连 HF 时会向 HF
-披露访客 IP；不满足 CORS、MIME 或 no-referrer canary 时才使用只读凭证保护的同源回退。回退单对象受 Vercel
-当前 20 MB 流式缓存上限约束，平台限制变化时需重新验证。
+许可参考和发布时间；正式启用前应人工核对模型再分发授权及 Live2D Cubism SDK 条款。当前 HF endpoint 未通过
+浏览器 CORS canary，因此运行时固定使用只读凭证保护的同源回退；直连实现仅作为后续 endpoint 能力变化时的显式
+切换路径保留。回退单对象受 Vercel 当前 20 MB 流式缓存上限约束，平台限制变化时需重新验证。
 
-回滚只需将 `config/site.yaml` 中的 `live2d.enabled` 设为 `false`。这会停止所有模型网络和渲染工作，不删除 HF
-资产，也不重写访客本地偏好。
+常规回滚只需将 `config/site.yaml` 中的 `live2d.enabled` 设为 `false`；紧急情况下还可将
+`LIVE2D_ASSET_DELIVERY_MODE` 设为 `disabled`，独立停止公开资产回源。这些操作都不删除 HF 资产，也不重写访客
+本地偏好。
 
 ## 文档
 

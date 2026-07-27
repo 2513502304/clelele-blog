@@ -72,9 +72,18 @@ export default function ImageLightbox() {
   }, [reset]);
   const backdropPointerHandlers = useBackdropClickDismiss(dismissFromBackdrop);
 
-  const handleZoomIn = useCallback(() => zoomTo(scaleRef.current * 1.5), [zoomTo]);
-  const handleZoomOut = useCallback(() => zoomTo(scaleRef.current / 1.5), [zoomTo]);
-  const handleRotate = useCallback(() => setRotation((r) => (r + 90) % 360), []);
+  const handleZoomIn = useCallback(() => {
+    if (!isLive2DOwnedTarget(document.activeElement)) zoomTo(scaleRef.current * 1.5);
+  }, [zoomTo]);
+  const handleZoomOut = useCallback(() => {
+    if (!isLive2DOwnedTarget(document.activeElement)) zoomTo(scaleRef.current / 1.5);
+  }, [zoomTo]);
+  const handleRotate = useCallback(() => {
+    if (!isLive2DOwnedTarget(document.activeElement)) setRotation((r) => (r + 90) % 360);
+  }, []);
+  const handleResetShortcut = useCallback(() => {
+    if (!isLive2DOwnedTarget(document.activeElement)) handleResetAll();
+  }, [handleResetAll]);
 
   const handleLike = useCallback(async () => {
     if (!currentLike || !currentLike.authEnabled || currentLike.pending) return;
@@ -178,7 +187,7 @@ export default function ImageLightbox() {
   useKeyboardShortcut({ key: '+', handler: handleZoomIn, enabled: isOpen, ignoreInputs: false, preventDefault: false });
   useKeyboardShortcut({ key: '-', handler: handleZoomOut, enabled: isOpen, ignoreInputs: false, preventDefault: false });
   useKeyboardShortcut({ key: 'r', handler: handleRotate, enabled: isOpen, ignoreInputs: false, preventDefault: false });
-  useKeyboardShortcut({ key: '0', handler: handleResetAll, enabled: isOpen, ignoreInputs: false, preventDefault: false });
+  useKeyboardShortcut({ key: '0', handler: handleResetShortcut, enabled: isOpen, ignoreInputs: false, preventDefault: false });
 
   const { refs, context } = useFloating({
     open: isOpen,

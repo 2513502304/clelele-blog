@@ -1,18 +1,25 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 import { createHfS3Client, type HfS3Config, HfS3ConflictError } from '../../src/lib/hf-s3';
 import { getLive2DObjectKey } from '../../src/lib/live2d/catalog';
-import { buildLive2DPackageManifest, serializeLive2DManifest } from '../../src/lib/live2d/package-manifest';
+import {
+  assertLive2DManifestReleaseId,
+  buildLive2DPackageManifest,
+  serializeLive2DManifest,
+} from '../../src/lib/live2d/package-manifest';
 import {
   type Live2DCatalog,
   type Live2DCostume,
   type Live2DProvenance,
   live2dCatalogSchema,
+  live2dPackageManifestSchema,
   live2dProvenanceSchema,
 } from '../../src/lib/live2d/types';
 
-interface PublishOptions {
+export interface PublishOptions {
   packageRoot: string;
   characterId: string;
   characterLabels: Record<string, string>;
@@ -30,6 +37,7 @@ interface PublishOptions {
   position: [number, number];
   approvedAudio: Set<string>;
   dryRun: boolean;
+  replace: boolean;
 }
 
 const repoRoot = path.resolve(import.meta.dirname, '../..');
@@ -61,14 +69,19 @@ function parsePosition(value: string): [number, number] {
   return [values[0], values[1]];
 }
 
-function parseArguments(arguments_: string[]): PublishOptions {
+export function parseArguments(arguments_: string[]): PublishOptions {
   const values = new Map<string, string>();
   const approvedAudio = new Set<string>();
   let dryRun = false;
+  let replace = false;
   for (let index = 0; index < arguments_.length; index += 1) {
     const argument = arguments_[index];
     if (argument === '--dry-run') {
       dryRun = true;
+      continue;
+    }
+    if (argument === '--replace') {
+      replace = true;
       continue;
     }
     if (argument === '--audio') {
@@ -105,6 +118,7 @@ function parseArguments(arguments_: string[]): PublishOptions {
     position: parsePosition(values.get('--position') ?? '0,0'),
     approvedAudio,
     dryRun,
+    replace,
   };
 }
 
@@ -173,19 +187,38 @@ async function publishObjects(
   );
 }
 
-function upsertCatalog(catalog: Live2DCatalog, options: PublishOptions, costume: Live2DCostume): Live2DCatalog {
+/** 默认只创建新 costume；只有显式 --replace 才替换已存在的同名项。 */
+export function upsertCatalog(
+  catalog: Live2DCatalog,
+  options: Pick<PublishOptions, 'characterId' | 'characterLabels' | 'replace'>,
+  costume: Live2DCostume,
+): Live2DCatalog {
   const characters = catalog.characters.map((character) => ({ ...character, costumes: [...character.costumes] }));
   let character = characters.find((candidate) => candidate.id === options.characterId);
   if (!character) {
     character = { id: options.characterId, label: options.characterLabels, costumes: [] };
     characters.push(character);
   }
-  const existing = character.costumes.find((candidate) => candidate.id === costume.id);
-  if (existing && existing.releaseId !== costume.releaseId) {
-    throw new Error(`Catalog costume ${options.characterId}/${costume.id} already points at a different immutable release.`);
+  const existingIndex = character.costumes.findIndex((candidate) => candidate.id === costume.id);
+  const existing = character.costumes[existingIndex];
+  if (existing && isDeepStrictEqual(existing, costume)) return live2dCatalogSchema.parse({ version: 1, characters });
+  if (existingIndex !== -1 && !options.replace) {
+    throw new Error(
+      `Catalog costume ${options.characterId}/${costume.id} already exists; pass --replace to replace it after verification.`,
+    );
   }
-  if (!existing) character.costumes.push(costume);
+  if (existingIndex === -1) character.costumes.push(costume);
+  else character.costumes[existingIndex] = costume;
   return live2dCatalogSchema.parse({ version: 1, characters });
+}
+
+/** publishedAt 仅记录本次执行时间，其余 provenance 字段均属于不可变发布事实。 */
+export function assertImmutableProvenanceMatches(existing: Live2DProvenance, next: Live2DProvenance): void {
+  const { publishedAt: _existingPublishedAt, ...existingImmutable } = live2dProvenanceSchema.parse(existing);
+  const { publishedAt: _nextPublishedAt, ...nextImmutable } = live2dProvenanceSchema.parse(next);
+  if (!isDeepStrictEqual(existingImmutable, nextImmutable)) {
+    throw new Error(`Existing provenance for release ${next.releaseId} conflicts with immutable publication fields.`);
+  }
 }
 
 async function main(): Promise<void> {
@@ -240,7 +273,13 @@ async function main(): Promise<void> {
     await writeFile(path.join(manifestDirectory, `${manifest.releaseId}.json`), manifestText, { flag: 'wx' }).catch(
       async (error) => {
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-        if ((await readFile(path.join(manifestDirectory, `${manifest.releaseId}.json`), 'utf8')) !== manifestText) throw error;
+        const existing = live2dPackageManifestSchema.parse(
+          JSON.parse(await readFile(path.join(manifestDirectory, `${manifest.releaseId}.json`), 'utf8')),
+        );
+        assertLive2DManifestReleaseId(existing);
+        if (!isDeepStrictEqual(existing, manifest)) {
+          throw new Error(`Existing manifest for release ${manifest.releaseId} conflicts with immutable package metadata.`);
+        }
       },
     );
     const provenanceText = `${JSON.stringify(provenance, null, 2)}\n`;
@@ -250,9 +289,10 @@ async function main(): Promise<void> {
         const existing = live2dProvenanceSchema.parse(
           JSON.parse(await readFile(path.join(provenanceDirectory, `${manifest.releaseId}.json`), 'utf8')),
         );
-        if (existing.releaseId !== provenance.releaseId || existing.manifestSha256 !== provenance.manifestSha256) throw error;
+        assertImmutableProvenanceMatches(existing, provenance);
       },
     );
+    // --replace 只更新可变 catalog 指针，必须等远端对象和两份不可变记录全部验证完成。
     await writeFile(catalogPath, `${JSON.stringify(nextCatalog, null, 2)}\n`);
   }
   console.log(
@@ -261,6 +301,6 @@ async function main(): Promise<void> {
   console.log(`${manifest.objects.length} immutable object(s), ${manifest.totalBytes} byte(s).`);
 }
 
-await main();
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();
 
 // npm run publish:live2d-models -- --package /absolute/model-dir --character-id chihaya-anon --character-labels 'zh=千早爱音,en=Chihaya Anon,ja=千早愛音' --costume-id default --costume-labels 'zh=默认,en=Default,ja=デフォルト' --source-url https://bestdori.com/tool/explorer/asset/jp/live2d/chara --source-revision 037_live_default --acquired-at 2026-07-27T00:00:00.000Z --converter-repository https://github.com/A-kirami/bestdori-live2d-downloader --converter-commit b6f6b1b29352e073f5987da8b06d6ae1e4b70ef6 --license https://bestdori.com/info/terms,https://www.live2d.com/eula/live2d-proprietary-software-license-agreement_en.html --publisher clelele --scale 0.9 --position 0,-0.1

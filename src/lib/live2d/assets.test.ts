@@ -313,7 +313,7 @@ test('origin accepts a missing CAS content type and serves the manifest MIME sep
   assert.equal((await response.arrayBuffer()).byteLength, asset.size);
 });
 
-test('concurrent cold reads for one immutable key share one origin request', async () => {
+test('each visitor gets an independent origin stream without Response clone buffering', async () => {
   let fetchCount = 0;
   let releaseFetch: (() => void) | undefined;
   const gate = new Promise<void>((resolve) => {
@@ -339,13 +339,12 @@ test('concurrent cold reads for one immutable key share one origin request', asy
   releaseFetch?.();
   const [firstResponse, secondResponse] = await Promise.all([first, second]);
   const [firstBytes, secondBytes] = await Promise.all([firstResponse.arrayBuffer(), secondResponse.arrayBuffer()]);
-  assert.equal(fetchCount, 1);
+  assert.equal(fetchCount, 2);
   assert.equal(firstBytes.byteLength, asset.size);
   assert.equal(secondBytes.byteLength, asset.size);
 });
 
-test('a slightly staggered request still joins the bounded cold-read window', async () => {
-  let fetchCount = 0;
+test('origin reads enforce a bounded abort-aware queue', async () => {
   const reader = createLive2DAssetOriginReader({
     config: () => ({
       accessKeyId: 'HFAKTEST',
@@ -355,16 +354,21 @@ test('a slightly staggered request still joins the bounded cold-read window', as
       prefix: 'bestdori',
       region: 'us-east-1',
     }),
-    fetch: async () => {
-      fetchCount += 1;
-      return assetResponse();
-    },
+    maxConcurrentReads: 1,
+    maxQueuedReads: 1,
+    fetch: async () => assetResponse(),
   });
   const first = await reader.read(asset);
-  await new Promise((resolve) => setTimeout(resolve, 10));
-  const second = await reader.read(asset);
-  await Promise.all([first.arrayBuffer(), second.arrayBuffer()]);
-  assert.equal(fetchCount, 1);
+  const queuedController = new AbortController();
+  const queued = reader.read(asset, queuedController.signal);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(reader.inFlightCount, 2);
+  await assert.rejects(reader.read(asset), /queue is full/);
+  queuedController.abort(new DOMException('Visitor disconnected.', 'AbortError'));
+  await assert.rejects(queued, { name: 'AbortError' });
+  assert.equal(reader.inFlightCount, 1);
+  await first.body?.cancel();
+  assert.equal(reader.inFlightCount, 0);
 });
 
 test('direct canary treats digest mismatch as permanent instead of silently falling back', async () => {

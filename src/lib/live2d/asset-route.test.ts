@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createLive2DAssetRouteHandler } from '../../pages/api/live2d-assets/[...path]';
+import { createLive2DAssetRouteHandler } from './asset-route';
 import { type Live2DAssetOriginReader, resolveLive2DPackageAsset } from './assets';
 
 const releaseId = '9e95d66201f07e339bd5542b1dd0d67ae1bd0b0f9b14a7335ca0bad6bd5916ad';
@@ -16,23 +16,36 @@ function createReader(): Live2DAssetOriginReader & { reads: number } {
       this.reads += 1;
       return new Response(new Uint8Array(asset.size));
     },
+    async verify() {
+      this.reads += 1;
+    },
   };
 }
 
-test('HEAD returns immutable manifest metadata without reading HF', async () => {
+test('HEAD verifies origin availability and returns immutable manifest metadata', async () => {
   const reader = createReader();
   const response = await createLive2DAssetRouteHandler(reader)(
     new Request(`https://blog.example/api/live2d-assets/${key}`, { method: 'HEAD' }),
     key,
   );
   assert.equal(response.status, 200);
-  assert.equal(reader.reads, 0);
+  assert.equal(reader.reads, 1);
   assert.equal(response.headers.get('content-type'), asset.mime);
   assert.equal(response.headers.get('content-length'), String(asset.size));
   assert.equal(response.headers.get('etag'), `"sha256-${asset.sha256}"`);
   assert.equal(response.headers.get('cache-control'), 'public, max-age=31536000, immutable');
   assert.equal(response.headers.get('vercel-cdn-cache-control'), 'public, max-age=31536000, immutable');
   assert.equal(await response.text(), '');
+});
+
+test('delivery kill switch returns 404 before resolving a manifest member', async () => {
+  const reader = createReader();
+  const response = await createLive2DAssetRouteHandler(reader, () => false)(
+    new Request(`https://blog.example/api/live2d-assets/${key}`),
+    key,
+  );
+  assert.equal(response.status, 404);
+  assert.equal(reader.reads, 0);
 });
 
 test('GET streams the allowlisted object with authoritative headers', async () => {

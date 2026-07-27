@@ -3,6 +3,7 @@ import { SeriesNavigation } from '@components/post/SeriesNavigation';
 import { SeriesPostList } from '@components/post/SeriesPostList';
 import HomeSiderSegmented from '@components/ui/segmented/HomeSiderSegmented';
 import { HomeSiderSegmentType, HomeSiderType } from '@constants/enum';
+import { live2dConfig } from '@constants/site-config';
 import { getPostSlug } from '@lib/content/locale';
 import { getAdjacentSeriesPosts, getSeriesPosts } from '@lib/content/posts';
 import { toPostRef, toPostRefs } from '@lib/content/transforms';
@@ -23,6 +24,7 @@ interface Props {
 const { type = HomeSiderType.HOME, className, isDrawer = false, post } = Astro.props;
 const locale = getLocaleFromUrl(Astro.url.pathname);
 const defaultSegmentType = type === HomeSiderType.POST ? HomeSiderSegmentType.DIRECTORY : HomeSiderSegmentType.INFO;
+const live2dEnabled = live2dConfig.enabled || (import.meta.env.DEV && process.env.LIVE2D_E2E === '1');
 
 // 获取系列文章（转换为轻量级引用）
 const seriesPosts = post && type === HomeSiderType.POST ? toPostRefs(await getSeriesPosts(post, locale)) : [];
@@ -94,7 +96,7 @@ const nextPost = adjacentPosts.nextPost ? toPostRef(adjacentPosts.nextPost) : nu
   }
 
   <ScrollProgress client:only="react" className="mt-auto w-full rounded-full pt-4" />
-  {!isDrawer && <div data-live2d-sidebar-anchor aria-hidden="true" class="pointer-events-none h-64 shrink-0" />}
+  {live2dEnabled && !isDrawer && <div data-live2d-sidebar-anchor aria-hidden="true" class="pointer-events-none h-64 shrink-0" />}
 </div>
 
 <script>

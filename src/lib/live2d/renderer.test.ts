@@ -26,6 +26,8 @@ class FakeCore implements Live2DCore {
   }
 
   resize() {}
+  suspend() {}
+  resume() {}
   destroy() {
     this.destroyed += 1;
   }
@@ -44,11 +46,12 @@ const selection = (key: string) => ({
   position: [0, 0] as [number, number],
 });
 const request = (async () => new Response()) as ResourceRequestHook;
+const canvas = () => new EventTarget() as HTMLCanvasElement;
 
 test('serializes mutations and keeps only the latest queued selection', async () => {
   const core = new FakeCore();
   const renderer = new Live2DRenderer({
-    canvas: {} as HTMLCanvasElement,
+    canvas: canvas(),
     request,
     ownsInput: () => true,
     createCore: async () => core,
@@ -71,7 +74,7 @@ test('serializes mutations and keeps only the latest queued selection', async ()
 test('times out each attempt independently and permits a later retry', async () => {
   const core = new FakeCore();
   const renderer = new Live2DRenderer({
-    canvas: {} as HTMLCanvasElement,
+    canvas: canvas(),
     request,
     ownsInput: () => true,
     createCore: async () => core,
@@ -91,7 +94,7 @@ test('prepares package bytes inside the same generation timeout before core load
   const core = new FakeCore();
   const order: string[] = [];
   const renderer = new Live2DRenderer({
-    canvas: {} as HTMLCanvasElement,
+    canvas: canvas(),
     request,
     ownsInput: () => true,
     prepare: async (signal) => {

@@ -1,9 +1,15 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { buildLive2DPackageManifest } from './package-manifest';
+import {
+  assertLive2DManifestReleaseId,
+  buildLive2DPackageManifest,
+  calculateLive2DReleaseId,
+  serializeLive2DManifest,
+} from './package-manifest';
+import { live2dPackageManifestSchema } from './types';
 
 async function createPackage(model: unknown): Promise<string> {
   const root = await mkdtemp(path.join(os.tmpdir(), 'live2d-package-'));
@@ -32,6 +38,43 @@ test('creates a deterministic manifest and strips core-owned sound bindings', as
     ['data/model.moc', 'data/motions/idle.mtn', 'data/textures/body.png', 'model.json'],
   );
   assert.doesNotMatch(new TextDecoder().decode(first.transformedFiles.get('model.json')), /sound/);
+  assert.equal(
+    calculateLive2DReleaseId(first.manifest.entryPath, [...first.manifest.objects].reverse()),
+    first.manifest.releaseId,
+  );
+});
+
+test('rejects duplicate paths after normalization', async () => {
+  const root = await createPackage({ model: 'data/model.moc', textures: ['data/./model.moc'] });
+  await assert.rejects(buildLive2DPackageManifest(root), /Duplicate package paths after normalization/);
+
+  assert.throws(
+    () =>
+      calculateLive2DReleaseId('model.json', [
+        { path: 'data/model.moc', size: 3, mime: 'application/octet-stream', sha256: 'a'.repeat(64) },
+        { path: 'data/./model.moc', size: 3, mime: 'application/octet-stream', sha256: 'a'.repeat(64) },
+      ]),
+    /Duplicate package path after normalization/,
+  );
+});
+
+test('rejects a manifest whose releaseId does not match its immutable contents', async () => {
+  const { manifest } = await buildLive2DPackageManifest(await createPackage(validModel));
+  const changed = { ...manifest, releaseId: 'a'.repeat(64) };
+  assert.throws(() => assertLive2DManifestReleaseId(changed), /Manifest releaseId mismatch/);
+  assert.throws(() => serializeLive2DManifest(changed), /Manifest releaseId mismatch/);
+});
+
+test('checked-in manifests retain their deterministic releaseId', async () => {
+  const directory = path.resolve(import.meta.dirname, '../../data/live2d/manifests');
+  const filenames = (await readdir(directory)).filter((name) => name.endsWith('.json')).sort();
+  assert.ok(filenames.length > 0, 'Expected at least one checked-in Live2D manifest.');
+
+  for (const filename of filenames) {
+    const manifest = live2dPackageManifestSchema.parse(JSON.parse(await readFile(path.join(directory, filename), 'utf8')));
+    assert.equal(filename, `${manifest.releaseId}.json`);
+    assert.doesNotThrow(() => assertLive2DManifestReleaseId(manifest));
+  }
 });
 
 for (const badReference of ['../secret', '/root/file', 'https://example.com/model.moc', 'data\\model.moc']) {

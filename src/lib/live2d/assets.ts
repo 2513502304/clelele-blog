@@ -15,7 +15,7 @@ const IMMUTABLE_CACHE_CONTROL = 'public, max-age=31536000, immutable';
 const DEFAULT_ORIGIN_ATTEMPTS = 3;
 const DEFAULT_ORIGIN_TIMEOUT_MS = 60_000;
 const DEFAULT_MAX_CONCURRENT_READS = 6;
-const COLD_READ_COALESCE_WINDOW_MS = 100;
+const DEFAULT_MAX_QUEUED_READS = 24;
 
 export const LIVE2D_BROWSER_CACHE_CONTROL = IMMUTABLE_CACHE_CONTROL;
 export const LIVE2D_CDN_CACHE_CONTROL = IMMUTABLE_CACHE_CONTROL;
@@ -129,20 +129,52 @@ function responseWithTransferDeadline(
   return new Response(body, { status: 200, headers: response.headers });
 }
 
-function createConcurrencyGate(limit: number): { acquire: () => Promise<() => void> } {
+function createConcurrencyGate(
+  limit: number,
+  maxQueued: number,
+): { acquire: (signal?: AbortSignal) => Promise<() => void>; readonly pendingCount: number } {
   let active = 0;
-  const queue: Array<() => void> = [];
+  const queue: Array<{
+    resolve: () => void;
+    reject: (reason?: unknown) => void;
+    signal?: AbortSignal;
+    abort?: () => void;
+  }> = [];
   return {
-    async acquire() {
-      if (active >= limit) await new Promise<void>((resolve) => queue.push(resolve));
+    async acquire(signal) {
+      signal?.throwIfAborted();
+      if (active >= limit) {
+        if (queue.length >= maxQueued) {
+          throw new Live2DOriginError('Live2D origin read queue is full.', true, 503);
+        }
+        await new Promise<void>((resolve, reject) => {
+          const entry = { resolve, reject, signal } as (typeof queue)[number];
+          const abort = () => {
+            const index = queue.indexOf(entry);
+            if (index >= 0) queue.splice(index, 1);
+            reject(signal?.reason);
+          };
+          entry.abort = abort;
+          signal?.addEventListener('abort', abort, { once: true });
+          queue.push(entry);
+        });
+      }
+      signal?.throwIfAborted();
       active += 1;
       let released = false;
       return () => {
         if (released) return;
         released = true;
         active -= 1;
-        queue.shift()?.();
+        const next = queue.shift();
+        if (next) {
+          if (next.abort) next.signal?.removeEventListener('abort', next.abort);
+          next.resolve();
+        }
       };
+    },
+    get pendingCount() {
+      return active + queue.length;
     },
   };
 }
@@ -153,30 +185,34 @@ export interface Live2DAssetOriginReaderOptions {
   attempts?: number;
   timeoutMs?: number;
   maxConcurrentReads?: number;
+  maxQueuedReads?: number;
   retryDelay?: (attempt: number) => Promise<void>;
 }
 
 export interface Live2DAssetOriginReader {
-  read(asset: Live2DAssetDescriptor): Promise<Response>;
+  read(asset: Live2DAssetDescriptor, signal?: AbortSignal): Promise<Response>;
+  verify(asset: Live2DAssetDescriptor, signal?: AbortSignal): Promise<void>;
   readonly inFlightCount: number;
 }
 
 /**
- * 同一不可变 key 的并发冷读共用一个 HF 请求，再为各响应 tee 出独立流。
- * origin 请求不绑定任一访客的 AbortSignal，避免其中一个客户端断开导致其余请求一起失败。
+ * 每个访客流独立拥有回源请求；并发和排队均有上限，断开后会释放对应槽位。
+ * immutable CDN/browser cache 负责正常命中，避免在 Function 内用 Response tee 缓冲慢消费者。
  */
 export function createLive2DAssetOriginReader(options: Live2DAssetOriginReaderOptions): Live2DAssetOriginReader {
   const fetchImpl = options.fetch ?? fetch;
   const attempts = options.attempts ?? DEFAULT_ORIGIN_ATTEMPTS;
   const timeoutMs = options.timeoutMs ?? DEFAULT_ORIGIN_TIMEOUT_MS;
   const retryDelay = options.retryDelay ?? ((attempt) => new Promise((resolve) => setTimeout(resolve, 200 * 2 ** attempt)));
-  const gate = createConcurrencyGate(options.maxConcurrentReads ?? DEFAULT_MAX_CONCURRENT_READS);
-  const inFlight = new Map<string, Promise<Response>>();
+  const gate = createConcurrencyGate(
+    options.maxConcurrentReads ?? DEFAULT_MAX_CONCURRENT_READS,
+    options.maxQueuedReads ?? DEFAULT_MAX_QUEUED_READS,
+  );
 
-  async function readFromOrigin(asset: Live2DAssetDescriptor): Promise<Response> {
+  async function readFromOrigin(asset: Live2DAssetDescriptor, requestSignal?: AbortSignal): Promise<Response> {
     let lastError: unknown;
     for (let attempt = 0; attempt < attempts; attempt += 1) {
-      const releasePermit = await gate.acquire();
+      const releasePermit = await gate.acquire(requestSignal);
       const controller = new AbortController();
       const timeoutId = setTimeout(
         () => controller.abort(new DOMException('Live2D origin timed out.', 'TimeoutError')),
@@ -191,7 +227,7 @@ export function createLive2DAssetOriginReader(options: Live2DAssetOriginReaderOp
           // while manifest MIME/length checks and the streaming byte counter validate the final response.
           redirect: 'follow',
           referrerPolicy: 'no-referrer',
-          signal: controller.signal,
+          signal: requestSignal ? AbortSignal.any([controller.signal, requestSignal]) : controller.signal,
         });
         if (!response.ok) {
           clearTimeout(timeoutId);
@@ -225,6 +261,7 @@ export function createLive2DAssetOriginReader(options: Live2DAssetOriginReaderOp
         clearTimeout(timeoutId);
         releasePermit();
         lastError = error;
+        if (requestSignal?.aborted) throw requestSignal.reason;
         const retryable = error instanceof Live2DOriginError ? error.retryable : isTransientFetchError(error);
         if (!retryable || attempt + 1 >= attempts) break;
         await retryDelay(attempt);
@@ -235,26 +272,17 @@ export function createLive2DAssetOriginReader(options: Live2DAssetOriginReaderOp
   }
 
   return {
-    async read(asset) {
-      let shared = inFlight.get(asset.key);
-      if (!shared) {
-        shared = readFromOrigin(asset);
-        inFlight.set(asset.key, shared);
-        void shared.then(
-          (response) => {
-            // 等待同一轮 Promise reaction 都 clone 完成后，取消无人消费的原始分支。
-            setTimeout(() => {
-              inFlight.delete(asset.key);
-              void response.body?.cancel().catch(() => undefined);
-            }, COLD_READ_COALESCE_WINDOW_MS);
-          },
-          () => inFlight.delete(asset.key),
-        );
-      }
-      return (await shared).clone();
+    read(asset, signal) {
+      return readFromOrigin(asset, signal);
+    },
+    async verify(asset, signal) {
+      // GET is used because HF's CAS redirect behavior is not uniform for HEAD. Cancelling immediately
+      // verifies credentials, object existence and immutable headers without buffering the package member.
+      const response = await readFromOrigin(asset, signal);
+      await response.body?.cancel().catch(() => undefined);
     },
     get inFlightCount() {
-      return inFlight.size;
+      return gate.pendingCount;
     },
   };
 }

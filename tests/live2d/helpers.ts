@@ -23,10 +23,22 @@ export async function expectNonBlankCanvas(page: Page): Promise<void> {
   expect(visiblePixels).toBeGreaterThan(info.width * info.height * 0.02);
 }
 
+/** Match model bytes and the renderer code that must remain behind the mobile wake interaction. */
+export function isLive2DTransferUrl(rawUrl: string): boolean {
+  const url = new URL(rawUrl);
+  const { pathname } = url;
+  const isProxiedAsset = pathname.includes('/api/live2d-assets/');
+  const isDirectBestdoriAsset = url.hostname === 's3.hf.co' && pathname.includes('/clelele0722/raw-datasets/bestdori/');
+  const isSourceRendererModule =
+    pathname.endsWith('/src/components/live2d/Live2DCanvas.tsx') || pathname.endsWith('/src/lib/live2d/renderer.ts');
+  const isBuiltRendererChunk = /\/_astro\/(?:Live2DCanvas|renderer)[.-][^/]+\.js$/i.test(pathname);
+  return isProxiedAsset || isDirectBestdoriAsset || isSourceRendererModule || isBuiltRendererChunk;
+}
+
 export function live2dRequests(page: Page): string[] {
   const requests: string[] = [];
   page.on('request', (request) => {
-    if (request.url().includes('/api/live2d-assets/')) requests.push(request.url());
+    if (isLive2DTransferUrl(request.url())) requests.push(request.url());
   });
   return requests;
 }

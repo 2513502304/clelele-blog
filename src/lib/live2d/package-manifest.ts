@@ -32,9 +32,18 @@ function normalizeRelativePath(value: string): string {
   return normalized.replace(/^\.\//, '');
 }
 
-function collectReferences(value: unknown, references: Set<string>, parentKey = ''): void {
+function addReference(references: Map<string, string>, value: string): void {
+  const normalized = normalizeRelativePath(value);
+  const previous = references.get(normalized);
+  if (previous !== undefined && previous !== value) {
+    throw new Error(`Duplicate package paths after normalization: ${previous} and ${value}`);
+  }
+  references.set(normalized, value);
+}
+
+function collectReferences(value: unknown, references: Map<string, string>, parentKey = ''): void {
   if (typeof value === 'string') {
-    if (REFERENCE_KEYS.has(parentKey) || parentKey === 'textures') references.add(normalizeRelativePath(value));
+    if (REFERENCE_KEYS.has(parentKey) || parentKey === 'textures') addReference(references, value);
     return;
   }
   if (Array.isArray(value)) {
@@ -70,6 +79,29 @@ function stableJson(value: unknown): string {
 
 function sha256(bytes: Uint8Array | string): string {
   return createHash('sha256').update(bytes).digest('hex');
+}
+
+/** 根据规范化后的入口与有序对象元数据计算稳定 releaseId。 */
+export function calculateLive2DReleaseId(entryPath: string, objects: readonly Live2DManifestObject[]): string {
+  const normalizedEntryPath = normalizeRelativePath(entryPath);
+  const normalizedObjects = objects.map((object) => ({ ...object, path: normalizeRelativePath(object.path) }));
+  normalizedObjects.sort((left, right) => left.path.localeCompare(right.path));
+
+  for (let index = 1; index < normalizedObjects.length; index += 1) {
+    if (normalizedObjects[index - 1].path === normalizedObjects[index].path) {
+      throw new Error(`Duplicate package path after normalization: ${normalizedObjects[index].path}`);
+    }
+  }
+
+  return sha256(stableJson({ entryPath: normalizedEntryPath, objects: normalizedObjects }));
+}
+
+/** 校验 manifest 声明的 releaseId 确实由其不可变内容计算得到。 */
+export function assertLive2DManifestReleaseId(manifest: Live2DPackageManifest): void {
+  const expectedReleaseId = calculateLive2DReleaseId(manifest.entryPath, manifest.objects);
+  if (manifest.releaseId !== expectedReleaseId) {
+    throw new Error(`Manifest releaseId mismatch: expected ${expectedReleaseId}, received ${manifest.releaseId}.`);
+  }
 }
 
 async function assertRegularContainedFile(rootRealPath: string, absolutePath: string): Promise<void> {
@@ -120,10 +152,10 @@ export async function buildLive2DPackageManifest(
   const entryPath = normalizeRelativePath(options.entryPath ?? 'model.json');
   const approvedAudio = new Set([...(options.approvedAudio ?? [])].map(normalizeRelativePath));
   const sourceEntry = JSON.parse(await readFile(path.join(rootRealPath, entryPath), 'utf8')) as unknown;
-  const references = new Set<string>();
+  const references = new Map<string, string>();
   collectReferences(sourceEntry, references);
-  references.add(entryPath);
-  for (const audioPath of approvedAudio) references.add(audioPath);
+  addReference(references, entryPath);
+  for (const audioPath of approvedAudio) addReference(references, audioPath);
 
   const availableFiles = await listFiles(rootRealPath);
   const caseFolded = new Map<string, string>();
@@ -138,7 +170,7 @@ export async function buildLive2DPackageManifest(
   const transformedFiles = new Map<string, Uint8Array>();
   const objects: Live2DManifestObject[] = [];
   const sanitizedEntry = new TextEncoder().encode(`${JSON.stringify(stripCoreAudio(sourceEntry, approvedAudio), null, 2)}\n`);
-  for (const relativePath of [...references].sort((left, right) => left.localeCompare(right))) {
+  for (const relativePath of [...references.keys()].sort((left, right) => left.localeCompare(right))) {
     const absolutePath = path.join(rootRealPath, ...relativePath.split('/'));
     await assertRegularContainedFile(rootRealPath, absolutePath);
     const extension = path.extname(relativePath).toLowerCase();
@@ -149,8 +181,7 @@ export async function buildLive2DPackageManifest(
     objects.push({ path: relativePath, size: bytes.byteLength, mime, sha256: sha256(bytes) });
   }
 
-  const digestInput = stableJson({ entryPath, objects });
-  const releaseId = sha256(digestInput);
+  const releaseId = calculateLive2DReleaseId(entryPath, objects);
   const manifest = live2dPackageManifestSchema.parse({
     version: 1,
     releaseId,
@@ -162,5 +193,7 @@ export async function buildLive2DPackageManifest(
 }
 
 export function serializeLive2DManifest(manifest: Live2DPackageManifest): string {
-  return `${JSON.stringify(live2dPackageManifestSchema.parse(manifest), null, 2)}\n`;
+  const parsed = live2dPackageManifestSchema.parse(manifest);
+  assertLive2DManifestReleaseId(parsed);
+  return `${JSON.stringify(parsed, null, 2)}\n`;
 }

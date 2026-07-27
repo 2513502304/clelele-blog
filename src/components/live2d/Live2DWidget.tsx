@@ -1,4 +1,4 @@
-import { Live2DCanvas } from '@components/live2d/Live2DCanvas';
+import { ErrorBoundary } from '@components/common';
 import { Live2DControls } from '@components/live2d/Live2DControls';
 import { Live2DModelPicker } from '@components/live2d/Live2DModelPicker';
 import { Live2DSettings } from '@components/live2d/Live2DSettings';
@@ -14,7 +14,7 @@ import { useStore } from '@nanostores/react';
 import { $live2dState, live2dActions } from '@store/live2d';
 import { $activeModal } from '@store/modal';
 import { claimActivePlayer, releaseActivePlayer } from '@store/player';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 export interface Live2DWidgetConfig {
   defaultCharacterId: string;
@@ -32,6 +32,10 @@ interface PointerStart {
 const immersiveModals = new Set(['imageLightbox', 'codeFullscreen', 'diagramFullscreen']);
 const LIVE2D_PLAYER_ID = 'live2d-character-audio';
 const DIALOGUE_DURATION_MS = 6_000;
+const Live2DCanvas = lazy(async () => {
+  const module = await import('./Live2DCanvas');
+  return { default: module.Live2DCanvas };
+});
 
 function catalogSelections() {
   return live2dCatalog.characters.flatMap((character) =>
@@ -44,7 +48,7 @@ function textLabel(values: Record<string, string>, locale: string): string {
 }
 
 /** Persistent shell: all visual, preference, asset and renderer work stays behind this single island. */
-export default function Live2DWidget({
+function Live2DWidgetContent({
   defaultCharacterId,
   defaultCostumeId,
   desktopIdleDelayMs,
@@ -144,8 +148,10 @@ export default function Live2DWidget({
     };
     update();
     window.addEventListener('resize', update, { passive: true });
+    document.addEventListener('astro:page-load', update);
     return () => {
       window.removeEventListener('resize', update);
+      document.removeEventListener('astro:page-load', update);
       live2dActions.clearGeometry();
     };
   }, []);
@@ -186,6 +192,18 @@ export default function Live2DWidget({
       stopTransientInteraction();
     }
   }, [state.avoidanceHidden, state.preferences.hidden, state.rendererStatus, stopTransientInteraction]);
+
+  useEffect(() => {
+    const syncRendererActivity = () => {
+      const shouldPause =
+        document.hidden || state.preferences.hidden || state.avoidanceHidden || state.rendererStatus === 'recoverable';
+      if (shouldPause) rendererRef.current?.suspend();
+      else rendererRef.current?.resume();
+    };
+    syncRendererActivity();
+    document.addEventListener('visibilitychange', syncRendererActivity);
+    return () => document.removeEventListener('visibilitychange', syncRendererActivity);
+  }, [state.avoidanceHidden, state.preferences.hidden, state.rendererStatus]);
 
   useEffect(() => {
     if (!state.preferences.audioEnabled) stopAudio();
@@ -377,16 +395,20 @@ export default function Live2DWidget({
       inert={state.avoidanceHidden}
     >
       <div className="live2d-stage">
-        <Live2DCanvas
-          selection={rendererSelection}
-          releaseId={costume.releaseId}
-          active={rendererStarted}
-          retryNonce={retryNonce}
-          getInteractionRoot={getInteractionRoot}
-          onPhase={handlePhase}
-          onTap={interact}
-          onRenderer={keepRenderer}
-        />
+        {rendererStarted && (
+          <Suspense fallback={null}>
+            <Live2DCanvas
+              selection={rendererSelection}
+              releaseId={costume.releaseId}
+              active
+              retryNonce={retryNonce}
+              getInteractionRoot={getInteractionRoot}
+              onPhase={handlePhase}
+              onTap={interact}
+              onRenderer={keepRenderer}
+            />
+          </Suspense>
+        )}
         <button
           ref={surfaceRef}
           type="button"
@@ -449,5 +471,30 @@ export default function Live2DWidget({
         {state.rendererStatus === 'ready' ? t('live2d.ready', { name: characterName }) : ''}
       </span>
     </div>
+  );
+}
+
+function Live2DWidgetFallback() {
+  const { t } = useTranslation();
+  return (
+    <button
+      type="button"
+      className="live2d-wake"
+      // React.lazy 会缓存失败的 chunk Promise；刷新页面才能建立新的网络代际。
+      onClick={() => window.location.reload()}
+      aria-label={t('live2d.retry')}
+      title={t('live2d.retry')}
+    >
+      <Icon icon="ri:refresh-line" aria-hidden="true" />
+    </button>
+  );
+}
+
+/** 将可选角色组件的异常限制在自身边界内，避免破坏持久博客布局，并提供局部重试。 */
+export default function Live2DWidget(config: Live2DWidgetConfig) {
+  return (
+    <ErrorBoundary FallbackComponent={Live2DWidgetFallback} resetKeys={[config.defaultCharacterId, config.defaultCostumeId]}>
+      <Live2DWidgetContent {...config} />
+    </ErrorBoundary>
   );
 }
