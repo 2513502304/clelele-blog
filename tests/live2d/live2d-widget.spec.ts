@@ -50,13 +50,48 @@ test('mobile transfers no model bytes until the visitor wakes the widget', async
 });
 
 test('manual motion selection interrupts immediately and pause preserves the current model state', async ({ page }) => {
+  const warmedMotion = page.waitForResponse(
+    (response) => response.url().includes(`${releaseIds.anonDefault}/data/motions/angry04.mtn`) && response.status() === 200,
+    { timeout: 90_000 },
+  );
   await page.goto('/');
   await waitForLive2DReady(page);
+  await warmedMotion;
   await page.getByRole('button', { name: '动作与表情' }).click();
 
   const motion = page.locator('.live2d-select-field select').first();
+  const selectedMotionStarted = page.evaluate(
+    () =>
+      new Promise<string>((resolve) => {
+        const handleMotion = (event: Event) => {
+          const group = (event as CustomEvent<{ group: string }>).detail.group;
+          if (group !== 'angry04') return;
+          window.removeEventListener('live2d:motionstart', handleMotion);
+          resolve(group);
+        };
+        window.addEventListener('live2d:motionstart', handleMotion);
+      }),
+  );
   await motion.selectOption({ label: 'angry04' });
   await expect(motion).toHaveValue('angry04\u00000');
+  expect(await selectedMotionStarted).toBe('angry04');
+
+  const interactionMotion = page.evaluate(
+    () =>
+      new Promise<string>((resolve) => {
+        const handleMotion = (event: Event) => {
+          const group = (event as CustomEvent<{ group: string }>).detail.group;
+          if (group !== 'smile01') return;
+          window.removeEventListener('live2d:motionstart', handleMotion);
+          resolve(group);
+        };
+        window.addEventListener('live2d:motionstart', handleMotion);
+      }),
+  );
+  await page.locator('.live2d-interaction-surface').click({ position: { x: 140, y: 80 } });
+  await expect(page.locator('.live2d-dialogue')).toContainText('ねえねえ、今日は何を見に来たの？');
+  await expect(motion).toHaveValue('smile01\u00000');
+  expect(await interactionMotion).toBe('smile01');
 
   await page.getByRole('button', { name: '暂停', exact: true }).click();
   await expect(page.locator('.live2d-root')).toHaveAttribute('data-phase', 'ready');
@@ -68,7 +103,7 @@ test('manual motion selection interrupts immediately and pause preserves the cur
     .locator('.live2d-canvas')
     .evaluate((canvas) => (canvas as HTMLCanvasElement).toDataURL('image/png'));
   expect(laterFrozenFrame).toBe(frozenFrame);
-  await expect(motion).toHaveValue('angry04\u00000');
+  await expect(motion).toHaveValue('smile01\u00000');
 
   await page.getByRole('button', { name: '继续', exact: true }).click();
   await page.waitForTimeout(200);
@@ -76,21 +111,53 @@ test('manual motion selection interrupts immediately and pause preserves the cur
     .locator('.live2d-canvas')
     .evaluate((canvas) => (canvas as HTMLCanvasElement).toDataURL('image/png'));
   expect(resumedFrame).not.toBe(frozenFrame);
-  await expect(motion).toHaveValue('angry04\u00000');
+  await expect(motion).toHaveValue('smile01\u00000');
+});
+
+test('enabled character voice requests the audio paired with the visible dialogue', async ({ page }) => {
+  await page.goto('/');
+  await waitForLive2DReady(page);
+  await page.getByRole('button', { name: 'Live2D 设置' }).click();
+  const audioSwitch = page.getByRole('switch', { name: '角色语音' });
+  await audioSwitch.click();
+  await expect(audioSwitch).toHaveAttribute('aria-checked', 'true');
+
+  const audioResponse = page.waitForResponse(
+    (response) => response.url().includes(`${releaseIds.anonDefault}/audio/`) && response.status() === 206,
+    { timeout: 30_000 },
+  );
+  await page.locator('.live2d-interaction-surface').click({ position: { x: 140, y: 80 } });
+  const response = await audioResponse;
+
+  await expect(page.locator('.live2d-dialogue')).toBeVisible();
+  expect(response.headers()['content-type']).toBe('audio/mpeg');
 });
 
 test('automatic effect preferences persist without reloading the model', async ({ page }) => {
   const requests = live2dRequests(page);
   await page.goto('/');
   await waitForLive2DReady(page);
-  const requestsBeforeToggle = requests.length;
-  await page.getByRole('button', { name: '动作与表情' }).click();
+  const nonMotionRequestCount = () => requests.filter((url) => !url.includes('/data/motions/')).length;
+  const requestsBeforeToggle = nonMotionRequestCount();
+  const animationButton = page.getByRole('button', { name: '动作与表情' });
+  await animationButton.hover();
+  const tooltip = page.locator('.live2d-controls-tooltip');
+  await expect(tooltip).toHaveAttribute('data-visible', 'true');
+  const [tooltipBox, toolbarBox] = await Promise.all([tooltip.boundingBox(), page.locator('.live2d-controls').boundingBox()]);
+  expect(tooltipBox).not.toBeNull();
+  expect(toolbarBox).not.toBeNull();
+  expect((tooltipBox?.y ?? 0) + (tooltipBox?.height ?? Number.POSITIVE_INFINITY)).toBeLessThanOrEqual(
+    toolbarBox?.y ?? Number.NEGATIVE_INFINITY,
+  );
+
+  await animationButton.click();
+  await expect(tooltip).not.toHaveAttribute('data-visible', 'true');
 
   const sway = page.getByRole('switch', { name: '摇摆' });
   await expect(sway).toHaveAttribute('aria-checked', 'true');
   await sway.click();
   await expect(sway).toHaveAttribute('aria-checked', 'false');
-  expect(requests).toHaveLength(requestsBeforeToggle);
+  expect(nonMotionRequestCount()).toBe(requestsBeforeToggle);
   const storedEffects = await page.evaluate(() => JSON.parse(localStorage.getItem('live2d-preferences') ?? '{}').effects);
   expect(storedEffects).toEqual({ sway: false, breathe: true, blink: true });
 

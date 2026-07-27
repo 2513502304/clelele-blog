@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { HfS3ObjectSnapshot } from '../hf-s3';
+import { getLive2DPackageManifest } from './asset-registry';
 import { getLive2DObjectKey, live2dCatalog } from './catalog';
 import { createLive2DMetadataStore } from './metadata-store';
 import { calculateLive2DReleaseId } from './package-manifest';
@@ -98,6 +99,24 @@ test('falls back to the checked-in catalog when the remote directory is unavaila
     },
   });
   assert.deepEqual(await store.getCatalog(), live2dCatalog);
+});
+
+test('keeps checked-in release manifests readable after the remote catalog replaces their entries', async () => {
+  const bootstrapReleaseId = live2dCatalog.characters[0]?.costumes[0]?.releaseId;
+  assert.ok(bootstrapReleaseId);
+  const bootstrapManifest = getLive2DPackageManifest(bootstrapReleaseId);
+  assert.ok(bootstrapManifest);
+  const { catalog: remoteCatalog } = remoteFixture();
+  const store = createLive2DMetadataStore({
+    client: {
+      async get(key) {
+        if (key === 'catalog.json') return snapshot(remoteCatalog);
+        return null;
+      },
+    },
+  });
+
+  assert.deepEqual(await store.getManifest(bootstrapReleaseId), bootstrapManifest);
 });
 
 test('rejects a remote manifest whose key and immutable release id disagree', async () => {

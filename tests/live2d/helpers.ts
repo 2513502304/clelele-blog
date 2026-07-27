@@ -2,8 +2,8 @@ import { expect, type Page } from '@playwright/test';
 import sharp from 'sharp';
 
 export const releaseIds = {
-  anonDefault: '9e95d66201f07e339bd5542b1dd0d67ae1bd0b0f9b14a7335ca0bad6bd5916ad',
-  anonSr: '63efa2f7902818e27ad2c3ec71b3cbcc6c83ee4b4c8c4176b2e7f764422f3e85',
+  anonDefault: '1d58a97e0077d03a6ea9aea65b7941d2b45cde0813d058e55b455880c5f92785',
+  anonSr: 'f168e709a012d5844349ba433923a869420bb4c8cc2f4d043bef91b8cba54bdd',
   tomoriDefault: 'c282ced11b66f7f30488ba356deab4bffa3e27a734478b929093140b69ffe349',
   tomoriSr: 'd5628c18018a77031a8df09e24002c5b76c3de65378464a755b75a52327b56a0',
 } as const;

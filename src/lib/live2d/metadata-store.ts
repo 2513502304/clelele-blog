@@ -93,7 +93,8 @@ export function createLive2DMetadataStore(options: Live2DMetadataStoreOptions) {
 
     const request = (async () => {
       const catalog = await getCatalog();
-      if (!releaseExists(catalog, releaseId)) {
+      const bootstrap = getLive2DPackageManifest(releaseId);
+      if (!releaseExists(catalog, releaseId) && !bootstrap) {
         throw new Live2DAssetPathError('unknown-release', 'Unknown Live2D release.');
       }
       try {
@@ -107,7 +108,6 @@ export function createLive2DMetadataStore(options: Live2DMetadataStoreOptions) {
         manifestCache.set(releaseId, manifest);
         return manifest;
       } catch (error) {
-        const bootstrap = getLive2DPackageManifest(releaseId);
         if (bootstrap) return bootstrap;
         throw error;
       }

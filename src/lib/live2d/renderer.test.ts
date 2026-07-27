@@ -134,6 +134,75 @@ test('exposes model-authored controls only after the renderer is ready', async (
   renderer.destroy();
 });
 
+test('prefetches unique lazy motions after readiness with bounded concurrency', async () => {
+  const core = new FakeCore();
+  core.getMotions = () => ({
+    idle: ['motions/idle.mtn'],
+    tap: ['motions/tap.mtn', 'motions/shared.mtn'],
+    expression: ['motions/shared.mtn', 'motions/wave.mtn'],
+  });
+  const urls: string[] = [];
+  let active = 0;
+  let maxActive = 0;
+  const prefetchControl: { finish?: () => void } = {};
+  const prefetchGate = new Promise<void>((resolve) => {
+    prefetchControl.finish = resolve;
+  });
+  const renderer = new Live2DRenderer({
+    canvas: canvas(),
+    createCore: async () => core,
+    motionPrefetchConcurrency: 2,
+    async prefetchMotion(url) {
+      urls.push(new URL(url).pathname);
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await prefetchGate;
+      active -= 1;
+    },
+  });
+  const loading = renderer.load(selection('prefetch'));
+  await new Promise((resolve) => setImmediate(resolve));
+  core.resolveCurrent?.();
+  await loading;
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(urls, ['/models/prefetch/motions/idle.mtn', '/models/prefetch/motions/tap.mtn']);
+  assert.equal(maxActive, 2);
+  prefetchControl.finish?.();
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(urls, [
+    '/models/prefetch/motions/idle.mtn',
+    '/models/prefetch/motions/tap.mtn',
+    '/models/prefetch/motions/shared.mtn',
+    '/models/prefetch/motions/wave.mtn',
+  ]);
+  renderer.destroy();
+});
+
+test('aborts current motion prefetch when the renderer is suspended', async () => {
+  const core = new FakeCore();
+  const observed: { signal?: AbortSignal } = {};
+  const renderer = new Live2DRenderer({
+    canvas: canvas(),
+    createCore: async () => core,
+    prefetchMotion: (_url, signal) => {
+      observed.signal = signal;
+      return new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve(), { once: true }));
+    },
+  });
+  const loading = renderer.load(selection('prefetch-abort'));
+  await new Promise((resolve) => setImmediate(resolve));
+  core.resolveCurrent?.();
+  await loading;
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(observed.signal?.aborted, false);
+
+  renderer.suspend();
+  assert.equal(observed.signal?.aborted, true);
+  renderer.destroy();
+});
+
 test('soft pause preserves the loaded model and blocks motion mutations until resumed', async () => {
   const core = new FakeCore();
   const renderer = new Live2DRenderer({ canvas: canvas(), createCore: async () => core });

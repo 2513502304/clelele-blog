@@ -33,9 +33,14 @@ export interface Live2DCore {
 export interface Live2DRendererOptions {
   canvas: HTMLCanvasElement;
   createCore?: (canvas: HTMLCanvasElement) => Promise<Live2DCore>;
+  prefetchMotion?: (url: string, signal: AbortSignal) => Promise<void>;
+  motionPrefetchConcurrency?: number;
   onPhase?: (phase: Live2DRendererPhase, error?: unknown) => void;
   onTap?: (areaName: string) => void;
 }
+
+const DEFAULT_MOTION_PREFETCH_CONCURRENCY = 4;
+const MAX_MOTION_PREFETCH_CONCURRENCY = 8;
 
 function abortError(message: string): DOMException {
   return new DOMException(message, 'AbortError');
@@ -82,6 +87,36 @@ async function defaultCreateCore(canvas: HTMLCanvasElement): Promise<Live2DCore>
 }
 
 /**
+ * 完整消费不可变动作响应，让 l2d 后续解析动作时复用浏览器有容量上限的 HTTP 缓存。
+ * 应用状态不保留响应字节，避免切换多个角色后在 JS 堆中累积模型资源。
+ */
+async function defaultPrefetchMotion(url: string, signal: AbortSignal): Promise<void> {
+  const response = await fetch(url, {
+    cache: 'force-cache',
+    credentials: 'same-origin',
+    signal,
+  });
+  if (!response.ok) throw new Error(`Live2D motion prefetch failed: ${response.status} (${url})`);
+  if (!response.body) {
+    await response.arrayBuffer();
+    return;
+  }
+  const reader = response.body.getReader();
+  try {
+    while (!(await reader.read()).done) {
+      // 流式读完响应即可填充 HTTP 缓存，不额外拼接完整 ArrayBuffer。
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+function resolveMotionUrl(entryPath: string, motionPath: string): string {
+  const baseHref = typeof location === 'undefined' ? 'http://localhost/' : location.href;
+  return new URL(motionPath, new URL(entryPath, baseHref)).href;
+}
+
+/**
  * Serializes model mutations around the unmodified upstream renderer.
  *
  * `l2d` owns Cubism's global runtime and cannot cancel a load in progress. A generation
@@ -103,6 +138,7 @@ export class Live2DRenderer {
   private playbackPaused = false;
   private contextLost = false;
   private lastSelection: Live2DRendererSelection | null = null;
+  private motionPrefetchController: AbortController | null = null;
 
   constructor(options: Live2DRendererOptions) {
     this.options = options;
@@ -144,6 +180,7 @@ export class Live2DRenderer {
   /** Keeps only the latest queued selection while allowing the current upstream load to settle. */
   load(selection: Live2DRendererSelection): Promise<void> {
     if (this.destroyed) return Promise.reject(abortError('Live2D renderer is destroyed.'));
+    this.cancelMotionPrefetch();
     this.lastSelection = selection;
     if (this.contextLost) return Promise.reject(abortError('Live2D WebGL context is currently lost.'));
     const generation = ++this.generation;
@@ -172,6 +209,7 @@ export class Live2DRenderer {
         }
         if (this.playbackPaused) core.pauseRendering?.();
         this.setPhase('ready');
+        this.startMotionPrefetch(core, selection, generation);
       } catch (error) {
         if (!this.destroyed && !this.suspended && generation === this.generation) {
           this.setPhase('recoverable', error);
@@ -182,6 +220,57 @@ export class Live2DRenderer {
     const result = this.tail.catch(() => undefined).then(run);
     this.tail = result.catch(() => undefined);
     return result;
+  }
+
+  /**
+   * 首帧完成后只预热当前模型按需加载的动作。基础模型和表情已由 l2d 主动加载，重复请求
+   * 不会改善切换延迟，反而会增加流量和 Vercel Function 压力。
+   */
+  private startMotionPrefetch(core: Live2DCore, selection: Live2DRendererSelection, generation: number): void {
+    this.cancelMotionPrefetch();
+    const urls = [
+      ...new Set(
+        Object.values(core.getMotions())
+          .flat()
+          .filter(Boolean)
+          .map((motionPath) => resolveMotionUrl(selection.entryPath, motionPath)),
+      ),
+    ];
+    if (urls.length === 0) return;
+
+    const controller = new AbortController();
+    this.motionPrefetchController = controller;
+    const concurrency = Math.max(
+      1,
+      Math.min(
+        MAX_MOTION_PREFETCH_CONCURRENCY,
+        Math.floor(this.options.motionPrefetchConcurrency ?? DEFAULT_MOTION_PREFETCH_CONCURRENCY),
+      ),
+    );
+    const prefetch = this.options.prefetchMotion ?? defaultPrefetchMotion;
+    let cursor = 0;
+    const worker = async (): Promise<void> => {
+      while (!controller.signal.aborted && generation === this.generation) {
+        const index = cursor++;
+        const url = urls[index];
+        if (!url) return;
+        try {
+          await prefetch(url, controller.signal);
+        } catch (error) {
+          if (controller.signal.aborted) return;
+          // 预热是尽力而为；失败的动作仍保留 l2d 原有的按需加载兜底路径。
+          if (import.meta.env?.DEV) console.warn('[Live2D] Motion prefetch failed.', error);
+        }
+      }
+    };
+    void Promise.all(Array.from({ length: Math.min(concurrency, urls.length) }, () => worker())).finally(() => {
+      if (this.motionPrefetchController === controller) this.motionPrefetchController = null;
+    });
+  }
+
+  private cancelMotionPrefetch(): void {
+    this.motionPrefetchController?.abort();
+    this.motionPrefetchController = null;
   }
 
   playMotion(group: string, index?: number, priority?: number): void {
@@ -227,6 +316,7 @@ export class Live2DRenderer {
   suspend(): void {
     if (this.suspended || this.destroyed) return;
     this.suspended = true;
+    this.cancelMotionPrefetch();
     this.generation += 1;
     this.setPhase('dormant');
     this.tail = this.tail
@@ -249,6 +339,7 @@ export class Live2DRenderer {
     event.preventDefault();
     if (this.destroyed || this.contextLost) return;
     this.contextLost = true;
+    this.cancelMotionPrefetch();
     this.generation += 1;
     this.core?.destroy();
     this.core = null;
@@ -278,6 +369,7 @@ export class Live2DRenderer {
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
+    this.cancelMotionPrefetch();
     this.generation += 1;
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
