@@ -255,6 +255,19 @@ export async function publishObjects(
 
 type ImmutableJsonPublisher = Pick<ReturnType<typeof createHfS3Client>, 'get' | 'put'>;
 
+function reconcileExistingImmutableJson(
+  existingBytes: Uint8Array,
+  requestedBytes: Uint8Array,
+  validateExisting?: (value: unknown) => void,
+): boolean {
+  if (existingBytes.byteLength === requestedBytes.byteLength && sha256(existingBytes) === sha256(requestedBytes)) {
+    return true;
+  }
+  if (!validateExisting) return false;
+  validateExisting(JSON.parse(new TextDecoder().decode(existingBytes)));
+  return true;
+}
+
 export async function publishImmutableJson(
   client: ImmutableJsonPublisher,
   key: string,
@@ -264,11 +277,7 @@ export async function publishImmutableJson(
   const bytes = new TextEncoder().encode(text);
   const existing = await client.get(key);
   if (existing) {
-    if (existing.bytes.byteLength === bytes.byteLength && sha256(existing.bytes) === sha256(bytes)) return;
-    if (validateExisting) {
-      validateExisting(JSON.parse(new TextDecoder().decode(existing.bytes)));
-      return;
-    }
+    if (reconcileExistingImmutableJson(existing.bytes, bytes, validateExisting)) return;
     throw new Error(`Existing immutable metadata conflicts for ${key}.`);
   }
   try {
@@ -276,11 +285,7 @@ export async function publishImmutableJson(
   } catch (error) {
     if (!(error instanceof HfS3ConflictError)) throw error;
     const raced = await client.get(key);
-    if (raced && raced.bytes.byteLength === bytes.byteLength && sha256(raced.bytes) === sha256(bytes)) return;
-    if (raced && validateExisting) {
-      validateExisting(JSON.parse(new TextDecoder().decode(raced.bytes)));
-      return;
-    }
+    if (raced && reconcileExistingImmutableJson(raced.bytes, bytes, validateExisting)) return;
     throw error;
   }
 }
@@ -447,44 +452,28 @@ function stableJson(value: unknown): unknown {
   return value;
 }
 
+function getImmutableProvenanceIdentity(value: Live2DProvenance) {
+  const provenance = live2dProvenanceSchema.parse(value);
+  const { acquiredAt: _acquiredAt, ...source } = provenance.source;
+  const { commit: _commit, ...converter } = provenance.converter;
+  const { publishedAt: _publishedAt, source: _source, converter: _converter, ...rest } = provenance;
+  return { ...rest, source, converter };
+}
+
 /**
  * 同一组模型字节可能由多个 Bestdori 入口复用。release 继续按内容去重，来源记录则按
  * 不含执行时间与当前 Git commit 的语义身份分开，避免来源别名互相覆盖或重复执行产生新 key。
  */
 export function getProvenanceObjectKey(value: Live2DProvenance): string {
   const provenance = live2dProvenanceSchema.parse(value);
-  const { acquiredAt: _acquiredAt, ...source } = provenance.source;
-  const { commit: _commit, ...converter } = provenance.converter;
-  const identity = stableJson({
-    version: provenance.version,
-    releaseId: provenance.releaseId,
-    source,
-    converter,
-    manifestSha256: provenance.manifestSha256,
-    licenseReferences: provenance.licenseReferences,
-    publisher: provenance.publisher,
-  });
+  const identity = stableJson(getImmutableProvenanceIdentity(provenance));
   return `provenance/${provenance.releaseId}/${sha256(JSON.stringify(identity))}.json`;
 }
 
 /** 发现时间、发布时间和执行代码 commit 不改变已发布字节，其余字段必须保持一致。 */
 export function assertImmutableProvenanceMatches(existing: Live2DProvenance, next: Live2DProvenance): void {
-  const parsedExisting = live2dProvenanceSchema.parse(existing);
   const parsedNext = live2dProvenanceSchema.parse(next);
-  const { acquiredAt: _existingAcquiredAt, ...existingSource } = parsedExisting.source;
-  const { acquiredAt: _nextAcquiredAt, ...nextSource } = parsedNext.source;
-  const { commit: _existingCommit, ...existingConverter } = parsedExisting.converter;
-  const { commit: _nextCommit, ...nextConverter } = parsedNext.converter;
-  const {
-    publishedAt: _existingPublishedAt,
-    source: _existingSource,
-    converter: _existingConverter,
-    ...existingRest
-  } = parsedExisting;
-  const { publishedAt: _nextPublishedAt, source: _nextSource, converter: _nextConverter, ...nextRest } = parsedNext;
-  const existingImmutable = { ...existingRest, source: existingSource, converter: existingConverter };
-  const nextImmutable = { ...nextRest, source: nextSource, converter: nextConverter };
-  if (!isDeepStrictEqual(existingImmutable, nextImmutable)) {
+  if (!isDeepStrictEqual(getImmutableProvenanceIdentity(existing), getImmutableProvenanceIdentity(parsedNext))) {
     throw new Error(`Existing provenance for release ${next.releaseId} conflicts with immutable publication fields.`);
   }
 }

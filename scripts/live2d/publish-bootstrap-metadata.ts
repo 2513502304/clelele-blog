@@ -4,7 +4,13 @@ import { fileURLToPath } from 'node:url';
 import { createHfS3Client } from '../../src/lib/hf-s3';
 import { assertLive2DManifestReleaseId } from '../../src/lib/live2d/package-manifest';
 import { live2dCatalogSchema, live2dPackageManifestSchema, live2dProvenanceSchema } from '../../src/lib/live2d/types';
-import { getPublisherConfig, publishImmutableJson, updateRemoteCatalog } from './publish-models';
+import {
+  assertImmutableProvenanceMatches,
+  getProvenanceObjectKey,
+  getPublisherConfig,
+  publishImmutableJson,
+  updateRemoteCatalog,
+} from './publish-models';
 
 const repoRoot = path.resolve(import.meta.dirname, '../..');
 
@@ -32,9 +38,12 @@ async function main(): Promise<void> {
       if (manifest.releaseId !== sourceCostume.releaseId || provenance.releaseId !== sourceCostume.releaseId) {
         throw new Error(`Bootstrap metadata release mismatch for ${character.id}/${sourceCostume.id}.`);
       }
+      const provenanceObjectKey = getProvenanceObjectKey(provenance);
 
       await publishImmutableJson(client, `manifests/${manifest.releaseId}.json`, manifestText);
-      await publishImmutableJson(client, `provenance/${provenance.releaseId}.json`, provenanceText);
+      await publishImmutableJson(client, provenanceObjectKey, provenanceText, (value) =>
+        assertImmutableProvenanceMatches(live2dProvenanceSchema.parse(value), provenance),
+      );
       await updateRemoteCatalog(
         client,
         {
@@ -44,7 +53,7 @@ async function main(): Promise<void> {
         },
         {
           ...sourceCostume,
-          provenancePath: `provenance/${sourceCostume.releaseId}.json`,
+          provenancePath: provenanceObjectKey,
         },
       );
       console.log(`Published bootstrap metadata: ${character.id}/${sourceCostume.id}`);
