@@ -3,13 +3,16 @@ import { createHash } from 'node:crypto';
 import test from 'node:test';
 import {
   assertImmutableProvenanceMatches,
+  getProvenanceObjectKey,
   parseArguments,
+  publishImmutableJson,
   publishObjects,
   removeCatalogCharacters,
   upsertCatalog,
   upsertCatalogBatch,
   verifyRemoteObject,
 } from '../../../scripts/live2d/publish-models';
+import { HfS3ConflictError } from '../hf-s3';
 import type { Live2DCatalog, Live2DCostume, Live2DProvenance, Live2DVoicePack } from './types';
 
 const releaseId = 'a'.repeat(64);
@@ -224,10 +227,28 @@ test('catalog alias cleanup removes only the superseded character without mutati
   );
 });
 
-test('existing provenance may differ only in publishedAt', () => {
+test('provenance identity is stable across reruns but separates sources sharing one release', () => {
   const existing = createProvenance();
   assert.doesNotThrow(() =>
-    assertImmutableProvenanceMatches(existing, { ...existing, publishedAt: '2026-07-27T02:00:00.000Z' }),
+    assertImmutableProvenanceMatches(existing, {
+      ...existing,
+      source: { ...existing.source, acquiredAt: '2026-07-28T02:00:00.000Z' },
+      converter: { ...existing.converter, commit: 'commit-2' },
+      publishedAt: '2026-07-28T03:00:00.000Z',
+    }),
+  );
+  assert.equal(
+    getProvenanceObjectKey(existing),
+    getProvenanceObjectKey({
+      ...existing,
+      source: { ...existing.source, acquiredAt: '2026-07-28T02:00:00.000Z' },
+      converter: { ...existing.converter, commit: 'commit-2' },
+      publishedAt: '2026-07-28T03:00:00.000Z',
+    }),
+  );
+  assert.notEqual(
+    getProvenanceObjectKey(existing),
+    getProvenanceObjectKey({ ...existing, source: { ...existing.source, revision: 'shared-model-alias' } }),
   );
 
   const conflicts: Live2DProvenance[] = [
@@ -240,6 +261,34 @@ test('existing provenance may differ only in publishedAt', () => {
   for (const conflict of conflicts) {
     assert.throws(() => assertImmutableProvenanceMatches(existing, conflict), /conflicts with immutable publication fields/);
   }
+});
+
+test('immutable provenance accepts a semantically identical concurrent winner', async () => {
+  const existing = createProvenance();
+  const next = {
+    ...existing,
+    source: { ...existing.source, acquiredAt: '2026-07-28T02:00:00.000Z' },
+    converter: { ...existing.converter, commit: 'commit-2' },
+    publishedAt: '2026-07-28T03:00:00.000Z',
+  };
+  let reads = 0;
+  await publishImmutableJson(
+    {
+      async get() {
+        reads += 1;
+        if (reads === 1) return null;
+        const bytes = new TextEncoder().encode(`${JSON.stringify(existing, null, 2)}\n`);
+        return { bytes, etag: null, contentType: 'application/json', contentLength: bytes.byteLength };
+      },
+      async put() {
+        throw new HfS3ConflictError('concurrent provenance write');
+      },
+    },
+    getProvenanceObjectKey(next),
+    `${JSON.stringify(next, null, 2)}\n`,
+    (value) => assertImmutableProvenanceMatches(value as Live2DProvenance, next),
+  );
+  assert.equal(reads, 2);
 });
 
 test('remote object verification tolerates a transient stale read without weakening immutable conflicts', async () => {

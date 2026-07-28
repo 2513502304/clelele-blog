@@ -253,8 +253,10 @@ export async function publishObjects(
   );
 }
 
+type ImmutableJsonPublisher = Pick<ReturnType<typeof createHfS3Client>, 'get' | 'put'>;
+
 export async function publishImmutableJson(
-  client: ReturnType<typeof createHfS3Client>,
+  client: ImmutableJsonPublisher,
   key: string,
   text: string,
   validateExisting?: (value: unknown) => void,
@@ -274,7 +276,12 @@ export async function publishImmutableJson(
   } catch (error) {
     if (!(error instanceof HfS3ConflictError)) throw error;
     const raced = await client.get(key);
-    if (!raced || raced.bytes.byteLength !== bytes.byteLength || sha256(raced.bytes) !== sha256(bytes)) throw error;
+    if (raced && raced.bytes.byteLength === bytes.byteLength && sha256(raced.bytes) === sha256(bytes)) return;
+    if (raced && validateExisting) {
+      validateExisting(JSON.parse(new TextDecoder().decode(raced.bytes)));
+      return;
+    }
+    throw error;
   }
 }
 
@@ -428,10 +435,55 @@ export function upsertCatalogBatch(
   return live2dCatalogSchema.parse({ version: 1, characters });
 }
 
-/** publishedAt 仅记录本次执行时间，其余 provenance 字段均属于不可变发布事实。 */
+function stableJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableJson);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, entry]) => [key, stableJson(entry)]),
+    );
+  }
+  return value;
+}
+
+/**
+ * 同一组模型字节可能由多个 Bestdori 入口复用。release 继续按内容去重，来源记录则按
+ * 不含执行时间与当前 Git commit 的语义身份分开，避免来源别名互相覆盖或重复执行产生新 key。
+ */
+export function getProvenanceObjectKey(value: Live2DProvenance): string {
+  const provenance = live2dProvenanceSchema.parse(value);
+  const { acquiredAt: _acquiredAt, ...source } = provenance.source;
+  const { commit: _commit, ...converter } = provenance.converter;
+  const identity = stableJson({
+    version: provenance.version,
+    releaseId: provenance.releaseId,
+    source,
+    converter,
+    manifestSha256: provenance.manifestSha256,
+    licenseReferences: provenance.licenseReferences,
+    publisher: provenance.publisher,
+  });
+  return `provenance/${provenance.releaseId}/${sha256(JSON.stringify(identity))}.json`;
+}
+
+/** 发现时间、发布时间和执行代码 commit 不改变已发布字节，其余字段必须保持一致。 */
 export function assertImmutableProvenanceMatches(existing: Live2DProvenance, next: Live2DProvenance): void {
-  const { publishedAt: _existingPublishedAt, ...existingImmutable } = live2dProvenanceSchema.parse(existing);
-  const { publishedAt: _nextPublishedAt, ...nextImmutable } = live2dProvenanceSchema.parse(next);
+  const parsedExisting = live2dProvenanceSchema.parse(existing);
+  const parsedNext = live2dProvenanceSchema.parse(next);
+  const { acquiredAt: _existingAcquiredAt, ...existingSource } = parsedExisting.source;
+  const { acquiredAt: _nextAcquiredAt, ...nextSource } = parsedNext.source;
+  const { commit: _existingCommit, ...existingConverter } = parsedExisting.converter;
+  const { commit: _nextCommit, ...nextConverter } = parsedNext.converter;
+  const {
+    publishedAt: _existingPublishedAt,
+    source: _existingSource,
+    converter: _existingConverter,
+    ...existingRest
+  } = parsedExisting;
+  const { publishedAt: _nextPublishedAt, source: _nextSource, converter: _nextConverter, ...nextRest } = parsedNext;
+  const existingImmutable = { ...existingRest, source: existingSource, converter: existingConverter };
+  const nextImmutable = { ...nextRest, source: nextSource, converter: nextConverter };
   if (!isDeepStrictEqual(existingImmutable, nextImmutable)) {
     throw new Error(`Existing provenance for release ${next.releaseId} conflicts with immutable publication fields.`);
   }
@@ -486,6 +538,7 @@ async function publishImmutablePackage(options: ImmutablePackageOptions) {
     publisher: options.publisher,
     publishedAt: new Date().toISOString(),
   });
+  const provenancePath = getProvenanceObjectKey(provenance);
 
   let client: ReturnType<typeof createHfS3Client> | null = null;
   if (!options.dryRun) {
@@ -498,14 +551,11 @@ async function publishImmutablePackage(options: ImmutablePackageOptions) {
       concurrency: options.objectConcurrency,
     });
     await publishImmutableJson(client, `manifests/${manifest.releaseId}.json`, manifestText);
-    await publishImmutableJson(
-      client,
-      `provenance/${manifest.releaseId}.json`,
-      `${JSON.stringify(provenance, null, 2)}\n`,
-      (value) => assertImmutableProvenanceMatches(live2dProvenanceSchema.parse(value), provenance),
+    await publishImmutableJson(client, provenancePath, `${JSON.stringify(provenance, null, 2)}\n`, (value) =>
+      assertImmutableProvenanceMatches(live2dProvenanceSchema.parse(value), provenance),
     );
   }
-  return { client, manifest };
+  return { client, manifest, provenancePath };
 }
 
 export async function publishLive2DModel(
@@ -513,7 +563,7 @@ export async function publishLive2DModel(
   interactions: Live2DInteraction[] = [{ area: 'head', motionGroup: 'smile01', lines: ['你好，很高兴见到你。'] }],
   behavior: PublishBehavior = {},
 ): Promise<{ releaseId: string; objectCount: number; totalBytes: number; costume: Live2DCostume }> {
-  const { client, manifest } = await publishImmutablePackage({
+  const { client, manifest, provenancePath } = await publishImmutablePackage({
     ...options,
     entryPath: 'model.json',
     converterOptions: {
@@ -534,7 +584,7 @@ export async function publishLive2DModel(
     scale: options.scale,
     position: options.position,
     interactions,
-    provenancePath: `provenance/${manifest.releaseId}.json`,
+    provenancePath,
   };
 
   if (client) {
@@ -556,7 +606,7 @@ export async function publishLive2DVoicePack(
 ): Promise<{ releaseId: string; objectCount: number; totalBytes: number; voice: Live2DVoicePack }> {
   const index = live2dVoiceIndexSchema.parse({ version: 1, interactions });
   await writeFile(path.join(options.packageRoot, 'dialogues.json'), `${JSON.stringify(index, null, 2)}\n`);
-  const { manifest } = await publishImmutablePackage({
+  const { manifest, provenancePath } = await publishImmutablePackage({
     ...options,
     entryPath: 'dialogues.json',
     converterOptions: {
@@ -577,7 +627,7 @@ export async function publishLive2DVoicePack(
       (total, interaction) => total + (interaction.dialogues?.length ?? interaction.lines?.length ?? 0),
       0,
     ),
-    provenancePath: `provenance/${manifest.releaseId}.json`,
+    provenancePath,
   };
   console.log(
     `${options.dryRun ? 'Validated' : 'Published'} ${options.characterId}/voice: ${manifest.releaseId} (${voice.dialogueCount} dialogues)`,
