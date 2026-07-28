@@ -23,7 +23,9 @@ export interface Live2DCore {
   getMotions(): Record<string, string[]>;
   getExpressions(): string[];
   playMotion(group: string, index?: number, priority?: number): void;
-  setExpression(id?: string): void;
+  setExpression(id: string): void;
+  resetMotion?(): void;
+  resetExpression?(): void;
   setEffects?(effects: { sway: boolean; breathe: boolean; blink: boolean }): void;
   pauseRendering?(): void;
   resumeRendering?(): void;
@@ -56,8 +58,25 @@ async function defaultCreateCore(canvas: HTMLCanvasElement): Promise<Live2DCore>
             _drawFrameId?: number | null;
             isDrawStart?: boolean;
             startDraw?: () => void;
+            live2DMgr?: {
+              getModel?: () => {
+                mainMotionManager?: { stopAllMotions?: () => void };
+                expressionManager?: { stopAllMotions?: () => void };
+              } | null;
+            };
           } | null;
-          l2d6Model?: { stop?: () => void; run?: () => void } | null;
+          l2d6Model?: {
+            stop?: () => void;
+            run?: () => void;
+            _subdelegates?: Array<{
+              getLive2DManager?: () => {
+                _models?: Array<{
+                  _motionManager?: { stopAllMotions?: () => void };
+                  _expressionManager?: { stopAllMotions?: () => void };
+                }>;
+              };
+            }>;
+          } | null;
         };
       })
     | null;
@@ -83,6 +102,18 @@ async function defaultCreateCore(canvas: HTMLCanvasElement): Promise<Live2DCore>
     renderingPaused = false;
     core._state?.l2d2Model?.startDraw?.();
     core._state?.l2d6Model?.run?.();
+  };
+  const getCubism6Model = () => core._state?.l2d6Model?._subdelegates?.[0]?.getLive2DManager?.()?._models?.[0];
+  // l2d 将 undefined 表情解释成“随机表情”，且没有公开默认态 API。停止当前
+  // manager 后，模型自己的更新循环会在下一帧恢复 idle 动作和未叠加表情的参数。
+  // 这里集中隔离锁定版 l2d 2.1.1 的内部字段，避免 UI 通过重载模型来重置状态。
+  core.resetMotion = () => {
+    core._state?.l2d2Model?.live2DMgr?.getModel?.()?.mainMotionManager?.stopAllMotions?.();
+    getCubism6Model()?._motionManager?.stopAllMotions?.();
+  };
+  core.resetExpression = () => {
+    core._state?.l2d2Model?.live2DMgr?.getModel?.()?.expressionManager?.stopAllMotions?.();
+    getCubism6Model()?._expressionManager?.stopAllMotions?.();
   };
   return core;
 }
@@ -299,8 +330,16 @@ export class Live2DRenderer {
     if (this.phase === 'ready' && !this.playbackPaused) this.core?.playMotion(group, index, priority);
   }
 
-  setExpression(id?: string): void {
+  resetMotion(): void {
+    if (this.phase === 'ready' && !this.playbackPaused) this.core?.resetMotion?.();
+  }
+
+  setExpression(id: string): void {
     if (this.phase === 'ready') this.core?.setExpression(id);
+  }
+
+  resetExpression(): void {
+    if (this.phase === 'ready' && !this.playbackPaused) this.core?.resetExpression?.();
   }
 
   setEffects(effects: { sway: boolean; breathe: boolean; blink: boolean }): void {

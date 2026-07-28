@@ -8,6 +8,8 @@ interface MotionOption {
   label: string;
 }
 
+const RANDOM_OPTION_VALUE = '__live2d_random__';
+
 interface Props {
   labels: Record<string, string>;
   motions: Record<string, string[]>;
@@ -17,6 +19,7 @@ interface Props {
   paused: boolean;
   effects: Live2DEffects;
   onPlayMotion: (group: string, index: number) => void;
+  onResetMotion: () => void;
   onExpression: (expression?: string) => void;
   onPause: () => void;
   onEffect: (effect: keyof Live2DEffects, enabled: boolean) => void;
@@ -38,6 +41,7 @@ export function Live2DAnimationPanel({
   paused,
   effects,
   onPlayMotion,
+  onResetMotion,
   onExpression,
   onPause,
   onEffect,
@@ -55,9 +59,28 @@ export function Live2DAnimationPanel({
     [motions],
   );
   const selectMotion = (value: string) => {
+    if (!value) {
+      onResetMotion();
+      return;
+    }
+    if (value === RANDOM_OPTION_VALUE) {
+      selectMotion(motionOptions[Math.floor(Math.random() * motionOptions.length)].value);
+      return;
+    }
     const [group, rawIndex] = value.split('\u0000');
     const index = Number(rawIndex);
     if (group && Number.isInteger(index)) onPlayMotion(group, index);
+  };
+  const selectExpression = (value: string) => {
+    if (!value) {
+      onExpression(undefined);
+      return;
+    }
+    if (value === RANDOM_OPTION_VALUE) {
+      onExpression(expressions[Math.floor(Math.random() * expressions.length)]);
+      return;
+    }
+    onExpression(value);
   };
 
   return (
@@ -80,7 +103,8 @@ export function Live2DAnimationPanel({
           disabled={motionOptions.length === 0 || paused}
           onChange={(event) => selectMotion(event.currentTarget.value)}
         >
-          <option value="">{motionOptions.length === 0 ? labels.unavailable : labels.selectMotion}</option>
+          <option value="">{motionOptions.length === 0 ? labels.unavailable : labels.defaultMotion}</option>
+          {motionOptions.length > 1 && <option value={RANDOM_OPTION_VALUE}>{labels.randomMotion}</option>}
           {motionOptions.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}
@@ -94,9 +118,10 @@ export function Live2DAnimationPanel({
         <select
           value={selectedExpression}
           disabled={expressions.length === 0 || paused}
-          onChange={(event) => onExpression(event.currentTarget.value || undefined)}
+          onChange={(event) => selectExpression(event.currentTarget.value)}
         >
-          <option value="">{expressions.length === 0 ? labels.unavailable : labels.randomExpression}</option>
+          <option value="">{expressions.length === 0 ? labels.unavailable : labels.defaultExpression}</option>
+          {expressions.length > 1 && <option value={RANDOM_OPTION_VALUE}>{labels.randomExpression}</option>}
           {expressions.map((expression) => (
             <option key={expression} value={expression}>
               {expression}

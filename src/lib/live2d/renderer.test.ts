@@ -9,6 +9,8 @@ class FakeCore implements Live2DCore {
   destroyed = 0;
   paused = 0;
   resumed = 0;
+  resetMotions = 0;
+  resetExpressions = 0;
   playedMotions: Array<[string, number | undefined, number | undefined]> = [];
   effects: Array<{ sway: boolean; breathe: boolean; blink: boolean }> = [];
   ready = true;
@@ -46,6 +48,12 @@ class FakeCore implements Live2DCore {
     this.playedMotions.push([group, index, priority]);
   }
   setExpression() {}
+  resetMotion() {
+    this.resetMotions += 1;
+  }
+  resetExpression() {
+    this.resetExpressions += 1;
+  }
   setEffects(effects: { sway: boolean; breathe: boolean; blink: boolean }) {
     this.effects.push(effects);
   }
@@ -221,6 +229,22 @@ test('soft pause preserves the loaded model and blocks motion mutations until re
   renderer.playMotion('angry', 1, 3);
   assert.equal(core.resumed, 1);
   assert.deepEqual(core.playedMotions, [['angry', 1, 3]]);
+  renderer.destroy();
+});
+
+test('resets an explicit motion and expression without reloading the model', async () => {
+  const core = new FakeCore();
+  const renderer = new Live2DRenderer({ canvas: canvas(), createCore: async () => core });
+  const loading = renderer.load(selection('reset-controls'));
+  await new Promise((resolve) => setImmediate(resolve));
+  core.resolveCurrent?.();
+  await loading;
+
+  renderer.resetMotion();
+  renderer.resetExpression();
+  assert.equal(core.resetMotions, 1);
+  assert.equal(core.resetExpressions, 1);
+  assert.deepEqual(core.loads, ['/models/reset-controls/model.json']);
   renderer.destroy();
 });
 

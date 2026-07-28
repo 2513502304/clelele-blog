@@ -94,7 +94,6 @@ function Live2DWidgetContent({
   const [catalog, setCatalog] = useState<Live2DCatalog>(live2dCatalog);
   const [voiceIndex, setVoiceIndex] = useState<{ releaseId: string; value: Live2DVoiceIndex } | null>(null);
   const orderedSelections = useMemo(() => getLive2DCatalogSelections(catalog), [catalog]);
-  effectsRef.current = state.preferences.effects;
 
   const stopAudio = useCallback(() => {
     const audio = audioRef.current;
@@ -520,14 +519,22 @@ function Live2DWidgetContent({
     rendererRef.current?.playMotion(group, index, USER_SELECTED_MOTION_PRIORITY);
   }, []);
 
+  const resetMotion = useCallback(() => {
+    selectedMotionRef.current = null;
+    setSelectedMotion('');
+    rendererRef.current?.resetMotion();
+  }, []);
+
   const selectExpression = useCallback((expression?: string) => {
     const next = expression ?? '';
     selectedExpressionRef.current = next;
     setSelectedExpression(next);
-    rendererRef.current?.setExpression(expression);
+    if (expression) rendererRef.current?.setExpression(expression);
+    else rendererRef.current?.resetExpression();
   }, []);
 
   useEffect(() => {
+    effectsRef.current = state.preferences.effects;
     rendererRef.current?.setEffects(state.preferences.effects);
   }, [state.preferences.effects]);
 
@@ -636,8 +643,10 @@ function Live2DWidgetContent({
     screenshot: t('live2d.screenshot'),
     motion: t('live2d.motion'),
     playMotion: t('live2d.playMotion'),
-    selectMotion: t('live2d.selectMotion'),
+    randomMotion: t('live2d.randomMotion'),
+    defaultMotion: t('live2d.defaultMotion'),
     expression: t('live2d.expression'),
+    defaultExpression: t('live2d.defaultExpression'),
     randomExpression: t('live2d.randomExpression'),
     unavailable: t('live2d.unavailable'),
     automaticEffects: t('live2d.automaticEffects'),
@@ -758,6 +767,7 @@ function Live2DWidgetContent({
           paused={userPaused}
           effects={state.preferences.effects}
           onPlayMotion={selectMotion}
+          onResetMotion={resetMotion}
           onExpression={selectExpression}
           onPause={togglePause}
           onEffect={live2dActions.setEffect}
