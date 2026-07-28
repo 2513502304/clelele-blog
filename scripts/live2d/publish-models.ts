@@ -72,6 +72,12 @@ export interface PublishBehavior {
   deferCatalog?: boolean;
   /** 大型批量迁移可提高单个 release 内的对象并发；独立发布保留保守默认值。 */
   objectConcurrency?: number;
+  /** 覆盖 HF S3 单次请求的重试次数；批量同步器应与其 CLI 参数保持一致。 */
+  requestAttempts?: number;
+  /** HEAD/DELETE 等小请求的独立超时。 */
+  requestTimeoutMs?: number;
+  /** PUT/GET 等传输请求的独立超时。 */
+  transferTimeoutMs?: number;
 }
 
 function requireValue(arguments_: string[], index: number, name: string): string {
@@ -315,21 +321,27 @@ export async function updateRemoteCatalogBatch(
 export async function commitRemoteCatalogUpdates(
   updates: readonly Live2DCatalogUpdate[],
   voiceUpdates: readonly Live2DVoiceCatalogUpdate[] = [],
+  behavior: Pick<PublishBehavior, 'requestAttempts' | 'requestTimeoutMs' | 'transferTimeoutMs'> = {},
 ): Promise<void> {
   if (updates.length === 0 && voiceUpdates.length === 0) return;
   const client = createHfS3Client(getPublisherConfig(), {
-    attempts: 5,
-    transferTimeoutMs: 120_000,
+    attempts: behavior.requestAttempts ?? 5,
+    requestTimeoutMs: behavior.requestTimeoutMs ?? 120_000,
+    transferTimeoutMs: behavior.transferTimeoutMs ?? 120_000,
   });
   await updateRemoteCatalogBatch(client, updates, voiceUpdates);
 }
 
 /** Removes superseded character aliases with the same optimistic concurrency contract as catalog publishing. */
-export async function removeRemoteCatalogCharacters(characterIds: ReadonlySet<string>): Promise<void> {
+export async function removeRemoteCatalogCharacters(
+  characterIds: ReadonlySet<string>,
+  behavior: Pick<PublishBehavior, 'requestAttempts' | 'requestTimeoutMs' | 'transferTimeoutMs'> = {},
+): Promise<void> {
   if (characterIds.size === 0) return;
   const client = createHfS3Client(getPublisherConfig(), {
-    attempts: 5,
-    transferTimeoutMs: 120_000,
+    attempts: behavior.requestAttempts ?? 5,
+    requestTimeoutMs: behavior.requestTimeoutMs ?? 120_000,
+    transferTimeoutMs: behavior.transferTimeoutMs ?? 120_000,
   });
   for (let attempt = 1; attempt <= 5; attempt += 1) {
     const snapshot = await client.get(LIVE2D_CATALOG_KEY);
@@ -440,6 +452,9 @@ interface ImmutablePackageOptions {
   dryRun: boolean;
   converterOptions: Record<string, unknown>;
   objectConcurrency?: number;
+  requestAttempts?: number;
+  requestTimeoutMs?: number;
+  transferTimeoutMs?: number;
 }
 
 /**
@@ -475,8 +490,9 @@ async function publishImmutablePackage(options: ImmutablePackageOptions) {
   let client: ReturnType<typeof createHfS3Client> | null = null;
   if (!options.dryRun) {
     client = createHfS3Client(getPublisherConfig(), {
-      attempts: 5,
-      transferTimeoutMs: 120_000,
+      attempts: options.requestAttempts ?? 5,
+      requestTimeoutMs: options.requestTimeoutMs ?? 120_000,
+      transferTimeoutMs: options.transferTimeoutMs ?? 120_000,
     });
     await publishObjects(client, manifest.releaseId, transformedFiles, manifest.objects, {
       concurrency: options.objectConcurrency,
@@ -505,6 +521,9 @@ export async function publishLive2DModel(
       approvedAudio: [...options.approvedAudio].sort(),
     },
     objectConcurrency: behavior.objectConcurrency,
+    requestAttempts: behavior.requestAttempts,
+    requestTimeoutMs: behavior.requestTimeoutMs,
+    transferTimeoutMs: behavior.transferTimeoutMs,
   });
   const costume: Live2DCostume = {
     id: options.costumeId,
@@ -533,6 +552,7 @@ export async function publishLive2DModel(
 export async function publishLive2DVoicePack(
   options: PublishVoiceOptions,
   interactions: Live2DInteraction[],
+  behavior: PublishBehavior = {},
 ): Promise<{ releaseId: string; objectCount: number; totalBytes: number; voice: Live2DVoicePack }> {
   const index = live2dVoiceIndexSchema.parse({ version: 1, interactions });
   await writeFile(path.join(options.packageRoot, 'dialogues.json'), `${JSON.stringify(index, null, 2)}\n`);
@@ -544,6 +564,10 @@ export async function publishLive2DVoicePack(
       localePriority: ['ja', 'en'],
       approvedAudio: [...options.approvedAudio].sort(),
     },
+    objectConcurrency: behavior.objectConcurrency,
+    requestAttempts: behavior.requestAttempts,
+    requestTimeoutMs: behavior.requestTimeoutMs,
+    transferTimeoutMs: behavior.transferTimeoutMs,
   });
   const voice: Live2DVoicePack = {
     releaseId: manifest.releaseId,

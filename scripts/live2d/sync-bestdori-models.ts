@@ -508,6 +508,12 @@ async function buildAndPublishCharacterVoice(
       dryRun: false,
     },
     interactions,
+    {
+      objectConcurrency: options.fileConcurrency,
+      requestAttempts: options.attempts,
+      requestTimeoutMs: options.timeoutMs,
+      transferTimeoutMs: options.timeoutMs,
+    },
   );
   if (!options.keepPackages) await rm(packageRoot, { recursive: true, force: true });
   return { characterId: catalogCharacterId(numericCharacterId), characterLabels, voice: result.voice };
@@ -669,7 +675,11 @@ async function main(): Promise<void> {
     ),
   ) => {
     if (records.length === 0 && voiceRecords.length === 0) return;
-    await commitRemoteCatalogUpdates(records.map(catalogUpdate), voiceRecords.map(voiceCatalogUpdate));
+    await commitRemoteCatalogUpdates(records.map(catalogUpdate), voiceRecords.map(voiceCatalogUpdate), {
+      requestAttempts: options.attempts,
+      requestTimeoutMs: options.timeoutMs,
+      transferTimeoutMs: options.timeoutMs,
+    });
     for (const record of records) {
       await appendCheckpoint({ ...record, status: 'cataloged' });
       completed.add(record.model);
@@ -746,7 +756,13 @@ async function main(): Promise<void> {
             replaceInteractions: true,
           },
           interactions,
-          { deferCatalog: true, objectConcurrency: options.fileConcurrency },
+          {
+            deferCatalog: true,
+            objectConcurrency: options.fileConcurrency,
+            requestAttempts: options.attempts,
+            requestTimeoutMs: options.timeoutMs,
+            transferTimeoutMs: options.timeoutMs,
+          },
         );
         const record = {
           model,
@@ -791,9 +807,41 @@ async function main(): Promise<void> {
   if (failures.length > 0) {
     throw new Error(`${failures.length} model or voice package(s) failed; rerun the same command to resume.`);
   }
-  await removeRemoteCatalogCharacters(supersededCharacterIds);
+  await removeRemoteCatalogCharacters(supersededCharacterIds, {
+    requestAttempts: options.attempts,
+    requestTimeoutMs: options.timeoutMs,
+    transferTimeoutMs: options.timeoutMs,
+  });
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();
 
-// LIVE2D_HF_S3_WRITE_ACCESS_KEY_ID=$(aws configure get aws_access_key_id --profile hf) LIVE2D_HF_S3_WRITE_SECRET_ACCESS_KEY=$(aws configure get aws_secret_access_key --profile hf) npm run sync:live2d-bestdori -- --model-concurrency 3 --file-concurrency 16
+/*
+前台全量同步（推荐）：直接在终端显示进度，按 Ctrl+C 或关闭终端即可停止；再次运行会从
+.cache/live2d-bestdori/*.jsonl checkpoint 继续，已验证的不可变 HF 对象不会重复上传。
+
+LIVE2D_HF_S3_WRITE_ACCESS_KEY_ID=$(aws configure get aws_access_key_id --profile hf) \
+LIVE2D_HF_S3_WRITE_SECRET_ACCESS_KEY=$(aws configure get aws_secret_access_key --profile hf) \
+npm run sync:live2d-bestdori -- \
+  --model-concurrency 8 \
+  --file-concurrency 16 \
+  --catalog-batch-size 100 \
+  --attempts 8 \
+  --timeout-ms 120000
+
+并发峰值约为 --model-concurrency × --file-concurrency。Bestdori 当前模型通常包含几十到近百个
+对象，8 × 16 在完成速度、远端压力和单模型故障隔离之间较均衡；不建议使用 24 × 16。
+
+主要参数：
+- --model-concurrency：同时构建/发布的模型包数量。
+- --file-concurrency：每个模型内下载、上传和验证对象的并发数量。
+- --catalog-batch-size：累计多少个模型后原子更新一次远端目录。
+- --attempts：Bestdori 下载及 HF S3 请求各自的最大尝试次数。
+- --timeout-ms：每次 Bestdori/HF 请求独立使用的超时，不是整批任务共用的总时限。
+- --keep-packages：保留 .cache 下转换后的模型包，默认成功后删除以节省本地空间。
+- --skip-audio：跳过角色日文语音包同步。
+- --refresh-index：忽略本地源索引缓存，重新读取 Bestdori 目录。
+- --plan-only：只生成同步计划，不上传对象或改写远端目录。
+- --limit N / --models a,b：限制本轮处理数量，或只处理指定模型。
+- --republish / --republish-voices：强制重新走模型或语音发布流程；日常断点续跑不需要。
+*/
