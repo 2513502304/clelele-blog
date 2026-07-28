@@ -68,7 +68,7 @@ export function createLive2DVoiceIndexCache(maximumEntries = DEFAULT_CACHE_SIZE)
         return index;
       })
       .catch((error) => {
-        cache.delete(voice.releaseId);
+        if (cache.get(voice.releaseId) === request) cache.delete(voice.releaseId);
         throw error;
       });
     touch(voice.releaseId, request);
@@ -113,7 +113,7 @@ export function createLive2DVoiceAudioPreloader(maximumEntries = DEFAULT_AUDIO_C
     })
       .then(consumeResponse)
       .catch((error) => {
-        cache.delete(url);
+        if (cache.get(url) === request) cache.delete(url);
         throw error;
       });
     touch(url, request);

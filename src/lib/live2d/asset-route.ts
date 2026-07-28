@@ -58,6 +58,8 @@ function createByteRangeStream(body: ReadableStream<Uint8Array>, range: ByteRang
           const sliceLength = Math.min(remaining, chunk.byteLength - sliceStart);
           controller.enqueue(chunk.subarray(sliceStart, sliceStart + sliceLength));
           remaining -= sliceLength;
+          if (remaining > 0) return;
+          break;
         }
         if (range.end === sourceSize - 1) {
           const result = await reader.read();

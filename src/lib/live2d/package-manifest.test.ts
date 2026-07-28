@@ -79,6 +79,10 @@ test('rejects duplicate paths after normalization', async () => {
 
 test('rejects a manifest whose releaseId does not match its immutable contents', async () => {
   const { manifest } = await buildLive2DPackageManifest(await createPackage(validModel));
+  assert.throws(
+    () => assertLive2DManifestReleaseId({ ...manifest, totalBytes: manifest.totalBytes + 1 }),
+    /Manifest totalBytes mismatch/,
+  );
   const changed = { ...manifest, releaseId: 'a'.repeat(64) };
   assert.throws(() => assertLive2DManifestReleaseId(changed), /Manifest releaseId mismatch/);
   assert.throws(() => serializeLive2DManifest(changed), /Manifest releaseId mismatch/);

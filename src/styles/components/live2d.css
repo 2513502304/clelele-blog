@@ -636,8 +636,13 @@
 
 @media (prefers-reduced-motion: reduce) {
   .live2d-root,
+  .live2d-controls-tooltip,
   .live2d-switch,
   .live2d-switch span {
     transition: none;
+  }
+
+  .live2d-dialogue-audio.is-loading {
+    animation: none;
   }
 }

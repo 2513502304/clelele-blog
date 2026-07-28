@@ -49,6 +49,33 @@ test('rejects mismatched release paths and dialogue counts', async () => {
   await assert.rejects(cache.get(voice('e'.repeat(64), 2), fetchImpl), /count does not match/);
 });
 
+test('an evicted stale voice failure cannot delete a newer request for the same release', async () => {
+  const cache = createLive2DVoiceIndexCache(1);
+  const first = voice('1'.repeat(64));
+  const second = voice('2'.repeat(64));
+  let rejectStale: ((reason?: unknown) => void) | undefined;
+  let firstCalls = 0;
+  const fetchImpl: typeof fetch = async (input) => {
+    if (String(input).includes(first.releaseId)) {
+      firstCalls += 1;
+      if (firstCalls === 1) {
+        return new Promise<Response>((_resolve, reject) => {
+          rejectStale = reject;
+        });
+      }
+    }
+    return Response.json(index);
+  };
+
+  const stale = cache.get(first, fetchImpl);
+  await cache.get(second, fetchImpl);
+  await cache.get(first, fetchImpl);
+  rejectStale?.(new Error('stale request failed'));
+  await assert.rejects(stale, /stale request failed/);
+  await cache.get(first, fetchImpl);
+  assert.equal(firstCalls, 2);
+});
+
 test('prefetches unique character audio with bounded concurrency and reuses completed requests', async () => {
   const preloader = createLive2DVoiceAudioPreloader(4);
   const voiceIndex = {
@@ -101,4 +128,35 @@ test('drops failed audio prefetch entries so a later attempt can recover', async
   await preloader.prefetch(voiceIndex, 'a'.repeat(64), { fetchImpl });
   await preloader.prefetch(voiceIndex, 'a'.repeat(64), { fetchImpl });
   assert.equal(calls, 2);
+});
+
+test('an evicted stale audio failure cannot remove a newer completed preload', async () => {
+  const preloader = createLive2DVoiceAudioPreloader(1);
+  const firstRelease = '1'.repeat(64);
+  const secondRelease = '2'.repeat(64);
+  const voiceIndex = {
+    version: 1 as const,
+    interactions: [{ area: 'head', dialogues: [{ text: 'line', audio: 'audio/line.mp3' }] }],
+  };
+  let rejectStale: ((reason?: unknown) => void) | undefined;
+  let firstCalls = 0;
+  const fetchImpl: typeof fetch = async (input) => {
+    if (String(input).includes(firstRelease)) {
+      firstCalls += 1;
+      if (firstCalls === 1) {
+        return new Promise<Response>((_resolve, reject) => {
+          rejectStale = reject;
+        });
+      }
+    }
+    return new Response('audio');
+  };
+
+  const stale = preloader.prefetch(voiceIndex, firstRelease, { fetchImpl });
+  await preloader.prefetch(voiceIndex, secondRelease, { fetchImpl });
+  await preloader.prefetch(voiceIndex, firstRelease, { fetchImpl });
+  rejectStale?.(new Error('stale preload failed'));
+  await stale;
+  await preloader.prefetch(voiceIndex, firstRelease, { fetchImpl });
+  assert.equal(firstCalls, 2);
 });

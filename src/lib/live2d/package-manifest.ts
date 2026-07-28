@@ -96,8 +96,12 @@ export function calculateLive2DReleaseId(entryPath: string, objects: readonly Li
   return sha256(stableJson({ entryPath: normalizedEntryPath, objects: normalizedObjects }));
 }
 
-/** 校验 manifest 声明的 releaseId 确实由其不可变内容计算得到。 */
+/** 校验 manifest 的汇总字节数和 releaseId 都与不可变对象清单一致。 */
 export function assertLive2DManifestReleaseId(manifest: Live2DPackageManifest): void {
+  const expectedTotalBytes = manifest.objects.reduce((total, object) => total + object.size, 0);
+  if (manifest.totalBytes !== expectedTotalBytes) {
+    throw new Error(`Manifest totalBytes mismatch: expected ${expectedTotalBytes}, received ${manifest.totalBytes}.`);
+  }
   const expectedReleaseId = calculateLive2DReleaseId(manifest.entryPath, manifest.objects);
   if (manifest.releaseId !== expectedReleaseId) {
     throw new Error(`Manifest releaseId mismatch: expected ${expectedReleaseId}, received ${manifest.releaseId}.`);

@@ -12,12 +12,19 @@ export const GET: APIRoute = async () => {
   if (!live2dEnabled && process.env.LIVE2D_ASSET_DELIVERY_MODE !== 'enabled') {
     return new Response('Live2D catalog not found.', { status: 404 });
   }
-  const catalog = await metadata.getCatalog();
-  return Response.json(catalog, {
-    headers: {
-      'cache-control': 'public, max-age=300, stale-while-revalidate=3600',
-      'vercel-cdn-cache-control': 'public, max-age=300, stale-while-revalidate=3600',
-      'x-content-type-options': 'nosniff',
-    },
-  });
+  try {
+    const catalog = await metadata.getCatalog();
+    return Response.json(catalog, {
+      headers: {
+        'cache-control': 'public, max-age=300, stale-while-revalidate=3600',
+        'vercel-cdn-cache-control': 'public, max-age=300, stale-while-revalidate=3600',
+        'x-content-type-options': 'nosniff',
+      },
+    });
+  } catch {
+    return new Response('Live2D catalog unavailable.', {
+      status: 503,
+      headers: { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' },
+    });
+  }
 };

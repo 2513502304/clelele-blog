@@ -95,6 +95,26 @@ test('does not play costume audio while a declared character voice index is load
   assert.equal(resolved?.audio, undefined);
 });
 
+test('falls back to costume text when the character dialogue pool has no visible line', () => {
+  const mappingReleaseId = 'd'.repeat(64);
+  const resolved = resolveLive2DPlayback(
+    {
+      mappingInteractions: [{ area: 'head', motionGroup: 'tap', lines: ['costume fallback'], audio: 'audio/tap.mp3' }],
+      mappingReleaseId,
+      dialogueSource: {
+        interactions: [{ area: 'head', dialogues: [{ text: '  ' }] }],
+        releaseId: 'e'.repeat(64),
+      },
+    },
+    'head',
+    () => 0,
+  );
+
+  assert.equal(resolved?.line, 'costume fallback');
+  assert.equal(resolved?.mapping.motionGroup, 'tap');
+  assert.deepEqual(resolved?.audio, { path: 'audio/tap.mp3', releaseId: mappingReleaseId });
+});
+
 test('bounds text-only dialogue reading time while allowing longer copy more time', () => {
   assert.equal(textDialogueDuration('短句'), 5_000);
   assert.ok(textDialogueDuration('这是一条长度适中的纯文字台词，会比短句保留更久。') > 5_000);

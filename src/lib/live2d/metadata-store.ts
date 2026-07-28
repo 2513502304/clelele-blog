@@ -8,6 +8,7 @@ export const LIVE2D_CATALOG_KEY = 'catalog.json';
 const CATALOG_CACHE_TTL_MS = 10 * 60 * 1000;
 const MAX_CATALOG_BYTES = 5_000_000;
 const MAX_MANIFEST_BYTES = 1_000_000;
+const MAX_MANIFEST_CACHE_ENTRIES = 64;
 
 interface MetadataClient {
   get(key: string, missingStatuses?: readonly number[]): Promise<HfS3ObjectSnapshot | null>;
@@ -18,6 +19,8 @@ export interface Live2DMetadataStoreOptions {
   bootstrapCatalog?: Live2DCatalog;
   now?: () => number;
   catalogTtlMs?: number;
+  manifestCacheEntries?: number;
+  onDiagnostic?: (message: string, error: unknown) => void;
 }
 
 function parseJsonSnapshot<T>(
@@ -44,6 +47,10 @@ function releaseExists(catalog: Live2DCatalog, releaseId: string): boolean {
 export function createLive2DMetadataStore(options: Live2DMetadataStoreOptions) {
   const now = options.now ?? Date.now;
   const catalogTtlMs = options.catalogTtlMs ?? CATALOG_CACHE_TTL_MS;
+  const manifestCacheEntries = options.manifestCacheEntries ?? MAX_MANIFEST_CACHE_ENTRIES;
+  if (!Number.isInteger(manifestCacheEntries) || manifestCacheEntries < 1) {
+    throw new Error('Live2D manifest cache size must be a positive integer.');
+  }
   const bootstrapCatalog = options.bootstrapCatalog ?? live2dCatalog;
   let catalogCache: {
     value: Live2DCatalog;
@@ -53,6 +60,15 @@ export function createLive2DMetadataStore(options: Live2DMetadataStoreOptions) {
   let catalogRequest: Promise<Live2DCatalog> | null = null;
   const manifestCache = new Map<string, Live2DPackageManifest>();
   const manifestRequests = new Map<string, Promise<Live2DPackageManifest>>();
+
+  const cacheManifest = (releaseId: string, manifest: Live2DPackageManifest) => {
+    manifestCache.delete(releaseId);
+    manifestCache.set(releaseId, manifest);
+    while (manifestCache.size > manifestCacheEntries) {
+      manifestCache.delete(manifestCache.keys().next().value as string);
+    }
+    return manifest;
+  };
 
   async function readRemoteCatalog(): Promise<Live2DCatalog> {
     const snapshot = await options.client.get(LIVE2D_CATALOG_KEY);
@@ -90,7 +106,7 @@ export function createLive2DMetadataStore(options: Live2DMetadataStoreOptions) {
 
   async function getManifest(releaseId: string): Promise<Live2DPackageManifest> {
     const cached = manifestCache.get(releaseId);
-    if (cached) return cached;
+    if (cached) return cacheManifest(releaseId, cached);
     const pending = manifestRequests.get(releaseId);
     if (pending) return pending;
 
@@ -100,18 +116,31 @@ export function createLive2DMetadataStore(options: Live2DMetadataStoreOptions) {
       if (!releaseExists(catalog, releaseId) && !bootstrap) {
         throw new Live2DAssetPathError('unknown-release', 'Unknown Live2D release.');
       }
+      let snapshot: HfS3ObjectSnapshot | null;
       try {
-        const snapshot = await options.client.get(`manifests/${releaseId}.json`);
-        if (!snapshot) throw new Error(`Live2D manifest is missing for release ${releaseId}.`);
+        snapshot = await options.client.get(`manifests/${releaseId}.json`);
+      } catch (error) {
+        if (bootstrap) return cacheManifest(releaseId, bootstrap);
+        throw error;
+      }
+      if (!snapshot) {
+        if (bootstrap) return cacheManifest(releaseId, bootstrap);
+        throw new Error(`Live2D manifest is missing for release ${releaseId}.`);
+      }
+      try {
         const manifest = parseJsonSnapshot(snapshot, MAX_MANIFEST_BYTES, 'Live2D manifest', (value) =>
           live2dPackageManifestSchema.parse(value),
         );
         if (manifest.releaseId !== releaseId) throw new Error(`Live2D manifest key does not match release ${releaseId}.`);
         assertLive2DManifestReleaseId(manifest);
-        manifestCache.set(releaseId, manifest);
-        return manifest;
+        return cacheManifest(releaseId, manifest);
       } catch (error) {
-        if (bootstrap) return bootstrap;
+        if (bootstrap) {
+          const message = `Remote Live2D manifest integrity check failed for release ${releaseId}; using bootstrap metadata.`;
+          if (options.onDiagnostic) options.onDiagnostic(message, error);
+          else console.error(`[Live2D] ${message}`, error);
+          return cacheManifest(releaseId, bootstrap);
+        }
         throw error;
       }
     })().finally(() => {

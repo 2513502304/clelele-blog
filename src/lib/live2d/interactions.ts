@@ -9,6 +9,10 @@ export interface ResolvedLive2DInteraction {
   audio?: string;
 }
 
+interface ResolvedInteractionSource extends ResolvedLive2DInteraction {
+  fromDialogueSource: boolean;
+}
+
 export interface ResolvedLive2DPlayback extends Omit<ResolvedLive2DInteraction, 'audio'> {
   audio?: {
     path: string;
@@ -38,29 +42,47 @@ export function textDialogueDuration(text: string): number {
 }
 
 /** Unknown hit areas degrade to the first mapping; dialogue text and audio remain an atomic pair. */
+function resolveLive2DInteractionSource(
+  interactions: readonly Live2DInteraction[],
+  area: string,
+  random: () => number = Math.random,
+  dialogueInteractions?: readonly Live2DInteraction[],
+): ResolvedInteractionSource | null {
+  const requested = normalizedArea(area);
+  const exact = interactions.filter((candidate) => normalizedArea(candidate.area) === requested);
+  const mappings = exact.length > 0 ? exact : interactions.slice(0, 1);
+  const mapping = mappings[Math.min(mappings.length - 1, Math.max(0, Math.floor(random() * mappings.length)))];
+  if (!mapping) return null;
+  const visibleChoicesFrom = (source: readonly Live2DInteraction[]) => {
+    const exactDialogues = source.filter((candidate) => normalizedArea(candidate.area) === requested);
+    const dialogueMappings = exactDialogues.length > 0 ? exactDialogues : source.slice(0, 1);
+    return dialogueMappings
+      .flatMap((candidate) =>
+        candidate.dialogues
+          ? candidate.dialogues.map((dialogue) => ({ mapping, line: dialogue.text.trim(), audio: dialogue.audio }))
+          : (candidate.lines ?? []).map((line) => ({ mapping, line: line.trim(), audio: candidate.audio })),
+      )
+      .filter((choice) => choice.line.length > 0);
+  };
+  const dialogueChoices = dialogueInteractions ? visibleChoicesFrom(dialogueInteractions) : [];
+  const fromDialogueSource = dialogueChoices.length > 0;
+  const visibleChoices = fromDialogueSource ? dialogueChoices : visibleChoicesFrom(mappings);
+  if (visibleChoices.length === 0) return null;
+  const index = Math.min(visibleChoices.length - 1, Math.max(0, Math.floor(random() * visibleChoices.length)));
+  const choice = visibleChoices[index] ?? visibleChoices[0];
+  return choice ? { ...choice, fromDialogueSource } : null;
+}
+
 export function resolveLive2DInteraction(
   interactions: readonly Live2DInteraction[],
   area: string,
   random: () => number = Math.random,
   dialogueInteractions?: readonly Live2DInteraction[],
 ): ResolvedLive2DInteraction | null {
-  const requested = normalizedArea(area);
-  const exact = interactions.filter((candidate) => normalizedArea(candidate.area) === requested);
-  const mappings = exact.length > 0 ? exact : interactions.slice(0, 1);
-  const mapping = mappings[Math.min(mappings.length - 1, Math.max(0, Math.floor(random() * mappings.length)))];
-  if (!mapping) return null;
-  const dialogueSource = dialogueInteractions ?? mappings;
-  const exactDialogues = dialogueSource.filter((candidate) => normalizedArea(candidate.area) === requested);
-  const dialogueMappings = exactDialogues.length > 0 ? exactDialogues : dialogueSource.slice(0, 1);
-  const choices = dialogueMappings.flatMap((candidate) =>
-    candidate.dialogues
-      ? candidate.dialogues.map((dialogue) => ({ mapping, line: dialogue.text.trim(), audio: dialogue.audio }))
-      : (candidate.lines ?? []).map((line) => ({ mapping, line: line.trim(), audio: candidate.audio })),
-  );
-  const visibleChoices = choices.filter((choice) => choice.line.length > 0);
-  if (visibleChoices.length === 0) return null;
-  const index = Math.min(visibleChoices.length - 1, Math.max(0, Math.floor(random() * visibleChoices.length)));
-  return visibleChoices[index] ?? visibleChoices[0];
+  const resolved = resolveLive2DInteractionSource(interactions, area, random, dialogueInteractions);
+  if (!resolved) return null;
+  const { fromDialogueSource: _fromDialogueSource, ...interaction } = resolved;
+  return interaction;
 }
 
 /**
@@ -72,15 +94,20 @@ export function resolveLive2DPlayback(
   area: string,
   random: () => number = Math.random,
 ): ResolvedLive2DPlayback | null {
-  const resolved = resolveLive2DInteraction(options.mappingInteractions, area, random, options.dialogueSource?.interactions);
+  const resolved = resolveLive2DInteractionSource(
+    options.mappingInteractions,
+    area,
+    random,
+    options.dialogueSource?.interactions,
+  );
   if (!resolved) return null;
-  const releaseId = options.dialogueSource?.releaseId ?? options.mappingReleaseId;
+  const releaseId = resolved.fromDialogueSource ? options.dialogueSource?.releaseId : options.mappingReleaseId;
   return {
     mapping: resolved.mapping,
     line: resolved.line,
-    ...(!resolved.audio || (options.suppressMappingAudio && !options.dialogueSource)
+    ...(!resolved.audio || (options.suppressMappingAudio && !resolved.fromDialogueSource)
       ? {}
-      : { audio: { path: resolved.audio, releaseId } }),
+      : { audio: { path: resolved.audio, releaseId: releaseId ?? options.mappingReleaseId } }),
   };
 }
 

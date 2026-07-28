@@ -55,4 +55,5 @@ test('resolves a costume together with its owning character', () => {
   assert.equal(selection?.costume.id, 'live-sr-01');
   assert.equal(findLive2DSelection('takamatsu-tomori', 'live-sr-01')?.character.id, 'takamatsu-tomori');
   assert.equal(findLive2DSelection('chihaya-anon', 'missing'), null);
+  assert.equal(findLive2DSelection('missing-character', 'live-sr-01'), null);
 });

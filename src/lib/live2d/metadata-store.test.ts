@@ -175,3 +175,70 @@ test('allows immutable manifests referenced only by a character voice pack', asy
 
   assert.deepEqual(await store.getManifest(releaseId), manifest);
 });
+
+test('bounds immutable manifest metadata with least-recently-used eviction', async () => {
+  const first = remoteFixture();
+  const secondObjects = [{ path: 'model.json', size: 2, mime: 'application/json', sha256: 'e'.repeat(64) }];
+  const secondManifest: Live2DPackageManifest = {
+    version: 1,
+    releaseId: calculateLive2DReleaseId('model.json', secondObjects),
+    entryPath: 'model.json',
+    totalBytes: 2,
+    objects: secondObjects,
+  };
+  const secondCostume = {
+    ...first.catalog.characters[0].costumes[0],
+    id: 'second-costume',
+    releaseId: secondManifest.releaseId,
+    entryPath: getLive2DObjectKey(secondManifest.releaseId, 'model.json'),
+  };
+  first.catalog.characters[0].costumes.push(secondCostume);
+  const reads = new Map<string, number>();
+  const store = createLive2DMetadataStore({
+    manifestCacheEntries: 1,
+    client: {
+      async get(key) {
+        reads.set(key, (reads.get(key) ?? 0) + 1);
+        if (key === 'catalog.json') return snapshot(first.catalog);
+        if (key === `manifests/${first.manifest.releaseId}.json`) return snapshot(first.manifest);
+        if (key === `manifests/${secondManifest.releaseId}.json`) return snapshot(secondManifest);
+        return null;
+      },
+    },
+  });
+
+  await store.getManifest(first.manifest.releaseId);
+  await store.getManifest(secondManifest.releaseId);
+  await store.getManifest(first.manifest.releaseId);
+  assert.equal(reads.get(`manifests/${first.manifest.releaseId}.json`), 2);
+});
+
+test('reports remote bootstrap-manifest integrity failures once and caches the trusted fallback', async () => {
+  const bootstrapReleaseId = live2dCatalog.characters[0]?.costumes[0]?.releaseId;
+  assert.ok(bootstrapReleaseId);
+  const bootstrapManifest = getLive2DPackageManifest(bootstrapReleaseId);
+  assert.ok(bootstrapManifest);
+  const diagnostics: Array<{ message: string; error: unknown }> = [];
+  let manifestReads = 0;
+  const store = createLive2DMetadataStore({
+    onDiagnostic(message, error) {
+      diagnostics.push({ message, error });
+    },
+    client: {
+      async get(key) {
+        if (key === 'catalog.json') return snapshot(live2dCatalog);
+        if (key === `manifests/${bootstrapReleaseId}.json`) {
+          manifestReads += 1;
+          return snapshot({ ...bootstrapManifest, totalBytes: bootstrapManifest.totalBytes + 1 });
+        }
+        return null;
+      },
+    },
+  });
+
+  assert.deepEqual(await store.getManifest(bootstrapReleaseId), bootstrapManifest);
+  assert.deepEqual(await store.getManifest(bootstrapReleaseId), bootstrapManifest);
+  assert.equal(manifestReads, 1);
+  assert.equal(diagnostics.length, 1);
+  assert.match(diagnostics[0].message, /integrity check failed/);
+});

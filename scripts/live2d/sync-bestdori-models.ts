@@ -48,6 +48,8 @@ interface BuildData {
   expressions: BundleFile[];
 }
 
+class NonRetryableBestdoriResponseError extends Error {}
+
 export class BestdoriAssetUnavailableError extends Error {
   constructor(readonly url: string) {
     super(`Bestdori indexed asset is no longer downloadable: ${url}`);
@@ -132,12 +134,14 @@ async function request(url: string, options: Options, allowMissing = false): Pro
       }
       if (!response.ok) {
         const retryable = response.status === 408 || response.status === 429 || response.status >= 500;
-        if (!retryable) throw new Error(`${url} returned ${response.status}.`);
+        if (response.body) await response.body.cancel().catch(() => undefined);
+        if (!retryable) throw new NonRetryableBestdoriResponseError(`${url} returned ${response.status}.`);
         throw new Error(`${url} temporarily returned ${response.status}.`);
       }
       return response;
     } catch (error) {
       lastError = error;
+      if (error instanceof NonRetryableBestdoriResponseError) throw error;
       if (attempt === options.attempts) break;
       await new Promise((resolve) => setTimeout(resolve, 300 * 2 ** (attempt - 1) + Math.floor(Math.random() * 200)));
     }
