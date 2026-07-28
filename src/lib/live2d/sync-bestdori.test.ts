@@ -4,11 +4,13 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import {
+  BestdoriAssetUnavailableError,
   cardDialogueText,
   cardHasVoiceText,
   cardVoiceDirectories,
   characterCardIds,
   checkpointState,
+  readBestdoriBundleResponse,
   voiceCheckpointState,
 } from '../../../scripts/live2d/sync-bestdori-models';
 import type { Live2DCostume, Live2DVoicePack } from './types';
@@ -81,6 +83,23 @@ test('checkpoint recovery does not retry source assets confirmed unavailable', a
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test('optional Bestdori bundle assets may be missing while required assets fail permanently', async () => {
+  const url = 'https://bestdori.com/assets/jp/example_rip/file.physics';
+  const html = () => new Response('<!doctype html><title>Bestdori</title>', { headers: { 'content-type': 'text/html' } });
+  const empty = () => new Response(new Uint8Array());
+
+  assert.equal(await readBestdoriBundleResponse(null, url, true), null);
+  assert.equal(await readBestdoriBundleResponse(html(), url, true), null);
+  assert.equal(await readBestdoriBundleResponse(empty(), url, true), null);
+
+  await assert.rejects(() => readBestdoriBundleResponse(null, url, false), BestdoriAssetUnavailableError);
+  await assert.rejects(() => readBestdoriBundleResponse(html(), url, false), BestdoriAssetUnavailableError);
+  await assert.rejects(() => readBestdoriBundleResponse(empty(), url, false), BestdoriAssetUnavailableError);
+
+  const bytes = await readBestdoriBundleResponse(new Response(new Uint8Array([1, 2, 3])), url, false);
+  assert.deepEqual(bytes, new Uint8Array([1, 2, 3]));
 });
 
 test('character card aggregation includes every rarity and prefers Japanese dialogue text', () => {
