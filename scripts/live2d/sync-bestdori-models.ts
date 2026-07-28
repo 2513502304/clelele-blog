@@ -51,8 +51,11 @@ interface BuildData {
 class NonRetryableBestdoriResponseError extends Error {}
 
 export class BestdoriAssetUnavailableError extends Error {
-  constructor(readonly url: string) {
-    super(`Bestdori indexed asset is no longer downloadable: ${url}`);
+  constructor(
+    readonly url: string,
+    detail = 'indexed asset is no longer downloadable',
+  ) {
+    super(`Bestdori ${detail}: ${url}`);
     this.name = 'BestdoriAssetUnavailableError';
   }
 }
@@ -155,10 +158,11 @@ async function fetchJson<T>(url: string, options: Options): Promise<T> {
 }
 
 async function fetchAssetJson<T>(url: string, options: Options): Promise<T> {
-  const response = await request(url, options);
+  const response = await request(url, options, true);
+  if (!response) throw new BestdoriAssetUnavailableError(url, 'returned 404 for required asset');
   if (response?.headers.get('content-type')?.startsWith('text/html')) {
     await response.body?.cancel();
-    throw new BestdoriAssetUnavailableError(url);
+    throw new BestdoriAssetUnavailableError(url, 'returned HTML for required asset');
   }
   return (await response?.json()) as T;
 }
@@ -238,6 +242,28 @@ async function fileExists(file: string): Promise<boolean> {
     .catch(() => false);
 }
 
+/**
+ * Bestdori 的索引偶尔会保留已经下线的文件，并用 HTML 页面响应资源 URL。
+ * 可选资源（目前是 physics）缺失时允许继续发布；模型、贴图等必需资源缺失时必须跳过整个模型。
+ */
+export async function readBestdoriBundleResponse(
+  response: Response | null,
+  url: string,
+  allowMissing: boolean,
+): Promise<Uint8Array | null> {
+  const unavailable = (detail: string) => {
+    if (allowMissing) return null;
+    throw new BestdoriAssetUnavailableError(url, detail);
+  };
+  if (!response) return unavailable('returned 404 for required asset');
+  if (response.headers.get('content-type')?.startsWith('text/html')) {
+    await response.body?.cancel();
+    return unavailable('returned HTML for required asset');
+  }
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  return bytes.byteLength > 0 ? bytes : unavailable('returned an empty required asset');
+}
+
 async function downloadBundleFile(
   source: BundleFile,
   destination: string,
@@ -247,11 +273,9 @@ async function downloadBundleFile(
 ): Promise<boolean> {
   if (await fileExists(destination)) return true;
   const url = `${BESTDORI_ASSETS}/${server}/${source.bundleName}_rip/${source.fileName}`;
-  const response = await request(url, options, allowMissing);
-  if (!response) return false;
-  if (response.headers.get('content-type')?.startsWith('text/html')) throw new Error(`Bestdori returned HTML for ${url}.`);
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  if (bytes.byteLength === 0) throw new Error(`Bestdori returned an empty file for ${url}.`);
+  const response = await request(url, options, true);
+  const bytes = await readBestdoriBundleResponse(response, url, allowMissing);
+  if (!bytes) return false;
   await mkdir(path.dirname(destination), { recursive: true });
   const temporary = `${destination}.part`;
   await writeFile(temporary, bytes);
@@ -721,7 +745,11 @@ async function main(): Promise<void> {
     await runPool(batch, options.modelConcurrency, async ({ model, server }) => {
       const numericCharacterId = characterIdForModel(model);
       if (!numericCharacterId) {
-        failures.push({ asset: model, error: new Error('Model name does not contain a Bestdori character id.') });
+        const reason = 'Bestdori index entry is not a character model.';
+        await appendCheckpoint({ model, server, status: 'skipped', publishedAt: new Date().toISOString(), reason });
+        completed.add(model);
+        finished += 1;
+        console.warn(`[${finished}/${tasks.length}] skipped non-character ${model}`);
         return;
       }
       const packageRoot = path.join(options.workspace, 'packages', model);
@@ -791,7 +819,7 @@ async function main(): Promise<void> {
             server,
             status: 'skipped',
             publishedAt: new Date().toISOString(),
-            reason: 'Bestdori returned its HTML shell instead of buildData.asset.',
+            reason: error.message,
           });
           completed.add(model);
           await rm(packageRoot, { recursive: true, force: true });
