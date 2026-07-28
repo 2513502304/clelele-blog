@@ -2,6 +2,7 @@
   "name": "clelele-blog",
   "type": "module",
   "version": "4.1.0",
+  "packageManager": "pnpm@9.15.1",
   "engines": {
     "node": ">=22.9.0"
   },
@@ -15,6 +16,9 @@
     "generate:all": "npm run generate:lqips && npm run generate:summaries && npm run generate:similarities",
     "import:style-prompts": "node scripts/import-style-prompts.mjs",
     "upload:style-examples": "node --env-file-if-exists=.env.local --import tsx scripts/upload-style-examples.ts",
+    "publish:live2d-models": "node --env-file-if-exists=.env.local --import tsx scripts/live2d/publish-models.ts",
+    "publish:live2d-bootstrap": "node --env-file-if-exists=.env.local --import tsx scripts/live2d/publish-bootstrap-metadata.ts",
+    "sync:live2d-bestdori": "node --env-file-if-exists=.env.local --import tsx scripts/live2d/sync-bestdori-models.ts",
     "build": "astro build",
     "preview": "astro preview",
     "astro": "astro",
@@ -23,6 +27,8 @@
     "test:bangumi": "node --import tsx --test src/lib/bangumi/*.test.ts",
     "test:character-quote": "node --import tsx --test src/lib/character-quote.test.ts",
     "test:style-gallery": "node --import tsx --test src/lib/style-gallery*.test.ts",
+    "test:live2d": "node --import tsx --test src/lib/hf-s3.test.ts src/lib/live2d/*.test.ts src/store/live2d.test.ts src/store/player.test.ts",
+    "test:live2d:browser": "playwright test tests/live2d",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "lint:fix:unssafe": "biome check --write --unsafe",
@@ -88,6 +94,7 @@
     "foxact": "^0.2.49",
     "hast-util-to-html": "^9.0.5",
     "js-yaml": "^4.1.1",
+    "l2d": "2.1.1",
     "marked": "^17.0.1",
     "mermaid": "^11.12.2",
     "metascraper": "^5.49.7",
@@ -134,6 +141,7 @@
     "@iconify/react": "^5.2.1",
     "@inkjs/ui": "^2.0.0",
     "@lint-md/cli": "^2.0.0",
+    "@playwright/test": "1.62.0",
     "@rollup/plugin-yaml": "^4.1.2",
     "@tailwindcss/container-queries": "^0.1.1",
     "@tailwindcss/typography": "^0.5.19",
@@ -171,5 +179,10 @@
     "*.{md,mdx}": [
       "lint-md --fix"
     ]
+  },
+  "pnpm": {
+    "patchedDependencies": {
+      "l2d@2.1.1": "patches/l2d@2.1.1.patch"
+    }
   }
 }

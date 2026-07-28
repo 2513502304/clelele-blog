@@ -303,6 +303,27 @@ comment:
 
 **推荐使用 Waline**：自部署简单、功能丰富（Markdown、表情、邮件通知）、带访问量统计。详细配置请参考[完整使用指南](/src/content/blog/tools/astro-koharu-guide.md#如何添加评论功能)。
 
+### Live2D 模型发布
+
+Live2D 功能默认关闭。模型二进制不进入 Git：维护者先使用
+[`bestdori-live2d-downloader`](https://github.com/A-kirami/bestdori-live2d-downloader) 等工具得到标准 Cubism 2
+目录，再运行 `npm run publish:live2d-models -- ...` 发布到 HF Bucket。完整示例保留在
+`scripts/live2d/publish-models.ts` 最后一行。
+
+发布器会结构化解析 `model.json`，拒绝绝对 URL、父目录跳转、符号链接、硬链接、非普通文件、大小写冲突、
+缺失引用和不支持的文件类型。运行时 motion 音频绑定会被移除；只有通过 `--audio` 明确批准的文件才进入
+manifest，后续由博客自己的媒体互斥逻辑播放。每个对象都写入内容哈希 release 目录，使用 create-only 写入并在
+更新 catalog 前回读校验 SHA-256，因此中断后可安全重跑，既不会覆盖已有 release，也不会推广不完整模型。
+
+仓库只保留 `src/data/live2d/catalog.json`、逐对象 manifest 和 provenance。provenance 记录来源、转换器版本、
+许可参考和发布时间；正式启用前应人工核对模型再分发授权及 Live2D Cubism SDK 条款。当前 HF endpoint 未通过
+浏览器 CORS canary，因此运行时固定使用只读凭证保护的同源回退；直连实现仅作为后续 endpoint 能力变化时的显式
+切换路径保留。回退单对象受 Vercel 当前 20 MB 流式缓存上限约束，平台限制变化时需重新验证。
+
+常规回滚只需将 `config/site.yaml` 中的 `live2d.enabled` 设为 `false`；紧急情况下还可将
+`LIVE2D_ASSET_DELIVERY_MODE` 设为 `disabled`，独立停止公开资产回源。这些操作都不删除 HF 资产，也不重写访客
+本地偏好。
+
 ## 文档
 
 - **[快速开始](./GETTING-STARTED.md)** - 启动你的博客

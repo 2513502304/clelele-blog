@@ -1,0 +1,129 @@
+{
+  "version": 1,
+  "characters": [
+    {
+      "id": "chihaya-anon",
+      "label": {
+        "zh": "千早爱音",
+        "en": "Chihaya Anon",
+        "ja": "千早愛音"
+      },
+      "costumes": [
+        {
+          "id": "default",
+          "label": {
+            "zh": "开始吧，一辈子的约定",
+            "en": "Let's Start a Lifetime",
+            "ja": "一生を、はじめよう"
+          },
+          "releaseId": "9e95d66201f07e339bd5542b1dd0d67ae1bd0b0f9b14a7335ca0bad6bd5916ad",
+          "entryPath": "releases/9e95d66201f07e339bd5542b1dd0d67ae1bd0b0f9b14a7335ca0bad6bd5916ad/model.json",
+          "packageBytes": 2396808,
+          "scale": 0.9,
+          "position": [0, -0.1],
+          "interactions": [
+            {
+              "area": "head",
+              "motionGroup": "smile01",
+              "lines": ["ねえねえ、今日は何を見に来たの？"]
+            },
+            {
+              "area": "body",
+              "motionGroup": "thinking01",
+              "lines": ["ちょっと待って、今いいこと思いついたかも！"]
+            }
+          ],
+          "provenancePath": "src/data/live2d/provenance/9e95d66201f07e339bd5542b1dd0d67ae1bd0b0f9b14a7335ca0bad6bd5916ad.json"
+        },
+        {
+          "id": "live-sr-01",
+          "label": {
+            "zh": "要搞好关系的是……",
+            "en": "Someone Who Gets Along Well With",
+            "ja": "仲良くする相手は…"
+          },
+          "releaseId": "63efa2f7902818e27ad2c3ec71b3cbcc6c83ee4b4c8c4176b2e7f764422f3e85",
+          "entryPath": "releases/63efa2f7902818e27ad2c3ec71b3cbcc6c83ee4b4c8c4176b2e7f764422f3e85/model.json",
+          "packageBytes": 2282741,
+          "scale": 0.9,
+          "position": [0, -0.1],
+          "interactions": [
+            {
+              "area": "head",
+              "motionGroup": "smile01",
+              "lines": ["ねえねえ、今日は何を見に来たの？"]
+            },
+            {
+              "area": "body",
+              "motionGroup": "thinking01",
+              "lines": ["ちょっと待って、今いいこと思いついたかも！"]
+            }
+          ],
+          "provenancePath": "src/data/live2d/provenance/63efa2f7902818e27ad2c3ec71b3cbcc6c83ee4b4c8c4176b2e7f764422f3e85.json"
+        }
+      ]
+    },
+    {
+      "id": "takamatsu-tomori",
+      "label": {
+        "zh": "高松灯",
+        "en": "Takamatsu Tomori",
+        "ja": "高松燈"
+      },
+      "costumes": [
+        {
+          "id": "default",
+          "label": {
+            "zh": "开始吧，一辈子的约定",
+            "en": "Let's Start a Lifetime",
+            "ja": "一生を、はじめよう"
+          },
+          "releaseId": "c282ced11b66f7f30488ba356deab4bffa3e27a734478b929093140b69ffe349",
+          "entryPath": "releases/c282ced11b66f7f30488ba356deab4bffa3e27a734478b929093140b69ffe349/model.json",
+          "packageBytes": 2149507,
+          "scale": 0.9,
+          "position": [0, -0.1],
+          "interactions": [
+            {
+              "area": "head",
+              "motionGroup": "smile01",
+              "lines": ["……見つけてくれて、ありがとう。"]
+            },
+            {
+              "area": "body",
+              "motionGroup": "thinking01",
+              "lines": ["言葉にすると、ちゃんと残るから。"]
+            }
+          ],
+          "provenancePath": "src/data/live2d/provenance/c282ced11b66f7f30488ba356deab4bffa3e27a734478b929093140b69ffe349.json"
+        },
+        {
+          "id": "live-sr-01",
+          "label": {
+            "zh": "不可思议的小动物",
+            "en": "Mysterious Little Animal",
+            "ja": "不思議な小動物"
+          },
+          "releaseId": "d5628c18018a77031a8df09e24002c5b76c3de65378464a755b75a52327b56a0",
+          "entryPath": "releases/d5628c18018a77031a8df09e24002c5b76c3de65378464a755b75a52327b56a0/model.json",
+          "packageBytes": 1843458,
+          "scale": 0.9,
+          "position": [0, -0.1],
+          "interactions": [
+            {
+              "area": "head",
+              "motionGroup": "smile01",
+              "lines": ["……見つけてくれて、ありがとう。"]
+            },
+            {
+              "area": "body",
+              "motionGroup": "thinking01",
+              "lines": ["言葉にすると、ちゃんと残るから。"]
+            }
+          ],
+          "provenancePath": "src/data/live2d/provenance/d5628c18018a77031a8df09e24002c5b76c3de65378464a755b75a52327b56a0.json"
+        }
+      ]
+    }
+  ]
+}

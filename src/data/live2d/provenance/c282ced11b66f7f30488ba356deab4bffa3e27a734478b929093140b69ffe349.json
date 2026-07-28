@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "releaseId": "c282ced11b66f7f30488ba356deab4bffa3e27a734478b929093140b69ffe349",
+  "source": {
+    "url": "https://bestdori.com/tool/explorer/asset/jp/live2d/chara",
+    "revision": "036_live_default",
+    "acquiredAt": "2026-07-27T00:00:00.000Z"
+  },
+  "converter": {
+    "repository": "https://github.com/A-kirami/bestdori-live2d-downloader",
+    "commit": "b6f6b1b29352e073f5987da8b06d6ae1e4b70ef6",
+    "options": {
+      "coreAudioRemoved": true,
+      "approvedAudio": [],
+      "implementation": "Node.js port of the referenced converter buildData pipeline"
+    }
+  },
+  "manifestSha256": "46be915fe42e636c82ab4dff57505a7ed02147d0264eedca42fe96ba8f340c18",
+  "licenseReferences": [
+    "https://bestdori.com/info/terms",
+    "https://www.live2d.com/eula/live2d-proprietary-software-license-agreement_en.html"
+  ],
+  "publisher": "clelele",
+  "publishedAt": "2026-07-27T03:45:35.721Z"
+}

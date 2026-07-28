@@ -23,7 +23,6 @@ interface Props {
 const { type = HomeSiderType.HOME, className, isDrawer = false, post } = Astro.props;
 const locale = getLocaleFromUrl(Astro.url.pathname);
 const defaultSegmentType = type === HomeSiderType.POST ? HomeSiderSegmentType.DIRECTORY : HomeSiderSegmentType.INFO;
-
 // 获取系列文章（转换为轻量级引用）
 const seriesPosts = post && type === HomeSiderType.POST ? toPostRefs(await getSeriesPosts(post, locale)) : [];
 

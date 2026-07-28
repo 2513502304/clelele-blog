@@ -1,0 +1,54 @@
+diff --git a/dist/index.js b/dist/index.js
+index 3d813a9fd7d6965a94ed1cc813d13bb92314aaca..72a56f2bb9368aef4f10095100aea8d7ca985b59 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -4836,7 +4836,7 @@ var D = class {
+ 	}
+ }, O = class extends d {
+ 	constructor() {
+-		super(), this.modelHomeDir = "", this.modelSetting = null, this.tmpMatrix = [];
++		super(), this.modelHomeDir = "", this.modelSetting = null, this.tmpMatrix = [], this._effects = { sway: !0, breathe: !0, blink: !0 };
+ 	}
+ 	loadJSON(e) {
+ 		let t = this.modelSetting.getTextureNum(), n = this.modelSetting.getPoseFile() == null ? 0 : 1, r = 1 + t + n, i = 0;
+@@ -4907,9 +4907,12 @@ var D = class {
+ 			group: this._currentMotionGroup,
+ 			index: this._currentMotionIndex,
+ 			file: this.modelSetting.getMotionFile(this._currentMotionGroup, this._currentMotionIndex)
+-		})), this.startRandomMotion(u.MOTION_GROUP_IDLE, u.PRIORITY_IDLE)), this.live2DModel.loadParam(), this.mainMotionManager.updateParam(this.live2DModel) || this.eyeBlink != null && this.eyeBlink.updateParam(this.live2DModel), this.live2DModel.saveParam(), this.expressionManager != null && this.expressions != null && !this.expressionManager.isFinished() && this.expressionManager.updateParam(this.live2DModel), this.live2DModel.addToParamFloat("PARAM_ANGLE_X", this.dragX * 30, 1), this.live2DModel.addToParamFloat("PARAM_ANGLE_Y", this.dragY * 30, 1), this.live2DModel.addToParamFloat("PARAM_ANGLE_Z", this.dragX * this.dragY * -30, 1), this.live2DModel.addToParamFloat("PARAM_BODY_ANGLE_X", this.dragX * 10, 1), this.live2DModel.addToParamFloat("PARAM_EYE_BALL_X", this.dragX, 1), this.live2DModel.addToParamFloat("PARAM_EYE_BALL_Y", this.dragY, 1), this.live2DModel.addToParamFloat("PARAM_ANGLE_X", Number(15 * Math.sin(e / 6.5345)), .5), this.live2DModel.addToParamFloat("PARAM_ANGLE_Y", Number(8 * Math.sin(e / 3.5345)), .5), this.live2DModel.addToParamFloat("PARAM_ANGLE_Z", Number(10 * Math.sin(e / 5.5345)), .5), this.live2DModel.addToParamFloat("PARAM_BODY_ANGLE_X", Number(4 * Math.sin(e / 15.5345)), .5), this.live2DModel.setParamFloat("PARAM_BREATH", Number(.5 + .5 * Math.sin(e / 3.2345)), 1), this.physics != null && this.physics.updateParam(this.live2DModel), this.lipSync ?? this.live2DModel.setParamFloat("PARAM_MOUTH_OPEN_Y", this.lipSyncValue), this.pose != null && this.pose.updateParam(this.live2DModel), this._forcedParams != null) for (let [e, t] of Object.entries(this._forcedParams)) this.live2DModel.setParamFloat(e, t, 1);
++		})), this.startRandomMotion(u.MOTION_GROUP_IDLE, u.PRIORITY_IDLE)), this.live2DModel.loadParam(), this.mainMotionManager.updateParam(this.live2DModel) || this._effects.blink && this.eyeBlink != null && this.eyeBlink.updateParam(this.live2DModel), this.live2DModel.saveParam(), this.expressionManager != null && this.expressions != null && !this.expressionManager.isFinished() && this.expressionManager.updateParam(this.live2DModel), this.live2DModel.addToParamFloat("PARAM_ANGLE_X", this.dragX * 30, 1), this.live2DModel.addToParamFloat("PARAM_ANGLE_Y", this.dragY * 30, 1), this.live2DModel.addToParamFloat("PARAM_ANGLE_Z", this.dragX * this.dragY * -30, 1), this.live2DModel.addToParamFloat("PARAM_BODY_ANGLE_X", this.dragX * 10, 1), this.live2DModel.addToParamFloat("PARAM_EYE_BALL_X", this.dragX, 1), this.live2DModel.addToParamFloat("PARAM_EYE_BALL_Y", this.dragY, 1), this._effects.sway && (this.live2DModel.addToParamFloat("PARAM_ANGLE_X", Number(15 * Math.sin(e / 6.5345)), .5), this.live2DModel.addToParamFloat("PARAM_ANGLE_Y", Number(8 * Math.sin(e / 3.5345)), .5), this.live2DModel.addToParamFloat("PARAM_ANGLE_Z", Number(10 * Math.sin(e / 5.5345)), .5), this.live2DModel.addToParamFloat("PARAM_BODY_ANGLE_X", Number(4 * Math.sin(e / 15.5345)), .5)), this._effects.breathe && this.live2DModel.setParamFloat("PARAM_BREATH", Number(.5 + .5 * Math.sin(e / 3.2345)), 1), this.physics != null && this.physics.updateParam(this.live2DModel), this.lipSync ?? this.live2DModel.setParamFloat("PARAM_MOUTH_OPEN_Y", this.lipSyncValue), this.pose != null && this.pose.updateParam(this.live2DModel), this._forcedParams != null) for (let [e, t] of Object.entries(this._forcedParams)) this.live2DModel.setParamFloat(e, t, 1);
+ 		this.live2DModel.update();
+ 	}
++	setEffects(e) {
++		this._effects = { ...this._effects, ...e };
++	}
+ 	setRandomExpression() {
+ 		let e = [];
+ 		for (let t in this.expressions) e.push(t);
+@@ -11785,6 +11788,9 @@ var Mo = class {
+ 	setExpression(e) {
+ 		this._exprCtrl.setExpression(e);
+ 	}
++	setEffects(e) {
++		this._state.currentVersion === 2 && this._state.l2d2Model?.live2DMgr?.getModel?.()?.setEffects?.(e);
++	}
+ 	setVolume(e) {
+ 		this._state.currentVersion === 2 && this._state.l2d2Model ? this._state.l2d2Model.setVolume(e) : this._state.currentVersion !== null && this._state.l2d6Model && this._state.l2d6Model.setVolume(e);
+ 	}
+diff --git a/dist/l2d.d.ts b/dist/l2d.d.ts
+index e87562f5ccd4ebac2e86d367103940d5a9ced21a..9c7084b3563ac2c873b640e69f35792a194e858a 100644
+--- a/dist/l2d.d.ts
++++ b/dist/l2d.d.ts
+@@ -43,6 +43,12 @@ declare class L2D extends Emitter<L2DEventMap> {
+      * @param id - 表情 ID，省略时随机切换
+      */
+     setExpression(id?: string): void;
++    /** 控制 Cubism 2 模型的自动摇摆、呼吸与眨眼效果。 */
++    setEffects(effects: Partial<{
++        sway: boolean;
++        breathe: boolean;
++        blink: boolean;
++    }>): void;
+     /**
+      * 设置动作声音文件的播放音量，与加载选项中的 `volume` 作用一致。
+      * @param volume - 音量，范围 `0`（静音）~ `1`（最大）

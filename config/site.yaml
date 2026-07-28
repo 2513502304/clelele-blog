@@ -643,6 +643,19 @@ hpoi:
   # icon: ri:archive-stack-fill
 
 # =============================================================================
+# Live2D Character Widget
+# 站点已启用；默认模型需与已发布并验证的 catalog 保持一致。
+# =============================================================================
+live2d:
+  enabled: true
+  # enabled 为 true 时，下面两个 ID 必须与 src/lib/live2d/catalog.ts 一致。
+  defaultCharacterId: chihaya-anon
+  defaultCostumeId: default
+  displayPolicy: smart # smart: 沉浸式弹窗打开时暂时避让；always-visible: 始终显示
+  audioEnabled: false # 角色语音默认静音，访客可在本地设置中开启
+  desktopIdleDelayMs: 1200 # 桌面端空闲加载延迟；移动端始终等待用户主动唤醒
+
+# =============================================================================
 # Development Tools (Dev Only)
 # 开发工具配置 - 仅在开发环境（pnpm dev）生效
 # =============================================================================

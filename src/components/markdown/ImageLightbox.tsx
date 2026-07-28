@@ -12,6 +12,7 @@ import { useKeyboardShortcut } from '@hooks/useKeyboardShortcut';
 import { useTranslation } from '@hooks/useTranslation';
 import { useZoomPan } from '@hooks/useZoomPan';
 import { createImageLightboxDownloadAction } from '@lib/image-lightbox-download';
+import { getLive2DFocusNodes, isLive2DOwnedTarget } from '@lib/live2d/focus-scope';
 import { useStore } from '@nanostores/react';
 import {
   $imageLightboxData,
@@ -71,9 +72,18 @@ export default function ImageLightbox() {
   }, [reset]);
   const backdropPointerHandlers = useBackdropClickDismiss(dismissFromBackdrop);
 
-  const handleZoomIn = useCallback(() => zoomTo(scaleRef.current * 1.5), [zoomTo]);
-  const handleZoomOut = useCallback(() => zoomTo(scaleRef.current / 1.5), [zoomTo]);
-  const handleRotate = useCallback(() => setRotation((r) => (r + 90) % 360), []);
+  const handleZoomIn = useCallback(() => {
+    if (!isLive2DOwnedTarget(document.activeElement)) zoomTo(scaleRef.current * 1.5);
+  }, [zoomTo]);
+  const handleZoomOut = useCallback(() => {
+    if (!isLive2DOwnedTarget(document.activeElement)) zoomTo(scaleRef.current / 1.5);
+  }, [zoomTo]);
+  const handleRotate = useCallback(() => {
+    if (!isLive2DOwnedTarget(document.activeElement)) setRotation((r) => (r + 90) % 360);
+  }, []);
+  const handleResetShortcut = useCallback(() => {
+    if (!isLive2DOwnedTarget(document.activeElement)) handleResetAll();
+  }, [handleResetAll]);
 
   const handleLike = useCallback(async () => {
     if (!currentLike || !currentLike.authEnabled || currentLike.pending) return;
@@ -145,6 +155,7 @@ export default function ImageLightbox() {
 
   const navigateTo = useCallback(
     (dir: 1 | -1) => {
+      if (isLive2DOwnedTarget(document.activeElement)) return;
       if (isDeleting) return;
       if (!navigateImage(dir)) return;
       reset();
@@ -176,7 +187,7 @@ export default function ImageLightbox() {
   useKeyboardShortcut({ key: '+', handler: handleZoomIn, enabled: isOpen, ignoreInputs: false, preventDefault: false });
   useKeyboardShortcut({ key: '-', handler: handleZoomOut, enabled: isOpen, ignoreInputs: false, preventDefault: false });
   useKeyboardShortcut({ key: 'r', handler: handleRotate, enabled: isOpen, ignoreInputs: false, preventDefault: false });
-  useKeyboardShortcut({ key: '0', handler: handleResetAll, enabled: isOpen, ignoreInputs: false, preventDefault: false });
+  useKeyboardShortcut({ key: '0', handler: handleResetShortcut, enabled: isOpen, ignoreInputs: false, preventDefault: false });
 
   const { refs, context } = useFloating({
     open: isOpen,
@@ -278,7 +289,7 @@ export default function ImageLightbox() {
             {/* Backdrop */}
             <div className="fixed inset-0 bg-black/90 backdrop-blur-sm" />
             {/* Content */}
-            <FloatingFocusManager context={context}>
+            <FloatingFocusManager context={context} getInsideElements={getLive2DFocusNodes}>
               <div ref={refs.setFloating} className="fixed inset-0 flex items-center justify-center" {...getFloatingProps()}>
                 {/* Toolbar: vertical right on desktop, horizontal top on tablet */}
                 <motion.div

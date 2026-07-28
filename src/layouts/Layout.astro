@@ -21,11 +21,12 @@ import Header from '@components/layout/Header.astro';
 import MobileDrawer from '@components/layout/MobileDrawer.astro';
 import SearchDialog from '@components/layout/SearchDialog';
 import SearchPortal from '@components/layout/SearchPortal.astro';
+import Live2DWidget from '@components/live2d/Live2DWidget';
 import CodeBlockFullscreen from '@components/markdown/CodeBlockFullscreen';
 import DiagramFullscreen from '@components/markdown/DiagramFullscreen';
 import ImageLightbox from '@components/markdown/ImageLightbox';
 import { Toaster } from '@components/ui/sonner';
-import { bgmConfig, christmasConfig, seoConfig, siteConfig } from '@constants/site-config';
+import { bgmConfig, christmasConfig, live2dConfig, live2dEnabled, seoConfig, siteConfig } from '@constants/site-config';
 import { getOgImageUrl } from '@lib/seo/og-image';
 import LoadingIndicator from 'astro-loading-indicator/component';
 import { SEO } from 'astro-seo';
@@ -350,6 +351,18 @@ const keywords = keywordsOverride || siteConfig.keywords || [siteConfig.title];
       {bgmConfig.enabled && bgmConfig.audio.length > 0 && (
         <div transition:persist="global-bgm">
           <GlobalBGMPlayer client:only="react" audioGroups={bgmConfig.audio} metingApi={bgmConfig.metingApi} />
+        </div>
+      )}
+      {live2dEnabled && (
+        <div transition:persist="live2d-character-widget">
+          <Live2DWidget
+            client:only="react"
+            defaultCharacterId={live2dConfig.defaultCharacterId}
+            defaultCostumeId={live2dConfig.defaultCostumeId}
+            desktopIdleDelayMs={live2dConfig.desktopIdleDelayMs}
+            displayPolicy={live2dConfig.displayPolicy}
+            audioEnabled={live2dConfig.audioEnabled}
+          />
         </div>
       )}
       <FloatingGroup client:only="react" />
