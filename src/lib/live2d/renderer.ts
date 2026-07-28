@@ -35,6 +35,7 @@ export interface Live2DCore {
 export interface Live2DRendererOptions {
   canvas: HTMLCanvasElement;
   createCore?: (canvas: HTMLCanvasElement) => Promise<Live2DCore>;
+  loadTimeoutMs?: number;
   prefetchMotion?: (url: string, signal: AbortSignal) => Promise<void>;
   motionPrefetchConcurrency?: number;
   onPhase?: (phase: Live2DRendererPhase, error?: unknown) => void;
@@ -44,9 +45,30 @@ export interface Live2DRendererOptions {
 const DEFAULT_MOTION_PREFETCH_CONCURRENCY = 4;
 const MAX_MOTION_PREFETCH_CONCURRENCY = 8;
 const MOTION_PREFETCH_IDLE_TIMEOUT_MS = 2_000;
+// l2d 2.1.1 在 Cubism 包内部资源请求失败时不会 reject。限制整包加载时间，
+// 让访客最终能看到重试入口，而不是一直停留在加载状态。
+const DEFAULT_MODEL_LOAD_TIMEOUT_MS = 45_000;
 
 function abortError(message: string): DOMException {
   return new DOMException(message, 'AbortError');
+}
+
+function loadTimeoutError(path: string): DOMException {
+  return new DOMException(`Live2D model load timed out: ${path}`, 'TimeoutError');
+}
+
+async function withLoadDeadline(load: Promise<void>, timeoutMs: number, path: string): Promise<void> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      load,
+      new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => reject(loadTimeoutError(path)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
+  }
 }
 
 async function defaultCreateCore(canvas: HTMLCanvasElement): Promise<Live2DCore> {
@@ -170,7 +192,7 @@ export class Live2DRenderer {
   private core: Live2DCore | null = null;
   private phase: Live2DRendererPhase = 'dormant';
   private generation = 0;
-  private loadedEvents = 0;
+  private readonly loadedEvents = new WeakMap<Live2DCore, { count: number }>();
   private tail: Promise<void> = Promise.resolve();
   private resizeObserver: ResizeObserver | null = null;
   private resizeFrame: number | null = null;
@@ -213,8 +235,10 @@ export class Live2DRenderer {
     }
     core.on('tap', (areaName) => this.options.onTap?.(areaName ?? ''));
     core.on('loaded', () => {
-      this.loadedEvents += 1;
+      const events = this.loadedEvents.get(core);
+      if (events) events.count += 1;
     });
+    this.loadedEvents.set(core, { count: 0 });
     this.core = core;
     return core;
   }
@@ -231,28 +255,40 @@ export class Live2DRenderer {
         throw abortError('Live2D selection was superseded.');
       }
       this.setPhase('loading');
+      let core: Live2DCore | null = null;
       try {
-        const core = await this.ensureCore();
-        const loadedBefore = this.loadedEvents;
-        await core.load({
-          path: selection.entryPath,
-          scale: selection.scale,
-          position: selection.position,
-          volume: 0,
-          logLevel: 'warn',
-        });
+        core = await this.ensureCore();
+        const events = this.loadedEvents.get(core);
+        const loadedBefore = events?.count ?? 0;
+        await withLoadDeadline(
+          core.load({
+            path: selection.entryPath,
+            scale: selection.scale,
+            position: selection.position,
+            volume: 0,
+            logLevel: 'warn',
+          }),
+          this.options.loadTimeoutMs ?? DEFAULT_MODEL_LOAD_TIMEOUT_MS,
+          selection.entryPath,
+        );
         if (this.destroyed || this.suspended || generation !== this.generation) {
           throw abortError('Live2D load result is stale.');
         }
         // Upstream logs and returns for fetch/initialization failures instead of rejecting.
         // Requiring its success event prevents a transparent or partial canvas being reported ready.
-        if (this.loadedEvents === loadedBefore || core.getParams().length === 0) {
+        if ((events?.count ?? 0) === loadedBefore || core.getParams().length === 0) {
           throw new Error(`Live2D model did not finish loading: ${selection.entryPath}`);
         }
         if (this.playbackPaused) core.pauseRendering?.();
         this.setPhase('ready');
         this.scheduleMotionPrefetch(core, selection, generation);
       } catch (error) {
+        // 失败或超时的 l2d core 可能保留部分纹理和未完成回调。展示重试入口前先销毁，
+        // 确保下一代加载从干净实例开始，也避免旧 loaded 事件污染新模型状态。
+        if (core && this.core === core) {
+          core.destroy();
+          this.core = null;
+        }
         if (!this.destroyed && !this.suspended && generation === this.generation) {
           this.setPhase('recoverable', error);
         }

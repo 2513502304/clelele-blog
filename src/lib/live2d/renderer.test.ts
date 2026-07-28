@@ -111,6 +111,35 @@ test('treats an upstream silent initialization failure as recoverable', async ()
   renderer.destroy();
 });
 
+test('times out a stalled upstream load and retries with a clean core', async () => {
+  const stalled = new FakeCore();
+  const recovered = new FakeCore();
+  const cores = [stalled, recovered];
+  const phases: string[] = [];
+  const renderer = new Live2DRenderer({
+    canvas: canvas(),
+    createCore: async () => {
+      const core = cores.shift();
+      if (!core) throw new Error('Unexpected renderer core creation.');
+      return core;
+    },
+    loadTimeoutMs: 5,
+    onPhase: (phase) => phases.push(phase),
+  });
+
+  await assert.rejects(renderer.load(selection('stalled')), { name: 'TimeoutError' });
+  assert.equal(renderer.getPhase(), 'recoverable');
+  assert.equal(stalled.destroyed, 1);
+
+  const retry = renderer.load(selection('recovered'));
+  await new Promise((resolve) => setImmediate(resolve));
+  recovered.resolveCurrent?.();
+  await retry;
+  assert.equal(renderer.getPhase(), 'ready');
+  assert.deepEqual(phases, ['loading', 'recoverable', 'loading', 'ready']);
+  renderer.destroy();
+});
+
 test('does not let a phase observer misclassify a successful model load', async () => {
   const core = new FakeCore();
   const renderer = new Live2DRenderer({
