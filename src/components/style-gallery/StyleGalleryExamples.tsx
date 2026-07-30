@@ -1,4 +1,5 @@
 import { Icon } from '@iconify/react';
+import { downloadStyleGalleryImages } from '@lib/style-gallery-batch-download';
 import {
   getStyleGalleryUploadPartCount,
   STYLE_GALLERY_DIRECT_UPLOAD_MAX_SIZE,
@@ -298,6 +299,7 @@ export default function StyleGalleryExamples({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkPlatform, setBulkPlatform] = useState<string>(STYLE_GALLERY_PLATFORMS[0].slug);
   const [mutating, setMutating] = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     setToken(localStorage.getItem(STYLE_GALLERY_UPLOAD_TOKEN_STORAGE_KEY) ?? '');
@@ -430,6 +432,25 @@ export default function StyleGalleryExamples({
       setStatus(error instanceof Error ? error.message : 'Failed to delete examples');
     } finally {
       setMutating(false);
+    }
+  }
+
+  async function downloadSelectedExamples() {
+    if (!selectedIds.size || downloading || mutating) return;
+    const selected = examples.filter((example) => selectedIds.has(example.id));
+    setDownloading(true);
+    setStatus(`Downloading 0 / ${selected.length} selected examples`);
+    try {
+      const result = await downloadStyleGalleryImages(selected, {
+        onProgress: (completed, total) => setStatus(`Downloading ${completed} / ${total} selected examples`),
+      });
+      setStatus(
+        result.failed.length
+          ? `Downloaded ${result.downloaded}; ${result.failed.length} failed and can be retried`
+          : `Downloaded ${result.downloaded} selected example${result.downloaded === 1 ? '' : 's'}`,
+      );
+    } finally {
+      setDownloading(false);
     }
   }
 
@@ -761,7 +782,7 @@ export default function StyleGalleryExamples({
               </select>
               <button
                 type="button"
-                disabled={!selectedIds.size || mutating}
+                disabled={!selectedIds.size || mutating || downloading}
                 onClick={updateSelectedPlatform}
                 className="inline-flex h-9 items-center gap-2 rounded-md bg-gray-950 px-3 font-bold text-sm text-white disabled:opacity-50 dark:bg-white dark:text-gray-950"
               >
@@ -770,7 +791,19 @@ export default function StyleGalleryExamples({
               </button>
               <button
                 type="button"
-                disabled={!selectedIds.size || mutating}
+                disabled={!selectedIds.size || mutating || downloading}
+                onClick={() => void downloadSelectedExamples()}
+                className="inline-flex h-9 items-center gap-2 rounded-md border border-sky-200 px-3 font-bold text-sky-600 text-sm disabled:opacity-50 dark:border-sky-900 dark:text-sky-300"
+              >
+                <Icon
+                  icon={downloading ? 'ri:loader-4-line' : 'ri:download-2-line'}
+                  className={`size-4 ${downloading ? 'animate-spin' : ''}`}
+                />
+                {downloading ? 'Downloading' : 'Download'}
+              </button>
+              <button
+                type="button"
+                disabled={!selectedIds.size || mutating || downloading}
                 onClick={deleteSelectedExamples}
                 className="inline-flex h-9 items-center gap-2 rounded-md border border-red-200 px-3 font-bold text-red-500 text-sm disabled:opacity-50 dark:border-red-950"
               >
