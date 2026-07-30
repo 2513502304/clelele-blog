@@ -168,6 +168,10 @@ export function createLive2DStore(options: CreateLive2DStoreOptions = {}) {
       updatePreferences((current) => ({ ...current, audioEnabled }));
     },
 
+    setPointerTrackingEnabled(pointerTrackingEnabled: boolean): void {
+      updatePreferences((current) => ({ ...current, pointerTrackingEnabled }));
+    },
+
     setDisplayPolicy(displayPolicy: Live2DDisplayPolicy): void {
       updatePreferences((current) => ({ ...current, displayPolicy }));
       if (displayPolicy === 'always-visible') $state.set({ ...$state.get(), avoidanceHidden: false });

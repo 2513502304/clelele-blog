@@ -13,6 +13,7 @@ class FakeCore implements Live2DCore {
   resetExpressions = 0;
   playedMotions: Array<[string, number | undefined, number | undefined]> = [];
   effects: Array<{ sway: boolean; breathe: boolean; blink: boolean }> = [];
+  pointerTracking: boolean[] = [];
   ready = true;
   resolveCurrent: (() => void) | null = null;
   private readonly listeners = new Map<'tap' | 'loaded', Array<(value?: string) => void>>();
@@ -56,6 +57,9 @@ class FakeCore implements Live2DCore {
   }
   setEffects(effects: { sway: boolean; breathe: boolean; blink: boolean }) {
     this.effects.push(effects);
+  }
+  setPointerTracking(enabled: boolean) {
+    this.pointerTracking.push(enabled);
   }
   pauseRendering() {
     this.paused += 1;
@@ -287,6 +291,23 @@ test('forwards automatic effect preferences to the ready renderer', async () => 
 
   renderer.setEffects({ sway: false, breathe: true, blink: false });
   assert.deepEqual(core.effects, [{ sway: false, breathe: true, blink: false }]);
+  renderer.destroy();
+});
+
+test('forwards pointer tracking preferences only after the renderer is ready', async () => {
+  const core = new FakeCore();
+  const renderer = new Live2DRenderer({ canvas: canvas(), createCore: async () => core });
+  renderer.setPointerTracking(false);
+  assert.deepEqual(core.pointerTracking, []);
+
+  const loading = renderer.load(selection('pointer-tracking'));
+  await new Promise((resolve) => setImmediate(resolve));
+  core.resolveCurrent?.();
+  await loading;
+
+  renderer.setPointerTracking(false);
+  renderer.setPointerTracking(true);
+  assert.deepEqual(core.pointerTracking, [false, true]);
   renderer.destroy();
 });
 

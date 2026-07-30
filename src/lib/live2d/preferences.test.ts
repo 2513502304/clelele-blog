@@ -20,6 +20,7 @@ describe('Live2D preferences', () => {
         position: { x: 840, y: 320 },
         hidden: true,
         audioEnabled: true,
+        pointerTrackingEnabled: true,
         displayPolicy: 'always-visible',
       }),
       {
@@ -28,6 +29,7 @@ describe('Live2D preferences', () => {
         placement: { kind: 'detached', x: 840, y: 320 },
         hidden: true,
         audioEnabled: true,
+        pointerTrackingEnabled: true,
         displayPolicy: 'always-visible',
         effects: { sway: true, breathe: true, blink: true },
       },
@@ -45,6 +47,7 @@ describe('Live2D preferences', () => {
     assert.deepEqual(partial.placement, { kind: 'preset', preset: 'bottom-left' });
     assert.equal(partial.hidden, false);
     assert.equal(partial.audioEnabled, true);
+    assert.equal(partial.pointerTrackingEnabled, true);
     assert.equal(partial.displayPolicy, 'smart');
     assert.deepEqual(partial.effects, { sway: true, breathe: true, blink: true });
 
@@ -53,6 +56,19 @@ describe('Live2D preferences', () => {
       effects: { sway: false, breathe: true, blink: false },
     });
     assert.deepEqual(customized.effects, { sway: false, breathe: true, blink: false });
+
+    const migratedOldDefault = parseLive2DPreferences({
+      version: 1,
+      audioEnabled: false,
+    });
+    assert.equal(migratedOldDefault.audioEnabled, true);
+
+    const explicitCurrentChoice = parseLive2DPreferences({
+      ...DEFAULT_LIVE2D_PREFERENCES,
+      audioEnabled: false,
+      pointerTrackingEnabled: true,
+    });
+    assert.equal(explicitCurrentChoice.audioEnabled, false);
   });
 
   it('falls back safely for corrupt and unknown-version data', () => {
@@ -110,6 +126,7 @@ describe('Live2D preferences', () => {
       placement: { kind: 'detached', x: 620, y: 140 },
       hidden: true,
       audioEnabled: true,
+      pointerTrackingEnabled: false,
       displayPolicy: 'always-visible',
     });
     const reconciled = reconcileLive2DSelection(
@@ -122,6 +139,7 @@ describe('Live2D preferences', () => {
     );
 
     assert.deepEqual(reconciled.selection, { characterId: 'chihaya-anon', costumeId: 'default' });
+    assert.equal(reconciled.pointerTrackingEnabled, false);
     assert.deepEqual({ ...reconciled, selection: preferences.selection }, preferences);
   });
 });

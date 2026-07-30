@@ -64,6 +64,7 @@ function Live2DWidgetContent({
   const rootFocusCleanup = useRef<(() => void) | null>(null);
   const wakeFocusCleanup = useRef<(() => void) | null>(null);
   const pointerStart = useRef<PointerStart | null>(null);
+  const pointerInsidePanel = useRef(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const dialogueTimerRef = useRef<number | null>(null);
   const interactionGeneration = useRef(new Live2DInteractionGeneration());
@@ -386,6 +387,7 @@ function Live2DWidgetContent({
       }
       if (phase === 'ready') {
         rendererRef.current?.setEffects(effectsRef.current);
+        rendererRef.current?.setPointerTracking(state.preferences.pointerTrackingEnabled && !pointerInsidePanel.current);
         setModelControls({
           motions: rendererRef.current?.getMotions() ?? {},
           expressions: rendererRef.current?.getExpressions() ?? [],
@@ -397,7 +399,7 @@ function Live2DWidgetContent({
         }
       }
     },
-    [stopTransientInteraction],
+    [state.preferences.pointerTrackingEnabled, stopTransientInteraction],
   );
 
   const interact = useCallback(
@@ -538,6 +540,23 @@ function Live2DWidgetContent({
     rendererRef.current?.setEffects(state.preferences.effects);
   }, [state.preferences.effects]);
 
+  useEffect(() => {
+    if (!state.activePanel) pointerInsidePanel.current = false;
+    rendererRef.current?.setPointerTracking(state.preferences.pointerTrackingEnabled && !pointerInsidePanel.current);
+  }, [state.activePanel, state.preferences.pointerTrackingEnabled]);
+
+  const setPanelPointerPresence = useCallback(
+    (inside: boolean) => {
+      if (pointerInsidePanel.current === inside) return;
+      pointerInsidePanel.current = inside;
+      // Only panel hover suppresses tracking. Merely opening a panel must not disable gaze elsewhere.
+      rendererRef.current?.setPointerTracking(state.preferences.pointerTrackingEnabled && !inside);
+    },
+    [state.preferences.pointerTrackingEnabled],
+  );
+
+  const isPanelTarget = (target: EventTarget | null) => target instanceof Element && target.closest('.live2d-panel') !== null;
+
   const cycle = (direction: -1 | 1) => {
     const current = orderedSelections.findIndex(
       (entry) =>
@@ -621,6 +640,8 @@ function Live2DWidgetContent({
     restore: t('live2d.restore'),
     audio: t('live2d.audio'),
     audioDescription: t('live2d.audioDescription'),
+    pointerTracking: t('live2d.pointerTracking'),
+    pointerTrackingDescription: t('live2d.pointerTrackingDescription'),
     displayPolicy: t('live2d.displayPolicy'),
     smart: t('live2d.smart'),
     alwaysVisible: t('live2d.alwaysVisible'),
@@ -669,6 +690,12 @@ function Live2DWidgetContent({
       data-avoidance-hidden={state.avoidanceHidden || undefined}
       aria-hidden={state.avoidanceHidden || undefined}
       inert={state.avoidanceHidden}
+      onPointerOver={(event) => {
+        if (isPanelTarget(event.target) && !isPanelTarget(event.relatedTarget)) setPanelPointerPresence(true);
+      }}
+      onPointerOut={(event) => {
+        if (isPanelTarget(event.target) && !isPanelTarget(event.relatedTarget)) setPanelPointerPresence(false);
+      }}
     >
       <div className="live2d-stage">
         {rendererStarted && (
@@ -779,9 +806,11 @@ function Live2DWidgetContent({
         <Live2DSettings
           labels={labels}
           audioEnabled={state.preferences.audioEnabled}
+          pointerTrackingEnabled={state.preferences.pointerTrackingEnabled}
           displayPolicy={state.preferences.displayPolicy}
           placement={state.preferences.placement}
           onAudio={live2dActions.setAudioEnabled}
+          onPointerTracking={live2dActions.setPointerTrackingEnabled}
           onPolicy={live2dActions.setDisplayPolicy}
           onPreset={live2dActions.setPreset}
           onClose={() => live2dActions.setActivePanel(null)}
