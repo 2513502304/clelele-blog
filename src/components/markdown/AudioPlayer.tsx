@@ -132,7 +132,12 @@ export function AudioPlayer({ element }: AudioPlayerProps) {
 
   return (
     <div className="audio-player not-prose">
-      <PlayerPreview track={currentTrack} playing={player.state.playing} timeStore={player.timeStore} />
+      <PlayerPreview
+        track={currentTrack}
+        playing={player.state.playing}
+        timeStore={player.timeStore}
+        onTogglePlay={player.togglePlay}
+      />
       <MediaControls
         playing={player.state.playing}
         loading={player.state.loading}

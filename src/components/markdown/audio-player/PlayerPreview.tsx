@@ -3,6 +3,7 @@
  */
 
 import { usePlaybackLrcIndex } from '@hooks/usePlaybackTime';
+import { useTranslation } from '@hooks/useTranslation';
 import type { MetingSong } from '@lib/meting';
 import type { PlaybackTimeStore } from '@lib/playback-time-store';
 import { cn } from '@lib/utils';
@@ -13,6 +14,7 @@ interface PlayerPreviewProps {
   track: MetingSong | null;
   playing: boolean;
   timeStore: PlaybackTimeStore;
+  onTogglePlay: () => void;
   /** Line height in px — must match CSS `.audio-player-lrc p` height. @default 32 */
   lrcLineHeight?: number;
   /** Container height in px — must match CSS `.audio-player-lrc` height. @default 128 */
@@ -58,9 +60,11 @@ export const PlayerPreview = memo(function PlayerPreview({
   track,
   playing,
   timeStore,
+  onTogglePlay,
   lrcLineHeight = DEFAULT_LRC_LINE_HEIGHT,
   lrcContainerHeight = DEFAULT_LRC_CONTAINER_HEIGHT,
 }: PlayerPreviewProps) {
+  const { t } = useTranslation();
   const lrcText = useLrcText(track?.lrc);
   const lrcLines = useMemo(() => parseLrc(lrcText), [lrcText]);
   const currentLrcIndex = usePlaybackLrcIndex(timeStore, lrcLines);
@@ -71,13 +75,22 @@ export const PlayerPreview = memo(function PlayerPreview({
     <div className="audio-player-preview">
       {/* Disc wrapper: vinyl disc + tonearm */}
       <div className="audio-player-disc-wrapper">
-        <div className={cn('audio-player-disc', playing && 'spinning')}>
-          {track?.pic ? (
-            <img src={track.pic} alt={track.name || ''} className="audio-player-cover" draggable={false} />
-          ) : (
-            <div className="audio-player-cover audio-player-cover-placeholder" />
-          )}
-        </div>
+        <button
+          type="button"
+          className="audio-player-disc-button"
+          onClick={onTogglePlay}
+          aria-label={playing ? t('media.pause') : t('media.play')}
+          aria-pressed={playing}
+          title={playing ? t('media.pause') : t('media.play')}
+        >
+          <span className={cn('audio-player-disc', playing && 'spinning')}>
+            {track?.pic ? (
+              <img src={track.pic} alt={track.name || ''} className="audio-player-cover" draggable={false} />
+            ) : (
+              <span className="audio-player-cover audio-player-cover-placeholder" />
+            )}
+          </span>
+        </button>
         <div className={cn('audio-player-needle', playing && 'playing')}>
           <div className="audio-player-needle-arm">
             <div className="audio-player-needle-head" />
