@@ -1,0 +1,35 @@
+---
+import HomeSider from '@components/layout/HomeSider.astro';
+import MusicSessionAdmin from '@components/music/MusicSessionAdmin';
+import Cover from '@components/ui/cover/Cover.astro';
+import { CONTENT_PADDING } from '@constants/layout';
+import { siteConfig } from '@constants/site-config';
+import Layout from '@layouts/Layout.astro';
+import TwoColumnLayout from '@layouts/TwoColumnLayout.astro';
+import { getMusicAdminGitHubId, isMusicAdminLoginConfigured } from '@lib/music/admin-auth';
+import { getStyleGalleryViewer } from '@lib/style-gallery-github-auth';
+
+export const prerender = false;
+
+if (!isMusicAdminLoginConfigured()) {
+  return new Response('GitHub login is not configured.', { status: 503 });
+}
+
+const viewer = getStyleGalleryViewer(Astro.cookies);
+if (!viewer) {
+  return Astro.redirect('/api/style-gallery/auth/github/login?returnTo=%2Fmusic%2Fadmin');
+}
+if (viewer.id !== getMusicAdminGitHubId()) {
+  return Astro.redirect('/404');
+}
+---
+
+<Layout title={`网易云播放会话 | ${siteConfig.title}`} description="管理博客播放器使用的网易云登录会话">
+  <TwoColumnLayout>
+    <Cover slot="cover" title="网易云播放会话" />
+    <HomeSider slot="sider" />
+    <main class={`bg-gradient-start shadow-box tablet:shadow-none ${CONTENT_PADDING.standard}`}>
+      <MusicSessionAdmin client:load />
+    </main>
+  </TwoColumnLayout>
+</Layout>
