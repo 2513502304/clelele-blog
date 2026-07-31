@@ -38,3 +38,29 @@ test('batch downloads isolate failed files and keep concurrency bounded', async 
     items.filter((item) => item.id !== 'image-3').map((item) => `${item.id}.webp`),
   );
 });
+
+test('non-finite worker options fall back to bounded defaults', async () => {
+  const items = Array.from({ length: 4 }, (_, index) => ({ id: `image-${index}`, src: `/image-${index}.webp` }));
+  let active = 0;
+  let maxActive = 0;
+  let calls = 0;
+
+  const result = await downloadStyleGalleryImages(items, {
+    concurrency: Number.POSITIVE_INFINITY,
+    attempts: Number.NaN,
+    fetchImage: async () => {
+      calls += 1;
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      active -= 1;
+      return new Response('failed', { status: 503 });
+    },
+    saveBlob: () => undefined,
+  });
+
+  assert.equal(maxActive, 3);
+  assert.equal(calls, items.length * 2);
+  assert.equal(result.downloaded, 0);
+  assert.equal(result.failed.length, items.length);
+});

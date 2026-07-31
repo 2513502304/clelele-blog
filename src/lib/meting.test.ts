@@ -77,3 +77,31 @@ test('normalizes common Meting fields and isolates caches by full API URL', asyn
     else Reflect.deleteProperty(globalThis, 'localStorage');
   }
 });
+
+test('drops songs that do not provide a playable URL', async () => {
+  const localStorageDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  const originalFetch = globalThis.fetch;
+
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: new MemoryStorage(),
+  });
+  globalThis.fetch = async () =>
+    Response.json([
+      { name: 'Missing URL', artist: 'Artist', url: '' },
+      { name: 'Whitespace URL', artist: 'Artist', url: '   ' },
+      { name: 'Playable', artist: 'Artist', url: 'https://media.example.test/song.mp3' },
+    ]);
+
+  try {
+    const songs = await fetchMeting('netease', 'playlist', 'empty-url', 'https://api.example.test/meting');
+    assert.deepEqual(
+      songs.map((song) => song.name),
+      ['Playable'],
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (localStorageDescriptor) Object.defineProperty(globalThis, 'localStorage', localStorageDescriptor);
+    else Reflect.deleteProperty(globalThis, 'localStorage');
+  }
+});

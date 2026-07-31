@@ -12,7 +12,7 @@ import { useTranslation } from '@hooks/useTranslation';
 import { Icon } from '@iconify/react';
 import type { PlaybackTimeStore } from '@lib/playback-time-store';
 import { cn } from '@lib/utils';
-import { type CSSProperties, memo, useRef } from 'react';
+import { type CSSProperties, memo, useEffect, useRef } from 'react';
 import type { PlayMode } from '@/store/player';
 
 export interface MediaControlsProps {
@@ -88,16 +88,44 @@ export const MediaControls = memo(function MediaControls({
   const sliderRef = useRef<HTMLInputElement>(null);
   const progressPointerId = useRef<number | null>(null);
   const volumePointerId = useRef<number | null>(null);
+  const pendingSeek = useRef<number | null>(null);
+  const seekFrame = useRef<number | null>(null);
   usePlaybackProgress(timeStore, progressBarRef, sliderRef);
   const formattedTime = usePlaybackFormattedTime(timeStore);
 
-  const applyProgress = (input: HTMLInputElement, next: number) => {
+  useEffect(
+    () => () => {
+      if (seekFrame.current !== null) cancelAnimationFrame(seekFrame.current);
+    },
+    [],
+  );
+
+  const commitSeek = (next: number) => {
+    if (seekFrame.current !== null) cancelAnimationFrame(seekFrame.current);
+    seekFrame.current = null;
+    pendingSeek.current = null;
+    onSeek(next);
+  };
+
+  const scheduleSeek = (next: number) => {
+    pendingSeek.current = next;
+    if (seekFrame.current !== null) return;
+    seekFrame.current = requestAnimationFrame(() => {
+      seekFrame.current = null;
+      const pending = pendingSeek.current;
+      pendingSeek.current = null;
+      if (pending !== null) onSeek(pending);
+    });
+  };
+
+  const applyProgress = (input: HTMLInputElement, next: number, commit: 'now' | 'frame' = 'now') => {
     const duration = timeStore.getDuration();
     if (duration <= 0) return;
     input.valueAsNumber = next;
     const ratio = duration > 0 ? Math.max(0, Math.min(1, next / duration)) : 0;
     if (progressBarRef.current) progressBarRef.current.style.width = `${ratio * 100}%`;
-    onSeek(next);
+    if (commit === 'frame') scheduleSeek(next);
+    else commitSeek(next);
   };
 
   const handleProgressInput = (event: React.FormEvent<HTMLInputElement>) => {
@@ -171,6 +199,7 @@ export const MediaControls = memo(function MediaControls({
             onPointerDown={(event) => {
               if (!event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return;
               event.preventDefault();
+              event.currentTarget.focus();
               volumePointerId.current = event.pointerId;
               event.currentTarget.setPointerCapture(event.pointerId);
               applyVolume(event.currentTarget, rangeValueAtPointer(event.currentTarget, event.clientX));
@@ -215,6 +244,7 @@ export const MediaControls = memo(function MediaControls({
             onPointerDown={(event) => {
               if (!event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return;
               event.preventDefault();
+              event.currentTarget.focus();
               progressPointerId.current = event.pointerId;
               event.currentTarget.dataset.scrubbing = 'true';
               event.currentTarget.setPointerCapture(event.pointerId);
@@ -222,7 +252,7 @@ export const MediaControls = memo(function MediaControls({
             }}
             onPointerMove={(event) => {
               if (progressPointerId.current !== event.pointerId) return;
-              applyProgress(event.currentTarget, rangeValueAtPointer(event.currentTarget, event.clientX));
+              applyProgress(event.currentTarget, rangeValueAtPointer(event.currentTarget, event.clientX), 'frame');
             }}
             onPointerUp={(event) => {
               if (progressPointerId.current !== event.pointerId) return;

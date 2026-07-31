@@ -5,10 +5,10 @@
  * Supports NetEase Cloud Music and QQ Music.
  */
 
+import { fetchWithRetry } from './fetch-with-retry';
+
 const DEFAULT_API = '/api/music/meting';
 const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
-const REQUEST_TIMEOUT_MS = 15_000;
-const REQUEST_ATTEMPTS = 3;
 
 export interface MetingSong {
   name: string;
@@ -108,29 +108,16 @@ function normalizeMetingSong(obj: unknown, apiUrl: string): MetingSong | null {
   const name = typeof o.name === 'string' ? o.name : typeof o.title === 'string' ? o.title : null;
   const artist = typeof o.artist === 'string' ? o.artist : typeof o.author === 'string' ? o.author : null;
   if (!name || !artist || typeof o.url !== 'string') return null;
+  const url = upgradeSameHostUrl(o.url, apiUrl);
+  if (!url.trim()) return null;
 
   return {
     name,
     artist,
-    url: upgradeSameHostUrl(o.url, apiUrl),
+    url,
     pic: upgradeSameHostUrl(o.pic, apiUrl),
     lrc: upgradeSameHostUrl(o.lrc, apiUrl),
   };
-}
-
-async function fetchWithRetry(url: URL): Promise<Response> {
-  let lastError: unknown;
-  for (let attempt = 1; attempt <= REQUEST_ATTEMPTS; attempt += 1) {
-    try {
-      const response = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
-      if (response.ok || (response.status < 500 && response.status !== 429)) return response;
-      lastError = new Error(`Meting API error: ${response.status}`);
-    } catch (error) {
-      lastError = error;
-    }
-    if (attempt < REQUEST_ATTEMPTS) await new Promise((resolve) => setTimeout(resolve, 300 * 2 ** (attempt - 1)));
-  }
-  throw lastError instanceof Error ? lastError : new Error('Meting API request failed');
 }
 
 /** Fetch songs from Meting API for a single parsed URL. */
@@ -143,7 +130,9 @@ export async function fetchMeting(server: string, type: string, id: string, apiU
   const url = new URL(resolvedApiUrl);
   const params = new URLSearchParams({ server, type, id });
   url.search = params.toString();
-  const response = await fetchWithRetry(url);
+  const response = await fetchWithRetry(url, {
+    statusError: (failedResponse) => new Error(`Meting API error: ${failedResponse.status}`),
+  });
   if (!response.ok) throw new Error(`Meting API error: ${response.status}`);
 
   const data: unknown = await response.json();

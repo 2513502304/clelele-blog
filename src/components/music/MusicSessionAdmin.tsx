@@ -1,3 +1,4 @@
+import { ErrorBoundary, InlineErrorFallback } from '@components/common';
 import { Icon } from '@iconify/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -26,7 +27,7 @@ function formatDate(value?: string): string {
   return new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'medium' }).format(new Date(value));
 }
 
-export default function MusicSessionAdmin() {
+function MusicSessionAdminContent() {
   const [status, setStatus] = useState<SessionStatus | null>(null);
   const [qr, setQr] = useState<QrLogin | null>(null);
   const [qrMessage, setQrMessage] = useState('');
@@ -35,6 +36,20 @@ export default function MusicSessionAdmin() {
   const [error, setError] = useState('');
   const pollTimer = useRef<number | null>(null);
   const polling = useRef(false);
+  const actionRef = useRef<'qr' | 'health' | null>(null);
+
+  const beginAction = (next: 'qr' | 'health'): boolean => {
+    // React state does not update synchronously, so the ref closes the double-click window.
+    if (actionRef.current !== null) return false;
+    actionRef.current = next;
+    setAction(next);
+    return true;
+  };
+
+  const endAction = () => {
+    actionRef.current = null;
+    setAction(null);
+  };
 
   const stopPolling = useCallback(() => {
     polling.current = false;
@@ -90,8 +105,8 @@ export default function MusicSessionAdmin() {
   );
 
   const createQr = async () => {
+    if (!beginAction('qr')) return;
     stopPolling();
-    setAction('qr');
     setError('');
     setQrMessage('正在生成二维码…');
     try {
@@ -106,12 +121,12 @@ export default function MusicSessionAdmin() {
       setError(reason instanceof Error ? reason.message : '生成二维码失败。');
       setQrMessage('');
     } finally {
-      setAction(null);
+      endAction();
     }
   };
 
   const checkHealth = async () => {
-    setAction('health');
+    if (!beginAction('health')) return;
     setError('');
     try {
       const response = await fetch('/api/music/session/health', { method: 'POST' });
@@ -120,7 +135,7 @@ export default function MusicSessionAdmin() {
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '健康检查失败。');
     } finally {
-      setAction(null);
+      endAction();
     }
   };
 
@@ -210,5 +225,13 @@ export default function MusicSessionAdmin() {
         </section>
       </div>
     </section>
+  );
+}
+
+export default function MusicSessionAdmin() {
+  return (
+    <ErrorBoundary FallbackComponent={InlineErrorFallback}>
+      <MusicSessionAdminContent />
+    </ErrorBoundary>
   );
 }

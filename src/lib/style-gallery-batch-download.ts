@@ -19,6 +19,11 @@ interface StyleGalleryBatchDownloadOptions {
 const DEFAULT_DOWNLOAD_CONCURRENCY = 3;
 const DEFAULT_DOWNLOAD_ATTEMPTS = 2;
 
+function normalizePositiveInteger(value: number | undefined, fallback: number): number {
+  if (value === undefined || !Number.isFinite(value)) return fallback;
+  return Math.max(1, Math.floor(value));
+}
+
 function extensionFromUrl(src: string): string {
   const extension = src.split(/[?#]/, 1)[0].split('.').at(-1)?.toLowerCase();
   return extension && /^(?:jpe?g|png|webp)$/.test(extension) ? extension : 'png';
@@ -68,8 +73,8 @@ export async function downloadStyleGalleryImages(
   items: readonly StyleGalleryDownloadItem[],
   options: StyleGalleryBatchDownloadOptions = {},
 ): Promise<StyleGalleryBatchDownloadResult> {
-  const concurrency = Math.max(1, Math.floor(options.concurrency ?? DEFAULT_DOWNLOAD_CONCURRENCY));
-  const attempts = Math.max(1, Math.floor(options.attempts ?? DEFAULT_DOWNLOAD_ATTEMPTS));
+  const concurrency = normalizePositiveInteger(options.concurrency, DEFAULT_DOWNLOAD_CONCURRENCY);
+  const attempts = normalizePositiveInteger(options.attempts, DEFAULT_DOWNLOAD_ATTEMPTS);
   const fetchImage = options.fetchImage ?? fetch;
   const saveBlob = options.saveBlob ?? saveBrowserBlob;
   const failed: StyleGalleryDownloadItem[] = [];

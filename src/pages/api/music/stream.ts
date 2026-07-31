@@ -16,7 +16,14 @@ export const GET: APIRoute = async ({ url }) => {
   } catch (error) {
     console.warn(`[music] Authenticated audio resolution failed for song ${songId}; using fallback.`, error);
   }
-  target ??= createFallbackAudioUrl(songId);
+  if (!target) {
+    try {
+      target = createFallbackAudioUrl(songId);
+    } catch (error) {
+      console.error('[music] Failed to construct the fallback audio URL.', error);
+      return new Response('Music metadata is temporarily unavailable.', { status: 503 });
+    }
+  }
   return new Response(null, {
     status: 302,
     headers: {
