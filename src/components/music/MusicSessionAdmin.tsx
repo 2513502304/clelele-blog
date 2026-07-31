@@ -37,6 +37,13 @@ function MusicSessionAdminContent() {
   const pollTimer = useRef<number | null>(null);
   const polling = useRef(false);
   const actionRef = useRef<'qr' | 'health' | null>(null);
+  const connectionStatus = !status?.connected
+    ? { label: '未连接', textClass: 'text-muted-foreground', dotClass: 'bg-muted-foreground/40' }
+    : status.health?.healthy === true
+      ? { label: '已验证', textClass: 'text-emerald-600', dotClass: 'bg-emerald-500' }
+      : status.health?.healthy === false
+        ? { label: '需要重新验证', textClass: 'text-amber-600', dotClass: 'bg-amber-500' }
+        : { label: '已保存', textClass: 'text-sky-600', dotClass: 'bg-sky-500' };
 
   const beginAction = (next: 'qr' | 'health'): boolean => {
     // React state does not update synchronously, so the ref closes the double-click window.
@@ -144,7 +151,7 @@ function MusicSessionAdminContent() {
       <header>
         <p className="font-medium text-primary text-sm">Owner only</p>
         <h1 className="mt-1 font-semibold text-2xl text-foreground">网易云播放会话</h1>
-        <p className="mt-2 max-w-2xl text-muted-foreground text-sm leading-6">
+        <p className="mt-2 text-muted-foreground text-sm leading-6">
           播放器优先使用这里保存的登录态解析完整音源；登录态失效或歌曲无权限时自动回退到原有 Meting 试听地址。
         </p>
       </header>
@@ -162,11 +169,9 @@ function MusicSessionAdminContent() {
         <section className="rounded-md border border-border bg-card p-4">
           <div className="flex items-center justify-between gap-3">
             <h2 className="font-semibold text-base text-foreground">当前状态</h2>
-            <span
-              className={`inline-flex items-center gap-1.5 text-sm ${status?.connected ? 'text-emerald-600' : 'text-muted-foreground'}`}
-            >
-              <span className={`size-2 rounded-full ${status?.connected ? 'bg-emerald-500' : 'bg-muted-foreground/40'}`} />
-              {status?.connected ? '已连接' : '未连接'}
+            <span className={`inline-flex items-center gap-1.5 text-sm ${connectionStatus.textClass}`}>
+              <span className={`size-2 rounded-full ${connectionStatus.dotClass}`} />
+              {connectionStatus.label}
             </span>
           </div>
           <dl className="mt-4 grid grid-cols-[6rem_1fr] gap-x-3 gap-y-2 text-sm">
