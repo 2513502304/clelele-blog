@@ -9,10 +9,14 @@ export interface FetchWithRetryOptions {
 const DEFAULT_ATTEMPTS = 3;
 const DEFAULT_TIMEOUT_MS = 15_000;
 const DEFAULT_INITIAL_BACKOFF_MS = 300;
+const MAX_ATTEMPTS = 5;
+const MAX_TIMEOUT_MS = 30_000;
+const MAX_INITIAL_BACKOFF_MS = 2_000;
+const MAX_BACKOFF_MS = 8_000;
 
-function positiveInteger(value: number | undefined, fallback: number): number {
+function boundedPositiveInteger(value: number | undefined, fallback: number, maximum: number): number {
   if (value === undefined || !Number.isFinite(value)) return fallback;
-  return Math.max(1, Math.floor(value));
+  return Math.min(maximum, Math.max(1, Math.floor(value)));
 }
 
 /**
@@ -20,9 +24,9 @@ function positiveInteger(value: number | undefined, fallback: number): number {
  * 4xx（429 除外）直接交给调用方处理，避免重试确定性的客户端错误。
  */
 export async function fetchWithRetry(input: string | URL, options: FetchWithRetryOptions = {}): Promise<Response> {
-  const attempts = positiveInteger(options.attempts, DEFAULT_ATTEMPTS);
-  const timeoutMs = positiveInteger(options.timeoutMs, DEFAULT_TIMEOUT_MS);
-  const initialBackoffMs = positiveInteger(options.initialBackoffMs, DEFAULT_INITIAL_BACKOFF_MS);
+  const attempts = boundedPositiveInteger(options.attempts, DEFAULT_ATTEMPTS, MAX_ATTEMPTS);
+  const timeoutMs = boundedPositiveInteger(options.timeoutMs, DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS);
+  const initialBackoffMs = boundedPositiveInteger(options.initialBackoffMs, DEFAULT_INITIAL_BACKOFF_MS, MAX_INITIAL_BACKOFF_MS);
   const fetcher = options.fetcher ?? fetch;
   let lastError: unknown;
 
@@ -35,7 +39,8 @@ export async function fetchWithRetry(input: string | URL, options: FetchWithRetr
       lastError = error;
     }
     if (attempt < attempts) {
-      await new Promise((resolve) => setTimeout(resolve, initialBackoffMs * 2 ** (attempt - 1)));
+      const backoffMs = Math.min(MAX_BACKOFF_MS, initialBackoffMs * 2 ** (attempt - 1));
+      await new Promise((resolve) => setTimeout(resolve, backoffMs));
     }
   }
 
