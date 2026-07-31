@@ -5,7 +5,9 @@
  * Supports NetEase Cloud Music and QQ Music.
  */
 
-const DEFAULT_API = 'https://163.hyc.moe/';
+import { fetchWithRetry } from './fetch-with-retry';
+
+const DEFAULT_API = '/api/music/meting';
 const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
 export interface MetingSong {
@@ -50,8 +52,13 @@ interface CacheEntry {
   timestamp: number;
 }
 
-function getCacheKey(server: string, type: string, id: string): string {
-  return `meting:${server}:${type}:${id}`;
+function getCacheKey(server: string, type: string, id: string, apiUrl: string): string {
+  return `meting:v4:${apiUrl}:${server}:${type}:${id}`;
+}
+
+function resolveApiUrl(apiUrl: string): URL {
+  const base = typeof window === 'undefined' ? 'http://localhost' : window.location.origin;
+  return new URL(apiUrl, base);
 }
 
 function getFromCache(key: string): MetingSong[] | null {
@@ -78,27 +85,61 @@ function setCache(key: string, data: MetingSong[]): void {
   }
 }
 
-function isMetingSong(obj: unknown): obj is MetingSong {
-  if (typeof obj !== 'object' || obj === null) return false;
+function upgradeSameHostUrl(value: unknown, apiUrl: string): string {
+  if (typeof value !== 'string') return '';
+  try {
+    const source = new URL(value);
+    const api = new URL(apiUrl);
+    // Several Meting deployments still serialize their own resolver links as HTTP. Upgrading only
+    // the same host avoids mixed-content failures without rewriting third-party CDN URLs.
+    if (api.protocol === 'https:' && source.protocol === 'http:' && source.hostname === api.hostname) {
+      source.protocol = 'https:';
+      return source.href;
+    }
+  } catch {
+    // Consumers surface malformed provider URLs; the remaining metadata is still useful.
+  }
+  return value;
+}
+
+function normalizeMetingSong(obj: unknown, apiUrl: string): MetingSong | null {
+  if (typeof obj !== 'object' || obj === null) return null;
   const o = obj as Record<string, unknown>;
-  return typeof o.name === 'string' && typeof o.artist === 'string' && typeof o.url === 'string';
+  const name = typeof o.name === 'string' ? o.name : typeof o.title === 'string' ? o.title : null;
+  const artist = typeof o.artist === 'string' ? o.artist : typeof o.author === 'string' ? o.author : null;
+  if (!name || !artist || typeof o.url !== 'string') return null;
+  const url = upgradeSameHostUrl(o.url, apiUrl);
+  if (!url.trim()) return null;
+
+  return {
+    name,
+    artist,
+    url,
+    pic: upgradeSameHostUrl(o.pic, apiUrl),
+    lrc: upgradeSameHostUrl(o.lrc, apiUrl),
+  };
 }
 
 /** Fetch songs from Meting API for a single parsed URL. */
 export async function fetchMeting(server: string, type: string, id: string, apiUrl?: string): Promise<MetingSong[]> {
-  const cacheKey = getCacheKey(server, type, id);
+  const resolvedApiUrl = resolveApiUrl(apiUrl || DEFAULT_API);
+  const cacheKey = getCacheKey(server, type, id, resolvedApiUrl.href);
   const cached = getFromCache(cacheKey);
   if (cached) return cached;
 
-  const url = new URL(apiUrl || DEFAULT_API);
+  const url = new URL(resolvedApiUrl);
   const params = new URLSearchParams({ server, type, id });
   url.search = params.toString();
-  const response = await fetch(url);
+  const response = await fetchWithRetry(url, {
+    statusError: (failedResponse) => new Error(`Meting API error: ${failedResponse.status}`),
+  });
   if (!response.ok) throw new Error(`Meting API error: ${response.status}`);
 
   const data: unknown = await response.json();
   if (!Array.isArray(data)) return [];
-  const songs = data.filter(isMetingSong) as MetingSong[];
+  const songs = data
+    .map((song) => normalizeMetingSong(song, resolvedApiUrl.href))
+    .filter((song): song is MetingSong => Boolean(song));
   if (songs.length > 0) setCache(cacheKey, songs);
   return songs;
 }

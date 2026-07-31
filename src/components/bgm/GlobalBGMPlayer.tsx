@@ -146,6 +146,7 @@ export default function GlobalBGMPlayer({ audioGroups, metingApi }: GlobalBGMPla
           track={currentTrack}
           playing={player.state.playing}
           timeStore={player.timeStore}
+          onTogglePlay={player.togglePlay}
           lrcLineHeight={28}
           lrcContainerHeight={isMobilePlayer ? 168 : 140}
         />

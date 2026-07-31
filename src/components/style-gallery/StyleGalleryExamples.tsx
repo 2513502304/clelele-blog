@@ -1,4 +1,5 @@
 import { Icon } from '@iconify/react';
+import { downloadStyleGalleryImages } from '@lib/style-gallery-batch-download';
 import {
   getStyleGalleryUploadPartCount,
   STYLE_GALLERY_DIRECT_UPLOAD_MAX_SIZE,
@@ -298,6 +299,7 @@ export default function StyleGalleryExamples({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkPlatform, setBulkPlatform] = useState<string>(STYLE_GALLERY_PLATFORMS[0].slug);
   const [mutating, setMutating] = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     setToken(localStorage.getItem(STYLE_GALLERY_UPLOAD_TOKEN_STORAGE_KEY) ?? '');
@@ -430,6 +432,27 @@ export default function StyleGalleryExamples({
       setStatus(error instanceof Error ? error.message : 'Failed to delete examples');
     } finally {
       setMutating(false);
+    }
+  }
+
+  async function downloadSelectedExamples() {
+    if (!selectedIds.size || downloading || mutating) return;
+    const selected = examples.filter((example) => selectedIds.has(example.id));
+    setDownloading(true);
+    setStatus(`Downloading 0 / ${selected.length} selected examples`);
+    try {
+      const result = await downloadStyleGalleryImages(selected, {
+        onProgress: (completed, total) => setStatus(`Downloading ${completed} / ${total} selected examples`),
+      });
+      setStatus(
+        result.failed.length
+          ? `Downloaded ${result.downloaded}; ${result.failed.length} failed and can be retried`
+          : `Downloaded ${result.downloaded} selected example${result.downloaded === 1 ? '' : 's'}`,
+      );
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Failed to download selected examples');
+    } finally {
+      setDownloading(false);
     }
   }
 
@@ -743,58 +766,72 @@ export default function StyleGalleryExamples({
 
       {examples.length ? (
         <div className="space-y-6">
-          {uploadsEnabled && (
-            <div className="sticky top-3 z-10 flex flex-wrap items-center gap-2 rounded-lg border border-rose-200 bg-white/95 p-3 shadow-md backdrop-blur dark:border-rose-900 dark:bg-gray-950/95">
-              <span className="mr-auto font-bold text-sm tabular-nums">{selectedIds.size} selected</span>
-              <select
-                value={bulkPlatform}
-                disabled={!selectedIds.size || mutating}
-                onChange={(event) => setBulkPlatform(event.currentTarget.value)}
-                aria-label="Destination platform"
-                className="h-9 rounded-md border border-gray-200 bg-white px-3 text-sm outline-none disabled:opacity-50 dark:border-gray-700 dark:bg-gray-950"
-              >
-                {STYLE_GALLERY_PLATFORMS.map((item) => (
-                  <option key={item.slug} value={item.slug}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
+          <div className="sticky top-3 z-10 flex flex-wrap items-center gap-2 rounded-lg border border-rose-200 bg-white/95 p-3 shadow-md backdrop-blur dark:border-rose-900 dark:bg-gray-950/95">
+            <span className="mr-auto font-bold text-sm tabular-nums">{selectedIds.size} selected</span>
+            {uploadsEnabled && (
+              <>
+                <select
+                  value={bulkPlatform}
+                  disabled={!selectedIds.size || mutating}
+                  onChange={(event) => setBulkPlatform(event.currentTarget.value)}
+                  aria-label="Destination platform"
+                  className="h-9 rounded-md border border-gray-200 bg-white px-3 text-sm outline-none disabled:opacity-50 dark:border-gray-700 dark:bg-gray-950"
+                >
+                  {STYLE_GALLERY_PLATFORMS.map((item) => (
+                    <option key={item.slug} value={item.slug}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  disabled={!selectedIds.size || mutating || downloading}
+                  onClick={updateSelectedPlatform}
+                  className="inline-flex h-9 items-center gap-2 rounded-md bg-gray-950 px-3 font-bold text-sm text-white disabled:opacity-50 dark:bg-white dark:text-gray-950"
+                >
+                  <Icon icon="ri:swap-2-line" className="size-4" />
+                  Change platform
+                </button>
+              </>
+            )}
+            <button
+              type="button"
+              disabled={!selectedIds.size || mutating || downloading}
+              onClick={() => void downloadSelectedExamples()}
+              className="inline-flex h-9 items-center gap-2 rounded-md border border-sky-200 px-3 font-bold text-sky-600 text-sm disabled:opacity-50 dark:border-sky-900 dark:text-sky-300"
+            >
+              <Icon
+                icon={downloading ? 'ri:loader-4-line' : 'ri:download-2-line'}
+                className={`size-4 ${downloading ? 'animate-spin' : ''}`}
+              />
+              {downloading ? 'Downloading' : 'Download'}
+            </button>
+            {uploadsEnabled && (
               <button
                 type="button"
-                disabled={!selectedIds.size || mutating}
-                onClick={updateSelectedPlatform}
-                className="inline-flex h-9 items-center gap-2 rounded-md bg-gray-950 px-3 font-bold text-sm text-white disabled:opacity-50 dark:bg-white dark:text-gray-950"
-              >
-                <Icon icon="ri:swap-2-line" className="size-4" />
-                Change platform
-              </button>
-              <button
-                type="button"
-                disabled={!selectedIds.size || mutating}
+                disabled={!selectedIds.size || mutating || downloading}
                 onClick={deleteSelectedExamples}
                 className="inline-flex h-9 items-center gap-2 rounded-md border border-red-200 px-3 font-bold text-red-500 text-sm disabled:opacity-50 dark:border-red-950"
               >
                 <Icon icon="ri:delete-bin-line" className="size-4" />
                 Delete
               </button>
-            </div>
-          )}
+            )}
+          </div>
           {exampleGroups.map(([platformName, platformExamples]) => (
             <section className="space-y-3" key={platformName}>
               <div className="flex items-center justify-between gap-3 border-rose-100 border-b pb-2 dark:border-gray-800">
                 <h3 className="font-black text-gray-900 text-lg dark:text-white">{platformName}</h3>
                 <div className="flex items-center gap-2">
-                  {uploadsEnabled && (
-                    <label className="inline-flex cursor-pointer items-center gap-2 text-muted-foreground text-xs">
-                      <input
-                        type="checkbox"
-                        checked={platformExamples.every((example) => selectedIds.has(example.id))}
-                        onChange={() => toggleGroup(platformExamples)}
-                        className="size-4 accent-rose-500"
-                      />
-                      Select group
-                    </label>
-                  )}
+                  <label className="inline-flex cursor-pointer items-center gap-2 text-muted-foreground text-xs">
+                    <input
+                      type="checkbox"
+                      checked={platformExamples.every((example) => selectedIds.has(example.id))}
+                      onChange={() => toggleGroup(platformExamples)}
+                      className="size-4 accent-rose-500"
+                    />
+                    Select group
+                  </label>
                   <span className="rounded-full bg-sky-50 px-3 py-1 font-bold text-sky-600 text-xs dark:bg-sky-950/50 dark:text-sky-200">
                     {platformExamples.length}
                   </span>
@@ -821,18 +858,16 @@ export default function StyleGalleryExamples({
                             className="aspect-square w-full object-cover transition duration-200 group-hover:scale-105"
                           />
                         </button>
-                        {uploadsEnabled && (
-                          <label className="absolute top-2 left-2 flex size-8 cursor-pointer items-center justify-center rounded-md bg-white/90 shadow dark:bg-gray-950/90">
-                            <input
-                              type="checkbox"
-                              checked={selectedIds.has(example.id)}
-                              disabled={mutating}
-                              onChange={() => toggleExample(example.id)}
-                              aria-label={`Select ${example.alt ?? 'generated example'}`}
-                              className="size-4 accent-rose-500"
-                            />
-                          </label>
-                        )}
+                        <label className="absolute top-2 left-2 flex size-8 cursor-pointer items-center justify-center rounded-md bg-white/90 shadow dark:bg-gray-950/90">
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(example.id)}
+                            disabled={mutating}
+                            onChange={() => toggleExample(example.id)}
+                            aria-label={`Select ${example.alt ?? 'generated example'}`}
+                            className="size-4 accent-rose-500"
+                          />
+                        </label>
                         <StyleGalleryLikeButton
                           exampleId={example.id}
                           controller={likes}

@@ -1,54 +1,68 @@
 diff --git a/dist/index.js b/dist/index.js
-index 3d813a9fd7d6965a94ed1cc813d13bb92314aaca..72a56f2bb9368aef4f10095100aea8d7ca985b59 100644
+index 3d813a9..b822ba0 100644
 --- a/dist/index.js
 +++ b/dist/index.js
-@@ -4836,7 +4836,7 @@ var D = class {
- 	}
- }, O = class extends d {
- 	constructor() {
+@@ -4839 +4839 @@ var D = class {
 -		super(), this.modelHomeDir = "", this.modelSetting = null, this.tmpMatrix = [];
 +		super(), this.modelHomeDir = "", this.modelSetting = null, this.tmpMatrix = [], this._effects = { sway: !0, breathe: !0, blink: !0 };
- 	}
- 	loadJSON(e) {
- 		let t = this.modelSetting.getTextureNum(), n = this.modelSetting.getPoseFile() == null ? 0 : 1, r = 1 + t + n, i = 0;
-@@ -4907,9 +4907,12 @@ var D = class {
- 			group: this._currentMotionGroup,
- 			index: this._currentMotionIndex,
- 			file: this.modelSetting.getMotionFile(this._currentMotionGroup, this._currentMotionIndex)
+@@ -4910 +4910 @@ var D = class {
 -		})), this.startRandomMotion(u.MOTION_GROUP_IDLE, u.PRIORITY_IDLE)), this.live2DModel.loadParam(), this.mainMotionManager.updateParam(this.live2DModel) || this.eyeBlink != null && this.eyeBlink.updateParam(this.live2DModel), this.live2DModel.saveParam(), this.expressionManager != null && this.expressions != null && !this.expressionManager.isFinished() && this.expressionManager.updateParam(this.live2DModel), this.live2DModel.addToParamFloat("PARAM_ANGLE_X", this.dragX * 30, 1), this.live2DModel.addToParamFloat("PARAM_ANGLE_Y", this.dragY * 30, 1), this.live2DModel.addToParamFloat("PARAM_ANGLE_Z", this.dragX * this.dragY * -30, 1), this.live2DModel.addToParamFloat("PARAM_BODY_ANGLE_X", this.dragX * 10, 1), this.live2DModel.addToParamFloat("PARAM_EYE_BALL_X", this.dragX, 1), this.live2DModel.addToParamFloat("PARAM_EYE_BALL_Y", this.dragY, 1), this.live2DModel.addToParamFloat("PARAM_ANGLE_X", Number(15 * Math.sin(e / 6.5345)), .5), this.live2DModel.addToParamFloat("PARAM_ANGLE_Y", Number(8 * Math.sin(e / 3.5345)), .5), this.live2DModel.addToParamFloat("PARAM_ANGLE_Z", Number(10 * Math.sin(e / 5.5345)), .5), this.live2DModel.addToParamFloat("PARAM_BODY_ANGLE_X", Number(4 * Math.sin(e / 15.5345)), .5), this.live2DModel.setParamFloat("PARAM_BREATH", Number(.5 + .5 * Math.sin(e / 3.2345)), 1), this.physics != null && this.physics.updateParam(this.live2DModel), this.lipSync ?? this.live2DModel.setParamFloat("PARAM_MOUTH_OPEN_Y", this.lipSyncValue), this.pose != null && this.pose.updateParam(this.live2DModel), this._forcedParams != null) for (let [e, t] of Object.entries(this._forcedParams)) this.live2DModel.setParamFloat(e, t, 1);
 +		})), this.startRandomMotion(u.MOTION_GROUP_IDLE, u.PRIORITY_IDLE)), this.live2DModel.loadParam(), this.mainMotionManager.updateParam(this.live2DModel) || this._effects.blink && this.eyeBlink != null && this.eyeBlink.updateParam(this.live2DModel), this.live2DModel.saveParam(), this.expressionManager != null && this.expressions != null && !this.expressionManager.isFinished() && this.expressionManager.updateParam(this.live2DModel), this.live2DModel.addToParamFloat("PARAM_ANGLE_X", this.dragX * 30, 1), this.live2DModel.addToParamFloat("PARAM_ANGLE_Y", this.dragY * 30, 1), this.live2DModel.addToParamFloat("PARAM_ANGLE_Z", this.dragX * this.dragY * -30, 1), this.live2DModel.addToParamFloat("PARAM_BODY_ANGLE_X", this.dragX * 10, 1), this.live2DModel.addToParamFloat("PARAM_EYE_BALL_X", this.dragX, 1), this.live2DModel.addToParamFloat("PARAM_EYE_BALL_Y", this.dragY, 1), this._effects.sway && (this.live2DModel.addToParamFloat("PARAM_ANGLE_X", Number(15 * Math.sin(e / 6.5345)), .5), this.live2DModel.addToParamFloat("PARAM_ANGLE_Y", Number(8 * Math.sin(e / 3.5345)), .5), this.live2DModel.addToParamFloat("PARAM_ANGLE_Z", Number(10 * Math.sin(e / 5.5345)), .5), this.live2DModel.addToParamFloat("PARAM_BODY_ANGLE_X", Number(4 * Math.sin(e / 15.5345)), .5)), this._effects.breathe && this.live2DModel.setParamFloat("PARAM_BREATH", Number(.5 + .5 * Math.sin(e / 3.2345)), 1), this.physics != null && this.physics.updateParam(this.live2DModel), this.lipSync ?? this.live2DModel.setParamFloat("PARAM_MOUTH_OPEN_Y", this.lipSyncValue), this.pose != null && this.pose.updateParam(this.live2DModel), this._forcedParams != null) for (let [e, t] of Object.entries(this._forcedParams)) this.live2DModel.setParamFloat(e, t, 1);
- 		this.live2DModel.update();
- 	}
+@@ -4913,0 +4914,3 @@ var D = class {
 +	setEffects(e) {
 +		this._effects = { ...this._effects, ...e };
 +	}
- 	setRandomExpression() {
- 		let e = [];
- 		for (let t in this.expressions) e.push(t);
-@@ -11785,6 +11788,9 @@ var Mo = class {
- 	setExpression(e) {
- 		this._exprCtrl.setExpression(e);
- 	}
+@@ -5053 +5056 @@ var D = class {
+-		this._glContextIndex = te++, this.live2DMgr = new A(e, this._glContextIndex), this._destroyed = !1, this.isDrawStart = !1, this.gl = null, this.canvas = null, this.dragMgr = null, this.viewMatrix = null, this.projMatrix = null, this.deviceToScreen = null, this._boundMouseEvent = this.mouseEvent.bind(this), this._boundTouchEvent = this.touchEvent.bind(this), this._resizeRafId = null;
++		this._glContextIndex = te++, this.live2DMgr = new A(e, this._glContextIndex), this._destroyed = !1, this.isDrawStart = !1, this.gl = null, this.canvas = null, this.dragMgr = null, this.viewMatrix = null, this.projMatrix = null, this.deviceToScreen = null, this._pointerTracking = !0, this._boundMouseEvent = this.mouseEvent.bind(this), this._boundTouchEvent = this.touchEvent.bind(this), this._resizeRafId = null;
+@@ -5056 +5059 @@ var D = class {
+-		this.canvas = e, this.canvas.addEventListener && (this.canvas.addEventListener("click", this._boundMouseEvent, !1), document.addEventListener("mousemove", this._boundMouseEvent, !1), document.addEventListener("mouseout", this._boundMouseEvent, !1), this.canvas.addEventListener("contextmenu", this._boundMouseEvent, !1), this.canvas.addEventListener("touchstart", this._boundTouchEvent, !1), this.canvas.addEventListener("touchend", this._boundTouchEvent, !1), this.canvas.addEventListener("touchmove", this._boundTouchEvent, !1)), r(this.canvas), this._resizeObserver = new ResizeObserver(() => {
++		this.canvas = e, this.canvas.addEventListener && (this.canvas.addEventListener("click", this._boundMouseEvent, !1), document.addEventListener("mousemove", this._boundMouseEvent, !1), document.addEventListener("mouseleave", this._boundMouseEvent, !1), this.canvas.addEventListener("contextmenu", this._boundMouseEvent, !1), this.canvas.addEventListener("touchstart", this._boundTouchEvent, !1), this.canvas.addEventListener("touchend", this._boundTouchEvent, !1), this.canvas.addEventListener("touchmove", this._boundTouchEvent, !1)), r(this.canvas), this._resizeObserver = new ResizeObserver(() => {
+@@ -5106 +5109 @@ var D = class {
+-		this.canvas && (this.canvas.removeEventListener("click", this._boundMouseEvent, !1), document.removeEventListener("mousemove", this._boundMouseEvent, !1), document.removeEventListener("mouseout", this._boundMouseEvent, !1), this.canvas.removeEventListener("contextmenu", this._boundMouseEvent, !1), this.canvas.removeEventListener("touchstart", this._boundTouchEvent, !1), this.canvas.removeEventListener("touchend", this._boundTouchEvent, !1), this.canvas.removeEventListener("touchmove", this._boundTouchEvent, !1)), this._resizeObserver &&= (this._resizeObserver.disconnect(), null), this._resizeRafId &&= (cancelAnimationFrame(this._resizeRafId), null), this._drawFrameId &&= (window.cancelAnimationFrame(this._drawFrameId), null), this._destroyed = !0, this.isDrawStart = !1, this.live2DMgr && this.live2DMgr.releaseModel(this.gl), this.canvas = null, this.gl = null, this.dragMgr = null, this.viewMatrix = null, this.projMatrix = null, this.deviceToScreen = null;
++		this.canvas && (this.canvas.removeEventListener("click", this._boundMouseEvent, !1), document.removeEventListener("mousemove", this._boundMouseEvent, !1), document.removeEventListener("mouseleave", this._boundMouseEvent, !1), this.canvas.removeEventListener("contextmenu", this._boundMouseEvent, !1), this.canvas.removeEventListener("touchstart", this._boundTouchEvent, !1), this.canvas.removeEventListener("touchend", this._boundTouchEvent, !1), this.canvas.removeEventListener("touchmove", this._boundTouchEvent, !1)), this._resizeObserver &&= (this._resizeObserver.disconnect(), null), this._resizeRafId &&= (cancelAnimationFrame(this._resizeRafId), null), this._drawFrameId &&= (window.cancelAnimationFrame(this._drawFrameId), null), this._destroyed = !0, this.isDrawStart = !1, this.live2DMgr && this.live2DMgr.releaseModel(this.gl), this.canvas = null, this.gl = null, this.dragMgr = null, this.viewMatrix = null, this.projMatrix = null, this.deviceToScreen = null;
+@@ -5192,0 +5196,3 @@ var D = class {
++	setPointerTracking(e) {
++		this._pointerTracking = e, e || this.lookFront();
++	}
+@@ -5193 +5199 @@ var D = class {
+-		e.preventDefault(), e.type == "click" || e.type == "contextmenu" ? this.modelTurnHead(e) : e.type == "mousemove" ? this.followPointer(e) : e.type == "mouseout" && this.lookFront();
++		e.preventDefault(), e.type == "click" || e.type == "contextmenu" ? (this.modelTurnHead(e), this._pointerTracking || this.lookFront()) : e.type == "mousemove" ? this._pointerTracking && this.followPointer(e) : e.type == "mouseleave" && this.lookFront();
+@@ -5198 +5204 @@ var D = class {
+-		e.type == "touchstart" ? e.touches.length == 1 && this.modelTurnHead(t) : e.type == "touchmove" ? this.followPointer(t) : e.type == "touchend" && this.lookFront();
++		e.type == "touchstart" ? e.touches.length == 1 && (this.modelTurnHead(t), this._pointerTracking || this.lookFront()) : e.type == "touchmove" ? this._pointerTracking && this.followPointer(t) : e.type == "touchend" && this.lookFront();
+@@ -11432,0 +11439 @@ var Eo = class extends So {
++	_pointerTracking = !0;
+@@ -11466 +11473 @@ var Eo = class extends So {
+-		if (!this._isModelReady()) return;
++		if (!this._pointerTracking || !this._isModelReady()) return;
+@@ -11473,0 +11481,3 @@ var Eo = class extends So {
++	setPointerTracking(e) {
++		this._pointerTracking = e, e || this.onMouseEnd();
++	}
+@@ -11485 +11495 @@ var Eo = class extends So {
+-		this.mouseMoveEventListener = this.onMouseMove.bind(this), this.mouseEndedEventListener = this.onMouseEnd.bind(this), this.tapEventListener = this.onTap.bind(this), document.addEventListener("mousemove", this.mouseMoveEventListener, { passive: !0 }), document.addEventListener("mouseout", this.mouseEndedEventListener, { passive: !0 }), document.addEventListener("pointerdown", this.tapEventListener, { passive: !0 });
++		this.mouseMoveEventListener = this.onMouseMove.bind(this), this.mouseEndedEventListener = this.onMouseEnd.bind(this), this.tapEventListener = this.onTap.bind(this), document.addEventListener("mousemove", this.mouseMoveEventListener, { passive: !0 }), document.addEventListener("mouseleave", this.mouseEndedEventListener, { passive: !0 }), document.addEventListener("pointerdown", this.tapEventListener, { passive: !0 });
+@@ -11488 +11498 @@ var Eo = class extends So {
+-		this.mouseMoveEventListener &&= (document.removeEventListener("mousemove", this.mouseMoveEventListener), null), this.mouseEndedEventListener &&= (document.removeEventListener("mouseout", this.mouseEndedEventListener), null), this.tapEventListener &&= (document.removeEventListener("pointerdown", this.tapEventListener), null);
++		this.mouseMoveEventListener &&= (document.removeEventListener("mousemove", this.mouseMoveEventListener), null), this.mouseEndedEventListener &&= (document.removeEventListener("mouseleave", this.mouseEndedEventListener), null), this.tapEventListener &&= (document.removeEventListener("pointerdown", this.tapEventListener), null);
+@@ -11788,0 +11799,6 @@ var Mo = class {
 +	setEffects(e) {
 +		this._state.currentVersion === 2 && this._state.l2d2Model?.live2DMgr?.getModel?.()?.setEffects?.(e);
 +	}
- 	setVolume(e) {
- 		this._state.currentVersion === 2 && this._state.l2d2Model ? this._state.l2d2Model.setVolume(e) : this._state.currentVersion !== null && this._state.l2d6Model && this._state.l2d6Model.setVolume(e);
- 	}
++	setPointerTracking(e) {
++		this._state.currentVersion === 2 && this._state.l2d2Model ? this._state.l2d2Model.setPointerTracking(e) : this._state.currentVersion !== null && this._state.l2d6Model?.setPointerTracking(e);
++	}
 diff --git a/dist/l2d.d.ts b/dist/l2d.d.ts
-index e87562f5ccd4ebac2e86d367103940d5a9ced21a..9c7084b3563ac2c873b640e69f35792a194e858a 100644
+index e87562f..6632493 100644
 --- a/dist/l2d.d.ts
 +++ b/dist/l2d.d.ts
-@@ -43,6 +43,12 @@ declare class L2D extends Emitter<L2DEventMap> {
-      * @param id - 表情 ID，省略时随机切换
-      */
-     setExpression(id?: string): void;
+@@ -45,0 +46,8 @@ declare class L2D extends Emitter<L2DEventMap> {
 +    /** 控制 Cubism 2 模型的自动摇摆、呼吸与眨眼效果。 */
 +    setEffects(effects: Partial<{
 +        sway: boolean;
 +        breathe: boolean;
 +        blink: boolean;
 +    }>): void;
-     /**
-      * 设置动作声音文件的播放音量，与加载选项中的 `volume` 作用一致。
-      * @param volume - 音量，范围 `0`（静音）~ `1`（最大）
++    /** 启用或关闭鼠标视线追随；关闭时将视线目标恢复到画布中心。 */
++    setPointerTracking(enabled: boolean): void;

@@ -22,6 +22,7 @@ export interface Live2DPreferences {
   placement: Live2DPlacement;
   hidden: boolean;
   audioEnabled: boolean;
+  pointerTrackingEnabled: boolean;
   displayPolicy: Live2DDisplayPolicy;
   effects: Live2DEffects;
 }
@@ -43,7 +44,8 @@ export const DEFAULT_LIVE2D_PREFERENCES: Readonly<Live2DPreferences> = Object.fr
   selection: Object.freeze({ characterId: 'chihaya-anon', costumeId: 'default' }),
   placement: Object.freeze({ kind: 'preset', preset: 'bottom-left' }),
   hidden: false,
-  audioEnabled: false,
+  audioEnabled: true,
+  pointerTrackingEnabled: true,
   displayPolicy: 'smart',
   effects: Object.freeze({ sway: true, breathe: true, blink: true }),
 });
@@ -93,12 +95,21 @@ function parseEffects(value: unknown, fallback: Live2DEffects): Live2DEffects {
 }
 
 function parseCurrentRecord(record: Record<string, unknown>, defaults: Live2DPreferences): Live2DPreferences {
+  const hasCurrentInteractionPreferences = typeof record.pointerTrackingEnabled === 'boolean';
   return {
     version: LIVE2D_PREFERENCES_VERSION,
     selection: parseSelection(record.selection, defaults.selection),
     placement: parsePlacement(record.placement, defaults.placement),
     hidden: typeof record.hidden === 'boolean' ? record.hidden : defaults.hidden,
-    audioEnabled: typeof record.audioEnabled === 'boolean' ? record.audioEnabled : defaults.audioEnabled,
+    // Older v1 records persisted the former false default during catalog reconciliation, so false
+    // did not necessarily represent a visitor choice. The gaze field marks records written by the
+    // current settings UI; from that point onward an explicit audio choice is preserved.
+    audioEnabled:
+      hasCurrentInteractionPreferences && typeof record.audioEnabled === 'boolean'
+        ? record.audioEnabled
+        : defaults.audioEnabled,
+    pointerTrackingEnabled:
+      typeof record.pointerTrackingEnabled === 'boolean' ? record.pointerTrackingEnabled : defaults.pointerTrackingEnabled,
     displayPolicy:
       record.displayPolicy === 'smart' || record.displayPolicy === 'always-visible'
         ? record.displayPolicy
@@ -123,6 +134,7 @@ function migrateLegacyRecord(record: Record<string, unknown>, defaults: Live2DPr
       placement,
       hidden: record.hidden,
       audioEnabled: record.audioEnabled,
+      pointerTrackingEnabled: record.pointerTrackingEnabled,
       displayPolicy: record.displayPolicy,
       effects: record.effects,
     },

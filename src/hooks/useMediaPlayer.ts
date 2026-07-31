@@ -228,7 +228,11 @@ export function useMediaPlayer<T>({ tracks, getUrl, getElement }: UseMediaPlayer
   const setVolume = useCallback((vol: number) => {
     const clamped = Math.max(0, Math.min(1, vol));
     const el = getElementRef.current();
-    if (el) el.volume = clamped;
+    if (el) {
+      el.volume = clamped;
+      // Dragging the visible slider from a muted state is an explicit request to hear that level.
+      el.muted = clamped === 0;
+    }
     setStoredVolume(clamped);
     setState((s) => ({ ...s, volume: clamped, muted: clamped === 0 }));
   }, []);

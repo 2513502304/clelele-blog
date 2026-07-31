@@ -6,9 +6,11 @@ import type { Live2DDisplayPolicy } from '@lib/live2d/preferences';
 interface Props {
   labels: Record<string, string>;
   audioEnabled: boolean;
+  pointerTrackingEnabled: boolean;
   displayPolicy: Live2DDisplayPolicy;
   placement: Live2DPlacement;
   onAudio: (enabled: boolean) => void;
+  onPointerTracking: (enabled: boolean) => void;
   onPolicy: (policy: Live2DDisplayPolicy) => void;
   onPreset: (preset: Live2DPlacementPreset) => void;
   onClose: () => void;
@@ -23,9 +25,11 @@ const presets = [
 export function Live2DSettings({
   labels,
   audioEnabled,
+  pointerTrackingEnabled,
   displayPolicy,
   placement,
   onAudio,
+  onPointerTracking,
   onPolicy,
   onPreset,
   onClose,
@@ -44,6 +48,23 @@ export function Live2DSettings({
           aria-checked={audioEnabled}
           aria-label={labels.audio}
           onClick={() => onAudio(!audioEnabled)}
+        >
+          <span />
+        </button>
+      </div>
+
+      <div className="live2d-setting-row">
+        <div>
+          <strong>{labels.pointerTracking}</strong>
+          <small>{labels.pointerTrackingDescription}</small>
+        </div>
+        <button
+          type="button"
+          className="live2d-switch"
+          role="switch"
+          aria-checked={pointerTrackingEnabled}
+          aria-label={labels.pointerTracking}
+          onClick={() => onPointerTracking(!pointerTrackingEnabled)}
         >
           <span />
         </button>

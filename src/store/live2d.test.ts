@@ -62,7 +62,7 @@ describe('Live2D store', () => {
     assert.equal(empty.$state.get().preferences.audioEnabled, true);
     assert.equal(empty.$state.get().preferences.displayPolicy, 'always-visible');
 
-    const stored = memoryStorage(JSON.stringify(DEFAULT_LIVE2D_PREFERENCES));
+    const stored = memoryStorage(JSON.stringify({ ...DEFAULT_LIVE2D_PREFERENCES, audioEnabled: false }));
     const returning = createLive2DStore({ storage: stored });
     returning.actions.initialize({ audioEnabled: true, displayPolicy: 'always-visible' });
     assert.equal(returning.$state.get().preferences.audioEnabled, false);
@@ -75,6 +75,7 @@ describe('Live2D store', () => {
     store.actions.initialize();
     store.actions.select({ characterId: 'tomori', costumeId: '036-live-sr-01' });
     store.actions.setAudioEnabled(true);
+    store.actions.setPointerTrackingEnabled(false);
     store.actions.setDisplayPolicy('smart');
     store.actions.moveTo({ x: 540, y: 180 });
     store.actions.setManualHidden(true);
@@ -89,6 +90,7 @@ describe('Live2D store', () => {
       placement: { kind: 'detached', x: 540, y: 180 },
       hidden: false,
       audioEnabled: true,
+      pointerTrackingEnabled: false,
       displayPolicy: 'smart',
       effects: { sway: true, breathe: true, blink: true },
     });
@@ -173,6 +175,7 @@ describe('Live2D store', () => {
       placement: { kind: 'detached', x: 400, y: 120 },
       hidden: false,
       audioEnabled: true,
+      pointerTrackingEnabled: true,
       displayPolicy: 'smart',
       effects: { sway: true, breathe: true, blink: true },
     });

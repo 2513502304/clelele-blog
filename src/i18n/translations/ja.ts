@@ -181,6 +181,8 @@ export const uiStrings: UIStrings = {
   'live2d.retry': '再試行',
   'live2d.audio': 'キャラクターボイス',
   'live2d.audioDescription': '触れ合う時に対応する日本語ボイスを再生',
+  'live2d.pointerTracking': '視線追従',
+  'live2d.pointerTrackingDescription': 'ポインターを追従し、無効時は正面に戻ります',
   'live2d.voiceLoading': 'キャラクターボイスを読み込み中',
   'live2d.voicePlaying': 'キャラクターボイスを再生中',
   'live2d.displayPolicy': '没入モーダルの表示方法',

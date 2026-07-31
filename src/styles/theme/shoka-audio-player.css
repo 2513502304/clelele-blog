@@ -73,8 +73,11 @@
   mix-blend-mode: overlay;
 }
 
-/* -- Vinyl disc ----------------------------------------------------------- */
-.audio-player-disc {
+/* Static button keeps the hit target stable while the vinyl rotates within it. */
+.audio-player-disc-button {
+  appearance: none;
+  padding: 0;
+  border: 0;
   width: 160px;
   height: 160px;
   border-radius: 50%;
@@ -82,24 +85,39 @@
   bottom: 0;
   left: 50%;
   transform: translateX(-50%);
+  background: transparent;
+  cursor: pointer;
+}
+
+/* -- Vinyl disc ----------------------------------------------------------- */
+.audio-player-disc {
+  position: absolute;
+  inset: 0;
+  display: block;
+  border-radius: 50%;
   background: #111;
   box-shadow:
     0 10px 30px -5px rgba(0, 0, 0, 0.4),
     0 0 0 1px rgba(255, 255, 255, 0.02);
-  animation: audio-disc-spin 20s linear infinite;
-  animation-play-state: paused;
+  animation:
+    audio-disc-spin 8s linear infinite,
+    audio-disc-breathe 4s ease-in-out infinite alternate;
+  animation-play-state: paused, paused;
   will-change: transform;
 }
 
 .audio-player-disc.spinning {
-  animation:
-    audio-disc-spin 8s linear infinite,
-    audio-disc-breathe 4s ease-in-out infinite alternate;
+  animation-play-state: running, running;
+}
+
+.audio-player-disc-button:focus-visible {
+  outline: 3px solid hsl(var(--primary) / 0.55);
+  outline-offset: 4px;
 }
 
 @keyframes audio-disc-spin {
   to {
-    transform: translateX(-50%) rotate(360deg);
+    transform: rotate(360deg);
   }
 }
 
@@ -376,6 +394,11 @@
   }
 
   .audio-player-disc {
+    width: 100%;
+    height: 100%;
+  }
+
+  .audio-player-disc-button {
     width: 120px;
     height: 120px;
   }

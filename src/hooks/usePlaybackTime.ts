@@ -18,7 +18,7 @@ import { type RefObject, useEffect, useRef, useSyncExternalStore } from 'react';
 export function usePlaybackProgress(
   timeStore: PlaybackTimeStore,
   progressBarRef: RefObject<HTMLElement | null>,
-  sliderRef?: RefObject<HTMLElement | null>,
+  sliderRef?: RefObject<HTMLInputElement | null>,
 ) {
   // biome-ignore lint/correctness/useExhaustiveDependencies: ref.current is accessed imperatively, refs are stable identity objects
   useEffect(() => {
@@ -28,9 +28,10 @@ export function usePlaybackProgress(
         bar.style.width = `${timeStore.getProgress()}%`;
       }
       const slider = sliderRef?.current;
-      if (slider) {
-        slider.setAttribute('aria-valuenow', String(Math.floor(timeStore.getCurrentTime())));
-        slider.setAttribute('aria-valuemax', String(Math.floor(timeStore.getDuration())));
+      if (slider && slider.dataset.scrubbing !== 'true') {
+        const duration = Math.max(timeStore.getDuration(), 0);
+        slider.max = String(Math.max(duration, 1));
+        slider.value = String(Math.min(timeStore.getCurrentTime(), duration));
       }
     };
     sync();

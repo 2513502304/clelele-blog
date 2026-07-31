@@ -24,6 +24,7 @@ export interface Live2DCore {
   getExpressions(): string[];
   playMotion(group: string, index?: number, priority?: number): void;
   setExpression(id: string): void;
+  setPointerTracking?(enabled: boolean): void;
   resetMotion?(): void;
   resetExpression?(): void;
   setEffects?(effects: { sway: boolean; breathe: boolean; blink: boolean }): void;
@@ -380,6 +381,11 @@ export class Live2DRenderer {
 
   setEffects(effects: { sway: boolean; breathe: boolean; blink: boolean }): void {
     if (this.phase === 'ready') this.core?.setEffects?.(effects);
+  }
+
+  /** Disables upstream document tracking while a Live2D control panel owns pointer focus. */
+  setPointerTracking(enabled: boolean): void {
+    if (this.phase === 'ready') this.core?.setPointerTracking?.(enabled);
   }
 
   getMotions(): Record<string, string[]> {
