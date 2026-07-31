@@ -18,7 +18,7 @@ interface EnhancedApi {
   login_qr_create: EnhancedApiMethod;
   login_qr_check: EnhancedApiMethod;
   login_status: EnhancedApiMethod;
-  song_url_v1: EnhancedApiMethod;
+  song_url: EnhancedApiMethod;
 }
 
 export interface NeteaseQrLogin {
@@ -52,13 +52,7 @@ async function getApi(): Promise<EnhancedApi> {
     apiPromise = import('@neteasecloudmusicapienhanced/api').then((loaded) => {
       const namespace = loaded as unknown as Record<string, unknown>;
       const candidate = (namespace.default ?? namespace['module.exports'] ?? namespace) as Partial<EnhancedApi>;
-      const required: (keyof EnhancedApi)[] = [
-        'login_qr_key',
-        'login_qr_create',
-        'login_qr_check',
-        'login_status',
-        'song_url_v1',
-      ];
+      const required: (keyof EnhancedApi)[] = ['login_qr_key', 'login_qr_create', 'login_qr_check', 'login_status', 'song_url'];
       if (required.some((name) => typeof candidate[name] !== 'function')) {
         throw new Error('NeteaseCloudMusicApiEnhanced does not expose the required methods.');
       }
@@ -108,25 +102,50 @@ export async function checkNeteaseQrLogin(key: string): Promise<NeteaseQrStatus>
 export async function getNeteaseAccountStatus(cookie: string): Promise<NeteaseAccountStatus> {
   const api = await getApi();
   const body = responseBody(await api.login_status({ cookie, timestamp: Date.now() }));
-  const data = asRecord(body.data);
-  const account = asRecord(data.account);
-  const profile = asRecord(data.profile);
+  return parseNeteaseAccountStatus(body);
+}
+
+/** Enhanced API 会把 `/login/status` 的原始响应包在 `data` 中，兼容直接响应便于后续升级依赖。 */
+export function parseNeteaseAccountStatus(value: unknown): NeteaseAccountStatus {
+  const body = asRecord(value);
+  const nested = asRecord(body.data);
+  const payload = Object.keys(nested).length > 0 ? nested : body;
+  const account = asRecord(payload.account);
+  const profile = asRecord(payload.profile);
   const userId = typeof account.id === 'number' ? account.id : typeof profile.userId === 'number' ? profile.userId : undefined;
   return {
-    authenticated: body.code === 200 && Boolean(userId),
+    authenticated: payload.code === 200 && Boolean(userId),
     userId,
     nickname: typeof profile.nickname === 'string' ? profile.nickname : undefined,
   };
 }
 
+const AUDIO_BITRATE_BY_LEVEL: Readonly<Record<string, number>> = {
+  standard: 128_000,
+  higher: 192_000,
+  exhigh: 320_000,
+  lossless: 999_000,
+  hires: 999_000,
+  jyeffect: 999_000,
+  sky: 999_000,
+  jymaster: 999_000,
+};
+
+/** `song_url` 使用码率而非级别；未知或超高规格安全回退到旧接口支持的最高档。 */
+export function getNeteaseAudioBitrate(level: string): number {
+  return AUDIO_BITRATE_BY_LEVEL[level] ?? AUDIO_BITRATE_BY_LEVEL.lossless;
+}
+
 export async function resolveNeteaseAudio(songId: string, cookie: string, level = 'exhigh'): Promise<NeteaseAudioResolution> {
   const api = await getApi();
-  const body = responseBody(await api.song_url_v1({ id: songId, level, cookie }));
+  // `song_url_v1` 依赖进程启动时写入 /tmp 的 XEAPI 公钥，不适合 Vercel 的无状态 Function。
+  // 经典 `song_url` 同样接受 MUSIC_U Cookie，并且不需要额外的临时运行时初始化。
+  const body = responseBody(await api.song_url({ id: songId, br: getNeteaseAudioBitrate(level), cookie }));
   const first = Array.isArray(body.data) ? asRecord(body.data[0]) : {};
   return {
     url: typeof first.url === 'string' && first.url ? first.url : null,
     freeTrial: first.freeTrialInfo !== null && first.freeTrialInfo !== undefined,
-    level: typeof first.level === 'string' ? first.level : undefined,
+    level: typeof first.level === 'string' ? first.level : level,
     type: typeof first.type === 'string' ? first.type : undefined,
   };
 }
