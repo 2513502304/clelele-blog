@@ -24,12 +24,12 @@ test('allows only the configured GitHub user to administer the music session', (
   const previousSecret = process.env.STYLE_GALLERY_SESSION_SECRET;
   const previousAdmin = process.env.MUSIC_ADMIN_GITHUB_ID;
   process.env.STYLE_GALLERY_SESSION_SECRET = 's'.repeat(48);
-  process.env.MUSIC_ADMIN_GITHUB_ID = '2513502304';
+  process.env.MUSIC_ADMIN_GITHUB_ID = '129171955';
 
   try {
     const ownerCookies = createCookieJar();
     setStyleGallerySession(ownerCookies, new URL('https://blog.example.test'), {
-      id: 2513502304,
+      id: 129171955,
       login: 'owner',
       avatarUrl: 'https://avatars.example.test/owner.png',
       profileUrl: 'https://github.com/owner',

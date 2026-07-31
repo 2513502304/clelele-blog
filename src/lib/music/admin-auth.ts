@@ -2,7 +2,7 @@ import { getStyleGalleryViewer, isStyleGalleryGitHubAuthEnabled } from '@lib/sty
 import type { AstroCookies } from 'astro';
 
 export function getMusicAdminGitHubId(): number {
-  const parsed = Number.parseInt(process.env.MUSIC_ADMIN_GITHUB_ID ?? '2513502304', 10);
+  const parsed = Number.parseInt(process.env.MUSIC_ADMIN_GITHUB_ID ?? '129171955', 10);
   if (!Number.isSafeInteger(parsed) || parsed <= 0) throw new Error('MUSIC_ADMIN_GITHUB_ID must be a positive GitHub user ID.');
   return parsed;
 }
