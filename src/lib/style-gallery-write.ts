@@ -61,7 +61,8 @@ export function serializeStyleGalleryWrite<T>(operation: () => Promise<T>): Prom
  *
  * 流程固定为：并发校验图片对象 -> 并发保存详情快照与详情对象 -> 每批只更新一次 catalog -> 重新读取验证。
  * 普通导入不会读写示例索引，只有草稿变更需要移除索引分组时才触碰它；任一步失败都会尽力恢复旧详情和索引。
- * 这样单批导入的主要复杂度保持为 O(批次 item 数 + catalog item 数)，避免对每个 item 重写一次全局 catalog。
+ * 单批详情 I/O 随批次 item 数线性增长；catalog 只重写一次，当前全量日期排序为 O(catalog item 数 log catalog item 数)。
+ * 该路径不会为每个 item 重写一次全局 catalog，因此不会因批量导入退化成重复的全表写入。
  * 生成示例必须走专用 endpoint，避免导入覆盖已有 Sub-gallery。
  */
 export async function writeStyleGalleryItems(
