@@ -49,11 +49,16 @@ export class StyleGalleryObjectConflictError extends HfS3ConflictError {
   }
 }
 
+export interface StyleGalleryObjectWriteConditions {
+  ifMatch?: string;
+  ifNoneMatch?: '*';
+}
+
 export async function putStyleGalleryObject(
   key: string,
   body: Uint8Array,
   contentType: string,
-  conditions: { ifMatch?: string; ifNoneMatch?: '*' } = {},
+  conditions: StyleGalleryObjectWriteConditions = {},
 ): Promise<void> {
   try {
     await client().put(key, body, contentType, conditions);

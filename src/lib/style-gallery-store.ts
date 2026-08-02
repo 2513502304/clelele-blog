@@ -3,6 +3,7 @@ import {
   getStyleGalleryObjectTextSnapshot,
   putStyleGalleryObject,
   StyleGalleryObjectConflictError,
+  type StyleGalleryObjectWriteConditions,
 } from '@lib/hf-s3-presign';
 import { styleGalleryCatalogSchema, styleGalleryExampleIndexSchema, styleGalleryItemSchema } from '@lib/style-gallery-schema';
 import type { StoredStyleGalleryItem, StyleGalleryCatalog, StyleGalleryExampleIndex } from '@/types/style-gallery';
@@ -91,10 +92,13 @@ export async function getStyleGalleryExampleIndex(options: { fresh?: boolean } =
   }
 }
 
-/** 写入前执行 schema 校验，并同步更新当前实例的详情缓存。 */
-export async function putStoredStyleGalleryItem(item: StoredStyleGalleryItem): Promise<void> {
+/** 写入前执行 schema 校验，并同步更新当前实例的详情缓存；可选条件用于避免覆盖跨实例并发更新。 */
+export async function putStoredStyleGalleryItem(
+  item: StoredStyleGalleryItem,
+  conditions: StyleGalleryObjectWriteConditions = {},
+): Promise<void> {
   const value = styleGalleryItemSchema.parse(item);
-  await putJson(getStyleGalleryItemKey(value.slug), value);
+  await putJson(getStyleGalleryItemKey(value.slug), value, conditions);
   itemCache.set(value.slug, { value, expiresAt: Date.now() + CACHE_TTL_MS });
 }
 
@@ -152,7 +156,7 @@ export function invalidateStyleGalleryStoreCache(): void {
   itemCache.clear();
 }
 
-async function putJson(key: string, value: unknown): Promise<void> {
+async function putJson(key: string, value: unknown, conditions: StyleGalleryObjectWriteConditions = {}): Promise<void> {
   const body = new TextEncoder().encode(`${JSON.stringify(value, null, 2)}\n`);
-  await putStyleGalleryObject(key, body, 'application/json; charset=utf-8');
+  await putStyleGalleryObject(key, body, 'application/json; charset=utf-8', conditions);
 }

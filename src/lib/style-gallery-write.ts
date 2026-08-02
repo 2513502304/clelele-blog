@@ -1,8 +1,9 @@
 import {
   deleteStyleGalleryObject,
-  getStyleGalleryObjectText,
+  getStyleGalleryObjectTextSnapshot,
   headStyleGalleryObject,
   putStyleGalleryObject,
+  StyleGalleryObjectConflictError,
 } from '@lib/hf-s3-presign';
 import { mapWithConcurrency } from '@lib/map-with-concurrency';
 import { assertStyleGalleryItemConsistency, getStyleGalleryItemAssetKeys } from '@lib/style-gallery-assets';
@@ -30,6 +31,7 @@ import type {
 
 const ASSET_VALIDATION_CONCURRENCY = 16;
 const ITEM_WRITE_CONCURRENCY = 16;
+const ITEM_WRITE_ATTEMPTS = 6;
 let writeQueue: Promise<unknown> = Promise.resolve();
 
 interface WriteItemsResult {
@@ -120,31 +122,16 @@ export async function writeStyleGalleryItems(
         candidates.push({ slug, submittedItem });
       }
 
-      const preparedWrites = await mapWithConcurrency(candidates, ITEM_WRITE_CONCURRENCY, async (candidate) => {
-        const itemKey = getStyleGalleryItemKey(candidate.slug);
-        const previousBody = await getStyleGalleryObjectText(itemKey);
-        const existingItem = previousBody ? styleGalleryItemSchema.parse(JSON.parse(previousBody)) : null;
-        const item = {
-          ...candidate.submittedItem,
-          slug: candidate.slug,
-          examples: existingItem?.examples ?? [],
-        };
-        return { item, previousBody };
-      });
-
-      for (const { item, previousBody } of preparedWrites) previousItemBodies.set(item.slug, previousBody);
-      const writeOutcomes = await mapWithConcurrency(preparedWrites, ITEM_WRITE_CONCURRENCY, async ({ item }) => {
-        try {
-          await putStoredStyleGalleryItem(item);
-          return null;
-        } catch (error) {
-          return error;
-        }
-      });
-      const writeErrors = writeOutcomes.filter((error) => error !== null);
+      const writeOutcomes = await mapWithConcurrency(candidates, ITEM_WRITE_CONCURRENCY, writeItemCandidate);
+      for (const outcome of writeOutcomes) {
+        if (outcome.item) previousItemBodies.set(outcome.item.slug, outcome.previousBody);
+      }
+      const writeErrors = writeOutcomes.flatMap((outcome) => (outcome.error ? [outcome.error] : []));
       if (writeErrors.length) throw new AggregateError(writeErrors, 'Failed to write one or more style gallery items.');
 
-      for (const { item } of preparedWrites) {
+      for (const outcome of writeOutcomes) {
+        if (!outcome.item) continue;
+        const { item } = outcome;
         writtenItems.push(item);
 
         if (item.draft) {
@@ -193,6 +180,47 @@ export async function writeStyleGalleryItems(
       throw error;
     }
   });
+}
+
+interface ItemWriteCandidate {
+  slug: string;
+  submittedItem: StoredStyleGalleryItem;
+}
+
+interface ItemWriteOutcome {
+  item: StoredStyleGalleryItem | null;
+  previousBody: string | null;
+  error: unknown | null;
+}
+
+/**
+ * 读取和条件写入在同一 worker 内完成。若其他实例先更新了 examples，HF 会返回 412；下一轮会读取
+ * 最新 item 并重新合并，避免 metadata 导入用旧快照覆盖刚上传的 Sub-gallery 数据。
+ */
+async function writeItemCandidate(candidate: ItemWriteCandidate): Promise<ItemWriteOutcome> {
+  for (let attempt = 1; attempt <= ITEM_WRITE_ATTEMPTS; attempt += 1) {
+    let snapshot: Awaited<ReturnType<typeof getStyleGalleryObjectTextSnapshot>>;
+    let item: StoredStyleGalleryItem;
+    try {
+      snapshot = await getStyleGalleryObjectTextSnapshot(getStyleGalleryItemKey(candidate.slug));
+      if (snapshot.text && !snapshot.etag) throw new Error(`HF did not return an ETag for item ${candidate.slug}.`);
+      const existingItem = snapshot.text ? styleGalleryItemSchema.parse(JSON.parse(snapshot.text)) : null;
+      item = styleGalleryItemSchema.parse({
+        ...candidate.submittedItem,
+        slug: candidate.slug,
+        examples: existingItem?.examples ?? [],
+      });
+      await putStoredStyleGalleryItem(item, snapshot.etag ? { ifMatch: snapshot.etag } : { ifNoneMatch: '*' });
+      return { item, previousBody: snapshot.text, error: null };
+    } catch (error) {
+      if (error instanceof StyleGalleryObjectConflictError && attempt < ITEM_WRITE_ATTEMPTS) {
+        await new Promise((resolve) => setTimeout(resolve, 40 * attempt + Math.floor(Math.random() * 80)));
+        continue;
+      }
+      return { item: null, previousBody: null, error };
+    }
+  }
+  return { item: null, previousBody: null, error: new Error(`Failed to write item ${candidate.slug}.`) };
 }
 
 export async function reconcileStyleGalleryExampleCounts(): Promise<{ checked: number; updated: number }> {

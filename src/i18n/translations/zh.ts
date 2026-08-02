@@ -144,6 +144,7 @@ export const uiStrings = {
   'gallery.sortDescending': '逆序',
   'gallery.imageCount': '{count} 张参考图',
   'gallery.exampleCount': '{count} 张生成示例',
+  'gallery.likeCount': '点赞数：{count}',
   'gallery.copy': '复制',
   'gallery.copied': '已复制',
   'gallery.copyRetry': '重试',

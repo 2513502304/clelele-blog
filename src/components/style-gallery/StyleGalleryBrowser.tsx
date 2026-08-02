@@ -39,6 +39,7 @@ export interface StyleGalleryBrowserLabels {
   sortDescending: string;
   imageCount: string;
   exampleCount: string;
+  likeCount: string;
   copy: string;
   copied: string;
   copyRetry: string;
@@ -230,7 +231,8 @@ export default function StyleGalleryBrowser({ items, tags, galleryBasePath, labe
                 </span>
                 <span className="inline-flex min-w-8 items-center justify-center gap-1 rounded-md bg-rose-500/90 px-2 py-1 font-bold text-[11px] text-white tabular-nums shadow-sm backdrop-blur-sm">
                   <Icon icon="ri:heart-3-fill" className="size-3" />
-                  {item.likeCount}
+                  <span className="sr-only">{labels.likeCount.replace('{count}', String(item.likeCount))}</span>
+                  <span aria-hidden="true">{item.likeCount}</span>
                 </span>
               </span>
             </a>

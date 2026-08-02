@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import type { StoredStyleGalleryItem } from '@/types/style-gallery';
+import type { StoredStyleGalleryItem, StyleGalleryExample } from '@/types/style-gallery';
 import { POST as writeItems } from '../pages/api/style-gallery/items';
 
 const token = 'test-upload-token';
@@ -64,6 +64,16 @@ describe('style gallery bulk item writes', () => {
         }),
       ],
     ]);
+    const objectVersions = new Map<string, number>([['metadata/catalog.json', 1]]);
+    const concurrentExample: StyleGalleryExample = {
+      id: 'concurrent-example',
+      src: '/api/style-gallery/image/examples/images/concurrent-example.webp',
+      alt: 'Concurrent example',
+      model: 'PixAI',
+      uploadedAt: '2026-08-03T00:01:00.000Z',
+      imageHash: 'f'.repeat(64),
+    };
+    let injectedItemConflict = false;
     let activeItemPuts = 0;
     let maxConcurrentItemPuts = 0;
     let catalogPutCount = 0;
@@ -82,7 +92,9 @@ describe('style gallery bulk item writes', () => {
       if (method === 'HEAD') return new Response(null, { status: 200 });
       if (method === 'GET') {
         const value = objects.get(key);
-        return value === undefined ? new Response(null, { status: 404 }) : new Response(value);
+        return value === undefined
+          ? new Response(null, { status: 404 })
+          : new Response(value, { headers: { etag: `"${objectVersions.get(key) ?? 1}"` } });
       }
       if (method === 'PUT') {
         if (key.startsWith('items/')) {
@@ -90,10 +102,27 @@ describe('style gallery bulk item writes', () => {
           maxConcurrentItemPuts = Math.max(maxConcurrentItemPuts, activeItemPuts);
           await new Promise((resolve) => setTimeout(resolve, 10));
           activeItemPuts -= 1;
+          if (!injectedItemConflict) {
+            const concurrentlyUpdatedItem = JSON.parse(bodyText(init?.body)) as StoredStyleGalleryItem;
+            objects.set(key, JSON.stringify({ ...concurrentlyUpdatedItem, examples: [concurrentExample] }));
+            objectVersions.set(key, 1);
+            injectedItemConflict = true;
+            return new Response(null, { status: 412 });
+          }
+        }
+        const requestHeaders = new Headers(init?.headers);
+        const currentValue = objects.get(key);
+        const currentEtag = currentValue === undefined ? null : `"${objectVersions.get(key) ?? 1}"`;
+        if (requestHeaders.get('if-none-match') === '*' && currentValue !== undefined) {
+          return new Response(null, { status: 412 });
+        }
+        if (requestHeaders.has('if-match') && requestHeaders.get('if-match') !== currentEtag) {
+          return new Response(null, { status: 412 });
         }
         if (key === 'metadata/catalog.json') catalogPutCount += 1;
         if (key === 'examples/index-v2.json') exampleIndexPutCount += 1;
         objects.set(key, bodyText(init?.body));
+        objectVersions.set(key, (objectVersions.get(key) ?? 0) + 1);
         return new Response(null, { status: 200 });
       }
       if (method === 'DELETE') {
@@ -118,6 +147,10 @@ describe('style gallery bulk item writes', () => {
       assert.equal(catalogPutCount, 1);
       assert.equal(exampleIndexPutCount, 0);
       assert.equal(JSON.parse(objects.get('metadata/catalog.json') ?? '{}').items.length, items.length);
+      const savedItems = [...objects.entries()]
+        .filter(([key]) => key.startsWith('items/'))
+        .map(([, value]) => JSON.parse(value) as StoredStyleGalleryItem);
+      assert.ok(savedItems.some((item) => item.examples.some((example) => example.id === concurrentExample.id)));
     } finally {
       globalThis.fetch = previousFetch;
       for (const [name, value] of Object.entries({
