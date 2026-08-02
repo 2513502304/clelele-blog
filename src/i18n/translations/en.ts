@@ -145,6 +145,7 @@ export const uiStrings: UIStrings = {
   'gallery.sortAscending': 'Ascending',
   'gallery.sortDescending': 'Descending',
   'gallery.imageCount': '{count} reference images',
+  'gallery.exampleCount': '{count} generated examples',
   'gallery.copy': 'Copy',
   'gallery.copied': 'Copied',
   'gallery.copyRetry': 'Retry',

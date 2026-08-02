@@ -38,6 +38,7 @@ export interface StyleGalleryBrowserLabels {
   sortAscending: string;
   sortDescending: string;
   imageCount: string;
+  exampleCount: string;
   copy: string;
   copied: string;
   copyRetry: string;
@@ -221,9 +222,16 @@ export default function StyleGalleryBrowser({ items, tags, galleryBasePath, labe
                 loading="lazy"
                 className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
               />
-              <span className="absolute right-2 bottom-2 inline-flex min-w-8 items-center justify-center gap-1 rounded-md bg-rose-500/90 px-2 py-1 font-bold text-[11px] text-white tabular-nums shadow-sm backdrop-blur-sm">
-                <Icon icon="ri:heart-3-fill" className="size-3" />
-                {item.likeCount}
+              <span className="absolute right-2 bottom-2 flex items-center gap-1.5">
+                <span className="inline-flex min-w-8 items-center justify-center gap-1 rounded-md bg-gray-950/80 px-2 py-1 font-bold text-[11px] text-white tabular-nums shadow-sm backdrop-blur-sm">
+                  <Icon icon="ri:image-2-fill" className="size-3" />
+                  <span className="sr-only">{labels.exampleCount.replace('{count}', String(item.exampleCount))}</span>
+                  <span aria-hidden="true">{item.exampleCount}</span>
+                </span>
+                <span className="inline-flex min-w-8 items-center justify-center gap-1 rounded-md bg-rose-500/90 px-2 py-1 font-bold text-[11px] text-white tabular-nums shadow-sm backdrop-blur-sm">
+                  <Icon icon="ri:heart-3-fill" className="size-3" />
+                  {item.likeCount}
+                </span>
               </span>
             </a>
             <div className="space-y-3 p-4">
