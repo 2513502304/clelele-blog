@@ -145,6 +145,8 @@ export const uiStrings: UIStrings = {
   'gallery.sortAscending': '昇順',
   'gallery.sortDescending': '降順',
   'gallery.imageCount': '参考画像 {count} 枚',
+  'gallery.exampleCount': '生成例 {count} 枚',
+  'gallery.likeCount': 'いいね数: {count}',
   'gallery.copy': 'コピー',
   'gallery.copied': 'コピー済み',
   'gallery.copyRetry': '再試行',

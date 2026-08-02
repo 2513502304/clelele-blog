@@ -4,6 +4,7 @@ import { appendFile, mkdir, readFile, rename, rm, stat, writeFile } from 'node:f
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Live2DCostume, Live2DInteraction, Live2DVoicePack } from '../../src/lib/live2d/types';
+import { configureEnvironmentProxy } from '../lib/environment-proxy.mjs';
 import {
   commitRemoteCatalogUpdates,
   type Live2DCatalogUpdate,
@@ -647,6 +648,7 @@ function voiceCatalogUpdate(record: VoiceCheckpointRecord): Live2DVoiceCatalogUp
 }
 
 async function main(): Promise<void> {
+  configureEnvironmentProxy();
   const options = parseArguments(process.argv.slice(2));
   const source = await loadSourceIndex(options);
   const checkpoint = path.join(options.workspace, 'manifest.jsonl');
@@ -852,6 +854,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
 前台全量同步（推荐）：直接在终端显示进度，按 Ctrl+C 或关闭终端即可停止；再次运行会从
 .cache/live2d-bestdori/*.jsonl checkpoint 继续，已验证的不可变 HF 对象不会重复上传。
 
+HTTP_PROXY=http://127.0.0.1:7897 \
+HTTPS_PROXY=http://127.0.0.1:7897 \
 LIVE2D_HF_S3_WRITE_ACCESS_KEY_ID=$(aws configure get aws_access_key_id --profile hf) \
 LIVE2D_HF_S3_WRITE_SECRET_ACCESS_KEY=$(aws configure get aws_secret_access_key --profile hf) \
 npm run sync:live2d-bestdori -- \

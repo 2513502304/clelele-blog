@@ -23,6 +23,8 @@ export interface StyleGalleryImageIndexLabels {
   sortAscending: string;
   sortDescending: string;
   imageCount: string;
+  exampleCount: string;
+  likeCount: string;
   noMatches: string;
   view: string;
   loadMore: string;
@@ -148,7 +150,7 @@ function StyleGalleryImageIndexContent({ items, galleryBasePath, labels }: Style
                 href={`${galleryBasePath}/${item.slug}`}
                 data-astro-prefetch="false"
                 className="group relative aspect-square min-w-0 overflow-hidden rounded-md border border-border bg-muted shadow-sm transition hover:z-10 hover:-translate-y-0.5 hover:border-primary/60 hover:shadow-md focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                aria-label={`${labels.view}: ${item.title}`}
+                aria-label={`${labels.view}: ${item.title}; ${labels.exampleCount.replace('{count}', String(item.exampleCount))}; ${labels.likeCount.replace('{count}', String(item.likeCount))}`}
                 title={item.title}
               >
                 <img
@@ -172,9 +174,17 @@ function StyleGalleryImageIndexContent({ items, galleryBasePath, labels }: Style
                     ×{item.imageCount}
                   </span>
                 )}
-                <span className="absolute right-1 bottom-6 inline-flex min-w-7 items-center justify-center gap-0.5 rounded-sm bg-rose-500/90 px-1 py-0.5 font-bold text-[9px] text-white tabular-nums">
-                  <Icon icon="ri:heart-3-fill" className="size-2.5" />
-                  {item.likeCount}
+                <span className="absolute right-1 bottom-6 flex items-center gap-1">
+                  <span className="inline-flex min-w-7 items-center justify-center gap-0.5 rounded-sm bg-black/70 px-1 py-0.5 font-bold text-[9px] text-white tabular-nums">
+                    <Icon icon="ri:image-2-fill" className="size-2.5" />
+                    <span className="sr-only">{labels.exampleCount.replace('{count}', String(item.exampleCount))}</span>
+                    <span aria-hidden="true">{item.exampleCount}</span>
+                  </span>
+                  <span className="inline-flex min-w-7 items-center justify-center gap-0.5 rounded-sm bg-rose-500/90 px-1 py-0.5 font-bold text-[9px] text-white tabular-nums">
+                    <Icon icon="ri:heart-3-fill" className="size-2.5" />
+                    <span className="sr-only">{labels.likeCount.replace('{count}', String(item.likeCount))}</span>
+                    <span aria-hidden="true">{item.likeCount}</span>
+                  </span>
                 </span>
                 <span className="absolute inset-x-0 bottom-0 truncate bg-black/70 px-1.5 py-1 font-mono text-[9px] text-white">
                   {item.imageHash.slice(0, 12)}
