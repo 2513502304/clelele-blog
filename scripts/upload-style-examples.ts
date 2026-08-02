@@ -19,6 +19,7 @@ import {
 import { styleGalleryCatalogSchema, styleGalleryExampleSchema } from '@lib/style-gallery-schema';
 import { z } from 'zod';
 import type { StyleGalleryExample } from '@/types/style-gallery';
+import { configureEnvironmentProxy } from './lib/environment-proxy.mjs';
 
 interface LocalImage {
   contentType: string;
@@ -323,6 +324,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  configureEnvironmentProxy();
   const options = parseStyleGalleryExampleUploadArgs(process.argv.slice(2));
   if (options.help) {
     usage();
@@ -426,7 +428,6 @@ main().catch((error) => {
 
 /*
 运行示例：
-NODE_OPTIONS=--use-env-proxy \
 HTTP_PROXY=http://127.0.0.1:7897 \
 HTTPS_PROXY=http://127.0.0.1:7897 \
 npm run upload:style-examples -- --item 2a256d37220e --platform PixAI /path/to/first.webp /path/to/second.webp

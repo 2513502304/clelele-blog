@@ -3,13 +3,15 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import sharp from 'sharp';
+import { configureEnvironmentProxy } from './lib/environment-proxy.mjs';
 
 const PLACEHOLDER = '[在此处替换为您想要生成的主体内容]';
 const DEFAULT_API_BASE_URL = process.env.STYLE_GALLERY_API_BASE_URL ?? 'https://clelele-blog.vercel.app';
 const REQUEST_TIMEOUT_MS = positiveInteger(process.env.STYLE_GALLERY_IMPORT_REQUEST_TIMEOUT_MS, 30_000);
-const UPLOAD_TIMEOUT_MS = positiveInteger(process.env.STYLE_GALLERY_IMPORT_UPLOAD_TIMEOUT_MS, 120_000);
+const UPLOAD_TIMEOUT_MS = positiveInteger(process.env.STYLE_GALLERY_IMPORT_UPLOAD_TIMEOUT_MS, 300_000);
 const REQUEST_ATTEMPTS = positiveInteger(process.env.STYLE_GALLERY_IMPORT_ATTEMPTS, 3);
 const UPLOAD_CONCURRENCY = positiveInteger(process.env.STYLE_GALLERY_IMPORT_UPLOAD_CONCURRENCY, 5);
+const ITEM_BATCH_SIZE = Math.min(positiveInteger(process.env.STYLE_GALLERY_IMPORT_ITEM_BATCH_SIZE, 50), 100);
 
 class NonRetryableRequestError extends Error {}
 
@@ -199,11 +201,16 @@ async function requestJson(url, options, timeoutMs = REQUEST_TIMEOUT_MS) {
     } catch (error) {
       if (error instanceof NonRetryableRequestError) throw error;
       lastError = error;
+      if (error?.name === 'TimeoutError') {
+        console.warn(`Request timed out after ${timeoutMs}ms (${attempt}/${REQUEST_ATTEMPTS}): ${url}`);
+      }
       if (attempt === REQUEST_ATTEMPTS) break;
     }
     await sleep(400 * 2 ** (attempt - 1) + Math.floor(Math.random() * 200));
   }
-  throw new Error(`Request failed after ${REQUEST_ATTEMPTS} attempts: ${url}`, { cause: lastError });
+  throw new Error(`Request failed after ${REQUEST_ATTEMPTS} attempts (${timeoutMs}ms per attempt): ${url}`, {
+    cause: lastError,
+  });
 }
 
 /** 上传一个 HF 签名 URL；每次重试都有独立 timeout，明确的非重试型 4xx 会立即失败。 */
@@ -241,11 +248,15 @@ async function prepareAndUploadAssets(apiBaseUrl, token, assets) {
   const entries = [...assets.entries()];
   const uploadedKeys = [];
   for (const chunk of chunks(entries, 200)) {
-    const prepared = await requestJson(`${apiBaseUrl}/api/style-gallery/uploads`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ action: 'prepare', keys: chunk.map(([key]) => key) }),
-    });
+    const prepared = await requestJson(
+      `${apiBaseUrl}/api/style-gallery/uploads`,
+      {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'prepare', keys: chunk.map(([key]) => key) }),
+      },
+      UPLOAD_TIMEOUT_MS,
+    );
     const uploadByKey = new Map(prepared.uploads.map((upload) => [upload.key, upload]));
     const pending = chunk.filter(([key]) => !uploadByKey.get(key)?.exists);
     let nextIndex = 0;
@@ -267,11 +278,15 @@ async function prepareAndUploadAssets(apiBaseUrl, token, assets) {
 async function cleanupAssets(apiBaseUrl, token, keys) {
   if (!keys.length) return;
   for (const chunk of chunks(keys, 200)) {
-    await requestJson(`${apiBaseUrl}/api/style-gallery/uploads`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ action: 'cleanup', keys: chunk }),
-    }).catch((error) => console.error(`Cleanup warning: ${error.message}`));
+    await requestJson(
+      `${apiBaseUrl}/api/style-gallery/uploads`,
+      {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'cleanup', keys: chunk }),
+      },
+      UPLOAD_TIMEOUT_MS,
+    ).catch((error) => console.error(`Cleanup warning: ${error.message}`));
   }
 }
 
@@ -286,6 +301,7 @@ function sleep(ms) {
 }
 
 async function main() {
+  configureEnvironmentProxy();
   const { apiBaseUrl, help, metadataOnly, sessionPath } = parseArgs(process.argv.slice(2));
   if (help || !sessionPath) {
     usage();
@@ -306,14 +322,24 @@ async function main() {
     uploadedKeys = await prepareAndUploadAssets(apiBaseUrl, token, prepared.assets);
     let written = 0;
     let apiDuplicates = 0;
-    for (const itemChunk of chunks(prepared.items, 100)) {
-      const result = await requestJson(`${apiBaseUrl}/api/style-gallery/items`, {
-        method: 'POST',
-        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ mode: metadataOnly ? 'upsert' : 'create', items: itemChunk }),
-      });
+    const itemChunks = chunks(prepared.items, ITEM_BATCH_SIZE);
+    for (let index = 0; index < itemChunks.length; index += 1) {
+      const itemChunk = itemChunks[index];
+      console.log(`Writing metadata batch ${index + 1}/${itemChunks.length} (${itemChunk.length} item(s))...`);
+      const result = await requestJson(
+        `${apiBaseUrl}/api/style-gallery/items`,
+        {
+          method: 'POST',
+          headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ mode: metadataOnly ? 'upsert' : 'create', items: itemChunk }),
+        },
+        UPLOAD_TIMEOUT_MS,
+      );
       written += result.written ?? 0;
       apiDuplicates += result.skippedDuplicates ?? 0;
+      console.log(
+        `Completed metadata batch ${index + 1}/${itemChunks.length}: ${result.written ?? 0} written, ${result.skippedDuplicates ?? 0} duplicate(s).`,
+      );
     }
     console.log(`Uploaded ${uploadedKeys.length} missing image assets with concurrency ${UPLOAD_CONCURRENCY}.`);
     console.log(`${metadataOnly ? 'Updated' : 'Wrote'} ${written} gallery metadata items in HF storage.`);
@@ -332,7 +358,6 @@ main().catch((error) => {
 });
 
 /*
-NODE_OPTIONS=--use-env-proxy \
 HTTP_PROXY=http://127.0.0.1:7897 \
 HTTPS_PROXY=http://127.0.0.1:7897 \
 STYLE_GALLERY_UPLOAD_TOKEN='...' \

@@ -28,7 +28,8 @@ import type {
   StyleGalleryExampleIndexGroup,
 } from '@/types/style-gallery';
 
-const ASSET_VALIDATION_CONCURRENCY = 8;
+const ASSET_VALIDATION_CONCURRENCY = 16;
+const ITEM_WRITE_CONCURRENCY = 16;
 let writeQueue: Promise<unknown> = Promise.resolve();
 
 interface WriteItemsResult {
@@ -58,8 +59,10 @@ export function serializeStyleGalleryWrite<T>(operation: () => Promise<T>): Prom
 /**
  * 写入新 item 或更新既有 item。
  *
- * 流程固定为：校验元数据和图片对象存在 -> 保存详情快照 -> 更新 catalog 与示例索引 -> 重新读取验证。
- * 任一步失败都会尽力恢复旧详情和索引；生成示例必须走专用 endpoint，避免导入覆盖已有 Sub-gallery。
+ * 流程固定为：并发校验图片对象 -> 并发保存详情快照与详情对象 -> 每批只更新一次 catalog -> 重新读取验证。
+ * 普通导入不会读写示例索引，只有草稿变更需要移除索引分组时才触碰它；任一步失败都会尽力恢复旧详情和索引。
+ * 这样单批导入的主要复杂度保持为 O(批次 item 数 + catalog item 数)，避免对每个 item 重写一次全局 catalog。
+ * 生成示例必须走专用 endpoint，避免导入覆盖已有 Sub-gallery。
  */
 export async function writeStyleGalleryItems(
   submittedItems: StoredStyleGalleryItem[],
@@ -88,18 +91,18 @@ export async function writeStyleGalleryItems(
     const items = [...byHash.values()];
     await validateItemAssets(items);
 
-    const [previousCatalog, previousIndex] = await Promise.all([
-      getStyleGalleryCatalog({ fresh: true }),
-      getStyleGalleryExampleIndex({ fresh: true }),
-    ]);
+    const previousCatalog = await getStyleGalleryCatalog({ fresh: true });
     const nextBySlug = new Map(previousCatalog.items.map((item) => [item.slug, item]));
     const slugByHash = new Map(previousCatalog.items.map((item) => [item.imageHash, item.slug]));
     const previousItemBodies = new Map<string, string | null>();
     const writtenItems: StoredStyleGalleryItem[] = [];
     const attemptedIndexGroups = new Map<string, StyleGalleryExampleIndexGroup | null>();
+    let previousIndex: StyleGalleryExampleIndex | null = null;
     let skippedDuplicates = 0;
 
     try {
+      const reservedSlugHashes = new Map(previousCatalog.items.map((item) => [item.slug, item.imageHash]));
+      const candidates: Array<{ slug: string; submittedItem: StoredStyleGalleryItem }> = [];
       for (const submittedItem of items) {
         const existingSlug = slugByHash.get(submittedItem.imageHash);
         if (existingSlug && mode === 'create') {
@@ -108,27 +111,46 @@ export async function writeStyleGalleryItems(
         }
 
         const slug = existingSlug ?? submittedItem.slug;
-        const slugCollision = nextBySlug.get(slug);
-        if (slugCollision && slugCollision.imageHash !== submittedItem.imageHash) {
+        const reservedHash = reservedSlugHashes.get(slug);
+        if (reservedHash && reservedHash !== submittedItem.imageHash) {
           throw new StyleGalleryClientError(`Style gallery slug collision: ${slug}`, 409);
         }
+        reservedSlugHashes.set(slug, submittedItem.imageHash);
+        candidates.push({ slug, submittedItem });
+      }
 
-        const existingItem = existingSlug ? await getStoredStyleGalleryItem(existingSlug, { fresh: true }) : null;
+      const preparedWrites = await mapWithConcurrency(candidates, ITEM_WRITE_CONCURRENCY, async (candidate) => {
+        const itemKey = getStyleGalleryItemKey(candidate.slug);
+        const previousBody = await getStyleGalleryObjectText(itemKey);
+        const existingItem = previousBody ? styleGalleryItemSchema.parse(JSON.parse(previousBody)) : null;
         const item = {
-          ...submittedItem,
-          slug,
+          ...candidate.submittedItem,
+          slug: candidate.slug,
           examples: existingItem?.examples ?? [],
         };
-        const itemKey = getStyleGalleryItemKey(slug);
-        previousItemBodies.set(slug, await getStyleGalleryObjectText(itemKey));
-        await putStoredStyleGalleryItem(item);
+        return { item, previousBody };
+      });
+
+      for (const { item, previousBody } of preparedWrites) previousItemBodies.set(item.slug, previousBody);
+      const writeOutcomes = await mapWithConcurrency(preparedWrites, ITEM_WRITE_CONCURRENCY, async ({ item }) => {
+        try {
+          await putStoredStyleGalleryItem(item);
+          return null;
+        } catch (error) {
+          return error;
+        }
+      });
+      const writeErrors = writeOutcomes.filter((error) => error !== null);
+      if (writeErrors.length) throw new AggregateError(writeErrors, 'Failed to write one or more style gallery items.');
+
+      for (const { item } of preparedWrites) {
         writtenItems.push(item);
 
         if (item.draft) {
-          nextBySlug.delete(slug);
+          nextBySlug.delete(item.slug);
         } else {
-          nextBySlug.set(slug, toStyleGalleryCatalogItem(item));
-          slugByHash.set(item.imageHash, slug);
+          nextBySlug.set(item.slug, toStyleGalleryCatalogItem(item));
+          slugByHash.set(item.imageHash, item.slug);
         }
       }
 
@@ -144,12 +166,15 @@ export async function writeStyleGalleryItems(
         for (const item of writtenItems) {
           if (!activeSlugs.has(item.slug)) attemptedIndexGroups.set(item.slug, null);
         }
+        if (attemptedIndexGroups.size) previousIndex = await getStyleGalleryExampleIndex({ fresh: true });
         await putStyleGalleryCatalog(nextCatalog);
-        await mutateStyleGalleryExampleIndex((current) => ({
-          version: 2,
-          updatedAt: nextCatalog.updatedAt,
-          groups: current.groups.filter((group) => activeSlugs.has(group.sourceSlug)),
-        }));
+        if (attemptedIndexGroups.size) {
+          await mutateStyleGalleryExampleIndex((current) => ({
+            version: 2,
+            updatedAt: nextCatalog.updatedAt,
+            groups: current.groups.filter((group) => activeSlugs.has(group.sourceSlug)),
+          }));
+        }
         invalidateStyleGalleryStoreCache();
         const savedCatalog = await getStyleGalleryCatalog({ fresh: true });
         assertCatalogContains(
@@ -287,7 +312,7 @@ function assertCatalogContains(catalog: StyleGalleryCatalog, items: StoredStyleG
 
 async function rollbackMetadata(
   previousCatalog: StyleGalleryCatalog,
-  previousIndex: StyleGalleryExampleIndex,
+  previousIndex: StyleGalleryExampleIndex | null,
   previousItemBodies: Map<string, string | null>,
   attemptedIndexGroups: ReadonlyMap<string, StyleGalleryExampleIndexGroup | null>,
 ): Promise<unknown[]> {
@@ -310,7 +335,7 @@ async function rollbackMetadata(
   } catch (error) {
     errors.push(error);
   }
-  if (attemptedIndexGroups.size) {
+  if (previousIndex && attemptedIndexGroups.size) {
     try {
       await restoreStyleGalleryExampleIndexStructure(previousIndex, attemptedIndexGroups);
     } catch (error) {
