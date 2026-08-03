@@ -15,7 +15,7 @@ export const STYLE_GALLERY_ITEM_PREFIX = 'items';
 
 const CACHE_TTL_MS = 30_000;
 let catalogCache: { value: StyleGalleryCatalog; expiresAt: number } | null = null;
-let exampleIndexCache: { value: StyleGalleryExampleIndex; expiresAt: number } | null = null;
+let exampleIndexCache: { value: StyleGalleryExampleIndex; etag: string | null; expiresAt: number } | null = null;
 let exampleIndexWriteQueue: Promise<unknown> = Promise.resolve();
 const itemCache = new Map<string, { value: StoredStyleGalleryItem; expiresAt: number }>();
 
@@ -77,11 +77,11 @@ export async function getStyleGalleryExampleIndex(options: { fresh?: boolean } =
   if (!options.fresh && exampleIndexCache && exampleIndexCache.expiresAt > now) return exampleIndexCache.value;
 
   try {
-    const raw = await getStyleGalleryObjectText(STYLE_GALLERY_EXAMPLE_INDEX_KEY);
-    const value = raw
-      ? styleGalleryExampleIndexSchema.parse(JSON.parse(raw))
+    const snapshot = await getStyleGalleryObjectTextSnapshot(STYLE_GALLERY_EXAMPLE_INDEX_KEY);
+    const value = snapshot.text
+      ? styleGalleryExampleIndexSchema.parse(JSON.parse(snapshot.text))
       : { version: 2 as const, updatedAt: new Date(0).toISOString(), groups: [] };
-    exampleIndexCache = { value, expiresAt: now + CACHE_TTL_MS };
+    exampleIndexCache = { value, etag: snapshot.etag, expiresAt: now + CACHE_TTL_MS };
     return value;
   } catch (error) {
     if (!options.fresh && exampleIndexCache) {
@@ -117,24 +117,41 @@ export function mutateStyleGalleryExampleIndex(
 ): Promise<StyleGalleryExampleIndex> {
   const operation = async () => {
     for (let attempt = 1; attempt <= 6; attempt += 1) {
-      const snapshot = await getStyleGalleryObjectTextSnapshot(STYLE_GALLERY_EXAMPLE_INDEX_KEY);
-      const current = snapshot.text
-        ? styleGalleryExampleIndexSchema.parse(JSON.parse(snapshot.text))
-        : { version: 2 as const, updatedAt: new Date(0).toISOString(), groups: [] };
-      if (snapshot.text && !snapshot.etag) throw new Error('HF did not return an ETag for the style gallery example index.');
-      const next = styleGalleryExampleIndexSchema.parse(transform(current));
+      // 页面 SSR/登录态查询通常已经读取过索引。复用带 ETag 的短期快照可省掉一次 1 MB 级下载；
+      // 若其他 Vercel 实例已写入，If-Match 会返回 412，下一轮再强制读取最新对象并重放 transform。
+      const cached =
+        attempt === 1 && exampleIndexCache?.etag && exampleIndexCache.expiresAt > Date.now() ? exampleIndexCache : null;
+      const snapshot = cached
+        ? { text: null, etag: cached.etag }
+        : await getStyleGalleryObjectTextSnapshot(STYLE_GALLERY_EXAMPLE_INDEX_KEY);
+      const current = cached
+        ? cached.value
+        : snapshot.text
+          ? styleGalleryExampleIndexSchema.parse(JSON.parse(snapshot.text))
+          : { version: 2 as const, updatedAt: new Date(0).toISOString(), groups: [] };
+      if (!cached && snapshot.text && !snapshot.etag) {
+        throw new Error('HF did not return an ETag for the style gallery example index.');
+      }
+      const transformed = transform(current);
+      // 幂等请求返回同一对象表示没有持久化变化，不刷新 updatedAt，也不消耗 HF 写请求。
+      if (transformed === current) {
+        exampleIndexCache = { value: current, etag: snapshot.etag, expiresAt: Date.now() + CACHE_TTL_MS };
+        return current;
+      }
+      const next = styleGalleryExampleIndexSchema.parse(transformed);
       const body = new TextEncoder().encode(`${JSON.stringify(next, null, 2)}\n`);
       try {
-        await putStyleGalleryObject(
+        const etag = await putStyleGalleryObject(
           STYLE_GALLERY_EXAMPLE_INDEX_KEY,
           body,
           'application/json; charset=utf-8',
           snapshot.etag ? { ifMatch: snapshot.etag } : { ifNoneMatch: '*' },
         );
-        exampleIndexCache = { value: next, expiresAt: Date.now() + CACHE_TTL_MS };
+        exampleIndexCache = { value: next, etag, expiresAt: Date.now() + CACHE_TTL_MS };
         return next;
       } catch (error) {
         if (!(error instanceof StyleGalleryObjectConflictError) || attempt === 6) throw error;
+        exampleIndexCache = null;
         await new Promise((resolve) => setTimeout(resolve, 40 * attempt + Math.floor(Math.random() * 80)));
       }
     }

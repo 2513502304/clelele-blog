@@ -181,23 +181,27 @@ export const PATCH: APIRoute = async ({ params, request }) => {
     const platform = getStyleGalleryPlatform(body.platform);
     if (!platform) return new Response('Invalid style gallery platform.', { status: 400 });
     const selectedIds = new Set(body.ids);
-    const result = await updateStyleGalleryItemExamples(slug, (examples, item) => {
-      const found = examples.filter((example) => selectedIds.has(example.id));
-      if (found.length !== selectedIds.size) throw new StyleGalleryClientError('One or more examples were not found.', 404);
-      const updated = examples.map((example) =>
-        selectedIds.has(example.id)
-          ? { ...example, alt: `${item.title} ${platform.label} example`, model: platform.label }
-          : example,
-      );
-      const identities = updated.map(getStyleGalleryExampleIdentity);
-      if (new Set(identities).size !== identities.length) {
-        throw new StyleGalleryClientError(
-          'Changing platform would duplicate an existing image in the destination platform.',
-          409,
+    const result = await updateStyleGalleryItemExamples(
+      slug,
+      (examples, item) => {
+        const found = examples.filter((example) => selectedIds.has(example.id));
+        if (found.length !== selectedIds.size) throw new StyleGalleryClientError('One or more examples were not found.', 404);
+        const updated = examples.map((example) =>
+          selectedIds.has(example.id)
+            ? { ...example, alt: `${item.title} ${platform.label} example`, model: platform.label }
+            : example,
         );
-      }
-      return updated;
-    });
+        const identities = updated.map(getStyleGalleryExampleIdentity);
+        if (new Set(identities).size !== identities.length) {
+          throw new StyleGalleryClientError(
+            'Changing platform would duplicate an existing image in the destination platform.',
+            409,
+          );
+        }
+        return updated;
+      },
+      { catalogMode: 'preserve-count' },
+    );
     return Response.json({ examples: result.item.examples, updatedAt: result.item.updated });
   } catch (error) {
     if (error instanceof z.ZodError) return new Response(error.message, { status: 400 });

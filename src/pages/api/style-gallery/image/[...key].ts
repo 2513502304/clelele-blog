@@ -1,4 +1,4 @@
-import { createStyleGallerySignedImageUrl } from '@lib/hf-s3-presign';
+import { createStyleGallerySignedImageUrl, getStyleGallerySignedImageRedirectCacheSeconds } from '@lib/hf-s3-presign';
 import type { APIRoute } from 'astro';
 
 export const prerender = false;
@@ -57,11 +57,14 @@ export const GET: APIRoute = async ({ params, request }) => {
         ?.replace(/[^a-zA-Z0-9._-]/g, '_') || 'image';
     if (download || import.meta.env.DEV) return await proxyImage(signedUrl, download ? filename : undefined);
 
+    const cacheSeconds = getStyleGallerySignedImageRedirectCacheSeconds();
     return new Response(null, {
       status: 302,
       headers: {
         location: signedUrl,
-        'cache-control': 'no-store',
+        // 浏览器和 Vercel 边缘节点都可复用 302；缓存会在签名失效前提前结束，随后自然换取新 URL。
+        'cache-control': cacheSeconds ? `public, max-age=${cacheSeconds}` : 'no-store',
+        ...(cacheSeconds && { 'vercel-cdn-cache-control': `public, s-maxage=${cacheSeconds}` }),
       },
     });
   } catch (error) {

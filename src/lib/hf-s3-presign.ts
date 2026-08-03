@@ -7,11 +7,27 @@ const DEFAULT_REGION = 'us-east-1';
 const DEFAULT_TTL_SECONDS = 60 * 60 * 24;
 const MAX_TTL_SECONDS = 60 * 60 * 24 * 7;
 const DEFAULT_UPLOAD_TTL_SECONDS = 15 * 60;
+const SIGNED_URL_CACHE_SAFETY_SECONDS = 5 * 60;
 
 function getTtlSeconds(): number {
   const parsed = Number.parseInt(process.env.STYLE_GALLERY_SIGNED_URL_TTL_SECONDS ?? '', 10);
   if (!Number.isFinite(parsed)) return DEFAULT_TTL_SECONDS;
   return Math.min(Math.max(parsed, 1), MAX_TTL_SECONDS);
+}
+
+/** HF 图片域名只用于浏览器连接预热，不包含 bucket 路径或任何凭据。 */
+export function getStyleGalleryImageStorageOrigin(): string {
+  return new URL(process.env.HF_S3_ENDPOINT ?? DEFAULT_ENDPOINT).origin;
+}
+
+/**
+ * 让 Vercel CDN 缓存图片重定向，同时确保缓存至少比预签名 URL 提前一段时间失效。
+ * 很短的自定义 TTL 保留一半有效期作为余量；默认 24 小时 TTL 保留 5 分钟余量。
+ */
+export function getStyleGallerySignedImageRedirectCacheSeconds(ttlSeconds = getTtlSeconds()): number {
+  if (ttlSeconds <= 2) return 0;
+  const safetySeconds = Math.min(SIGNED_URL_CACHE_SAFETY_SECONDS, Math.max(1, Math.floor(ttlSeconds / 2)));
+  return ttlSeconds - safetySeconds;
 }
 
 function getConfig(): HfS3Config {
@@ -59,9 +75,9 @@ export async function putStyleGalleryObject(
   body: Uint8Array,
   contentType: string,
   conditions: StyleGalleryObjectWriteConditions = {},
-): Promise<void> {
+): Promise<string | null> {
   try {
-    await client().put(key, body, contentType, conditions);
+    return await client().putWithEtag(key, body, contentType, conditions);
   } catch (error) {
     if (error instanceof HfS3ConflictError) throw new StyleGalleryObjectConflictError(error.message);
     throw error;

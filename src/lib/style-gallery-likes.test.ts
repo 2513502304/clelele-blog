@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 import { setStyleGalleryExampleLike } from './style-gallery-likes';
+import { getStyleGalleryExampleIndex, invalidateStyleGalleryStoreCache } from './style-gallery-store';
 
 const exampleId = 'example-one';
 let body = JSON.stringify({
@@ -23,6 +24,8 @@ let body = JSON.stringify({
 });
 let etag = '"etag-1"';
 let conflictOnce = true;
+let getCount = 0;
+let putCount = 0;
 const originalFetch = globalThis.fetch;
 const previousEnv = {
   accessKey: process.env.HF_S3_ACCESS_KEY_ID,
@@ -33,9 +36,14 @@ describe('style gallery like writes', () => {
   before(() => {
     process.env.HF_S3_ACCESS_KEY_ID = 'HFAKTEST';
     process.env.HF_S3_SECRET_ACCESS_KEY = 'test-secret';
+    invalidateStyleGalleryStoreCache();
     globalThis.fetch = async (_input, init) => {
-      if (!init?.method || init.method === 'GET') return new Response(body, { headers: { etag } });
+      if (!init?.method || init.method === 'GET') {
+        getCount += 1;
+        return new Response(body, { headers: { etag } });
+      }
       if (init.method === 'PUT') {
+        putCount += 1;
         if (conflictOnce) {
           conflictOnce = false;
           etag = '"etag-2"';
@@ -59,11 +67,14 @@ describe('style gallery like writes', () => {
   });
 
   it('replays a like after an ETag conflict and remains idempotent', async () => {
+    await getStyleGalleryExampleIndex();
     const first = await setStyleGalleryExampleLike({ exampleId, userId: 7, liked: true });
     assert.deepEqual(first, { liked: true, likeCount: 1, sourceSlug: 'source-one' });
     const duplicate = await setStyleGalleryExampleLike({ exampleId, userId: 7, liked: true });
     assert.equal(duplicate.likeCount, 1);
     const removed = await setStyleGalleryExampleLike({ exampleId, userId: 7, liked: false });
     assert.equal(removed.likeCount, 0);
+    assert.equal(getCount, 2, 'the mutation should reuse the prefetched ETag, then read only once for the forced 412 replay');
+    assert.equal(putCount, 3, 'the idempotent duplicate should not write and the warm mutation should reuse the ETag');
   });
 });
