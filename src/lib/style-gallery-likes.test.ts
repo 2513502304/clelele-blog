@@ -25,6 +25,7 @@ let body = JSON.stringify({
 let etag = '"etag-1"';
 let conflictOnce = true;
 let getCount = 0;
+let headCount = 0;
 let putCount = 0;
 const originalFetch = globalThis.fetch;
 const previousEnv = {
@@ -41,6 +42,10 @@ describe('style gallery like writes', () => {
       if (!init?.method || init.method === 'GET') {
         getCount += 1;
         return new Response(body, { headers: { etag } });
+      }
+      if (init.method === 'HEAD') {
+        headCount += 1;
+        return new Response(null, { headers: { etag } });
       }
       if (init.method === 'PUT') {
         putCount += 1;
@@ -70,11 +75,19 @@ describe('style gallery like writes', () => {
     await getStyleGalleryExampleIndex();
     const first = await setStyleGalleryExampleLike({ exampleId, userId: 7, liked: true });
     assert.deepEqual(first, { liked: true, likeCount: 1, sourceSlug: 'source-one' });
+
+    const concurrentlyChanged = JSON.parse(body);
+    concurrentlyChanged.groups[0].examples[0].likedBy = [];
+    body = JSON.stringify(concurrentlyChanged);
+    etag = '"etag-concurrent"';
     const duplicate = await setStyleGalleryExampleLike({ exampleId, userId: 7, liked: true });
     assert.equal(duplicate.likeCount, 1);
+    const confirmedDuplicate = await setStyleGalleryExampleLike({ exampleId, userId: 7, liked: true });
+    assert.equal(confirmedDuplicate.likeCount, 1);
     const removed = await setStyleGalleryExampleLike({ exampleId, userId: 7, liked: false });
     assert.equal(removed.likeCount, 0);
-    assert.equal(getCount, 2, 'the mutation should reuse the prefetched ETag, then read only once for the forced 412 replay');
-    assert.equal(putCount, 3, 'the idempotent duplicate should not write and the warm mutation should reuse the ETag');
+    assert.equal(getCount, 3, 'a stale no-op must fetch the latest body after the lightweight ETag check detects a change');
+    assert.equal(headCount, 2, 'warm no-op mutations should validate their cached ETag without downloading the index body');
+    assert.equal(putCount, 4, 'only the stale duplicate should replay as a write; the confirmed duplicate remains write-free');
   });
 });

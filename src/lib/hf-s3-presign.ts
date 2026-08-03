@@ -94,6 +94,12 @@ export async function headStyleGalleryObject(key: string): Promise<boolean> {
   }
 }
 
+/** 只读取对象 ETag，用于在不下载正文的前提下校验短期缓存是否仍为最新版本。 */
+export async function getStyleGalleryObjectEtag(key: string): Promise<string | null> {
+  const result = await client().head(key);
+  return result.exists ? result.etag : null;
+}
+
 export async function deleteStyleGalleryObject(key: string): Promise<void> {
   await client().delete(key);
 }

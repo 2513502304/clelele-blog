@@ -1,4 +1,5 @@
 import {
+  getStyleGalleryObjectEtag,
   getStyleGalleryObjectText,
   getStyleGalleryObjectTextSnapshot,
   putStyleGalleryObject,
@@ -133,8 +134,14 @@ export function mutateStyleGalleryExampleIndex(
         throw new Error('HF did not return an ETag for the style gallery example index.');
       }
       const transformed = transform(current);
-      // 幂等请求返回同一对象表示没有持久化变化，不刷新 updatedAt，也不消耗 HF 写请求。
+      // 缓存快照可能在本次请求开始前已被另一实例更新；幂等短路前用轻量 HEAD 验证 ETag。
+      // ETag 已变化时下一轮强制读取正文并重放 transform，避免把陈旧状态误报为已持久化。
       if (transformed === current) {
+        if (cached && (await getStyleGalleryObjectEtag(STYLE_GALLERY_EXAMPLE_INDEX_KEY)) !== snapshot.etag) {
+          exampleIndexCache = null;
+          await new Promise((resolve) => setTimeout(resolve, 40 * attempt + Math.floor(Math.random() * 80)));
+          continue;
+        }
         exampleIndexCache = { value: current, etag: snapshot.etag, expiresAt: Date.now() + CACHE_TTL_MS };
         return current;
       }
