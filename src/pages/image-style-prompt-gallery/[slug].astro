@@ -1,6 +1,7 @@
 ---
 import HomeSider from '@components/layout/HomeSider.astro';
 import StyleGalleryExamples from '@components/style-gallery/StyleGalleryExamples';
+import StyleGalleryStorageHints from '@components/style-gallery/StyleGalleryStorageHints.astro';
 import StylePromptCopy from '@components/style-gallery/StylePromptCopy';
 import Cover from '@components/ui/cover/Cover.astro';
 import { CONTENT_PADDING } from '@constants/layout';
@@ -37,6 +38,7 @@ Astro.response.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-re
 ---
 
 <Layout title={title} description={description}>
+  <StyleGalleryStorageHints slot="head" />
   <TwoColumnLayout>
     <Cover slot="cover" title={data.title} />
     <HomeSider slot="sider" />
@@ -75,6 +77,9 @@ Astro.response.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-re
                   <img
                     src={image.sourceImage}
                     alt={image.sourceImageAlt ?? `${data.title} reference image ${index + 1}`}
+                    loading={index === 0 ? 'eager' : 'lazy'}
+                    fetchpriority={index === 0 ? 'high' : 'auto'}
+                    decoding="async"
                     class="max-h-[68vh] w-full object-contain"
                   />
                   {referenceImages.length > 1 && (

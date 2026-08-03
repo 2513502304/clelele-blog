@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { describe, it } from 'node:test';
 import type { StoredStyleGalleryItem } from '@/types/style-gallery';
 import { mapWithConcurrency } from './map-with-concurrency';
+import { toStyleGalleryCardDataList } from './style-gallery';
 import { assertStyleGalleryItemConsistency, getStyleGalleryItemAssetKeys } from './style-gallery-assets';
 import { isAuthorizedStyleGalleryRequest } from './style-gallery-auth';
 import {
@@ -74,6 +75,11 @@ describe('style gallery metadata', () => {
     assert.equal(catalog.items[0].exampleCount, 3);
     assert.equal('tags' in catalog.items[0], false);
     assert.deepEqual(catalog.modelTargets, ['GPT-Image2', 'Nano Banana', 'PixAI', 'Midjourney', 'Flux']);
+
+    const [card] = toStyleGalleryCardDataList({ ...catalog, parentLikeCounts: { [item.slug]: 4 } });
+    assert.equal(card.likeCount, 4);
+    assert.equal('tags' in card, false);
+    assert.equal('modelTargets' in card, false);
   });
 
   it('validates multi-image group hashes', () => {

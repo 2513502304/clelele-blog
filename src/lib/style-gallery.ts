@@ -7,6 +7,11 @@ import type {
   StyleGalleryItem,
 } from '@/types/style-gallery';
 
+const overviewCache = new WeakMap<
+  StyleGalleryCatalog,
+  WeakMap<Awaited<ReturnType<typeof getStyleGalleryExampleIndex>>, StyleGalleryExampleOverviewItem[]>
+>();
+
 export interface StyleGalleryData extends StyleGalleryCatalog {
   /** 仅在服务端读取时派生，不属于持久化 catalog schema。 */
   parentLikeCounts: Record<string, number>;
@@ -39,12 +44,10 @@ export async function getStyleGalleryItemBySlug(slug: string): Promise<StyleGall
   };
 }
 
-/** 把 catalog 顶层的公共标签和目标平台注入各卡片，避免在 HF 中逐项重复存储。 */
+/** 合并列表排序需要的点赞总数；公共标签和目标平台继续只保留在 catalog 顶层。 */
 export function toStyleGalleryCardDataList(catalog: StyleGalleryData): StyleGalleryCardData[] {
   return catalog.items.map((item) => ({
     ...item,
-    tags: catalog.tags,
-    modelTargets: catalog.modelTargets,
     likeCount: catalog.parentLikeCounts[item.slug] ?? 0,
   }));
 }
@@ -52,8 +55,10 @@ export function toStyleGalleryCardDataList(catalog: StyleGalleryData): StyleGall
 /** 通过轻量示例索引与 catalog 做关联，构造 Sub-gallery 总览，不读取全部详情 item。 */
 export async function getStyleGalleryExampleOverview(): Promise<StyleGalleryExampleOverviewItem[]> {
   const [catalog, index] = await Promise.all([getStyleGalleryCatalog(), getStyleGalleryExampleIndex()]);
+  const cached = overviewCache.get(catalog)?.get(index);
+  if (cached) return cached;
   const sourceBySlug = new Map(catalog.items.map((item) => [item.slug, item]));
-  return index.groups
+  const overview = index.groups
     .flatMap((group) => {
       const source = sourceBySlug.get(group.sourceSlug);
       if (!source) return [];
@@ -68,4 +73,11 @@ export async function getStyleGalleryExampleOverview(): Promise<StyleGalleryExam
       }));
     })
     .sort((a, b) => (b.uploadedAt ?? '').localeCompare(a.uploadedAt ?? ''));
+  let byIndex = overviewCache.get(catalog);
+  if (!byIndex) {
+    byIndex = new WeakMap();
+    overviewCache.set(catalog, byIndex);
+  }
+  byIndex.set(index, overview);
+  return overview;
 }

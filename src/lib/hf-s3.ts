@@ -199,6 +199,30 @@ export function createHfS3Client(
   const attempts = options.attempts ?? DEFAULT_REQUEST_ATTEMPTS;
   const requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
   const transferTimeoutMs = options.transferTimeoutMs ?? 60_000;
+  async function putObject(
+    key: string,
+    body: Uint8Array,
+    contentType: string,
+    conditions: { ifMatch?: string; ifNoneMatch?: '*' } = {},
+  ): Promise<string | null> {
+    const requestBody = body.slice().buffer;
+    return retry(
+      `upload HF S3 object "${key}"`,
+      async () => {
+        const signed = createHfS3SignedHeaders(config, 'PUT', key, body, contentType, conditions);
+        const response = await fetch(signed.url, {
+          method: 'PUT',
+          headers: signed.headers,
+          body: requestBody,
+          signal: AbortSignal.timeout(transferTimeoutMs),
+        });
+        if (response.status === 412) throw new HfS3ConflictError(`HF S3 object changed: ${key}`);
+        if (!response.ok) throw await responseError(response, `Failed to upload HF S3 object "${key}"`);
+        return response.headers.get('etag');
+      },
+      attempts,
+    );
+  }
   return {
     presign(method: 'GET' | 'PUT', key: string, expires: number, now = new Date()) {
       return createHfS3PresignedUrl(config, method, key, expires, now);
@@ -209,22 +233,16 @@ export function createHfS3Client(
       contentType: string,
       conditions: { ifMatch?: string; ifNoneMatch?: '*' } = {},
     ): Promise<void> {
-      const requestBody = body.slice().buffer;
-      await retry(
-        `upload HF S3 object "${key}"`,
-        async () => {
-          const signed = createHfS3SignedHeaders(config, 'PUT', key, body, contentType, conditions);
-          const response = await fetch(signed.url, {
-            method: 'PUT',
-            headers: signed.headers,
-            body: requestBody,
-            signal: AbortSignal.timeout(transferTimeoutMs),
-          });
-          if (response.status === 412) throw new HfS3ConflictError(`HF S3 object changed: ${key}`);
-          if (!response.ok) throw await responseError(response, `Failed to upload HF S3 object "${key}"`);
-        },
-        attempts,
-      );
+      await putObject(key, body, contentType, conditions);
+    },
+    /** 条件更新调用方可复用响应 ETag，后续写入无需再次下载同一对象。 */
+    async putWithEtag(
+      key: string,
+      body: Uint8Array,
+      contentType: string,
+      conditions: { ifMatch?: string; ifNoneMatch?: '*' } = {},
+    ): Promise<string | null> {
+      return putObject(key, body, contentType, conditions);
     },
     async head(key: string): Promise<{ exists: boolean; size: number | null; etag: string | null }> {
       return retry(

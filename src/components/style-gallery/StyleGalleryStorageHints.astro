@@ -1,0 +1,9 @@
+---
+import { getStyleGalleryImageStorageOrigin } from '@lib/hf-s3-presign';
+
+const storageOrigin = getStyleGalleryImageStorageOrigin();
+---
+
+<!-- 图片仍由访客直连 HF；提前建立连接可减少 302 后的 DNS、TCP 与 TLS 等待。 -->
+<link rel="dns-prefetch" href={storageOrigin} />
+<link rel="preconnect" href={storageOrigin} />

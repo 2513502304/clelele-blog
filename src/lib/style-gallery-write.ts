@@ -45,6 +45,11 @@ interface UpdateExamplesResult {
   index: StyleGalleryExampleIndex;
 }
 
+interface UpdateExamplesOptions {
+  /** 平台等纯元数据修改不改变 exampleCount，可跳过体积较大的 catalog 读写。 */
+  catalogMode?: 'update-count' | 'preserve-count';
+}
+
 /**
  * 在单个服务实例内串行执行 Gallery 元数据写入，避免 catalog 的读-改-写相互覆盖。
  * 该队列不是跨实例分布式锁，因此每次操作仍需使用强制刷新、写后校验和回滚保护一致性。
@@ -267,51 +272,61 @@ export async function reconcileStyleGalleryExampleCounts(): Promise<{ checked: n
 }
 
 /**
- * 将单个 item 的 examples、catalog 计数和总览索引作为一组可回滚元数据提交。
- * 图片对象的创建/删除在调用方完成；本函数只负责三份元数据视图保持一致。
+ * 将单个 item、可选的 catalog 计数和总览索引作为一组可回滚元数据提交。
+ * 上传与删除更新三份视图；平台修改保证数量不变，因此省略 catalog 全量 I/O。
  */
 export async function updateStyleGalleryItemExamples(
   slug: string,
   transform: (examples: StyleGalleryExample[], item: StoredStyleGalleryItem) => StyleGalleryExample[],
+  options: UpdateExamplesOptions = {},
 ): Promise<UpdateExamplesResult> {
   return serializeStyleGalleryWrite(async () => {
-    const [previousItem, previousCatalog, previousIndex] = await Promise.all([
+    const catalogMode = options.catalogMode ?? 'update-count';
+    const [previousItem, previousCatalog] = await Promise.all([
       getStoredStyleGalleryItem(slug, { fresh: true }),
-      getStyleGalleryCatalog({ fresh: true }),
-      getStyleGalleryExampleIndex({ fresh: true }),
+      catalogMode === 'update-count' ? getStyleGalleryCatalog({ fresh: true }) : Promise.resolve(null),
     ]);
-    if (!previousItem || !previousCatalog.items.some((item) => item.slug === slug)) {
+    if (!previousItem || (previousCatalog && !previousCatalog.items.some((item) => item.slug === slug))) {
       throw new StyleGalleryClientError('Style gallery item not found.', 404);
     }
 
     const examples = transform(previousItem.examples, previousItem);
+    if (catalogMode === 'preserve-count' && examples.length !== previousItem.examples.length) {
+      throw new Error('A preserve-count example update must not add or remove examples.');
+    }
     const updatedAt = new Date().toISOString();
     const item: StoredStyleGalleryItem = { ...previousItem, updated: updatedAt, examples };
-    const catalog: StyleGalleryCatalog = {
-      ...previousCatalog,
-      updatedAt,
-      items: previousCatalog.items.map((candidate) =>
-        candidate.slug === slug ? { ...candidate, exampleCount: examples.length } : candidate,
-      ),
-    };
-    const previousGroup = previousIndex.groups.find((group) => group.sourceSlug === slug);
-    const attemptedGroup = examples.length ? toStyleGalleryExampleIndexGroup(slug, examples, previousGroup) : null;
+    const catalog: StyleGalleryCatalog | null = previousCatalog
+      ? {
+          ...previousCatalog,
+          updatedAt,
+          items: previousCatalog.items.map((candidate) =>
+            candidate.slug === slug ? { ...candidate, exampleCount: examples.length } : candidate,
+          ),
+        }
+      : null;
+    let previousIndex: StyleGalleryExampleIndex | null = null;
+    let attemptedGroup: StyleGalleryExampleIndexGroup | null = null;
 
     try {
-      await Promise.all([putStoredStyleGalleryItem(item), putStyleGalleryCatalog(catalog)]);
+      await Promise.all([putStoredStyleGalleryItem(item), ...(catalog ? [putStyleGalleryCatalog(catalog)] : [])]);
       const index = await mutateStyleGalleryExampleIndex((current) => {
+        // mutate 内部已经读取带 ETag 的最新 index；复用首次快照可少一次全量 HF 下载，并为失败回滚保留基线。
+        previousIndex ??= current;
         const currentGroup = current.groups.find((group) => group.sourceSlug === slug);
         const groups = current.groups.filter((group) => group.sourceSlug !== slug);
-        if (examples.length) groups.push(toStyleGalleryExampleIndexGroup(slug, examples, currentGroup));
+        attemptedGroup = examples.length ? toStyleGalleryExampleIndexGroup(slug, examples, currentGroup) : null;
+        if (attemptedGroup) groups.push(attemptedGroup);
         return { version: 2, updatedAt, groups };
       });
       return { item, index };
     } catch (error) {
-      const rollback = await Promise.allSettled([
-        putStoredStyleGalleryItem(previousItem),
-        putStyleGalleryCatalog(previousCatalog),
-        restoreStyleGalleryExampleIndexStructure(previousIndex, new Map([[slug, attemptedGroup]])),
-      ]);
+      const rollbackTasks: Promise<unknown>[] = [putStoredStyleGalleryItem(previousItem)];
+      if (previousCatalog) rollbackTasks.push(putStyleGalleryCatalog(previousCatalog));
+      if (previousIndex) {
+        rollbackTasks.push(restoreStyleGalleryExampleIndexStructure(previousIndex, new Map([[slug, attemptedGroup]])));
+      }
+      const rollback = await Promise.allSettled(rollbackTasks);
       const rollbackErrors = rollback.flatMap((result) => (result.status === 'rejected' ? [result.reason] : []));
       if (rollbackErrors.length) {
         throw new AggregateError([error, ...rollbackErrors], 'Example metadata update failed and rollback was incomplete.');

@@ -1,5 +1,10 @@
 import { Icon } from '@iconify/react';
-import { type ImageLightboxLikeAction, type ImageLightboxLikeMutationResult, syncImageLightboxLikes } from '@store/modal';
+import {
+  type ImageLightboxLikeAction,
+  type ImageLightboxLikeMutationResult,
+  syncImageLightboxLikes,
+  updateImageLightboxLike,
+} from '@store/modal';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { StyleGalleryViewer } from '@/types/style-gallery';
 
@@ -65,6 +70,13 @@ export function useStyleGalleryLikes(initialCounts: Record<string, number>): Sty
         setAuthEnabled(data.authEnabled);
         setViewer(data.viewer);
         setLikedIds(likedIdsRef.current);
+        syncImageLightboxLikes((exampleId) => ({
+          liked: likedIdsRef.current.has(exampleId),
+          likeCount: countsRef.current[exampleId] ?? 0,
+          pending: pendingIdsRef.current.has(exampleId),
+          authEnabled: data.authEnabled,
+          viewerAuthenticated: Boolean(data.viewer),
+        }));
       })
       .catch((error) => {
         if (!(error instanceof DOMException && error.name === 'AbortError')) {
@@ -94,6 +106,7 @@ export function useStyleGalleryLikes(initialCounts: Record<string, number>): Sty
     setPendingIds(pendingIdsRef.current);
     setLikedIds(likedIdsRef.current);
     setCounts(countsRef.current);
+    updateImageLightboxLike(exampleId, { liked: nextLiked, likeCount: optimisticCount, pending: true });
 
     try {
       const response = await fetch('/api/style-gallery/likes', {
@@ -114,6 +127,7 @@ export function useStyleGalleryLikes(initialCounts: Record<string, number>): Sty
       data.liked ? likedIdsRef.current.add(exampleId) : likedIdsRef.current.delete(exampleId);
       setCounts(countsRef.current);
       setLikedIds(likedIdsRef.current);
+      updateImageLightboxLike(exampleId, { liked: data.liked, likeCount: data.likeCount, pending: false });
       return data;
     } catch (error) {
       console.error('[style-gallery] Failed to update an example like.', error);
@@ -122,11 +136,13 @@ export function useStyleGalleryLikes(initialCounts: Record<string, number>): Sty
       wasLiked ? likedIdsRef.current.add(exampleId) : likedIdsRef.current.delete(exampleId);
       setCounts(countsRef.current);
       setLikedIds(likedIdsRef.current);
+      updateImageLightboxLike(exampleId, { liked: wasLiked, likeCount: previousCount, pending: false });
       return { liked: wasLiked, likeCount: previousCount };
     } finally {
       pendingIdsRef.current = new Set(pendingIdsRef.current);
       pendingIdsRef.current.delete(exampleId);
       setPendingIds(pendingIdsRef.current);
+      updateImageLightboxLike(exampleId, { pending: false });
     }
   }, []);
 
@@ -161,17 +177,6 @@ export function createStyleGalleryLightboxLikeAction(
   };
 }
 
-/** 将异步登录态和任意入口触发的点赞结果同步到当前 Gallery lightbox。 */
-export function syncStyleGalleryLightboxLikes(controller: StyleGalleryLikesController): void {
-  syncImageLightboxLikes((exampleId) => ({
-    liked: controller.isLiked(exampleId),
-    likeCount: controller.getCount(exampleId),
-    pending: controller.isPending(exampleId),
-    authEnabled: controller.authEnabled,
-    viewerAuthenticated: Boolean(controller.viewer),
-  }));
-}
-
 interface LikeButtonProps {
   exampleId: string;
   controller: StyleGalleryLikesController;
@@ -194,15 +199,13 @@ export function StyleGalleryLikeButton({ exampleId, controller, labels, classNam
       type="button"
       onClick={() => void controller.toggle(exampleId)}
       disabled={!controller.authEnabled || pending}
+      aria-busy={pending}
       aria-pressed={liked}
       aria-label={`${title}: ${controller.getCount(exampleId)}`}
       title={title}
       className={`inline-flex h-9 min-w-14 items-center justify-center gap-1.5 rounded-full border border-white/70 bg-white/92 px-2.5 font-bold text-xs shadow-md backdrop-blur transition hover:border-rose-300 hover:text-rose-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-950/90 ${liked ? 'text-rose-500' : 'text-gray-600 dark:text-gray-200'} ${className}`}
     >
-      <Icon
-        icon={pending ? 'ri:loader-4-line' : liked ? 'ri:heart-3-fill' : 'ri:heart-3-line'}
-        className={`size-4 ${pending ? 'animate-spin' : ''}`}
-      />
+      <Icon icon={liked ? 'ri:heart-3-fill' : 'ri:heart-3-line'} className={`size-4 ${pending ? 'animate-pulse' : ''}`} />
       <span className="min-w-3 text-center tabular-nums">{controller.getCount(exampleId)}</span>
     </button>
   );
