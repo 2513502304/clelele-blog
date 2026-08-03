@@ -19,7 +19,6 @@ import {
   createStyleGalleryLightboxLikeAction,
   StyleGalleryLikeButton,
   type StyleGalleryLikeLabels,
-  syncStyleGalleryLightboxLikes,
   useStyleGalleryLikes,
 } from './StyleGalleryLikeButton';
 
@@ -53,7 +52,9 @@ export interface StyleGalleryExamplesOverviewLabels {
 
 const INITIAL_EXAMPLE_COUNT = 24;
 const EXAMPLE_BATCH_SIZE = 24;
-const EAGER_EXAMPLE_COUNT = 8;
+// 与 Gallery 主预览保持一致：桌面端前两行主动加载，只有首行使用高网络优先级。
+const EAGER_EXAMPLE_COUNT = 6;
+const HIGH_PRIORITY_EXAMPLE_COUNT = 3;
 const sortKeys = ['default', 'date', 'id', 'examples', 'likes'] as const;
 const sortDirections = ['asc', 'desc'] as const;
 type SortKey = (typeof sortKeys)[number];
@@ -81,9 +82,6 @@ function StyleGalleryExamplesOverviewContent({
   const [sortKey, setSortKey] = useQueryState('sort', parseAsStringLiteral(sortKeys).withDefault('default'));
   const [sortDirection, setSortDirection] = useQueryState('dir', parseAsStringLiteral(sortDirections).withDefault('asc'));
   const likes = useStyleGalleryLikes(Object.fromEntries(examples.map((example) => [example.id, example.likeCount])));
-  useEffect(() => {
-    syncStyleGalleryLightboxLikes(likes);
-  }, [likes]);
   useEffect(() => {
     setUploadToken(localStorage.getItem(STYLE_GALLERY_UPLOAD_TOKEN_STORAGE_KEY) ?? '');
   }, []);
@@ -133,31 +131,22 @@ function StyleGalleryExamplesOverviewContent({
     },
     [uploadToken, uploadsEnabled],
   );
-  const lightboxImages = useMemo(
-    () =>
-      filtered.map((example) => ({
-        id: example.id,
-        src: example.src,
-        alt: `${example.sourceTitle} ${example.model}`,
-        like: createStyleGalleryLightboxLikeAction(example.id, likes, labels.likes),
-        copy: createStyleGalleryCopyAction(() => loadStyleGalleryPrompt(example.sourceSlug), lightboxActionLabels),
-        delete: createStyleGalleryDeleteAction(
-          example.id,
-          `${example.sourceTitle} ${example.model}`,
-          uploadsEnabled && Boolean(uploadToken.trim()),
-          () => deleteOverviewExample(example.sourceSlug, example.id),
-          lightboxActionLabels,
-        ),
-      })),
-    [deleteOverviewExample, filtered, labels.likes, lightboxActionLabels, likes, uploadToken, uploadsEnabled],
-  );
-  const { hasMore, loadMore, loadMoreRef, visibleItems } = useProgressiveList(filtered, {
-    initialCount: INITIAL_EXAMPLE_COUNT,
-    batchSize: EXAMPLE_BATCH_SIZE,
-    resetKey: `${platform}\u0000${query.trim().toLowerCase()}\u0000${sortKey}\u0000${sortDirection}`,
-  });
-
   function openLightbox(example: StyleGalleryExampleOverviewItem) {
+    // 仅在用户打开 popup 时构造导航动作；点赞状态更新不再重复映射数千个未打开的示例。
+    const lightboxImages = filtered.map((candidate) => ({
+      id: candidate.id,
+      src: candidate.src,
+      alt: `${candidate.sourceTitle} ${candidate.model}`,
+      like: createStyleGalleryLightboxLikeAction(candidate.id, likes, labels.likes),
+      copy: createStyleGalleryCopyAction(() => loadStyleGalleryPrompt(candidate.sourceSlug), lightboxActionLabels),
+      delete: createStyleGalleryDeleteAction(
+        candidate.id,
+        `${candidate.sourceTitle} ${candidate.model}`,
+        uploadsEnabled && Boolean(uploadToken.trim()),
+        () => deleteOverviewExample(candidate.sourceSlug, candidate.id),
+        lightboxActionLabels,
+      ),
+    }));
     const currentIndex = Math.max(
       0,
       filtered.findIndex((candidate) => candidate.id === example.id),
@@ -169,6 +158,11 @@ function StyleGalleryExamplesOverviewContent({
       currentIndex,
     });
   }
+  const { hasMore, loadMore, loadMoreRef, visibleItems } = useProgressiveList(filtered, {
+    initialCount: INITIAL_EXAMPLE_COUNT,
+    batchSize: EXAMPLE_BATCH_SIZE,
+    resetKey: `${platform}\u0000${query.trim().toLowerCase()}\u0000${sortKey}\u0000${sortDirection}`,
+  });
 
   function refreshLikeSortCounts() {
     setLikeSortCounts(Object.fromEntries(examples.map((example) => [example.id, likes.getCount(example.id)])));
@@ -283,7 +277,7 @@ function StyleGalleryExamplesOverviewContent({
                       width={4}
                       height={5}
                       loading={index < EAGER_EXAMPLE_COUNT ? 'eager' : 'lazy'}
-                      fetchPriority={index < 4 ? 'high' : 'auto'}
+                      fetchPriority={index < HIGH_PRIORITY_EXAMPLE_COUNT ? 'high' : 'auto'}
                       decoding="async"
                       className="aspect-[4/5] w-full object-cover transition duration-200 group-hover:scale-[1.02]"
                     />

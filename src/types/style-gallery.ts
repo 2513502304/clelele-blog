@@ -104,8 +104,6 @@ export interface StyleGalleryExampleIndex {
 }
 
 export interface StyleGalleryCardData extends StyleGalleryCatalogItem {
-  tags: string[];
-  modelTargets: string[];
   /** 当前原图下所有生成示例的点赞总和。 */
   likeCount: number;
 }

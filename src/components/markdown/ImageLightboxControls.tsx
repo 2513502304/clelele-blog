@@ -50,11 +50,12 @@ export function LightboxLikeButton({ action, onClick }: { action: ImageLightboxL
       whileTap={{ scale: 0.85 }}
       aria-label={`${title}: ${action.likeCount}`}
       aria-pressed={action.liked}
+      aria-busy={action.pending}
       title={title}
     >
       <Icon
-        icon={action.pending ? 'ri:loader-4-line' : action.liked ? 'ri:heart-3-fill' : 'ri:heart-3-line'}
-        className={cn('size-5', action.pending && 'animate-spin')}
+        icon={action.liked ? 'ri:heart-3-fill' : 'ri:heart-3-line'}
+        className={cn('size-5', action.pending && 'animate-pulse')}
       />
       <span className="tabular-nums">{action.likeCount}</span>
     </motion.button>

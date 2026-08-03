@@ -33,8 +33,11 @@ export interface StyleGalleryImageIndexLabels {
 const sortKeys = ['default', 'date', 'id', 'examples', 'likes'] as const;
 const sortDirections = ['asc', 'desc'] as const;
 type SortKey = (typeof sortKeys)[number];
-const INITIAL_INDEX_ITEM_COUNT = 120;
-const INDEX_ITEM_BATCH_SIZE = 120;
+const INITIAL_INDEX_ITEM_COUNT = 72;
+const INDEX_ITEM_BATCH_SIZE = 72;
+// 矩阵首批仍覆盖多个视口；仅首行 eager，避免几十个签名重定向同时争抢连接。
+const EAGER_INDEX_ITEM_COUNT = 12;
+const HIGH_PRIORITY_INDEX_ITEM_COUNT = 4;
 
 function normalize(value: string) {
   return value.toLowerCase().trim();
@@ -89,6 +92,7 @@ function StyleGalleryImageIndexContent({ items, galleryBasePath, labels }: Style
     initialCount: INITIAL_INDEX_ITEM_COUNT,
     batchSize: INDEX_ITEM_BATCH_SIZE,
     resetKey: `${query.trim().toLowerCase()}\u0000${sortKey}\u0000${sortDirection}`,
+    rootMargin: '-120px 0px',
   });
 
   return (
@@ -158,8 +162,8 @@ function StyleGalleryImageIndexContent({ items, galleryBasePath, labels }: Style
                   alt={item.sourceImageAlt ?? item.title}
                   width={1}
                   height={1}
-                  loading={index < 24 ? 'eager' : 'lazy'}
-                  fetchPriority={index < 12 ? 'high' : 'auto'}
+                  loading={index < EAGER_INDEX_ITEM_COUNT ? 'eager' : 'lazy'}
+                  fetchPriority={index < HIGH_PRIORITY_INDEX_ITEM_COUNT ? 'high' : 'auto'}
                   decoding="async"
                   className="h-full w-full object-cover transition duration-200 group-hover:scale-105"
                 />

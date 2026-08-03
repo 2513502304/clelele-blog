@@ -21,7 +21,6 @@ import {
   navigateImage,
   openModal,
   removeImageFromLightbox,
-  updateImageLightboxLike,
 } from '@store/modal';
 import { AnimatePresence, motion } from 'motion/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -87,24 +86,8 @@ export default function ImageLightbox() {
 
   const handleLike = useCallback(async () => {
     if (!currentLike || !currentLike.authEnabled || currentLike.pending) return;
-    // 未登录时直接交给 action 跳转 OAuth，不在离开页面前制造一次虚假的乐观计数。
-    if (!currentLike.viewerAuthenticated) {
-      await currentLike.toggle();
-      return;
-    }
-    const previous = { liked: currentLike.liked, likeCount: currentLike.likeCount };
-    updateImageLightboxLike(currentLike.exampleId, {
-      liked: !currentLike.liked,
-      likeCount: Math.max(0, currentLike.likeCount + (currentLike.liked ? -1 : 1)),
-      pending: true,
-    });
-    try {
-      const result = await currentLike.toggle();
-      updateImageLightboxLike(currentLike.exampleId, result ? { ...result, pending: false } : { ...previous, pending: false });
-    } catch {
-      // Gallery controller 会记录详细错误；lightbox 只负责恢复此次交互前的视觉状态。
-      updateImageLightboxLike(currentLike.exampleId, { ...previous, pending: false });
-    }
+    // Gallery action 统一负责 OAuth 跳转、乐观状态、失败回滚和持久化，避免 popup 再执行一遍相同更新。
+    await currentLike.toggle();
   }, [currentLike]);
 
   const handleCopy = useCallback(async () => {
@@ -441,6 +424,9 @@ export default function ImageLightbox() {
                     <motion.img
                       src={data.src}
                       alt={data.alt}
+                      loading="eager"
+                      fetchPriority="high"
+                      decoding="async"
                       className="max-h-[80vh] max-w-[90vw] origin-center rounded-lg object-contain shadow-2xl will-change-transform"
                       animate={{ scale: state.scale, rotate: rotation, opacity: imageLoaded ? 1 : 0 }}
                       transition={{

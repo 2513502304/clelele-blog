@@ -13,8 +13,6 @@ export interface StyleGalleryBrowserItem {
   sourceImageAlt?: string;
   imageHash: string;
   imageCount: number;
-  tags: string[];
-  modelTargets: string[];
   exampleCount: number;
   likeCount: number;
 }
@@ -22,6 +20,7 @@ export interface StyleGalleryBrowserItem {
 interface StyleGalleryBrowserProps {
   items: StyleGalleryBrowserItem[];
   tags: string[];
+  modelTargets: string[];
   galleryBasePath: string;
   labels: StyleGalleryBrowserLabels;
 }
@@ -49,6 +48,9 @@ export interface StyleGalleryBrowserLabels {
 
 type SortKey = 'default' | 'date' | 'id' | 'examples' | 'likes';
 type SortDirection = 'asc' | 'desc';
+// 桌面端固定三列：前两行主动加载，但只让首行占用高网络优先级。
+const EAGER_CARD_COUNT = 6;
+const HIGH_PRIORITY_CARD_COUNT = 3;
 
 function normalize(value: string) {
   return value.toLowerCase().trim();
@@ -58,7 +60,7 @@ function normalize(value: string) {
  * Gallery 主预览页：在 catalog 的完整 prompt 上搜索，再执行标签筛选、排序和本地分页。
  * 搜索和复制都不读取详情 item，避免每张卡片额外访问 HF。
  */
-export default function StyleGalleryBrowser({ items, tags, galleryBasePath, labels }: StyleGalleryBrowserProps) {
+export default function StyleGalleryBrowser({ items, tags, modelTargets, galleryBasePath, labels }: StyleGalleryBrowserProps) {
   const [query, setQuery] = useState('');
   const [activeTag, setActiveTag] = useState<string>('all');
   const [sortKey, setSortKey] = useState<SortKey>('default');
@@ -76,8 +78,8 @@ export default function StyleGalleryBrowser({ items, tags, galleryBasePath, labe
   const filteredItems = useMemo(() => {
     const q = normalize(query);
     const filtered = items.filter((item) => {
-      const matchesTag = activeTag === 'all' || item.tags.includes(activeTag);
-      const searchable = [item.title, item.prompt, ...item.tags, ...item.modelTargets].filter(Boolean).join(' ');
+      const matchesTag = activeTag === 'all' || tags.includes(activeTag);
+      const searchable = [item.title, item.prompt, ...tags, ...modelTargets].filter(Boolean).join(' ');
       const matchesQuery = !q || normalize(searchable).includes(q);
       return matchesTag && matchesQuery;
     });
@@ -92,7 +94,7 @@ export default function StyleGalleryBrowser({ items, tags, galleryBasePath, labe
       });
     }
     return sortDirection === 'desc' ? sorted.reverse() : sorted;
-  }, [activeTag, items, query, sortDirection, sortKey]);
+  }, [activeTag, items, modelTargets, query, sortDirection, sortKey, tags]);
   const { currentPage, isPaginated, pageSize, setCurrentPage, setIsPaginated, setPageSize, totalPages, visibleItems } =
     useCollectionPagination(filteredItems, 'style-gallery-pagination-settings');
 
@@ -207,7 +209,7 @@ export default function StyleGalleryBrowser({ items, tags, galleryBasePath, labe
       </div>
 
       <div className="grid grid-cols-1 gap-4 [@media(min-width:769px)]:grid-cols-2 [@media(min-width:993px)]:grid-cols-3">
-        {visibleItems.map((item) => (
+        {visibleItems.map((item, index) => (
           <article
             key={item.slug}
             className="group overflow-hidden rounded-lg border border-rose-100 bg-white shadow-sm transition hover:-translate-y-1 hover:border-rose-200 hover:shadow-lg dark:border-gray-800 dark:bg-gray-950"
@@ -220,7 +222,11 @@ export default function StyleGalleryBrowser({ items, tags, galleryBasePath, labe
               <img
                 src={item.thumbnailImage ?? item.sourceImage}
                 alt={item.sourceImageAlt ?? item.title}
-                loading="lazy"
+                width={4}
+                height={5}
+                loading={index < EAGER_CARD_COUNT ? 'eager' : 'lazy'}
+                fetchPriority={index < HIGH_PRIORITY_CARD_COUNT ? 'high' : 'auto'}
+                decoding="async"
                 className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
               />
               <span className="absolute right-2 bottom-2 flex items-center gap-1.5">

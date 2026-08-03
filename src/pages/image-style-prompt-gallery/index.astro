@@ -1,6 +1,7 @@
 ---
 import HomeSider from '@components/layout/HomeSider.astro';
 import StyleGalleryBrowser from '@components/style-gallery/StyleGalleryBrowser';
+import StyleGalleryStorageHints from '@components/style-gallery/StyleGalleryStorageHints.astro';
 import Cover from '@components/ui/cover/Cover.astro';
 import { CONTENT_PADDING } from '@constants/layout';
 import { siteConfig } from '@constants/site-config';
@@ -45,6 +46,7 @@ Astro.response.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-re
 ---
 
 <Layout title={title} description={description}>
+  <StyleGalleryStorageHints slot="head" />
   <TwoColumnLayout>
     <Cover slot="cover" title={t(locale, 'gallery.title')} />
     <HomeSider slot="sider" />
@@ -81,7 +83,14 @@ Astro.response.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-re
         </div>
       </header>
 
-      <StyleGalleryBrowser client:idle items={cardItems} tags={tags} galleryBasePath={galleryBasePath} labels={browserLabels} />
+      <StyleGalleryBrowser
+        client:idle
+        items={cardItems}
+        tags={tags}
+        modelTargets={gallery.modelTargets}
+        galleryBasePath={galleryBasePath}
+        labels={browserLabels}
+      />
     </div>
   </TwoColumnLayout>
 </Layout>
