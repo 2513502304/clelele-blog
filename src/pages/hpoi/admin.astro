@@ -1,0 +1,35 @@
+---
+import { HpoiCacheAdmin } from '@components/hpoi';
+import HomeSider from '@components/layout/HomeSider.astro';
+import Cover from '@components/ui/cover/Cover.astro';
+import { CONTENT_PADDING } from '@constants/layout';
+import { siteConfig } from '@constants/site-config';
+import Layout from '@layouts/Layout.astro';
+import TwoColumnLayout from '@layouts/TwoColumnLayout.astro';
+import { getSiteAdminGitHubId, isSiteAdminLoginConfigured } from '@lib/site-admin-auth';
+import { getStyleGalleryViewer } from '@lib/style-gallery-github-auth';
+
+export const prerender = false;
+
+if (!isSiteAdminLoginConfigured()) {
+  return new Response('GitHub login is not configured.', { status: 503 });
+}
+
+const viewer = getStyleGalleryViewer(Astro.cookies);
+if (!viewer) {
+  return Astro.redirect('/api/style-gallery/auth/github/login?returnTo=%2Fhpoi%2Fadmin');
+}
+if (viewer.id !== getSiteAdminGitHubId()) {
+  return Astro.redirect('/404');
+}
+---
+
+<Layout title={`Hpoi 缓存管理 | ${siteConfig.title}`} description="刷新博客使用的 Hpoi 收藏数据缓存">
+  <TwoColumnLayout>
+    <Cover slot="cover" title="Hpoi 缓存管理" />
+    <HomeSider slot="sider" />
+    <main class={`bg-gradient-start shadow-box tablet:shadow-none ${CONTENT_PADDING.standard}`}>
+      <HpoiCacheAdmin client:load />
+    </main>
+  </TwoColumnLayout>
+</Layout>

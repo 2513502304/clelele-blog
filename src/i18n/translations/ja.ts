@@ -512,4 +512,12 @@ export const uiStrings: UIStrings = {
   'hpoi.sortDescending': '降順',
   'hpoi.source': 'Hpoiのデータ',
   'hpoi.updatedAt': '更新: {time}',
+  'hpoi.adminTitle': 'Hpoi キャッシュ管理',
+  'hpoi.adminDescription': '公開スナップショットを確認し、Hpoi からコレクション全体を再取得します。',
+  'hpoi.adminSnapshot': '現在のスナップショット',
+  'hpoi.adminLoading': 'キャッシュを読み込み中',
+  'hpoi.adminRefresh': '強制更新',
+  'hpoi.adminRefreshing': '更新中',
+  'hpoi.adminSuccess': 'Hpoi の最新データを取得し、古い CDN キャッシュを削除しました。',
+  'hpoi.adminError': '更新に失敗しました。以前のキャッシュは保持されています。後でもう一度お試しください。',
 };

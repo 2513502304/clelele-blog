@@ -1,5 +1,6 @@
 import { hpoiConfig } from '@constants/site-config';
 import { fetchHpoiCollection } from '@lib/hpoi';
+import { HPOI_CACHE_CONTROL, HPOI_CACHE_TAG } from '@lib/hpoi/cache';
 import type { APIRoute } from 'astro';
 
 export const prerender = false;
@@ -15,7 +16,9 @@ export const GET: APIRoute = async () => {
     return Response.json(data, {
       headers: {
         // Vercel 缓存新鲜结果 30 分钟；Hpoi 短暂不可用时可继续提供最多 24 小时的过期快照。
-        'cache-control': 'public, s-maxage=1800, stale-while-revalidate=86400',
+        'cache-control': HPOI_CACHE_CONTROL,
+        // 管理端仅清理 Hpoi 数据，不影响 Gallery 图片、音乐等其他 CDN 缓存。
+        'vercel-cache-tag': HPOI_CACHE_TAG,
       },
     });
   } catch (error) {
