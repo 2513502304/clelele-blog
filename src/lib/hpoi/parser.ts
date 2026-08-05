@@ -112,16 +112,20 @@ export function parseHpoiCollection(html: string): HpoiCollectionItem[] {
   return [...items.values()];
 }
 
-/** 读取 Hpoi 收藏页初始化脚本中的懒加载总页数；未找到时按仅有首屏处理。 */
+/**
+ * 读取 Hpoi 收藏页初始化脚本中的懒加载总页数。
+ *
+ * Hpoi 曾先后输出 `pageCount: '6'` 和 `pageCount: 6`，两种形式都需要兼容；未找到时按仅有首屏处理。
+ */
 export function parseHpoiCollectionPageCount(html: string): number {
   const $ = load(html);
   for (const script of $('script').toArray()) {
     const match = $(script)
       .text()
-      .match(/pageCount\s*:\s*['"](\d+)['"]/);
+      .match(/pageCount\s*:\s*(?:['"](\d+)['"]|(\d+))/);
     if (!match) continue;
 
-    const pageCount = Number.parseInt(match[1], 10);
+    const pageCount = Number.parseInt(match[1] ?? match[2], 10);
     if (pageCount > 0) return pageCount;
   }
   return 1;
