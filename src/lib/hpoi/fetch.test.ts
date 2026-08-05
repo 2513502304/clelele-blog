@@ -20,7 +20,7 @@ function collectionPage(ids: string[], pageCount?: number): string {
     <div class="hpoi-collect-container">
       <div class="collect-hobby-list-small">${items}</div>
     </div>
-    ${pageCount === undefined ? '' : `<script>var query = { page: '1', pageCount: '${pageCount}' };</script>`}
+    ${pageCount === undefined ? '' : `<script>var query = { page: 1, pageCount: ${pageCount} };</script>`}
   `;
 }
 

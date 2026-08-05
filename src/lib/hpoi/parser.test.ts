@@ -6,6 +6,7 @@ import {
   isHpoiCollectionPage,
   isHpoiProfilePage,
   parseHpoiCollection,
+  parseHpoiCollectionPageCount,
   parseHpoiProfile,
 } from './parser';
 
@@ -58,6 +59,12 @@ describe('Hpoi image proxy URLs', () => {
 });
 
 describe('parseHpoiCollection', () => {
+  it('accepts both current numeric and legacy quoted lazy-load page counts', () => {
+    assert.equal(parseHpoiCollectionPageCount('<script>var query = { pageCount: 6 };</script>'), 6);
+    assert.equal(parseHpoiCollectionPageCount("<script>var query = { pageCount: '3' };</script>"), 3);
+    assert.equal(parseHpoiCollectionPageCount('<script>var query = { page: 1 };</script>'), 1);
+  });
+
   it('parses large-card collection items', () => {
     const items = parseHpoiCollection(`
       <div class="hpoi-collect-container">

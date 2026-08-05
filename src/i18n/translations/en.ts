@@ -512,4 +512,12 @@ export const uiStrings: UIStrings = {
   'hpoi.sortDescending': 'Descending',
   'hpoi.source': 'Data from Hpoi',
   'hpoi.updatedAt': 'Updated {time}',
+  'hpoi.adminTitle': 'Hpoi Cache',
+  'hpoi.adminDescription': 'Inspect the public snapshot or fetch the complete collection from Hpoi again.',
+  'hpoi.adminSnapshot': 'Current snapshot',
+  'hpoi.adminLoading': 'Loading cache',
+  'hpoi.adminRefresh': 'Force refresh',
+  'hpoi.adminRefreshing': 'Refreshing',
+  'hpoi.adminSuccess': 'Fresh Hpoi data was fetched and the previous CDN cache was cleared.',
+  'hpoi.adminError': 'Refresh failed. The previous cache was preserved; try again later.',
 };

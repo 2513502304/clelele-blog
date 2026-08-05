@@ -510,4 +510,12 @@ export const uiStrings = {
   'hpoi.sortDescending': '逆序',
   'hpoi.source': '数据来自 Hpoi',
   'hpoi.updatedAt': '更新于 {time}',
+  'hpoi.adminTitle': 'Hpoi 缓存管理',
+  'hpoi.adminDescription': '查看当前公开快照，或从 Hpoi 重新获取完整收藏数据。',
+  'hpoi.adminSnapshot': '当前快照',
+  'hpoi.adminLoading': '正在读取缓存',
+  'hpoi.adminRefresh': '强制刷新',
+  'hpoi.adminRefreshing': '正在刷新',
+  'hpoi.adminSuccess': 'Hpoi 数据已重新获取，旧 CDN 缓存已清除。',
+  'hpoi.adminError': '刷新失败，原有缓存未被清除，请稍后重试。',
 } as const;
