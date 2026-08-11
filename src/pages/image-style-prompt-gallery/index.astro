@@ -39,6 +39,12 @@ const browserLabels = {
   copy: t(locale, 'gallery.copy'),
   copied: t(locale, 'gallery.copied'),
   copyRetry: t(locale, 'gallery.copyRetry'),
+  promptOption: t(locale, 'gallery.promptOption', { index: '{index}' }),
+  promptModelUnknown: t(locale, 'gallery.promptModelUnknown'),
+  promptChooserTitle: t(locale, 'gallery.promptChooserTitle'),
+  promptChooserDescription: t(locale, 'gallery.promptChooserDescription'),
+  promptLoading: t(locale, 'gallery.promptLoading'),
+  promptLoadFailed: t(locale, 'gallery.promptLoadFailed'),
   view: t(locale, 'gallery.view'),
   noMatches: t(locale, 'gallery.noMatches'),
 };
@@ -89,6 +95,7 @@ Astro.response.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-re
         tags={tags}
         modelTargets={gallery.modelTargets}
         galleryBasePath={galleryBasePath}
+        dateLocale={locale}
         labels={browserLabels}
       />
     </div>

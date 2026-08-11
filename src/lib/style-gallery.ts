@@ -1,4 +1,5 @@
 import { getStyleGalleryParentLikeCounts } from '@lib/style-gallery-likes';
+import { getPrimaryStyleGalleryPrompt } from '@lib/style-gallery-prompts';
 import { getStoredStyleGalleryItem, getStyleGalleryCatalog, getStyleGalleryExampleIndex } from '@lib/style-gallery-store';
 import type {
   StyleGalleryCardData,
@@ -30,11 +31,14 @@ export async function getStyleGalleryItemBySlug(slug: string): Promise<StyleGall
     getStyleGalleryExampleIndex(),
   ]);
   if (!item) return undefined;
+  const primaryPrompt = getPrimaryStyleGalleryPrompt(item.prompts);
   const indexedById = new Map(
     index.groups.find((group) => group.sourceSlug === slug)?.examples.map((example) => [example.id, example]),
   );
   return {
     ...item,
+    prompt: primaryPrompt.prompt,
+    originalPrompt: primaryPrompt.originalPrompt,
     examples: item.examples.map((example) => ({
       ...example,
       likeCount: indexedById.get(example.id)?.likedBy.length ?? 0,

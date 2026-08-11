@@ -48,6 +48,16 @@ export async function getStyleGalleryCatalog(options: { fresh?: boolean } = {}):
   }
 }
 
+/** 写路径使用带 ETag 的强制快照，以便跨 Vercel 实例进行条件提交。 */
+export async function getStyleGalleryCatalogSnapshot(): Promise<{ value: StyleGalleryCatalog; etag: string }> {
+  const snapshot = await getStyleGalleryObjectTextSnapshot(STYLE_GALLERY_CATALOG_KEY);
+  if (!snapshot.text) throw new Error('Style gallery catalog does not exist in HF storage.');
+  if (!snapshot.etag) throw new Error('HF did not return an ETag for the style gallery catalog.');
+  const value = styleGalleryCatalogSchema.parse(JSON.parse(snapshot.text));
+  catalogCache = { value, expiresAt: Date.now() + CACHE_TTL_MS };
+  return { value, etag: snapshot.etag };
+}
+
 /** 按需读取单个详情 item，不会为列表页预取所有 item 文件。 */
 export async function getStoredStyleGalleryItem(
   slug: string,
@@ -97,16 +107,21 @@ export async function getStyleGalleryExampleIndex(options: { fresh?: boolean } =
 export async function putStoredStyleGalleryItem(
   item: StoredStyleGalleryItem,
   conditions: StyleGalleryObjectWriteConditions = {},
-): Promise<void> {
+): Promise<string | null> {
   const value = styleGalleryItemSchema.parse(item);
-  await putJson(getStyleGalleryItemKey(value.slug), value, conditions);
+  const etag = await putJson(getStyleGalleryItemKey(value.slug), value, conditions);
   itemCache.set(value.slug, { value, expiresAt: Date.now() + CACHE_TTL_MS });
+  return etag;
 }
 
-export async function putStyleGalleryCatalog(catalog: StyleGalleryCatalog): Promise<void> {
+export async function putStyleGalleryCatalog(
+  catalog: StyleGalleryCatalog,
+  conditions: StyleGalleryObjectWriteConditions = {},
+): Promise<string | null> {
   const value = styleGalleryCatalogSchema.parse(catalog);
-  await putJson(STYLE_GALLERY_CATALOG_KEY, value);
+  const etag = await putJson(STYLE_GALLERY_CATALOG_KEY, value, conditions);
   catalogCache = { value, expiresAt: Date.now() + CACHE_TTL_MS };
+  return etag;
 }
 
 /**
@@ -180,7 +195,11 @@ export function invalidateStyleGalleryStoreCache(): void {
   itemCache.clear();
 }
 
-async function putJson(key: string, value: unknown, conditions: StyleGalleryObjectWriteConditions = {}): Promise<void> {
+async function putJson(
+  key: string,
+  value: unknown,
+  conditions: StyleGalleryObjectWriteConditions = {},
+): Promise<string | null> {
   const body = new TextEncoder().encode(`${JSON.stringify(value, null, 2)}\n`);
-  await putStyleGalleryObject(key, body, 'application/json; charset=utf-8', conditions);
+  return putStyleGalleryObject(key, body, 'application/json; charset=utf-8', conditions);
 }

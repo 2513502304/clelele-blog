@@ -1,12 +1,18 @@
+import { ErrorBoundary, InlineErrorFallback } from '@components/common';
 import { useCollectionPagination } from '@hooks/useCollectionPagination';
 import { Icon } from '@iconify/react';
-import { useMemo, useState } from 'react';
+import { groupStyleGalleryPromptsByModel } from '@lib/style-gallery-prompt-groups';
+import { useReducedMotion } from 'motion/react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CollectionPaginationSettings, CollectionPaginator } from '../collection/CollectionPagination';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog';
 
 export interface StyleGalleryBrowserItem {
   slug: string;
   title: string;
   prompt: string;
+  additionalPrompts: string[];
+  promptCount: number;
   date: string;
   sourceImage: string;
   thumbnailImage?: string;
@@ -22,6 +28,7 @@ interface StyleGalleryBrowserProps {
   tags: string[];
   modelTargets: string[];
   galleryBasePath: string;
+  dateLocale: string;
   labels: StyleGalleryBrowserLabels;
 }
 
@@ -42,12 +49,30 @@ export interface StyleGalleryBrowserLabels {
   copy: string;
   copied: string;
   copyRetry: string;
+  promptOption: string;
+  promptModelUnknown: string;
+  promptChooserTitle: string;
+  promptChooserDescription: string;
+  promptLoading: string;
+  promptLoadFailed: string;
   view: string;
   noMatches: string;
 }
 
 type SortKey = 'default' | 'date' | 'id' | 'examples' | 'likes';
 type SortDirection = 'asc' | 'desc';
+interface PromptChoice {
+  id: string;
+  prompt: string;
+  model?: string;
+  importedAt: string;
+}
+
+interface PromptPickerState {
+  item: StyleGalleryBrowserItem;
+  prompts: PromptChoice[] | null;
+  failed: boolean;
+}
 // 桌面端固定三列：前两行主动加载，但只让首行占用高网络优先级。
 const EAGER_CARD_COUNT = 6;
 const HIGH_PRIORITY_CARD_COUNT = 3;
@@ -57,16 +82,31 @@ function normalize(value: string) {
 }
 
 /**
- * Gallery 主预览页：在 catalog 的完整 prompt 上搜索，再执行标签筛选、排序和本地分页。
- * 搜索和复制都不读取详情 item，避免每张卡片额外访问 HF。
+ * Gallery 主预览页：在 catalog 的全部 prompt 文本上搜索，再执行标签筛选、排序和本地分页。
+ * 单 prompt 复制不读取详情；多 prompt 只在用户打开选择器时按需请求一次并缓存在浏览器内。
  */
-export default function StyleGalleryBrowser({ items, tags, modelTargets, galleryBasePath, labels }: StyleGalleryBrowserProps) {
+function StyleGalleryBrowserContent({
+  items,
+  tags,
+  modelTargets,
+  galleryBasePath,
+  dateLocale,
+  labels,
+}: StyleGalleryBrowserProps) {
+  const shouldReduceMotion = useReducedMotion();
   const [query, setQuery] = useState('');
   const [activeTag, setActiveTag] = useState<string>('all');
   const [sortKey, setSortKey] = useState<SortKey>('default');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
   const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
   const [copyErrorSlug, setCopyErrorSlug] = useState<string | null>(null);
+  const [promptPicker, setPromptPicker] = useState<PromptPickerState | null>(null);
+  const [expandedPromptModels, setExpandedPromptModels] = useState<Set<string>>(() => new Set());
+  const [expandedPromptIds, setExpandedPromptIds] = useState<Set<string>>(() => new Set());
+  const [copiedPromptId, setCopiedPromptId] = useState<string | null>(null);
+  const promptCache = useRef(new Map<string, PromptChoice[]>());
+  const dateFormatter = useMemo(() => new Intl.DateTimeFormat(dateLocale, { timeZone: 'Asia/Shanghai' }), [dateLocale]);
+  const promptGroups = useMemo(() => groupStyleGalleryPromptsByModel(promptPicker?.prompts ?? []), [promptPicker?.prompts]);
   const sortLabels: Record<SortKey, string> = {
     default: labels.sortDefault,
     date: labels.sortImportedAt,
@@ -75,11 +115,38 @@ export default function StyleGalleryBrowser({ items, tags, modelTargets, gallery
     likes: labels.sortLikeCount,
   };
 
+  useEffect(() => {
+    const firstPrompt = promptPicker?.prompts?.[0];
+    setExpandedPromptModels(firstPrompt ? new Set([firstPrompt.model?.trim() ?? '']) : new Set());
+    setExpandedPromptIds(firstPrompt ? new Set([firstPrompt.id]) : new Set());
+    setCopiedPromptId(null);
+  }, [promptPicker?.prompts]);
+
+  function togglePromptModelExpanded(model: string) {
+    setExpandedPromptModels((current) => {
+      const next = new Set(current);
+      if (next.has(model)) next.delete(model);
+      else next.add(model);
+      return next;
+    });
+  }
+
+  function togglePromptExpanded(promptId: string) {
+    setExpandedPromptIds((current) => {
+      const next = new Set(current);
+      if (next.has(promptId)) next.delete(promptId);
+      else next.add(promptId);
+      return next;
+    });
+  }
+
   const filteredItems = useMemo(() => {
     const q = normalize(query);
     const filtered = items.filter((item) => {
       const matchesTag = activeTag === 'all' || tags.includes(activeTag);
-      const searchable = [item.title, item.prompt, ...tags, ...modelTargets].filter(Boolean).join(' ');
+      const searchable = [item.title, item.prompt, ...item.additionalPrompts, ...tags, ...modelTargets]
+        .filter(Boolean)
+        .join(' ');
       const matchesQuery = !q || normalize(searchable).includes(q);
       return matchesTag && matchesQuery;
     });
@@ -118,16 +185,50 @@ export default function StyleGalleryBrowser({ items, tags, modelTargets, gallery
     setCurrentPage(1);
   }
 
-  async function copyPrompt(item: StyleGalleryBrowserItem) {
+  async function copyPromptText(item: StyleGalleryBrowserItem, prompt: string): Promise<boolean> {
     setCopyErrorSlug(null);
     try {
-      await navigator.clipboard.writeText(item.prompt);
+      await navigator.clipboard.writeText(prompt);
       setCopiedSlug(item.slug);
       window.setTimeout(() => setCopiedSlug((current) => (current === item.slug ? null : current)), 1800);
+      return true;
     } catch {
       setCopyErrorSlug(item.slug);
       window.setTimeout(() => setCopyErrorSlug((current) => (current === item.slug ? null : current)), 2400);
+      return false;
     }
+  }
+
+  async function copyPrompt(item: StyleGalleryBrowserItem) {
+    if (item.promptCount <= 1) {
+      await copyPromptText(item, item.prompt);
+      return;
+    }
+
+    const cached = promptCache.current.get(item.slug);
+    setPromptPicker({ item, prompts: cached ?? null, failed: false });
+    if (cached) return;
+    try {
+      const response = await fetch(`/api/style-gallery/prompts/${encodeURIComponent(item.slug)}`, {
+        credentials: 'same-origin',
+      });
+      if (!response.ok) throw new Error(`Prompt request failed with HTTP ${response.status}.`);
+      const data = (await response.json()) as { prompts?: PromptChoice[] };
+      if (!data.prompts?.length) throw new Error('Prompt response was empty.');
+      promptCache.current.set(item.slug, data.prompts);
+      setPromptPicker((current) =>
+        current?.item.slug === item.slug ? { ...current, prompts: data.prompts ?? [], failed: false } : current,
+      );
+    } catch {
+      setPromptPicker((current) => (current?.item.slug === item.slug ? { ...current, prompts: null, failed: true } : current));
+    }
+  }
+
+  async function copySelectedPrompt(prompt: PromptChoice) {
+    if (!promptPicker) return;
+    if (!(await copyPromptText(promptPicker.item, prompt.prompt))) return;
+    setCopiedPromptId(prompt.id);
+    window.setTimeout(() => setCopiedPromptId((current) => (current === prompt.id ? null : current)), 1800);
   }
 
   return (
@@ -257,7 +358,7 @@ export default function StyleGalleryBrowser({ items, tags, modelTargets, gallery
                 </a>
                 <div className="flex shrink-0 flex-col items-end gap-1">
                   <span className="rounded-full bg-rose-50 px-2 py-1 font-bold text-[11px] text-rose-500 dark:bg-rose-950/50 dark:text-rose-200">
-                    {new Date(item.date).toLocaleDateString()}
+                    {dateFormatter.format(new Date(item.date))}
                   </span>
                   {item.imageCount > 1 && (
                     <span className="rounded-full bg-sky-50 px-2 py-1 font-bold text-[11px] text-sky-600 dark:bg-sky-950/50 dark:text-sky-200">
@@ -288,6 +389,11 @@ export default function StyleGalleryBrowser({ items, tags, modelTargets, gallery
                     className="size-4"
                   />
                   {copyErrorSlug === item.slug ? labels.copyRetry : copiedSlug === item.slug ? labels.copied : labels.copy}
+                  {item.promptCount > 1 && copyErrorSlug !== item.slug && copiedSlug !== item.slug && (
+                    <span className="rounded bg-rose-50 px-1.5 py-0.5 text-[10px] text-rose-500 dark:bg-rose-950/50 dark:text-rose-200">
+                      ×{item.promptCount}
+                    </span>
+                  )}
                 </button>
                 <a
                   href={`${galleryBasePath}/${item.slug}`}
@@ -310,6 +416,125 @@ export default function StyleGalleryBrowser({ items, tags, modelTargets, gallery
       )}
 
       {isPaginated && <CollectionPaginator currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />}
+
+      <Dialog open={Boolean(promptPicker)} onOpenChange={(open) => !open && setPromptPicker(null)}>
+        <DialogContent
+          className="max-h-[min(80vh,44rem)] max-w-2xl overflow-hidden p-0"
+          overlayClassName="bg-black/55 backdrop-blur-sm"
+        >
+          <DialogHeader className="border-border border-b px-6 pt-6 pr-14 pb-4">
+            <DialogTitle>{labels.promptChooserTitle}</DialogTitle>
+            <DialogDescription>{labels.promptChooserDescription}</DialogDescription>
+          </DialogHeader>
+          <div className="overflow-y-auto px-4 pb-5">
+            {!promptPicker?.prompts && !promptPicker?.failed && (
+              <div className="flex min-h-32 items-center justify-center gap-2 text-muted-foreground text-sm">
+                <Icon icon="ri:loader-4-line" className={`size-4 ${shouldReduceMotion ? '' : 'animate-spin'}`} />
+                {labels.promptLoading}
+              </div>
+            )}
+            {promptPicker?.failed && (
+              <button
+                type="button"
+                onClick={() => copyPrompt(promptPicker.item)}
+                className="flex min-h-32 w-full items-center justify-center gap-2 text-rose-500 text-sm"
+              >
+                <Icon icon="ri:refresh-line" className="size-4" />
+                {labels.promptLoadFailed}
+              </button>
+            )}
+            {promptPicker?.prompts && (
+              <div className="space-y-5 pt-4">
+                {promptGroups.map((group) => {
+                  const groupKey = group.model ?? '';
+                  const groupExpanded = expandedPromptModels.has(groupKey);
+                  return (
+                    <section
+                      key={groupKey || '__unknown__'}
+                      aria-label={group.model ?? labels.promptModelUnknown}
+                      className="overflow-hidden rounded-lg border border-border bg-background"
+                    >
+                      <button
+                        type="button"
+                        aria-expanded={groupExpanded}
+                        onClick={() => togglePromptModelExpanded(groupKey)}
+                        className="flex w-full items-center gap-2 px-4 py-3 text-left transition hover:bg-muted/60"
+                      >
+                        <span className="min-w-0 flex-1 truncate font-bold text-sm">
+                          {group.model ?? labels.promptModelUnknown}
+                        </span>
+                        <span className="rounded-full bg-muted px-2 py-0.5 text-muted-foreground text-xs">
+                          ×{group.prompts.length}
+                        </span>
+                        <Icon
+                          icon={groupExpanded ? 'ri:arrow-up-s-line' : 'ri:arrow-down-s-line'}
+                          className="size-4 shrink-0 text-muted-foreground"
+                        />
+                      </button>
+                      {groupExpanded && (
+                        <div className="space-y-2 border-border border-t bg-muted/20 p-2 pl-5">
+                          {group.prompts.map(({ prompt, modelIndex }) => {
+                            const promptExpanded = expandedPromptIds.has(prompt.id);
+                            const promptCopied = copiedPromptId === prompt.id;
+                            return (
+                              <article
+                                key={prompt.id}
+                                className="overflow-hidden rounded-lg border border-border bg-background"
+                              >
+                                <button
+                                  type="button"
+                                  aria-expanded={promptExpanded}
+                                  onClick={() => togglePromptExpanded(prompt.id)}
+                                  className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-muted/60"
+                                >
+                                  <span className="min-w-0 flex-1 truncate font-bold text-sm">
+                                    {labels.promptOption.replace('{index}', String(modelIndex))}
+                                  </span>
+                                  <Icon
+                                    icon={promptExpanded ? 'ri:arrow-up-s-line' : 'ri:arrow-down-s-line'}
+                                    className="size-4 shrink-0 text-muted-foreground"
+                                  />
+                                </button>
+                                {promptExpanded && (
+                                  <div className="border-border border-t p-4">
+                                    <p className="whitespace-pre-wrap text-muted-foreground text-sm leading-6">
+                                      {prompt.prompt}
+                                    </p>
+                                    <button
+                                      type="button"
+                                      onClick={() => copySelectedPrompt(prompt)}
+                                      className="mt-4 ml-auto flex h-9 min-w-24 items-center justify-center gap-2 rounded-md bg-rose-500 px-4 font-bold text-sm text-white transition hover:bg-rose-600"
+                                    >
+                                      <Icon
+                                        icon={promptCopied ? 'ri:check-line' : 'ri:file-copy-line'}
+                                        className="size-4 shrink-0"
+                                      />
+                                      <span>{promptCopied ? labels.copied : labels.copy}</span>
+                                    </button>
+                                  </div>
+                                )}
+                              </article>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </section>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </section>
+  );
+}
+
+/** 将列表、分页和 prompt 选择器的渲染异常限制在 Gallery 主交互区。 */
+export default function StyleGalleryBrowser(props: StyleGalleryBrowserProps) {
+  return (
+    <ErrorBoundary FallbackComponent={InlineErrorFallback}>
+      <StyleGalleryBrowserContent {...props} />
+    </ErrorBoundary>
   );
 }
