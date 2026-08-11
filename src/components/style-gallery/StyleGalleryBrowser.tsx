@@ -503,11 +503,11 @@ function StyleGalleryBrowserContent({
                                     <button
                                       type="button"
                                       onClick={() => copySelectedPrompt(prompt)}
-                                      className="relative mt-4 ml-auto flex h-9 min-w-24 items-center justify-center rounded-md bg-rose-500 px-9 font-bold text-sm text-white transition hover:bg-rose-600"
+                                      className="mt-4 ml-auto flex h-9 min-w-24 items-center justify-center gap-2 rounded-md bg-rose-500 px-4 font-bold text-sm text-white transition hover:bg-rose-600"
                                     >
                                       <Icon
                                         icon={promptCopied ? 'ri:check-line' : 'ri:file-copy-line'}
-                                        className="absolute left-3 size-4"
+                                        className="size-4 shrink-0"
                                       />
                                       <span>{promptCopied ? labels.copied : labels.copy}</span>
                                     </button>
