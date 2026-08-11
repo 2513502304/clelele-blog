@@ -2,6 +2,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import sharp from 'sharp';
 import { configureEnvironmentProxy } from './lib/environment-proxy.mjs';
 
@@ -16,22 +17,28 @@ const ITEM_BATCH_SIZE = Math.min(positiveInteger(process.env.STYLE_GALLERY_IMPOR
 class NonRetryableRequestError extends Error {}
 
 function usage() {
-  console.error('Usage: node scripts/import-style-prompts.mjs <codex-session.jsonl> [--metadata-only] [--api-base-url=<url>]');
-  console.error('Required environment: STYLE_GALLERY_UPLOAD_TOKEN');
+  console.error(
+    'Usage: node scripts/import-style-prompts.mjs <codex-session.jsonl> [--dry-run] [--metadata-only] [--prompt-model=<name>] [--api-base-url=<url>]',
+  );
+  console.error('Required for writes: STYLE_GALLERY_UPLOAD_TOKEN');
 }
 
 function parseArgs(argv) {
   let sessionPath = null;
   let apiBaseUrl = DEFAULT_API_BASE_URL;
   let metadataOnly = false;
+  let promptModel = null;
+  let dryRun = false;
   let help = false;
   for (const arg of argv) {
     if (arg === '--help' || arg === '-h') help = true;
+    else if (arg === '--dry-run') dryRun = true;
     else if (arg === '--metadata-only' || arg === '--update-metadata-only') metadataOnly = true;
+    else if (arg.startsWith('--prompt-model=')) promptModel = arg.slice('--prompt-model='.length).trim() || null;
     else if (arg.startsWith('--api-base-url=')) apiBaseUrl = arg.slice('--api-base-url='.length);
     else if (!arg.startsWith('--') && !sessionPath) sessionPath = arg;
   }
-  return { apiBaseUrl: apiBaseUrl.replace(/\/$/, ''), help, metadataOnly, sessionPath };
+  return { apiBaseUrl: apiBaseUrl.replace(/\/$/, ''), dryRun, help, metadataOnly, promptModel, sessionPath };
 }
 
 function positiveInteger(value, fallback) {
@@ -61,6 +68,14 @@ function itemHashFromImageHashes(imageHashes) {
   return crypto.createHash('sha256').update(imageHashes.join('\n')).digest('hex');
 }
 
+function normalizePrompt(prompt) {
+  return prompt.replace(/\r\n?/g, '\n').trim();
+}
+
+function promptId(prompt) {
+  return crypto.createHash('sha256').update(normalizePrompt(prompt)).digest('hex');
+}
+
 function apiImagePath(kind, fileName) {
   return `/api/style-gallery/image/${kind}/${fileName}`;
 }
@@ -88,9 +103,14 @@ async function readRecords(sessionPath) {
 function extractItems(records) {
   const items = [];
   let pendingInput = null;
+  let currentModel = null;
   for (const { index, record } of records) {
     const payload = record?.payload;
     if (!payload || typeof payload !== 'object') continue;
+    if (record.type === 'turn_context' && typeof payload.model === 'string' && payload.model.trim()) {
+      currentModel = payload.model.trim();
+      continue;
+    }
     if (record.type === 'event_msg' && payload.type === 'user_message' && Array.isArray(payload.images)) {
       const images = payload.images.filter((value) => typeof value === 'string' && value.startsWith('data:image/'));
       if (images.length) {
@@ -99,6 +119,7 @@ function extractItems(records) {
           originalPrompt: sanitizeOriginalPrompt(typeof payload.message === 'string' ? payload.message : ''),
           sourceLine: index,
           timestamp: record.timestamp,
+          model: currentModel,
         };
       }
       continue;
@@ -106,7 +127,7 @@ function extractItems(records) {
     if (record.type === 'event_msg' && payload.type === 'agent_message') {
       const message = typeof payload.message === 'string' ? payload.message : payload.message?.content;
       if (pendingInput && typeof message === 'string' && message.includes(PLACEHOLDER)) {
-        items.push({ ...pendingInput, prompt: message.trim(), promptLine: index });
+        items.push({ ...pendingInput, prompt: normalizePrompt(message), promptLine: index });
         pendingInput = null;
       }
     }
@@ -115,12 +136,12 @@ function extractItems(records) {
 }
 
 /**
- * 构造待写入的 v3 item 和缺失资产集合。
- * 同一用户消息中的多张图保持原顺序并归入一个 item；资产 Map 按对象键去重，缩略图只生成一次。
+ * 构造待写入的 v4 item 和缺失资产集合。
+ * 同图不同 prompt 合并为有序变体；既有图片不重新生成或上传资产。
  */
-async function buildImportData(extractedItems, sessionPath, existingByHash, metadataOnly) {
+async function buildImportData(extractedItems, sessionPath, existingByHash, metadataOnly, promptModelOverride) {
   const assets = new Map();
-  const items = [];
+  const itemsByHash = new Map();
   let skippedDuplicates = 0;
   let skippedNewMetadata = 0;
 
@@ -130,16 +151,20 @@ async function buildImportData(extractedItems, sessionPath, existingByHash, meta
     const imageHashes = parsedImages.map((image) => crypto.createHash('sha256').update(image.bytes).digest('hex'));
     const itemHash = itemHashFromImageHashes(imageHashes);
     const existing = existingByHash.get(itemHash);
-    if (existing && !metadataOnly) skippedDuplicates += 1;
     if (!existing && metadataOnly) {
       skippedNewMetadata += 1;
+      continue;
+    }
+    const normalizedPrompt = normalizePrompt(extracted.prompt);
+    if (existing && !metadataOnly && normalizePrompt(existing.prompt) === normalizedPrompt) {
+      skippedDuplicates += 1;
       continue;
     }
 
     const shortHash = itemHash.slice(0, 12);
     const date = extracted.timestamp ? new Date(extracted.timestamp) : new Date();
     const slug = existing?.slug ?? `${date.toISOString().slice(0, 10)}-${shortHash}`;
-    const title = `Style Prompt ${shortHash}`;
+    const title = existing?.title ?? `Style Prompt ${shortHash}`;
     const imageRefs = [];
 
     for (let index = 0; index < parsedImages.length; index += 1) {
@@ -149,8 +174,8 @@ async function buildImportData(extractedItems, sessionPath, existingByHash, meta
       const thumbnailName = `${imageHash.slice(0, 12)}.webp`;
       const sourceKey = `source/${imageName}`;
       const thumbnailKey = `thumb/${thumbnailName}`;
-      assets.set(sourceKey, { body: image.bytes, contentType: image.mime });
-      if (!assets.has(thumbnailKey)) {
+      if (!existing) assets.set(sourceKey, { body: image.bytes, contentType: image.mime });
+      if (!existing && !assets.has(thumbnailKey)) {
         const thumbnail = await sharp(image.bytes)
           .resize({ width: 720, withoutEnlargement: true })
           .webp({ quality: 82 })
@@ -165,26 +190,39 @@ async function buildImportData(extractedItems, sessionPath, existingByHash, meta
       });
     }
 
-    if (!existing || metadataOnly) {
-      items.push({
-        version: 3,
-        slug,
-        title,
-        date: date.toISOString(),
-        sourceImage: imageRefs[0].sourceImage,
-        thumbnailImage: imageRefs[0].thumbnailImage,
-        sourceImageAlt: imageRefs[0].sourceImageAlt,
-        prompt: extracted.prompt,
-        ...(extracted.originalPrompt ? { originalPrompt: extracted.originalPrompt } : {}),
-        imageHash: itemHash,
-        images: imageRefs,
-        sourceSession: path.basename(sessionPath),
-        sourceLine: extracted.sourceLine,
-        examples: [],
-      });
+    const variant = {
+      id: promptId(normalizedPrompt),
+      prompt: normalizedPrompt,
+      ...(promptModelOverride || extracted.model ? { model: promptModelOverride ?? extracted.model } : {}),
+      ...(extracted.originalPrompt ? { originalPrompt: extracted.originalPrompt } : {}),
+      importedAt: date.toISOString(),
+      sourceSession: path.basename(sessionPath),
+      sourceLine: extracted.sourceLine,
+    };
+    const pending = itemsByHash.get(itemHash);
+    if (pending) {
+      if (pending.prompts.some((prompt) => normalizePrompt(prompt.prompt) === normalizedPrompt)) {
+        skippedDuplicates += 1;
+      } else {
+        pending.prompts.push(variant);
+      }
+      continue;
     }
+    itemsByHash.set(itemHash, {
+      version: 4,
+      slug,
+      title,
+      date: existing?.date ?? date.toISOString(),
+      sourceImage: existing?.sourceImage ?? imageRefs[0].sourceImage,
+      thumbnailImage: existing?.thumbnailImage ?? imageRefs[0].thumbnailImage,
+      sourceImageAlt: existing?.sourceImageAlt ?? imageRefs[0].sourceImageAlt,
+      prompts: [variant],
+      imageHash: itemHash,
+      images: imageRefs,
+      examples: [],
+    });
   }
-  return { assets, items, skippedDuplicates, skippedNewMetadata };
+  return { assets, items: [...itemsByHash.values()], skippedDuplicates, skippedNewMetadata };
 }
 
 async function requestJson(url, options, timeoutMs = REQUEST_TIMEOUT_MS) {
@@ -302,25 +340,35 @@ function sleep(ms) {
 
 async function main() {
   configureEnvironmentProxy();
-  const { apiBaseUrl, help, metadataOnly, sessionPath } = parseArgs(process.argv.slice(2));
+  const { apiBaseUrl, dryRun, help, metadataOnly, promptModel, sessionPath } = parseArgs(process.argv.slice(2));
   if (help || !sessionPath) {
     usage();
     process.exit(help ? 0 : 1);
   }
   const token = process.env.STYLE_GALLERY_UPLOAD_TOKEN;
-  if (!token) throw new Error('STYLE_GALLERY_UPLOAD_TOKEN is required.');
+  if (!dryRun && !token) throw new Error('STYLE_GALLERY_UPLOAD_TOKEN is required.');
   const absoluteSessionPath = path.resolve(sessionPath);
   const records = await readRecords(absoluteSessionPath);
   const extractedItems = extractItems(records);
   const catalog = await requestJson(`${apiBaseUrl}/api/style-gallery/catalog`, { headers: { accept: 'application/json' } });
   const existingByHash = new Map(catalog.items.map((item) => [item.imageHash, item]));
-  const prepared = await buildImportData(extractedItems, absoluteSessionPath, existingByHash, metadataOnly);
+  const prepared = await buildImportData(extractedItems, absoluteSessionPath, existingByHash, metadataOnly, promptModel);
 
   console.log(`Found ${extractedItems.length} image/prompt items.`);
+  if (dryRun) {
+    const updates = prepared.items.filter((item) => existingByHash.has(item.imageHash)).length;
+    console.log(
+      `Dry run: ${prepared.items.length - updates} new item(s), ${updates} existing item(s) with candidate prompts, ${prepared.skippedDuplicates} exact duplicate(s), ${prepared.assets.size} asset object(s) would be prepared.`,
+    );
+    return;
+  }
   let uploadedKeys = [];
   try {
     uploadedKeys = await prepareAndUploadAssets(apiBaseUrl, token, prepared.assets);
     let written = 0;
+    let created = 0;
+    let updated = 0;
+    let addedPrompts = 0;
     let apiDuplicates = 0;
     const itemChunks = chunks(prepared.items, ITEM_BATCH_SIZE);
     for (let index = 0; index < itemChunks.length; index += 1) {
@@ -336,13 +384,18 @@ async function main() {
         UPLOAD_TIMEOUT_MS,
       );
       written += result.written ?? 0;
+      created += result.created ?? 0;
+      updated += result.updated ?? 0;
+      addedPrompts += result.addedPrompts ?? 0;
       apiDuplicates += result.skippedDuplicates ?? 0;
       console.log(
-        `Completed metadata batch ${index + 1}/${itemChunks.length}: ${result.written ?? 0} written, ${result.skippedDuplicates ?? 0} duplicate(s).`,
+        `Completed metadata batch ${index + 1}/${itemChunks.length}: ${result.created ?? 0} new item(s), ${result.updated ?? 0} existing item(s) updated, ${result.addedPrompts ?? 0} prompt(s) added, ${result.skippedDuplicates ?? 0} duplicate prompt(s).`,
       );
     }
     console.log(`Uploaded ${uploadedKeys.length} missing image assets with concurrency ${UPLOAD_CONCURRENCY}.`);
-    console.log(`${metadataOnly ? 'Updated' : 'Wrote'} ${written} gallery metadata items in HF storage.`);
+    console.log(
+      `${metadataOnly ? 'Updated' : 'Wrote'} ${written} gallery metadata item(s): ${created} created, ${updated} updated, ${addedPrompts} prompt variant(s) added.`,
+    );
     console.log(`Skipped ${prepared.skippedDuplicates + apiDuplicates} duplicate image/prompt records.`);
     if (metadataOnly) console.log(`Skipped ${prepared.skippedNewMetadata} new records because --metadata-only was set.`);
   } catch (error) {
@@ -352,17 +405,24 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+export { buildImportData, extractItems };
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}
 
 /*
 HTTP_PROXY=http://127.0.0.1:7897 \
 HTTPS_PROXY=http://127.0.0.1:7897 \
 STYLE_GALLERY_UPLOAD_TOKEN='...' \
 STYLE_GALLERY_IMPORT_ATTEMPTS=5 \
-npm run import:style-prompts -- <session.jsonl>
+npm run import:style-prompts -- <session.jsonl> --prompt-model='gpt-5.6-sol'
+
+# JSONL 的 turn_context 已包含正确模型时，可省略 --prompt-model；该参数用于缺失或手动覆盖来源模型。
+# 写入前只核对新建/更新/重复数量时追加 --dry-run；该模式不需要 Upload Token，也不会修改 HF。
 */
 
 /*

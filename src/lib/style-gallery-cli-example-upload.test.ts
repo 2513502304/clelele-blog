@@ -10,6 +10,8 @@ function catalogItem(slug: string, imageHash: string): StyleGalleryCatalogItem {
     date: '2026-07-26T00:00:00.000Z',
     sourceImage: `/api/style-gallery/image/source/${imageHash.slice(0, 12)}.jpg`,
     prompt: 'Reusable prompt',
+    additionalPrompts: [],
+    promptCount: 1,
     imageHash,
     imageCount: 1,
     exampleCount: 0,

@@ -22,13 +22,25 @@ export interface StyleGalleryExampleView extends StyleGalleryExample {
   likeCount: number;
 }
 
+/** 同一参考图片下的一份可复用 prompt，以及生成它时可公开展示的来源信息。 */
+export interface StyleGalleryPromptVariant {
+  /** 规范化 prompt 文本的 SHA-256；用于幂等追加，不作为图片 item 身份。 */
+  id: string;
+  prompt: string;
+  model?: string;
+  originalPrompt?: string;
+  importedAt: string;
+  sourceSession?: string;
+  sourceLine?: number;
+}
+
 /**
  * HF `items/<slug>.json` 的完整详情数据。
  *
  * `examples` 只保存在 item 详情中，不写入列表 catalog，避免示例增长拖慢 Gallery 首页。
  */
 export interface StoredStyleGalleryItem {
-  version: 3;
+  version: 4;
   slug: string;
   title: string;
   date: string;
@@ -36,18 +48,19 @@ export interface StoredStyleGalleryItem {
   sourceImage: string;
   thumbnailImage?: string;
   sourceImageAlt?: string;
-  prompt: string;
-  originalPrompt?: string;
+  /** 首项是默认 prompt；后续导入只追加不同文本，不改变既有默认值。 */
+  prompts: StyleGalleryPromptVariant[];
   imageHash: string;
   images: StyleGalleryImageRef[];
-  sourceSession?: string;
-  sourceLine?: number;
   draft?: boolean;
   examples: StyleGalleryExample[];
 }
 
 /** 详情页使用的数据，在持久化 item 上补充 catalog 顶层共享配置。 */
 export interface StyleGalleryItem extends Omit<StoredStyleGalleryItem, 'examples'> {
+  /** 默认 prompt 的兼容读取字段，避免非切换型入口重复选择首项。 */
+  prompt: string;
+  originalPrompt?: string;
   tags: string[];
   modelTargets: string[];
   examples: StyleGalleryExampleView[];
@@ -55,7 +68,7 @@ export interface StyleGalleryItem extends Omit<StoredStyleGalleryItem, 'examples
 
 /**
  * `metadata/catalog.json` 中的列表页最小条目。
- * 完整 prompt 保留在此处以支持无需额外请求的搜索和复制；示例仅记录数量，不展开元数据。
+ * 默认 prompt 用于卡片渲染和直接复制；额外候选只保留搜索文本，模型与来源按需读取详情 item。
  */
 export interface StyleGalleryCatalogItem {
   slug: string;
@@ -65,6 +78,10 @@ export interface StyleGalleryCatalogItem {
   thumbnailImage?: string;
   sourceImageAlt?: string;
   prompt: string;
+  /** 除默认 prompt 外的候选全文，仅供列表页本地搜索；来源、模型等详情仍按需读取 item。 */
+  additionalPrompts: string[];
+  /** 详情 item 中可切换的 prompt 数量。 */
+  promptCount: number;
   imageHash: string;
   imageCount: number;
   exampleCount: number;
@@ -72,7 +89,7 @@ export interface StyleGalleryCatalogItem {
 
 /** Gallery 首页、图片矩阵和服务端检索共享的轻量索引。 */
 export interface StyleGalleryCatalog {
-  version: 3;
+  version: 4;
   updatedAt: string;
   tags: string[];
   modelTargets: string[];

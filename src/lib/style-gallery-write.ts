@@ -1,5 +1,6 @@
 import {
   deleteStyleGalleryObject,
+  getStyleGalleryObjectEtag,
   getStyleGalleryObjectTextSnapshot,
   headStyleGalleryObject,
   putStyleGalleryObject,
@@ -9,10 +10,12 @@ import { mapWithConcurrency } from '@lib/map-with-concurrency';
 import { assertStyleGalleryItemConsistency, getStyleGalleryItemAssetKeys } from '@lib/style-gallery-assets';
 import { StyleGalleryClientError } from '@lib/style-gallery-errors';
 import { toStyleGalleryExampleIndexGroup } from '@lib/style-gallery-examples';
+import { mergeStyleGalleryPromptVariants } from '@lib/style-gallery-prompts';
 import { styleGalleryItemSchema, toStyleGalleryCatalogItem } from '@lib/style-gallery-schema';
 import {
   getStoredStyleGalleryItem,
   getStyleGalleryCatalog,
+  getStyleGalleryCatalogSnapshot,
   getStyleGalleryExampleIndex,
   getStyleGalleryItemKey,
   invalidateStyleGalleryStoreCache,
@@ -37,6 +40,9 @@ let writeQueue: Promise<unknown> = Promise.resolve();
 interface WriteItemsResult {
   items: StoredStyleGalleryItem[];
   written: number;
+  created: number;
+  updated: number;
+  addedPrompts: number;
   skippedDuplicates: number;
 }
 
@@ -48,6 +54,12 @@ interface UpdateExamplesResult {
 interface UpdateExamplesOptions {
   /** 平台等纯元数据修改不改变 exampleCount，可跳过体积较大的 catalog 读写。 */
   catalogMode?: 'update-count' | 'preserve-count';
+}
+
+interface ItemExamplesMutation {
+  previousItem: StoredStyleGalleryItem;
+  item: StoredStyleGalleryItem;
+  writtenEtag: string;
 }
 
 /**
@@ -78,6 +90,7 @@ export async function writeStyleGalleryItems(
 ): Promise<WriteItemsResult> {
   return serializeStyleGalleryWrite(async () => {
     const byHash = new Map<string, StoredStyleGalleryItem>();
+    let skippedDuplicates = 0;
     for (const submittedItem of submittedItems) {
       const item = styleGalleryItemSchema.parse(submittedItem);
       if (item.examples.length) {
@@ -94,42 +107,52 @@ export async function writeStyleGalleryItems(
           },
         );
       }
-      byHash.set(item.imageHash, item);
+      const pending = byHash.get(item.imageHash);
+      if (!pending) {
+        byHash.set(item.imageHash, item);
+        continue;
+      }
+      const merged = mergeStyleGalleryPromptVariants(pending.prompts, item.prompts, { updateExisting: mode === 'upsert' });
+      skippedDuplicates += merged.skipped;
+      byHash.set(item.imageHash, { ...pending, prompts: merged.prompts });
     }
     const items = [...byHash.values()];
-    await validateItemAssets(items);
-
-    const previousCatalog = await getStyleGalleryCatalog({ fresh: true });
+    const catalogSnapshot = await getStyleGalleryCatalogSnapshot();
+    const previousCatalog = catalogSnapshot.value;
     const nextBySlug = new Map(previousCatalog.items.map((item) => [item.slug, item]));
     const slugByHash = new Map(previousCatalog.items.map((item) => [item.imageHash, item.slug]));
-    const previousItemBodies = new Map<string, string | null>();
+    // `create` 下的既有图片只追加 prompt，不重新 HEAD 已经由 item 引用的图片对象。
+    await validateItemAssets(mode === 'upsert' ? items : items.filter((item) => !slugByHash.has(item.imageHash)));
+    const previousItemBodies = new Map<string, { body: string | null; writtenEtag: string }>();
     const writtenItems: StoredStyleGalleryItem[] = [];
     const attemptedIndexGroups = new Map<string, StyleGalleryExampleIndexGroup | null>();
     let previousIndex: StyleGalleryExampleIndex | null = null;
-    let skippedDuplicates = 0;
+    let created = 0;
+    let updated = 0;
+    let addedPrompts = 0;
+    let writtenCatalogEtag: string | null = null;
 
     try {
       const reservedSlugHashes = new Map(previousCatalog.items.map((item) => [item.slug, item.imageHash]));
-      const candidates: Array<{ slug: string; submittedItem: StoredStyleGalleryItem }> = [];
+      const candidates: ItemWriteCandidate[] = [];
       for (const submittedItem of items) {
         const existingSlug = slugByHash.get(submittedItem.imageHash);
-        if (existingSlug && mode === 'create') {
-          skippedDuplicates += 1;
-          continue;
-        }
-
         const slug = existingSlug ?? submittedItem.slug;
         const reservedHash = reservedSlugHashes.get(slug);
         if (reservedHash && reservedHash !== submittedItem.imageHash) {
           throw new StyleGalleryClientError(`Style gallery slug collision: ${slug}`, 409);
         }
         reservedSlugHashes.set(slug, submittedItem.imageHash);
-        candidates.push({ slug, submittedItem });
+        candidates.push({ slug, submittedItem, mode, existingInCatalog: Boolean(existingSlug) });
       }
 
       const writeOutcomes = await mapWithConcurrency(candidates, ITEM_WRITE_CONCURRENCY, writeItemCandidate);
       for (const outcome of writeOutcomes) {
-        if (outcome.item) previousItemBodies.set(outcome.item.slug, outcome.previousBody);
+        skippedDuplicates += outcome.skippedPrompts;
+        addedPrompts += outcome.addedPrompts;
+        if (outcome.item && outcome.writtenEtag) {
+          previousItemBodies.set(outcome.item.slug, { body: outcome.previousBody, writtenEtag: outcome.writtenEtag });
+        }
       }
       const writeErrors = writeOutcomes.flatMap((outcome) => (outcome.error ? [outcome.error] : []));
       if (writeErrors.length) throw new AggregateError(writeErrors, 'Failed to write one or more style gallery items.');
@@ -138,6 +161,8 @@ export async function writeStyleGalleryItems(
         if (!outcome.item) continue;
         const { item } = outcome;
         writtenItems.push(item);
+        if (outcome.created) created += 1;
+        else updated += 1;
 
         if (item.draft) {
           nextBySlug.delete(item.slug);
@@ -149,7 +174,7 @@ export async function writeStyleGalleryItems(
 
       if (writtenItems.length) {
         const nextCatalog: StyleGalleryCatalog = {
-          version: 3,
+          version: 4,
           updatedAt: new Date().toISOString(),
           tags: previousCatalog.tags,
           modelTargets: previousCatalog.modelTargets,
@@ -160,7 +185,10 @@ export async function writeStyleGalleryItems(
           if (!activeSlugs.has(item.slug)) attemptedIndexGroups.set(item.slug, null);
         }
         if (attemptedIndexGroups.size) previousIndex = await getStyleGalleryExampleIndex({ fresh: true });
-        await putStyleGalleryCatalog(nextCatalog);
+        writtenCatalogEtag = await requireWrittenObjectEtag(
+          STYLE_GALLERY_CATALOG_KEY,
+          await putStyleGalleryCatalog(nextCatalog, { ifMatch: catalogSnapshot.etag }),
+        );
         if (attemptedIndexGroups.size) {
           await mutateStyleGalleryExampleIndex((current) => ({
             version: 2,
@@ -176,9 +204,22 @@ export async function writeStyleGalleryItems(
         );
       }
 
-      return { items: writtenItems, written: writtenItems.length, skippedDuplicates };
+      return {
+        items: writtenItems,
+        written: writtenItems.length,
+        created,
+        updated,
+        addedPrompts,
+        skippedDuplicates,
+      };
     } catch (error) {
-      const rollbackErrors = await rollbackMetadata(previousCatalog, previousIndex, previousItemBodies, attemptedIndexGroups);
+      const rollbackErrors = await rollbackMetadata(
+        previousCatalog,
+        writtenCatalogEtag,
+        previousIndex,
+        previousItemBodies,
+        attemptedIndexGroups,
+      );
       if (rollbackErrors.length) {
         throw new AggregateError([error, ...rollbackErrors], 'Style gallery write failed and rollback was incomplete.');
       }
@@ -190,17 +231,23 @@ export async function writeStyleGalleryItems(
 interface ItemWriteCandidate {
   slug: string;
   submittedItem: StoredStyleGalleryItem;
+  mode: 'create' | 'upsert';
+  existingInCatalog: boolean;
 }
 
 interface ItemWriteOutcome {
   item: StoredStyleGalleryItem | null;
   previousBody: string | null;
+  writtenEtag: string | null;
   error: unknown | null;
+  created: boolean;
+  addedPrompts: number;
+  skippedPrompts: number;
 }
 
 /**
  * 读取和条件写入在同一 worker 内完成。若其他实例先更新了 examples，HF 会返回 412；下一轮会读取
- * 最新 item 并重新合并，避免 metadata 导入用旧快照覆盖刚上传的 Sub-gallery 数据。
+ * 最新 item 并重新合并 prompts/examples，避免导入用旧快照覆盖并发写入的数据。
  */
 async function writeItemCandidate(candidate: ItemWriteCandidate): Promise<ItemWriteOutcome> {
   for (let attempt = 1; attempt <= ITEM_WRITE_ATTEMPTS; attempt += 1) {
@@ -210,30 +257,80 @@ async function writeItemCandidate(candidate: ItemWriteCandidate): Promise<ItemWr
       snapshot = await getStyleGalleryObjectTextSnapshot(getStyleGalleryItemKey(candidate.slug));
       if (snapshot.text && !snapshot.etag) throw new Error(`HF did not return an ETag for item ${candidate.slug}.`);
       const existingItem = snapshot.text ? styleGalleryItemSchema.parse(JSON.parse(snapshot.text)) : null;
-      item = styleGalleryItemSchema.parse({
-        ...candidate.submittedItem,
-        slug: candidate.slug,
-        examples: existingItem?.examples ?? [],
+      if (candidate.existingInCatalog && !existingItem) {
+        throw new Error(`Catalog references missing style gallery item metadata: ${candidate.slug}`);
+      }
+      const merged = mergeStyleGalleryPromptVariants(existingItem?.prompts ?? [], candidate.submittedItem.prompts, {
+        updateExisting: candidate.mode === 'upsert',
       });
-      await putStoredStyleGalleryItem(item, snapshot.etag ? { ifMatch: snapshot.etag } : { ifNoneMatch: '*' });
-      return { item, previousBody: snapshot.text, error: null };
+      if (existingItem && candidate.existingInCatalog && candidate.mode === 'create' && merged.added === 0) {
+        return {
+          item: null,
+          previousBody: snapshot.text,
+          writtenEtag: null,
+          error: null,
+          created: false,
+          addedPrompts: 0,
+          skippedPrompts: merged.skipped,
+        };
+      }
+      item = styleGalleryItemSchema.parse(
+        existingItem && candidate.mode === 'create'
+          ? { ...existingItem, prompts: merged.prompts, updated: new Date().toISOString() }
+          : {
+              ...candidate.submittedItem,
+              slug: candidate.slug,
+              prompts: merged.prompts,
+              examples: existingItem?.examples ?? [],
+            },
+      );
+      const writtenEtag = await requireWrittenObjectEtag(
+        getStyleGalleryItemKey(candidate.slug),
+        await putStoredStyleGalleryItem(item, snapshot.etag ? { ifMatch: snapshot.etag } : { ifNoneMatch: '*' }),
+      );
+      return {
+        item,
+        previousBody: snapshot.text,
+        writtenEtag,
+        error: null,
+        created: !existingItem,
+        addedPrompts: existingItem ? merged.added : item.prompts.length,
+        skippedPrompts: merged.skipped,
+      };
     } catch (error) {
       if (error instanceof StyleGalleryObjectConflictError && attempt < ITEM_WRITE_ATTEMPTS) {
         await new Promise((resolve) => setTimeout(resolve, 40 * attempt + Math.floor(Math.random() * 80)));
         continue;
       }
-      return { item: null, previousBody: null, error };
+      return {
+        item: null,
+        previousBody: null,
+        writtenEtag: null,
+        error,
+        created: false,
+        addedPrompts: 0,
+        skippedPrompts: 0,
+      };
     }
   }
-  return { item: null, previousBody: null, error: new Error(`Failed to write item ${candidate.slug}.`) };
+  return {
+    item: null,
+    previousBody: null,
+    writtenEtag: null,
+    error: new Error(`Failed to write item ${candidate.slug}.`),
+    created: false,
+    addedPrompts: 0,
+    skippedPrompts: 0,
+  };
 }
 
 export async function reconcileStyleGalleryExampleCounts(): Promise<{ checked: number; updated: number }> {
   return serializeStyleGalleryWrite(async () => {
-    const [catalog, previousIndex] = await Promise.all([
-      getStyleGalleryCatalog({ fresh: true }),
+    const [catalogSnapshot, previousIndex] = await Promise.all([
+      getStyleGalleryCatalogSnapshot(),
       getStyleGalleryExampleIndex({ fresh: true }),
     ]);
+    const catalog = catalogSnapshot.value;
     const storedItems = await mapWithConcurrency(catalog.items, ASSET_VALIDATION_CONCURRENCY, async (item) => {
       const stored = await getStoredStyleGalleryItem(item.slug, { fresh: true });
       if (!stored) throw new Error(`Style gallery item metadata is missing: ${item.slug}`);
@@ -253,7 +350,7 @@ export async function reconcileStyleGalleryExampleCounts(): Promise<{ checked: n
     const indexChanged = JSON.stringify(groups) !== JSON.stringify(previousIndex.groups);
     if (updated || indexChanged) {
       const updatedAt = new Date().toISOString();
-      await putStyleGalleryCatalog({ ...catalog, updatedAt, items });
+      await putStyleGalleryCatalog({ ...catalog, updatedAt, items }, { ifMatch: catalogSnapshot.etag });
       await mutateStyleGalleryExampleIndex((current) => {
         const currentBySlug = new Map(current.groups.map((group) => [group.sourceSlug, group]));
         return {
@@ -282,20 +379,15 @@ export async function updateStyleGalleryItemExamples(
 ): Promise<UpdateExamplesResult> {
   return serializeStyleGalleryWrite(async () => {
     const catalogMode = options.catalogMode ?? 'update-count';
-    const [previousItem, previousCatalog] = await Promise.all([
-      getStoredStyleGalleryItem(slug, { fresh: true }),
-      catalogMode === 'update-count' ? getStyleGalleryCatalog({ fresh: true }) : Promise.resolve(null),
-    ]);
-    if (!previousItem || (previousCatalog && !previousCatalog.items.some((item) => item.slug === slug))) {
+    const catalogSnapshot = catalogMode === 'update-count' ? await getStyleGalleryCatalogSnapshot() : null;
+    const previousCatalog = catalogSnapshot?.value ?? null;
+    if (previousCatalog && !previousCatalog.items.some((item) => item.slug === slug)) {
       throw new StyleGalleryClientError('Style gallery item not found.', 404);
     }
-
-    const examples = transform(previousItem.examples, previousItem);
-    if (catalogMode === 'preserve-count' && examples.length !== previousItem.examples.length) {
-      throw new Error('A preserve-count example update must not add or remove examples.');
-    }
-    const updatedAt = new Date().toISOString();
-    const item: StoredStyleGalleryItem = { ...previousItem, updated: updatedAt, examples };
+    const mutation = await mutateStoredStyleGalleryItemExamples(slug, transform, catalogMode);
+    const { previousItem, item } = mutation;
+    const examples = item.examples;
+    const updatedAt = item.updated ?? new Date().toISOString();
     const catalog: StyleGalleryCatalog | null = previousCatalog
       ? {
           ...previousCatalog,
@@ -307,9 +399,15 @@ export async function updateStyleGalleryItemExamples(
       : null;
     let previousIndex: StyleGalleryExampleIndex | null = null;
     let attemptedGroup: StyleGalleryExampleIndexGroup | null = null;
+    let writtenCatalogEtag: string | null = null;
 
     try {
-      await Promise.all([putStoredStyleGalleryItem(item), ...(catalog ? [putStyleGalleryCatalog(catalog)] : [])]);
+      if (catalog && catalogSnapshot) {
+        writtenCatalogEtag = await requireWrittenObjectEtag(
+          STYLE_GALLERY_CATALOG_KEY,
+          await putStyleGalleryCatalog(catalog, { ifMatch: catalogSnapshot.etag }),
+        );
+      }
       const index = await mutateStyleGalleryExampleIndex((current) => {
         // mutate 内部已经读取带 ETag 的最新 index；复用首次快照可少一次全量 HF 下载，并为失败回滚保留基线。
         previousIndex ??= current;
@@ -321,8 +419,12 @@ export async function updateStyleGalleryItemExamples(
       });
       return { item, index };
     } catch (error) {
-      const rollbackTasks: Promise<unknown>[] = [putStoredStyleGalleryItem(previousItem)];
-      if (previousCatalog) rollbackTasks.push(putStyleGalleryCatalog(previousCatalog));
+      // 只在 item 仍是本次写入版本时回滚；若另一实例已追加 prompt 或更新 examples，宁可报告
+      // 回滚不完整，也不能用旧快照覆盖对方已经成功提交的数据。
+      const rollbackTasks: Promise<unknown>[] = [putStoredStyleGalleryItem(previousItem, { ifMatch: mutation.writtenEtag })];
+      if (previousCatalog && writtenCatalogEtag) {
+        rollbackTasks.push(putStyleGalleryCatalog(previousCatalog, { ifMatch: writtenCatalogEtag }));
+      }
       if (previousIndex) {
         rollbackTasks.push(restoreStyleGalleryExampleIndexStructure(previousIndex, new Map([[slug, attemptedGroup]])));
       }
@@ -338,6 +440,37 @@ export async function updateStyleGalleryItemExamples(
   });
 }
 
+/**
+ * 对单个 item 执行 ETag 条件读改写。transform 必须可重放；发生 412 时会读取最新 prompts/examples
+ * 并重新计算结果，使上传、删除和平台修改不会覆盖其他实例刚追加的 prompt。
+ */
+async function mutateStoredStyleGalleryItemExamples(
+  slug: string,
+  transform: (examples: StyleGalleryExample[], item: StoredStyleGalleryItem) => StyleGalleryExample[],
+  catalogMode: NonNullable<UpdateExamplesOptions['catalogMode']>,
+): Promise<ItemExamplesMutation> {
+  for (let attempt = 1; attempt <= ITEM_WRITE_ATTEMPTS; attempt += 1) {
+    const snapshot = await getStyleGalleryObjectTextSnapshot(getStyleGalleryItemKey(slug));
+    if (!snapshot.text) throw new StyleGalleryClientError('Style gallery item not found.', 404);
+    if (!snapshot.etag) throw new Error(`HF did not return an ETag for item ${slug}.`);
+    const previousItem = styleGalleryItemSchema.parse(JSON.parse(snapshot.text));
+    const examples = transform(previousItem.examples, previousItem);
+    if (catalogMode === 'preserve-count' && examples.length !== previousItem.examples.length) {
+      throw new Error('A preserve-count example update must not add or remove examples.');
+    }
+    const item = styleGalleryItemSchema.parse({ ...previousItem, updated: new Date().toISOString(), examples });
+    try {
+      const writtenEtag = await putStoredStyleGalleryItem(item, { ifMatch: snapshot.etag });
+      if (!writtenEtag) throw new Error(`HF did not return an ETag after writing item ${slug}.`);
+      return { previousItem, item, writtenEtag };
+    } catch (error) {
+      if (!(error instanceof StyleGalleryObjectConflictError) || attempt === ITEM_WRITE_ATTEMPTS) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 40 * attempt + Math.floor(Math.random() * 80)));
+    }
+  }
+  throw new Error(`Failed to update style gallery item ${slug} after concurrent write retries.`);
+}
+
 async function validateItemAssets(items: StoredStyleGalleryItem[]): Promise<void> {
   const keys = [...new Set(items.flatMap(getStyleGalleryItemAssetKeys))];
   await mapWithConcurrency(keys, ASSET_VALIDATION_CONCURRENCY, async (key) => {
@@ -349,35 +482,46 @@ async function validateItemAssets(items: StoredStyleGalleryItem[]): Promise<void
 
 /** 写后确认本次提交的所有非草稿 item 已进入 catalog，防止详情成功但列表索引遗漏。 */
 function assertCatalogContains(catalog: StyleGalleryCatalog, items: StoredStyleGalleryItem[]): void {
-  const savedHashes = new Set(catalog.items.map((item) => item.imageHash));
-  const missing = items.filter((item) => !savedHashes.has(item.imageHash));
+  const savedByHash = new Map(catalog.items.map((item) => [item.imageHash, item]));
+  const missing = items.filter((item) => {
+    const saved = savedByHash.get(item.imageHash);
+    return !saved || saved.promptCount < item.prompts.length;
+  });
   if (missing.length) throw new Error(`Catalog verification failed for ${missing.length} style gallery item(s).`);
 }
 
 async function rollbackMetadata(
   previousCatalog: StyleGalleryCatalog,
+  writtenCatalogEtag: string | null,
   previousIndex: StyleGalleryExampleIndex | null,
-  previousItemBodies: Map<string, string | null>,
+  previousItemBodies: Map<string, { body: string | null; writtenEtag: string }>,
   attemptedIndexGroups: ReadonlyMap<string, StyleGalleryExampleIndexGroup | null>,
 ): Promise<unknown[]> {
   const errors: unknown[] = [];
-  for (const [slug, body] of previousItemBodies) {
+  for (const [slug, snapshot] of previousItemBodies) {
     try {
       const key = getStyleGalleryItemKey(slug);
-      if (body === null) {
-        await deleteStyleGalleryObject(key);
+      if (snapshot.body === null) {
+        // 新对象若已被另一实例接手更新则保留；只有仍等于本次写入版本时才删除孤儿。
+        if ((await getStyleGalleryObjectEtag(key)) === snapshot.writtenEtag) await deleteStyleGalleryObject(key);
       } else {
-        await putStyleGalleryObject(key, new TextEncoder().encode(body), 'application/json; charset=utf-8');
+        await putStyleGalleryObject(key, new TextEncoder().encode(snapshot.body), 'application/json; charset=utf-8', {
+          ifMatch: snapshot.writtenEtag,
+        });
       }
     } catch (error) {
       errors.push(error);
     }
   }
-  try {
-    const body = new TextEncoder().encode(`${JSON.stringify(previousCatalog, null, 2)}\n`);
-    await putStyleGalleryObject(STYLE_GALLERY_CATALOG_KEY, body, 'application/json; charset=utf-8');
-  } catch (error) {
-    errors.push(error);
+  if (writtenCatalogEtag) {
+    try {
+      const body = new TextEncoder().encode(`${JSON.stringify(previousCatalog, null, 2)}\n`);
+      await putStyleGalleryObject(STYLE_GALLERY_CATALOG_KEY, body, 'application/json; charset=utf-8', {
+        ifMatch: writtenCatalogEtag,
+      });
+    } catch (error) {
+      errors.push(error);
+    }
   }
   if (previousIndex && attemptedIndexGroups.size) {
     try {
@@ -388,6 +532,12 @@ async function rollbackMetadata(
   }
   invalidateStyleGalleryStoreCache();
   return errors;
+}
+
+async function requireWrittenObjectEtag(key: string, responseEtag: string | null): Promise<string> {
+  const etag = responseEtag ?? (await getStyleGalleryObjectEtag(key));
+  if (!etag) throw new Error(`HF did not return an ETag after writing ${key}.`);
+  return etag;
 }
 
 /**

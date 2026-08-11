@@ -24,6 +24,7 @@ import {
 } from './style-gallery-examples';
 import { getStyleGalleryExampleContentType, getStyleGalleryExampleExtension } from './style-gallery-image-type';
 import { getStyleGalleryPlatform } from './style-gallery-platforms';
+import { getStyleGalleryPromptId, mergeStyleGalleryPromptVariants } from './style-gallery-prompts';
 import {
   styleGalleryCatalogSchema,
   styleGalleryExampleIndexSchema,
@@ -35,15 +36,23 @@ const firstHash = 'a'.repeat(64);
 const secondHash = 'b'.repeat(64);
 
 function createItem(): StoredStyleGalleryItem {
+  const prompt = 'Reusable style prompt';
   return {
-    version: 3,
+    version: 4,
     slug: '2026-07-13-aaaaaaaaaaaa',
     title: 'Style Prompt aaaaaaaaaaaa',
     date: '2026-07-13T00:00:00.000Z',
     sourceImage: '/api/style-gallery/image/source/aaaaaaaaaaaa.jpg',
     thumbnailImage: '/api/style-gallery/image/thumb/aaaaaaaaaaaa.webp',
     sourceImageAlt: 'Reference image 1',
-    prompt: 'Reusable style prompt',
+    prompts: [
+      {
+        id: createHash('sha256').update(prompt).digest('hex'),
+        prompt,
+        model: 'gpt-5.6-sol',
+        importedAt: '2026-07-13T00:00:00.000Z',
+      },
+    ],
     imageHash: firstHash,
     images: [
       {
@@ -71,7 +80,10 @@ describe('style gallery metadata', () => {
       modelTargets: ['GPT-Image2', 'Nano Banana', 'PixAI', 'Midjourney', 'Flux'],
       items: [catalogItem],
     });
-    assert.equal(catalog.items[0].prompt, item.prompt);
+    assert.equal(catalog.items[0].prompt, item.prompts[0].prompt);
+    assert.deepEqual(catalog.items[0].additionalPrompts, []);
+    assert.equal(catalog.items[0].promptCount, 1);
+    assert.equal(catalog.version, 4);
     assert.equal(catalog.items[0].exampleCount, 3);
     assert.equal('tags' in catalog.items[0], false);
     assert.deepEqual(catalog.modelTargets, ['GPT-Image2', 'Nano Banana', 'PixAI', 'Midjourney', 'Flux']);
@@ -80,6 +92,55 @@ describe('style gallery metadata', () => {
     assert.equal(card.likeCount, 4);
     assert.equal('tags' in card, false);
     assert.equal('modelTargets' in card, false);
+  });
+
+  it('keeps secondary prompt text in catalog search data without duplicating detail metadata', () => {
+    const item = createItem();
+    const secondPrompt = 'Second prompt from the same model';
+    item.prompts.push({
+      id: getStyleGalleryPromptId(secondPrompt),
+      prompt: secondPrompt,
+      model: 'gpt-5.6-sol',
+      importedAt: '2026-07-14T00:00:00.000Z',
+    });
+    const catalogItem = toStyleGalleryCatalogItem(item);
+    assert.equal(catalogItem.prompt, item.prompts[0].prompt);
+    assert.deepEqual(catalogItem.additionalPrompts, [secondPrompt]);
+    assert.equal(catalogItem.promptCount, 2);
+    assert.equal('model' in catalogItem, false);
+    assert.equal('sourceSession' in catalogItem, false);
+  });
+
+  it('normalizes legacy items and appends only distinct prompt variants', () => {
+    const current = createItem();
+    const { prompts: _prompts, ...legacyFields } = current;
+    const legacy = styleGalleryItemSchema.parse({
+      ...legacyFields,
+      version: 3,
+      prompt: 'Reusable style prompt',
+      originalPrompt: 'Extract this image style.',
+      sourceSession: 'legacy-session.jsonl',
+      sourceLine: 12,
+    });
+    assert.equal(legacy.version, 4);
+    assert.equal(legacy.prompts.length, 1);
+    assert.equal(legacy.prompts[0].originalPrompt, 'Extract this image style.');
+
+    const differentPrompt = 'A second reusable style prompt';
+    const incoming = [
+      {
+        id: getStyleGalleryPromptId(differentPrompt),
+        prompt: differentPrompt,
+        model: 'gpt-5.6-terra',
+        importedAt: '2026-07-14T00:00:00.000Z',
+      },
+      { ...legacy.prompts[0], model: 'gpt-5.6-sol' },
+    ];
+    const merged = mergeStyleGalleryPromptVariants(legacy.prompts, incoming);
+    assert.equal(merged.added, 1);
+    assert.equal(merged.skipped, 1);
+    assert.equal(merged.prompts[0].prompt, 'Reusable style prompt');
+    assert.equal(merged.prompts[1].model, 'gpt-5.6-terra');
   });
 
   it('validates multi-image group hashes', () => {

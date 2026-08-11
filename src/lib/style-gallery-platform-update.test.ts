@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { describe, it } from 'node:test';
 import type { StoredStyleGalleryItem, StyleGalleryExampleIndex } from '@/types/style-gallery';
 import { PATCH as updatePlatform } from '../pages/api/style-gallery/examples/[slug]';
@@ -10,13 +11,20 @@ const firstHash = 'a'.repeat(64);
 const secondHash = 'b'.repeat(64);
 
 function createItem(): StoredStyleGalleryItem {
+  const prompt = 'Reusable style prompt';
   return {
-    version: 3,
+    version: 4,
     slug,
     title: 'Style Prompt platform update',
     date: '2026-08-04T00:00:00.000Z',
     sourceImage: '/api/style-gallery/image/source/aaaaaaaaaaaa.jpg',
-    prompt: 'Reusable style prompt',
+    prompts: [
+      {
+        id: createHash('sha256').update(prompt).digest('hex'),
+        prompt,
+        importedAt: '2026-07-13T00:00:00.000Z',
+      },
+    ],
     imageHash: firstHash,
     images: [
       {
@@ -98,6 +106,11 @@ describe('style gallery platform updates', () => {
     ]);
     const reads = new Map<string, number>();
     const writes = new Map<string, number>();
+    const versions = new Map<string, number>([
+      [`items/${slug}.json`, 1],
+      ['examples/index-v2.json', 1],
+    ]);
+    let injectConcurrentPrompt = true;
     process.env.STYLE_GALLERY_UPLOAD_TOKEN = token;
     process.env.HF_S3_ACCESS_KEY_ID = 'HFAKTEST';
     process.env.HF_S3_SECRET_ACCESS_KEY = 'test-secret';
@@ -112,12 +125,39 @@ describe('style gallery platform updates', () => {
       if (method === 'GET') {
         reads.set(key, (reads.get(key) ?? 0) + 1);
         const value = objects.get(key);
-        return value === undefined ? new Response(null, { status: 404 }) : new Response(value, { headers: { etag: '"1"' } });
+        return value === undefined
+          ? new Response(null, { status: 404 })
+          : new Response(value, { headers: { etag: `"${versions.get(key) ?? 1}"` } });
       }
       if (method === 'PUT') {
+        if (key === `items/${slug}.json` && injectConcurrentPrompt) {
+          injectConcurrentPrompt = false;
+          const current = JSON.parse(objects.get(key) ?? '') as StoredStyleGalleryItem;
+          const concurrentPrompt = 'Concurrent prompt variant';
+          objects.set(
+            key,
+            JSON.stringify({
+              ...current,
+              prompts: [
+                ...current.prompts,
+                {
+                  id: createHash('sha256').update(concurrentPrompt).digest('hex'),
+                  prompt: concurrentPrompt,
+                  importedAt: '2026-08-04T00:03:00.000Z',
+                },
+              ],
+            }),
+          );
+          versions.set(key, (versions.get(key) ?? 1) + 1);
+          return new Response(null, { status: 412 });
+        }
+        const expected = new Headers(init?.headers).get('if-match');
+        if (expected && expected !== `"${versions.get(key) ?? 1}"`) return new Response(null, { status: 412 });
         writes.set(key, (writes.get(key) ?? 0) + 1);
         objects.set(key, bodyText(init?.body));
-        return new Response(null, { status: 200 });
+        const version = (versions.get(key) ?? 0) + 1;
+        versions.set(key, version);
+        return new Response(null, { status: 200, headers: { etag: `"${version}"` } });
       }
       return new Response(null, { status: 405 });
     };
@@ -134,9 +174,10 @@ describe('style gallery platform updates', () => {
       const item = JSON.parse(objects.get(`items/${slug}.json`) ?? '') as StoredStyleGalleryItem;
       const index = JSON.parse(objects.get('examples/index-v2.json') ?? '') as StyleGalleryExampleIndex;
       assert.equal(item.examples[0].model, 'PixAI');
+      assert.equal(item.prompts[1].prompt, 'Concurrent prompt variant');
       assert.equal(index.groups[0].examples[0].model, 'PixAI');
       assert.deepEqual(index.groups[0].examples[0].likedBy, [2513502304]);
-      assert.equal(reads.get(`items/${slug}.json`), 1);
+      assert.equal(reads.get(`items/${slug}.json`), 2);
       assert.equal(reads.get('examples/index-v2.json'), 1);
       assert.equal(reads.get('metadata/catalog.json') ?? 0, 0);
       assert.equal(writes.get(`items/${slug}.json`), 1);

@@ -109,8 +109,11 @@ export async function getStyleGalleryObjectText(key: string): Promise<string | n
   return result ? new TextDecoder().decode(result.bytes) : null;
 }
 
-export async function getStyleGalleryObjectTextSnapshot(key: string): Promise<{ text: string | null; etag: string | null }> {
-  const result = await client(10_000).get(key, [403, 404]);
+export async function getStyleGalleryObjectTextSnapshot(
+  key: string,
+  timeoutMs = 10_000,
+): Promise<{ text: string | null; etag: string | null }> {
+  const result = await client(timeoutMs).get(key, [403, 404]);
   return result ? { text: new TextDecoder().decode(result.bytes), etag: result.etag } : { text: null, etag: null };
 }
 

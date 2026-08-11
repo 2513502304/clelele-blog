@@ -14,12 +14,16 @@ import {
 } from '@lib/style-gallery-lightbox-actions';
 import { groupStyleGalleryExamplesByPlatform, STYLE_GALLERY_PLATFORMS } from '@lib/style-gallery-platforms';
 import {
+  STYLE_GALLERY_PROMPT_SELECTED_EVENT,
+  type StyleGalleryPromptSelectedDetail,
+} from '@lib/style-gallery-prompt-selection';
+import {
   chunkStyleGalleryRequestItems,
   STYLE_GALLERY_MUTATION_BATCH_SIZE,
   STYLE_GALLERY_PREPARE_BATCH_SIZE,
 } from '@lib/style-gallery-request-batches';
 import { openModal } from '@store/modal';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { StyleGalleryExample, StyleGalleryExampleView } from '@/types/style-gallery';
 import {
   createStyleGalleryLightboxLikeAction,
@@ -296,10 +300,21 @@ export default function StyleGalleryExamples({
   const [bulkPlatform, setBulkPlatform] = useState<string>(STYLE_GALLERY_PLATFORMS[0].slug);
   const [mutating, setMutating] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const activePrompt = useRef(prompt);
 
   useEffect(() => {
     setToken(localStorage.getItem(STYLE_GALLERY_UPLOAD_TOKEN_STORAGE_KEY) ?? '');
   }, []);
+
+  useEffect(() => {
+    activePrompt.current = prompt;
+    const handlePromptSelection = (event: Event) => {
+      const detail = (event as CustomEvent<StyleGalleryPromptSelectedDetail>).detail;
+      if (detail?.slug === slug) activePrompt.current = detail.prompt;
+    };
+    window.addEventListener(STYLE_GALLERY_PROMPT_SELECTED_EVENT, handlePromptSelection);
+    return () => window.removeEventListener(STYLE_GALLERY_PROMPT_SELECTED_EVENT, handlePromptSelection);
+  }, [prompt, slug]);
 
   const exampleGroups = useMemo(() => groupStyleGalleryExamplesByPlatform(examples), [examples]);
 
@@ -331,7 +346,7 @@ export default function StyleGalleryExamples({
       src: candidate.src,
       alt: candidate.alt ?? candidate.model ?? 'Generated example',
       like: createStyleGalleryLightboxLikeAction(candidate.id, likes, likeLabels),
-      copy: createStyleGalleryCopyAction(() => prompt, lightboxActionLabels),
+      copy: createStyleGalleryCopyAction(() => activePrompt.current, lightboxActionLabels),
       delete: createStyleGalleryDeleteAction(
         candidate.id,
         candidate.alt ?? candidate.model ?? 'generated example',

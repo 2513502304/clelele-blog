@@ -108,18 +108,17 @@ Astro.response.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-re
           <div>
             <StylePromptCopy
               client:load
-              prompt={data.prompt}
+              itemSlug={data.slug}
+              prompts={data.prompts}
               label={t(locale, 'gallery.prompt')}
               copyLabel={t(locale, 'gallery.copy')}
               copiedLabel={t(locale, 'gallery.copied')}
+              chooserLabel={t(locale, 'gallery.promptChooserTitle')}
+              promptOptionLabel={t(locale, 'gallery.promptOption', { index: '{index}' })}
+              unknownModelLabel={t(locale, 'gallery.promptModelUnknown')}
+              originalPromptLabel={t(locale, 'gallery.originalPrompt')}
             />
           </div>
-          {data.originalPrompt && (
-            <div class="rounded-lg border border-sky-100 bg-sky-50/70 p-5 shadow-sm dark:border-sky-950/60 dark:bg-sky-950/30">
-              <p class="text-xs font-bold uppercase tracking-wider text-sky-500 dark:text-sky-200">Original user prompt</p>
-              <p class="mt-2 whitespace-pre-wrap text-sm leading-7 text-gray-700 dark:text-gray-200">{data.originalPrompt}</p>
-            </div>
-          )}
         </section>
       </article>
 
