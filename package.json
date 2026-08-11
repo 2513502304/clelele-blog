@@ -15,7 +15,6 @@
     "generate:summaries:force": "tsx src/scripts/generateSummaries.ts --force",
     "generate:all": "npm run generate:lqips && npm run generate:summaries && npm run generate:similarities",
     "import:style-prompts": "node scripts/import-style-prompts.mjs",
-    "migrate:style-gallery-metadata": "node --env-file-if-exists=.env.local --import tsx scripts/migrate-style-gallery-metadata.ts",
     "upload:style-examples": "node --env-file-if-exists=.env.local --import tsx scripts/upload-style-examples.ts",
     "publish:live2d-models": "node --env-file-if-exists=.env.local --import tsx scripts/live2d/publish-models.ts",
     "publish:live2d-bootstrap": "node --env-file-if-exists=.env.local --import tsx scripts/live2d/publish-bootstrap-metadata.ts",
