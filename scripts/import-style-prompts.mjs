@@ -158,7 +158,8 @@ async function buildImportData(extractedItems, sessionPath, existingByHash, meta
       continue;
     }
     const normalizedPrompt = normalizePrompt(extracted.prompt);
-    if (existing && !metadataOnly && normalizePrompt(existing.prompt) === normalizedPrompt) {
+    const existingPrompts = existing ? [existing.prompt, ...(existing.additionalPrompts ?? [])] : [];
+    if (existing && !metadataOnly && existingPrompts.some((prompt) => normalizePrompt(prompt) === normalizedPrompt)) {
       skippedDuplicates += 1;
       continue;
     }

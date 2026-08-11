@@ -43,7 +43,8 @@ describe('style prompt import variants', () => {
       thumbnailImage: `/api/style-gallery/image/thumb/${imageHash.slice(0, 12)}.webp`,
       sourceImageAlt: 'Existing reference image',
       prompt: `${PLACEHOLDER}, first prompt`,
-      promptCount: 1,
+      additionalPrompts: [`${PLACEHOLDER}, second prompt`],
+      promptCount: 2,
       imageHash,
       imageCount: 1,
       exampleCount: 0,
@@ -55,7 +56,7 @@ describe('style prompt import variants', () => {
         sourceLine: 8,
         timestamp: '2026-08-11T00:00:00.000Z',
         model: 'gpt-5.6-terra',
-        prompt: `${PLACEHOLDER}, second prompt`,
+        prompt: `${PLACEHOLDER}, third prompt`,
       },
     ];
 
@@ -74,6 +75,16 @@ describe('style prompt import variants', () => {
     );
     assert.equal(duplicate.items.length, 0);
     assert.equal(duplicate.skippedDuplicates, 1);
+
+    const duplicateAdditionalPrompt = await buildImportData(
+      [{ ...extracted[0], prompt: existing.additionalPrompts[0] }],
+      '/tmp/session.jsonl',
+      new Map([[imageHash, existing]]),
+      false,
+      null,
+    );
+    assert.equal(duplicateAdditionalPrompt.items.length, 0);
+    assert.equal(duplicateAdditionalPrompt.skippedDuplicates, 1);
   });
 
   it('groups ordered prompt variants for the same new image', async () => {
