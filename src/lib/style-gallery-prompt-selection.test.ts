@@ -9,7 +9,7 @@ import {
 
 describe('style gallery prompt selection', () => {
   it('retains the latest prompt for islands that subscribe after the event', () => {
-    const previousWindow = globalThis.window;
+    const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
     const eventTarget = new EventTarget();
     Object.defineProperty(globalThis, 'window', { configurable: true, value: eventTarget });
     let observed: StyleGalleryPromptSelectedDetail | undefined;
@@ -23,7 +23,8 @@ describe('style gallery prompt selection', () => {
       assert.deepEqual(observed, detail);
       assert.equal(getSelectedStyleGalleryPrompt(detail.slug), detail.prompt);
     } finally {
-      Object.defineProperty(globalThis, 'window', { configurable: true, value: previousWindow });
+      if (previousWindow) Object.defineProperty(globalThis, 'window', previousWindow);
+      else Reflect.deleteProperty(globalThis, 'window');
     }
   });
 });
