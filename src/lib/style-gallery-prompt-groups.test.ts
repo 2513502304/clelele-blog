@@ -29,4 +29,24 @@ describe('style gallery prompt groups', () => {
       ],
     );
   });
+
+  it('treats a whitespace-only model as unknown', () => {
+    const groups = groupStyleGalleryPromptsByModel([{ id: 'blank-1', model: '   ' }, { id: 'unknown-1' }]);
+
+    assert.deepEqual(
+      groups.map((group) => ({
+        model: group.model,
+        prompts: group.prompts.map(({ prompt, modelIndex }) => ({ id: prompt.id, modelIndex })),
+      })),
+      [
+        {
+          model: undefined,
+          prompts: [
+            { id: 'blank-1', modelIndex: 1 },
+            { id: 'unknown-1', modelIndex: 2 },
+          ],
+        },
+      ],
+    );
+  });
 });

@@ -36,7 +36,9 @@ function parseArgs(argv) {
     else if (arg === '--metadata-only' || arg === '--update-metadata-only') metadataOnly = true;
     else if (arg.startsWith('--prompt-model=')) promptModel = arg.slice('--prompt-model='.length).trim() || null;
     else if (arg.startsWith('--api-base-url=')) apiBaseUrl = arg.slice('--api-base-url='.length);
-    else if (!arg.startsWith('--') && !sessionPath) sessionPath = arg;
+    else if (arg.startsWith('--')) throw new Error(`Unknown option: ${arg}`);
+    else if (!sessionPath) sessionPath = arg;
+    else throw new Error(`Unexpected positional argument: ${arg}`);
   }
   return { apiBaseUrl: apiBaseUrl.replace(/\/$/, ''), dryRun, help, metadataOnly, promptModel, sessionPath };
 }
@@ -405,7 +407,7 @@ async function main() {
   }
 }
 
-export { buildImportData, extractItems };
+export { buildImportData, extractItems, parseArgs };
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((error) => {

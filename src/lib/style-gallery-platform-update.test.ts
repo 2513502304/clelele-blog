@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import { describe, it } from 'node:test';
+import { getStyleGalleryPromptId } from '@lib/style-gallery-prompts';
 import type { StoredStyleGalleryItem, StyleGalleryExampleIndex } from '@/types/style-gallery';
 import { PATCH as updatePlatform } from '../pages/api/style-gallery/examples/[slug]';
 
@@ -20,7 +20,7 @@ function createItem(): StoredStyleGalleryItem {
     sourceImage: '/api/style-gallery/image/source/aaaaaaaaaaaa.jpg',
     prompts: [
       {
-        id: createHash('sha256').update(prompt).digest('hex'),
+        id: getStyleGalleryPromptId(prompt),
         prompt,
         importedAt: '2026-07-13T00:00:00.000Z',
       },
@@ -141,7 +141,7 @@ describe('style gallery platform updates', () => {
               prompts: [
                 ...current.prompts,
                 {
-                  id: createHash('sha256').update(concurrentPrompt).digest('hex'),
+                  id: getStyleGalleryPromptId(concurrentPrompt),
                   prompt: concurrentPrompt,
                   importedAt: '2026-08-04T00:03:00.000Z',
                 },

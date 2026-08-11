@@ -97,40 +97,49 @@ async function migrateItem(
 async function main(): Promise<void> {
   configureEnvironmentProxy();
   const options = parseArgs(process.argv.slice(2));
-  const catalogSnapshot = await getStyleGalleryObjectTextSnapshot(STYLE_GALLERY_CATALOG_KEY, options.timeoutMs);
-  if (!catalogSnapshot.text || !catalogSnapshot.etag) throw new Error('HF catalog metadata or ETag is missing.');
-  const rawCatalog = JSON.parse(catalogSnapshot.text) as { version?: unknown };
-  const catalog = styleGalleryCatalogSchema.parse(rawCatalog);
-  let completed = 0;
-  let changed = 0;
+  for (let attempt = 1; attempt <= options.attempts; attempt += 1) {
+    try {
+      const catalogSnapshot = await getStyleGalleryObjectTextSnapshot(STYLE_GALLERY_CATALOG_KEY, options.timeoutMs);
+      if (!catalogSnapshot.text || !catalogSnapshot.etag) throw new Error('HF catalog metadata or ETag is missing.');
+      const rawCatalog = JSON.parse(catalogSnapshot.text) as { version?: unknown };
+      const catalog = styleGalleryCatalogSchema.parse(rawCatalog);
+      let completed = 0;
+      let changed = 0;
 
-  const migrated = await mapWithConcurrency(catalog.items, options.concurrency, async (entry) => {
-    const result = await migrateItem(entry.slug, options);
-    completed += 1;
-    if (result.changed) changed += 1;
-    if (completed % 50 === 0 || completed === catalog.items.length) {
-      console.log(`Processed ${completed}/${catalog.items.length} item(s); ${changed} require migration.`);
+      const migrated = await mapWithConcurrency(catalog.items, options.concurrency, async (entry) => {
+        const result = await migrateItem(entry.slug, options);
+        completed += 1;
+        if (result.changed) changed += 1;
+        if (completed % 50 === 0 || completed === catalog.items.length) {
+          console.log(`Processed ${completed}/${catalog.items.length} item(s); ${changed} require migration.`);
+        }
+        return result.item;
+      });
+
+      const nextCatalog: StyleGalleryCatalog = {
+        version: 4,
+        updatedAt: new Date().toISOString(),
+        tags: catalog.tags,
+        modelTargets: catalog.modelTargets,
+        items: migrated.map((item, index) => toStyleGalleryCatalogItem(item, catalog.items[index].exampleCount)),
+      };
+      const catalogChanged = rawCatalog.version !== 4 || JSON.stringify(catalog) !== JSON.stringify(nextCatalog);
+      if (catalogChanged && !options.dryRun) {
+        await putStyleGalleryObject(STYLE_GALLERY_CATALOG_KEY, encodeJson(nextCatalog), 'application/json; charset=utf-8', {
+          ifMatch: catalogSnapshot.etag,
+        });
+      }
+
+      console.log(
+        `${options.dryRun ? 'Dry run complete' : 'Migration complete'}: ${changed}/${catalog.items.length} item(s), catalog ${catalogChanged ? 'updated' : 'unchanged'}, default model ${options.model}.`,
+      );
+      return;
+    } catch (error) {
+      if (options.dryRun || !(error instanceof StyleGalleryObjectConflictError) || attempt === options.attempts) throw error;
+      console.warn(`Catalog changed during migration; rebuilding from the latest snapshot (${attempt}/${options.attempts}).`);
+      await sleep(250 * 2 ** (attempt - 1) + Math.floor(Math.random() * 200));
     }
-    return result.item;
-  });
-
-  const nextCatalog: StyleGalleryCatalog = {
-    version: 4,
-    updatedAt: new Date().toISOString(),
-    tags: catalog.tags,
-    modelTargets: catalog.modelTargets,
-    items: migrated.map((item, index) => toStyleGalleryCatalogItem(item, catalog.items[index].exampleCount)),
-  };
-  const catalogChanged = rawCatalog.version !== 4 || JSON.stringify(catalog) !== JSON.stringify(nextCatalog);
-  if (catalogChanged && !options.dryRun) {
-    await putStyleGalleryObject(STYLE_GALLERY_CATALOG_KEY, encodeJson(nextCatalog), 'application/json; charset=utf-8', {
-      ifMatch: catalogSnapshot.etag,
-    });
   }
-
-  console.log(
-    `${options.dryRun ? 'Dry run complete' : 'Migration complete'}: ${changed}/${catalog.items.length} item(s), catalog ${catalogChanged ? 'updated' : 'unchanged'}, default model ${options.model}.`,
-  );
 }
 
 main().catch((error) => {

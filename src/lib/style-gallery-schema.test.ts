@@ -47,7 +47,7 @@ function createItem(): StoredStyleGalleryItem {
     sourceImageAlt: 'Reference image 1',
     prompts: [
       {
-        id: createHash('sha256').update(prompt).digest('hex'),
+        id: getStyleGalleryPromptId(prompt),
         prompt,
         model: 'gpt-5.6-sol',
         importedAt: '2026-07-13T00:00:00.000Z',
@@ -109,6 +109,30 @@ describe('style gallery metadata', () => {
     assert.equal(catalogItem.promptCount, 2);
     assert.equal('model' in catalogItem, false);
     assert.equal('sourceSession' in catalogItem, false);
+  });
+
+  it('rejects inconsistent or duplicated catalog prompt metadata', () => {
+    const catalogItem = toStyleGalleryCatalogItem(createItem());
+    const catalog = {
+      version: 4,
+      updatedAt: '2026-07-13T00:01:00.000Z',
+      tags: ['codex-session', 'style-prompt'],
+      modelTargets: ['GPT-Image2'],
+      items: [catalogItem],
+    };
+
+    assert.throws(
+      () => styleGalleryCatalogSchema.parse({ ...catalog, items: [{ ...catalogItem, promptCount: 2 }] }),
+      /Prompt count does not match/,
+    );
+    assert.throws(
+      () =>
+        styleGalleryCatalogSchema.parse({
+          ...catalog,
+          items: [{ ...catalogItem, promptCount: 2, additionalPrompts: [`  ${catalogItem.prompt}\r\n`] }],
+        }),
+      /Duplicate prompt text/,
+    );
   });
 
   it('normalizes legacy items and appends only distinct prompt variants', () => {

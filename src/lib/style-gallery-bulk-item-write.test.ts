@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import { describe, it } from 'node:test';
+import { getStyleGalleryPromptId } from '@lib/style-gallery-prompts';
 import type { StoredStyleGalleryItem, StyleGalleryExample } from '@/types/style-gallery';
 import { POST as writeItems } from '../pages/api/style-gallery/items';
 
@@ -21,7 +21,7 @@ function createItem(index: number): StoredStyleGalleryItem {
     sourceImageAlt: `Reference ${index}`,
     prompts: [
       {
-        id: createHash('sha256').update(prompt).digest('hex'),
+        id: getStyleGalleryPromptId(prompt),
         prompt,
         model: 'gpt-test',
         importedAt: '2026-08-03T00:00:00.000Z',
@@ -169,7 +169,7 @@ describe('style gallery bulk item writes', () => {
         ...items[0],
         prompts: [
           {
-            id: createHash('sha256').update(alternatePrompt).digest('hex'),
+            id: getStyleGalleryPromptId(alternatePrompt),
             prompt: alternatePrompt,
             model: 'gpt-5.6-terra',
             importedAt: '2026-08-03T01:00:00.000Z',

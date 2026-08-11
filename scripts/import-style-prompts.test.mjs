@@ -1,11 +1,16 @@
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { describe, it } from 'node:test';
-import { buildImportData, extractItems } from './import-style-prompts.mjs';
+import { buildImportData, extractItems, parseArgs } from './import-style-prompts.mjs';
 
 const PLACEHOLDER = '[在此处替换为您想要生成的主体内容]';
 
 describe('style prompt import variants', () => {
+  it('rejects unknown options and extra session paths before entering write mode', () => {
+    assert.throws(() => parseArgs(['session.jsonl', '--dry-rnu']), /Unknown option: --dry-rnu/);
+    assert.throws(() => parseArgs(['first.jsonl', 'second.jsonl']), /Unexpected positional argument: second.jsonl/);
+  });
+
   it('associates the active Codex model with the extracted prompt', () => {
     const items = extractItems([
       { index: 1, record: { type: 'turn_context', payload: { model: 'gpt-5.6-sol' } } },
@@ -69,5 +74,38 @@ describe('style prompt import variants', () => {
     );
     assert.equal(duplicate.items.length, 0);
     assert.equal(duplicate.skippedDuplicates, 1);
+  });
+
+  it('groups ordered prompt variants for the same new image', async () => {
+    const bytes = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      'base64',
+    );
+    const common = {
+      images: [`data:image/png;base64,${bytes.toString('base64')}`],
+      originalPrompt: 'Extract this style.',
+      timestamp: '2026-08-11T00:00:00.000Z',
+      model: 'gpt-5.6-sol',
+    };
+    const firstPrompt = `${PLACEHOLDER}, first extraction`;
+    const secondPrompt = `${PLACEHOLDER}, second extraction`;
+
+    const prepared = await buildImportData(
+      [
+        { ...common, sourceLine: 2, prompt: firstPrompt },
+        { ...common, sourceLine: 8, prompt: secondPrompt },
+      ],
+      '/tmp/session.jsonl',
+      new Map(),
+      false,
+      null,
+    );
+
+    assert.equal(prepared.items.length, 1);
+    assert.deepEqual(
+      prepared.items[0].prompts.map(({ prompt }) => prompt),
+      [firstPrompt, secondPrompt],
+    );
+    assert.notEqual(prepared.items[0].prompts[0].id, prepared.items[0].prompts[1].id);
   });
 });

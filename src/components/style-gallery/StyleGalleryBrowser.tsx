@@ -1,6 +1,8 @@
+import { ErrorBoundary, InlineErrorFallback } from '@components/common';
 import { useCollectionPagination } from '@hooks/useCollectionPagination';
 import { Icon } from '@iconify/react';
 import { groupStyleGalleryPromptsByModel } from '@lib/style-gallery-prompt-groups';
+import { useReducedMotion } from 'motion/react';
 import { useMemo, useRef, useState } from 'react';
 import { CollectionPaginationSettings, CollectionPaginator } from '../collection/CollectionPagination';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog';
@@ -83,7 +85,7 @@ function normalize(value: string) {
  * Gallery 主预览页：在 catalog 的全部 prompt 文本上搜索，再执行标签筛选、排序和本地分页。
  * 单 prompt 复制不读取详情；多 prompt 只在用户打开选择器时按需请求一次并缓存在浏览器内。
  */
-export default function StyleGalleryBrowser({
+function StyleGalleryBrowserContent({
   items,
   tags,
   modelTargets,
@@ -91,6 +93,7 @@ export default function StyleGalleryBrowser({
   dateLocale,
   labels,
 }: StyleGalleryBrowserProps) {
+  const shouldReduceMotion = useReducedMotion();
   const [query, setQuery] = useState('');
   const [activeTag, setActiveTag] = useState<string>('all');
   const [sortKey, setSortKey] = useState<SortKey>('default');
@@ -396,7 +399,7 @@ export default function StyleGalleryBrowser({
           <div className="overflow-y-auto px-4 pb-5">
             {!promptPicker?.prompts && !promptPicker?.failed && (
               <div className="flex min-h-32 items-center justify-center gap-2 text-muted-foreground text-sm">
-                <Icon icon="ri:loader-4-line" className="size-4 animate-spin" />
+                <Icon icon="ri:loader-4-line" className={`size-4 ${shouldReduceMotion ? '' : 'animate-spin'}`} />
                 {labels.promptLoading}
               </div>
             )}
@@ -445,5 +448,14 @@ export default function StyleGalleryBrowser({
         </DialogContent>
       </Dialog>
     </section>
+  );
+}
+
+/** 将列表、分页和 prompt 选择器的渲染异常限制在 Gallery 主交互区。 */
+export default function StyleGalleryBrowser(props: StyleGalleryBrowserProps) {
+  return (
+    <ErrorBoundary FallbackComponent={InlineErrorFallback}>
+      <StyleGalleryBrowserContent {...props} />
+    </ErrorBoundary>
   );
 }

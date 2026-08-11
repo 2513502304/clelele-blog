@@ -6,6 +6,7 @@ export function normalizeStyleGalleryPrompt(prompt: string): string {
   return prompt.replace(/\r\n?/g, '\n').trim();
 }
 
+/** 使用规范化全文生成 prompt 的稳定身份，确保 CRLF 与首尾空白不会产生重复候选。 */
 export function getStyleGalleryPromptId(prompt: string): string {
   return createHash('sha256').update(normalizeStyleGalleryPrompt(prompt)).digest('hex');
 }

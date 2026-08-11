@@ -1,3 +1,4 @@
+import { ErrorBoundary, InlineErrorFallback } from '@components/common';
 import { Icon } from '@iconify/react';
 import { groupStyleGalleryPromptsByModel } from '@lib/style-gallery-prompt-groups';
 import { selectStyleGalleryPrompt } from '@lib/style-gallery-prompt-selection';
@@ -18,7 +19,7 @@ export interface StylePromptCopyProps {
   className?: string;
 }
 
-export default function StylePromptCopy({
+function StylePromptCopyContent({
   itemSlug,
   prompts,
   label,
@@ -105,5 +106,14 @@ export default function StylePromptCopy({
         {copied ? copiedLabel : ''}
       </span>
     </div>
+  );
+}
+
+/** 详情页 prompt 选择与复制失败时保留局部重试入口，不影响原图和 Sub-gallery。 */
+export default function StylePromptCopy(props: StylePromptCopyProps) {
+  return (
+    <ErrorBoundary FallbackComponent={InlineErrorFallback}>
+      <StylePromptCopyContent {...props} />
+    </ErrorBoundary>
   );
 }

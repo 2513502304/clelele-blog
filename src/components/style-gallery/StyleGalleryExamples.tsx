@@ -14,6 +14,7 @@ import {
 } from '@lib/style-gallery-lightbox-actions';
 import { groupStyleGalleryExamplesByPlatform, STYLE_GALLERY_PLATFORMS } from '@lib/style-gallery-platforms';
 import {
+  getSelectedStyleGalleryPrompt,
   STYLE_GALLERY_PROMPT_SELECTED_EVENT,
   type StyleGalleryPromptSelectedDetail,
 } from '@lib/style-gallery-prompt-selection';
@@ -307,7 +308,7 @@ export default function StyleGalleryExamples({
   }, []);
 
   useEffect(() => {
-    activePrompt.current = prompt;
+    activePrompt.current = getSelectedStyleGalleryPrompt(slug) ?? prompt;
     const handlePromptSelection = (event: Event) => {
       const detail = (event as CustomEvent<StyleGalleryPromptSelectedDetail>).detail;
       if (detail?.slug === slug) activePrompt.current = detail.prompt;

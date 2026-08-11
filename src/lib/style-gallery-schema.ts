@@ -103,20 +103,38 @@ const legacyStyleGalleryItemSchema = z
 /** 读取时兼容既有 v3 对象；下一次写入该 item 时会自然收敛为 v4。 */
 export const styleGalleryItemSchema = z.union([currentStyleGalleryItemSchema, legacyStyleGalleryItemSchema]);
 
-export const styleGalleryCatalogItemSchema = z.object({
-  slug: z.string().regex(/^[a-z0-9-]+$/i),
-  title: z.string().min(1),
-  date: z.string().datetime({ offset: true }),
-  sourceImage: imagePathSchema,
-  thumbnailImage: imagePathSchema.optional(),
-  sourceImageAlt: z.string().min(1).optional(),
-  prompt: z.string().min(1),
-  additionalPrompts: z.array(z.string().trim().min(1)).default([]),
-  promptCount: z.number().int().positive().default(1),
-  imageHash: imageHashSchema,
-  imageCount: z.number().int().positive(),
-  exampleCount: z.number().int().nonnegative(),
-});
+export const styleGalleryCatalogItemSchema = z
+  .object({
+    slug: z.string().regex(/^[a-z0-9-]+$/i),
+    title: z.string().min(1),
+    date: z.string().datetime({ offset: true }),
+    sourceImage: imagePathSchema,
+    thumbnailImage: imagePathSchema.optional(),
+    sourceImageAlt: z.string().min(1).optional(),
+    prompt: z.string().min(1),
+    additionalPrompts: z.array(z.string().trim().min(1)).default([]),
+    promptCount: z.number().int().positive().default(1),
+    imageHash: imageHashSchema,
+    imageCount: z.number().int().positive(),
+    exampleCount: z.number().int().nonnegative(),
+  })
+  .superRefine((item, context) => {
+    const prompts = [item.prompt, ...item.additionalPrompts].map(normalizeStyleGalleryPrompt);
+    if (item.promptCount !== prompts.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Prompt count does not match catalog prompt entries.',
+        path: ['promptCount'],
+      });
+    }
+    if (new Set(prompts).size !== prompts.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Duplicate prompt text in style gallery catalog item.',
+        path: ['additionalPrompts'],
+      });
+    }
+  });
 
 const styleGalleryCatalogFields = {
   updatedAt: z.string().datetime({ offset: true }),
