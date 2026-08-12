@@ -54,6 +54,32 @@ test('builds source-image lightbox navigation without generated-example mutation
   assert.equal(data.images[0].delete, undefined);
 });
 
+test('rejects an empty source-image lightbox', () => {
+  assert.throws(
+    () =>
+      createStyleGallerySourceLightboxData([], 'missing', {
+        copyPrompt: 'Copy',
+        copiedPrompt: 'Copied',
+        copyFailed: 'Failed',
+      }),
+    /requires at least one image/,
+  );
+});
+
+test('falls back to the first source image when the current id is unknown', () => {
+  const data = createStyleGallerySourceLightboxData(
+    [
+      { id: 'first', src: '/source/first.webp', alt: 'First', getPrompt: () => 'first prompt' },
+      { id: 'second', src: '/source/second.webp', alt: 'Second', getPrompt: () => 'second prompt' },
+    ],
+    'missing',
+    { copyPrompt: 'Copy', copiedPrompt: 'Copied', copyFailed: 'Failed' },
+  );
+
+  assert.equal(data.currentIndex, 0);
+  assert.equal(data.src, '/source/first.webp');
+});
+
 test('keeps an updated like state when navigating away from an image and back', () => {
   openModal('imageLightbox', {
     src: '/first.webp',

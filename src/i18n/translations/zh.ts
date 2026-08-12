@@ -150,6 +150,7 @@ export const uiStrings = {
   'gallery.sortAscending': '顺序',
   'gallery.sortDescending': '逆序',
   'gallery.imageCount': '{count} 张参考图',
+  'gallery.referenceImage': '参考图 {index}',
   'gallery.exampleCount': '{count} 张生成示例',
   'gallery.likeCount': '点赞数：{count}',
   'gallery.copy': '复制',

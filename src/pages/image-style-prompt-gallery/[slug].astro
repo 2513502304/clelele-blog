@@ -76,9 +76,9 @@ Astro.response.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-re
               client:load
               images={referenceImages}
               itemSlug={data.slug}
-              title={data.title}
               prompt={data.prompt}
               openImageLabel={t(locale, 'image.openLightbox')}
+              referenceImageLabel={t(locale, 'gallery.referenceImage', { index: '{index}' })}
               lightboxCopyLabels={{
                 copyPrompt: t(locale, 'image.copyPrompt'),
                 copiedPrompt: t(locale, 'image.copiedPrompt'),

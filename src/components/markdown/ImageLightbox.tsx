@@ -22,7 +22,7 @@ import {
   openModal,
   removeImageFromLightbox,
 } from '@store/modal';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { LightboxLikeButton, NavButton, ToolbarButton, ToolbarLink, ZoomHint } from './ImageLightboxControls';
 
@@ -33,6 +33,7 @@ const MAX_ZOOM_SENSITIVITY = 1.25;
 
 export default function ImageLightbox() {
   const { t } = useTranslation();
+  const shouldReduceMotion = useReducedMotion();
   const data = useStore($imageLightboxData);
   const isOpen = data !== null;
   const currentImage = data?.images[data.currentIndex];
@@ -444,7 +445,7 @@ export default function ImageLightbox() {
                           decoding="async"
                           className="col-start-1 row-start-1 max-h-[80vh] max-w-[90vw] rounded-lg object-contain"
                           animate={{ opacity: imageLoaded ? 0 : 1 }}
-                          transition={{ opacity: { duration: 0.18 } }}
+                          transition={{ opacity: { duration: shouldReduceMotion ? 0 : 0.18 } }}
                           draggable={false}
                         />
                       )}
@@ -457,7 +458,7 @@ export default function ImageLightbox() {
                         decoding="async"
                         className="col-start-1 row-start-1 max-h-[80vh] max-w-[90vw] rounded-lg object-contain"
                         animate={{ opacity: imageLoaded ? 1 : 0 }}
-                        transition={{ opacity: { duration: 0.2 } }}
+                        transition={{ opacity: { duration: shouldReduceMotion ? 0 : 0.2 } }}
                         onLoad={() => setImageLoaded(true)}
                         draggable={false}
                       />
