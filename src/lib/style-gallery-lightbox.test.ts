@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { createStyleGallerySourceLightboxData } from '@lib/style-gallery-lightbox-actions';
 import {
   $imageLightboxData,
   closeModal,
@@ -23,6 +24,35 @@ function likeAction(exampleId: string): ImageLightboxLikeAction {
     toggle: async () => ({ liked: true, likeCount: 1 }),
   };
 }
+
+test('builds source-image lightbox navigation without generated-example mutations', async () => {
+  const data = createStyleGallerySourceLightboxData(
+    [
+      {
+        id: 'first',
+        src: '/source/first.webp',
+        previewSrc: '/thumb/first.webp',
+        alt: 'First',
+        getPrompt: () => 'first prompt',
+      },
+      {
+        id: 'second',
+        src: '/source/second.webp',
+        alt: 'Second',
+        getPrompt: () => 'second prompt',
+      },
+    ],
+    'second',
+    { copyPrompt: 'Copy', copiedPrompt: 'Copied', copyFailed: 'Failed' },
+  );
+
+  assert.equal(data.currentIndex, 1);
+  assert.equal(data.src, '/source/second.webp');
+  assert.equal(data.images[0].previewSrc, '/thumb/first.webp');
+  assert.equal(await data.images[0].copy?.getText(), 'first prompt');
+  assert.equal(data.images[0].like, undefined);
+  assert.equal(data.images[0].delete, undefined);
+});
 
 test('keeps an updated like state when navigating away from an image and back', () => {
   openModal('imageLightbox', {
