@@ -252,6 +252,7 @@ export const uiStrings: UIStrings = {
 
   // ── Lightboxでの画像表示 ──────────────────────────────────────────
   'image.zoomIn': '拡大',
+  'image.openLightbox': '画像を拡大表示',
   'image.zoomOut': '縮小',
   'image.resetZoom': 'リセット',
   'image.resetZoomRotate': '回転と拡大をリセット',

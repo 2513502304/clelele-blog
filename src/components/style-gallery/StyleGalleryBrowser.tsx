@@ -1,12 +1,15 @@
 import { ErrorBoundary, InlineErrorFallback } from '@components/common';
 import { useCollectionPagination } from '@hooks/useCollectionPagination';
 import { Icon } from '@iconify/react';
+import { createStyleGallerySourceLightboxData, type StyleGalleryLightboxCopyLabels } from '@lib/style-gallery-lightbox-actions';
 import {
   getStyleGalleryPromptCacheKey,
   groupStyleGalleryPromptsByModel,
   type StyleGalleryPromptDisclosureState,
   toggleStyleGalleryPromptModel,
 } from '@lib/style-gallery-prompt-groups';
+import { getSelectedStyleGalleryPrompt } from '@lib/style-gallery-prompt-selection';
+import { openModal } from '@store/modal';
 import { useReducedMotion } from 'motion/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CollectionPaginationSettings, CollectionPaginator } from '../collection/CollectionPagination';
@@ -35,6 +38,7 @@ interface StyleGalleryBrowserProps {
   galleryBasePath: string;
   dateLocale: string;
   labels: StyleGalleryBrowserLabels;
+  lightboxCopyLabels: StyleGalleryLightboxCopyLabels;
 }
 
 export interface StyleGalleryBrowserLabels {
@@ -62,6 +66,7 @@ export interface StyleGalleryBrowserLabels {
   promptLoadFailed: string;
   view: string;
   noMatches: string;
+  openImage: string;
 }
 
 type SortKey = 'default' | 'date' | 'id' | 'examples' | 'likes';
@@ -117,6 +122,7 @@ function StyleGalleryBrowserContent({
   galleryBasePath,
   dateLocale,
   labels,
+  lightboxCopyLabels,
 }: StyleGalleryBrowserProps) {
   const shouldReduceMotion = useReducedMotion();
   const [query, setQuery] = useState('');
@@ -251,6 +257,21 @@ function StyleGalleryBrowserContent({
   function toggleSortDirection() {
     setSortDirection((direction) => (direction === 'asc' ? 'desc' : 'asc'));
     setCurrentPage(1);
+  }
+
+  function openSourceLightbox(item: StyleGalleryBrowserItem) {
+    const data = createStyleGallerySourceLightboxData(
+      filteredItems.map((candidate) => ({
+        id: candidate.slug,
+        src: candidate.sourceImage,
+        previewSrc: candidate.thumbnailImage ?? candidate.sourceImage,
+        alt: candidate.sourceImageAlt ?? candidate.title,
+        getPrompt: () => getSelectedStyleGalleryPrompt(candidate.slug) ?? candidate.prompt,
+      })),
+      item.slug,
+      lightboxCopyLabels,
+    );
+    openModal('imageLightbox', data);
   }
 
   async function copyPromptText(item: StyleGalleryBrowserItem, prompt: string): Promise<boolean> {
@@ -401,34 +422,41 @@ function StyleGalleryBrowserContent({
             onFocusCapture={() => prefetchPromptChoices(item)}
             className="group overflow-hidden rounded-lg border border-rose-100 bg-white shadow-sm transition hover:-translate-y-1 hover:border-rose-200 hover:shadow-lg dark:border-gray-800 dark:bg-gray-950"
           >
-            <a
-              href={`${galleryBasePath}/${item.slug}`}
-              data-astro-prefetch="false"
-              className="relative block aspect-[4/5] overflow-hidden bg-rose-50 dark:bg-gray-900"
-            >
-              <img
-                src={item.thumbnailImage ?? item.sourceImage}
-                alt={item.sourceImageAlt ?? item.title}
-                width={4}
-                height={5}
-                loading={index < EAGER_CARD_COUNT ? 'eager' : 'lazy'}
-                fetchPriority={index < HIGH_PRIORITY_CARD_COUNT ? 'high' : 'auto'}
-                decoding="async"
-                className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
-              />
-              <span className="absolute right-2 bottom-2 flex items-center gap-1.5">
-                <span className="inline-flex min-w-8 items-center justify-center gap-1 rounded-md bg-gray-950/80 px-2 py-1 font-bold text-[11px] text-white tabular-nums shadow-sm backdrop-blur-sm">
-                  <Icon icon="ri:image-2-fill" className="size-3" />
-                  <span className="sr-only">{labels.exampleCount.replace('{count}', String(item.exampleCount))}</span>
-                  <span aria-hidden="true">{item.exampleCount}</span>
+            <div className="relative aspect-[4/5] overflow-hidden bg-rose-50 dark:bg-gray-900">
+              <a href={`${galleryBasePath}/${item.slug}`} data-astro-prefetch="false" className="block h-full w-full">
+                <img
+                  src={item.thumbnailImage ?? item.sourceImage}
+                  alt={item.sourceImageAlt ?? item.title}
+                  width={4}
+                  height={5}
+                  loading={index < EAGER_CARD_COUNT ? 'eager' : 'lazy'}
+                  fetchPriority={index < HIGH_PRIORITY_CARD_COUNT ? 'high' : 'auto'}
+                  decoding="async"
+                  className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
+                />
+                <span className="absolute right-2 bottom-2 flex items-center gap-1.5">
+                  <span className="inline-flex min-w-8 items-center justify-center gap-1 rounded-md bg-gray-950/80 px-2 py-1 font-bold text-[11px] text-white tabular-nums shadow-sm backdrop-blur-sm">
+                    <Icon icon="ri:image-2-fill" className="size-3" />
+                    <span className="sr-only">{labels.exampleCount.replace('{count}', String(item.exampleCount))}</span>
+                    <span aria-hidden="true">{item.exampleCount}</span>
+                  </span>
+                  <span className="inline-flex min-w-8 items-center justify-center gap-1 rounded-md bg-rose-500/90 px-2 py-1 font-bold text-[11px] text-white tabular-nums shadow-sm backdrop-blur-sm">
+                    <Icon icon="ri:heart-3-fill" className="size-3" />
+                    <span className="sr-only">{labels.likeCount.replace('{count}', String(item.likeCount))}</span>
+                    <span aria-hidden="true">{item.likeCount}</span>
+                  </span>
                 </span>
-                <span className="inline-flex min-w-8 items-center justify-center gap-1 rounded-md bg-rose-500/90 px-2 py-1 font-bold text-[11px] text-white tabular-nums shadow-sm backdrop-blur-sm">
-                  <Icon icon="ri:heart-3-fill" className="size-3" />
-                  <span className="sr-only">{labels.likeCount.replace('{count}', String(item.likeCount))}</span>
-                  <span aria-hidden="true">{item.likeCount}</span>
-                </span>
-              </span>
-            </a>
+              </a>
+              <button
+                type="button"
+                onClick={() => openSourceLightbox(item)}
+                className="absolute top-2 left-2 z-10 flex size-9 cursor-zoom-in items-center justify-center rounded-md border border-white/20 bg-black/50 text-white shadow-sm backdrop-blur-sm transition hover:scale-105 hover:bg-black/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                aria-label={`${labels.openImage}: ${item.title}`}
+                title={labels.openImage}
+              >
+                <Icon icon="ri:zoom-in-line" className="size-4" />
+              </button>
+            </div>
             <div className="space-y-3 p-4">
               <div className="flex items-start justify-between gap-3">
                 <a

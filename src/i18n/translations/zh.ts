@@ -250,6 +250,7 @@ export const uiStrings = {
 
   // ── Image Lightbox ──────────────────────────────────────────
   'image.zoomIn': '放大',
+  'image.openLightbox': '放大查看',
   'image.zoomOut': '缩小',
   'image.resetZoom': '重置',
   'image.resetZoomRotate': '重置缩放和旋转',

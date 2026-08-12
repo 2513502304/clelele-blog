@@ -252,6 +252,7 @@ export const uiStrings: UIStrings = {
 
   // ── Image Lightbox ──────────────────────────────────────────
   'image.zoomIn': 'Zoom in',
+  'image.openLightbox': 'Open image preview',
   'image.zoomOut': 'Zoom out',
   'image.resetZoom': 'Reset',
   'image.resetZoomRotate': 'Reset zoom and rotation',

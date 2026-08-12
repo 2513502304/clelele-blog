@@ -1,5 +1,8 @@
 import { ErrorBoundary, InlineErrorFallback } from '@components/common';
 import { Icon } from '@iconify/react';
+import { createStyleGallerySourceLightboxData, type StyleGalleryLightboxCopyLabels } from '@lib/style-gallery-lightbox-actions';
+import { getSelectedStyleGalleryPrompt } from '@lib/style-gallery-prompt-selection';
+import { openModal } from '@store/modal';
 import { parseAsString, parseAsStringLiteral, useQueryState } from 'nuqs';
 import { NuqsAdapter } from 'nuqs/adapters/react';
 import { useMemo } from 'react';
@@ -10,6 +13,7 @@ interface StyleGalleryImageIndexProps {
   items: StyleGalleryCardData[];
   galleryBasePath: string;
   labels: StyleGalleryImageIndexLabels;
+  lightboxCopyLabels: StyleGalleryLightboxCopyLabels;
 }
 
 export interface StyleGalleryImageIndexLabels {
@@ -28,6 +32,7 @@ export interface StyleGalleryImageIndexLabels {
   noMatches: string;
   view: string;
   loadMore: string;
+  openImage: string;
 }
 
 const sortKeys = ['default', 'date', 'id', 'examples', 'likes'] as const;
@@ -51,7 +56,7 @@ function reportUrlStateError(error: unknown) {
  * 高密度图片矩阵。筛选和排序后采用渐进挂载，未挂载的图片不会发出请求；已挂载卡片使用固定比例占位，
  * 防止后到图片改变网格位置。
  */
-function StyleGalleryImageIndexContent({ items, galleryBasePath, labels }: StyleGalleryImageIndexProps) {
+function StyleGalleryImageIndexContent({ items, galleryBasePath, labels, lightboxCopyLabels }: StyleGalleryImageIndexProps) {
   const [query, setQuery] = useQueryState('q', parseAsString.withDefault(''));
   const [sortKey, setSortKey] = useQueryState('sort', parseAsStringLiteral(sortKeys).withDefault('default'));
   const [sortDirection, setSortDirection] = useQueryState('dir', parseAsStringLiteral(sortDirections).withDefault('asc'));
@@ -94,6 +99,21 @@ function StyleGalleryImageIndexContent({ items, galleryBasePath, labels }: Style
     resetKey: `${query.trim().toLowerCase()}\u0000${sortKey}\u0000${sortDirection}`,
     rootMargin: '-120px 0px',
   });
+
+  function openSourceLightbox(item: StyleGalleryCardData) {
+    const data = createStyleGallerySourceLightboxData(
+      visibleItems.map((candidate) => ({
+        id: candidate.slug,
+        src: candidate.sourceImage,
+        previewSrc: candidate.thumbnailImage ?? candidate.sourceImage,
+        alt: candidate.sourceImageAlt ?? candidate.title,
+        getPrompt: () => getSelectedStyleGalleryPrompt(candidate.slug) ?? candidate.prompt,
+      })),
+      item.slug,
+      lightboxCopyLabels,
+    );
+    openModal('imageLightbox', data);
+  }
 
   return (
     <section className="space-y-4" aria-label="Image style prompt gallery index">
@@ -149,36 +169,52 @@ function StyleGalleryImageIndexContent({ items, galleryBasePath, labels }: Style
         <>
           <div className="grid grid-cols-[repeat(auto-fill,minmax(92px,1fr))] gap-2.5 md:grid-cols-[repeat(auto-fill,minmax(76px,1fr))] md:gap-2">
             {renderedItems.map((item, index) => (
-              <a
+              <div
                 key={item.slug}
-                href={`${galleryBasePath}/${item.slug}`}
-                data-astro-prefetch="false"
-                className="group relative aspect-square min-w-0 overflow-hidden rounded-md border border-border bg-muted shadow-sm transition hover:z-10 hover:-translate-y-0.5 hover:border-primary/60 hover:shadow-md focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                aria-label={`${labels.view}: ${item.title}; ${labels.exampleCount.replace('{count}', String(item.exampleCount))}; ${labels.likeCount.replace('{count}', String(item.likeCount))}`}
-                title={item.title}
+                className="group relative aspect-square min-w-0 overflow-hidden rounded-md border border-border bg-muted shadow-sm transition focus-within:z-10 focus-within:ring-2 focus-within:ring-primary hover:z-10 hover:-translate-y-0.5 hover:border-primary/60 hover:shadow-md"
               >
-                <img
-                  src={item.thumbnailImage ?? item.sourceImage}
-                  alt={item.sourceImageAlt ?? item.title}
-                  width={1}
-                  height={1}
-                  loading={index < EAGER_INDEX_ITEM_COUNT ? 'eager' : 'lazy'}
-                  fetchPriority={index < HIGH_PRIORITY_INDEX_ITEM_COUNT ? 'high' : 'auto'}
-                  decoding="async"
-                  className="h-full w-full object-cover transition duration-200 group-hover:scale-105"
-                />
-                <span className="absolute top-1 left-1 rounded-sm bg-black/65 px-1 py-0.5 font-mono text-[9px] text-white tabular-nums">
-                  {String(index + 1).padStart(3, '0')}
-                </span>
+                <a
+                  href={`${galleryBasePath}/${item.slug}`}
+                  data-astro-prefetch="false"
+                  className="block h-full w-full focus-visible:outline-none"
+                  aria-label={`${labels.view}: ${item.title}; ${labels.exampleCount.replace('{count}', String(item.exampleCount))}; ${labels.likeCount.replace('{count}', String(item.likeCount))}`}
+                  title={item.title}
+                >
+                  <img
+                    src={item.thumbnailImage ?? item.sourceImage}
+                    alt={item.sourceImageAlt ?? item.title}
+                    width={1}
+                    height={1}
+                    loading={index < EAGER_INDEX_ITEM_COUNT ? 'eager' : 'lazy'}
+                    fetchPriority={index < HIGH_PRIORITY_INDEX_ITEM_COUNT ? 'high' : 'auto'}
+                    decoding="async"
+                    className="h-full w-full object-cover transition duration-200 group-hover:scale-105"
+                  />
+                </a>
+                <button
+                  type="button"
+                  onClick={() => openSourceLightbox(item)}
+                  className="group/index-lightbox absolute top-1 left-1 z-10 flex min-h-5 min-w-7 cursor-zoom-in items-center justify-center rounded-sm bg-black/65 px-1 py-0.5 font-mono text-[9px] text-white tabular-nums transition hover:bg-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                  aria-label={`${labels.openImage}: ${item.title}`}
+                  title={labels.openImage}
+                >
+                  <span className="group-hover/index-lightbox:hidden group-focus-visible/index-lightbox:hidden">
+                    {String(index + 1).padStart(3, '0')}
+                  </span>
+                  <Icon
+                    icon="ri:zoom-in-line"
+                    className="hidden size-3 group-hover/index-lightbox:block group-focus-visible/index-lightbox:block"
+                  />
+                </button>
                 {item.imageCount > 1 && (
                   <span
-                    className="absolute top-1 right-1 flex min-w-5 items-center justify-center rounded-sm bg-sky-500/90 px-1 py-0.5 font-bold text-[9px] text-white"
+                    className="pointer-events-none absolute top-1 right-1 flex min-w-5 items-center justify-center rounded-sm bg-sky-500/90 px-1 py-0.5 font-bold text-[9px] text-white"
                     title={labels.imageCount.replace('{count}', String(item.imageCount))}
                   >
                     ×{item.imageCount}
                   </span>
                 )}
-                <span className="absolute right-1 bottom-6 flex items-center gap-1">
+                <span className="pointer-events-none absolute right-1 bottom-6 flex items-center gap-1">
                   <span className="inline-flex min-w-7 items-center justify-center gap-0.5 rounded-sm bg-black/70 px-1 py-0.5 font-bold text-[9px] text-white tabular-nums">
                     <Icon icon="ri:image-2-fill" className="size-2.5" />
                     <span className="sr-only">{labels.exampleCount.replace('{count}', String(item.exampleCount))}</span>
@@ -190,10 +226,10 @@ function StyleGalleryImageIndexContent({ items, galleryBasePath, labels }: Style
                     <span aria-hidden="true">{item.likeCount}</span>
                   </span>
                 </span>
-                <span className="absolute inset-x-0 bottom-0 truncate bg-black/70 px-1.5 py-1 font-mono text-[9px] text-white">
+                <span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-black/70 px-1.5 py-1 font-mono text-[9px] text-white">
                   {item.imageHash.slice(0, 12)}
                 </span>
-              </a>
+              </div>
             ))}
           </div>
           {hasMore && (

@@ -47,6 +47,12 @@ const browserLabels = {
   promptLoadFailed: t(locale, 'gallery.promptLoadFailed'),
   view: t(locale, 'gallery.view'),
   noMatches: t(locale, 'gallery.noMatches'),
+  openImage: t(locale, 'image.openLightbox'),
+};
+const lightboxCopyLabels = {
+  copyPrompt: t(locale, 'image.copyPrompt'),
+  copiedPrompt: t(locale, 'image.copiedPrompt'),
+  copyFailed: t(locale, 'image.copyFailed'),
 };
 Astro.response.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=300');
 ---
@@ -97,6 +103,7 @@ Astro.response.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-re
         galleryBasePath={galleryBasePath}
         dateLocale={locale}
         labels={browserLabels}
+        lightboxCopyLabels={lightboxCopyLabels}
       />
     </div>
   </TwoColumnLayout>
