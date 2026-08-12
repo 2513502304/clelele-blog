@@ -150,6 +150,7 @@ export const uiStrings = {
   'gallery.sortAscending': '顺序',
   'gallery.sortDescending': '逆序',
   'gallery.imageCount': '{count} 张参考图',
+  'gallery.referenceImage': '参考图 {index}',
   'gallery.exampleCount': '{count} 张生成示例',
   'gallery.likeCount': '点赞数：{count}',
   'gallery.copy': '复制',
@@ -250,6 +251,7 @@ export const uiStrings = {
 
   // ── Image Lightbox ──────────────────────────────────────────
   'image.zoomIn': '放大',
+  'image.openLightbox': '放大查看',
   'image.zoomOut': '缩小',
   'image.resetZoom': '重置',
   'image.resetZoomRotate': '重置缩放和旋转',

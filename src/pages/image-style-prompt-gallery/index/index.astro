@@ -34,6 +34,12 @@ const labels = {
   noMatches: t(locale, 'gallery.noMatches'),
   view: t(locale, 'gallery.view'),
   loadMore: t(locale, 'search.loadMore'),
+  openImage: t(locale, 'image.openLightbox'),
+};
+const lightboxCopyLabels = {
+  copyPrompt: t(locale, 'image.copyPrompt'),
+  copiedPrompt: t(locale, 'image.copiedPrompt'),
+  copyFailed: t(locale, 'image.copyFailed'),
 };
 Astro.response.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=300');
 ---
@@ -56,7 +62,13 @@ Astro.response.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-re
         <span class="font-black text-3xl text-primary tabular-nums">{items.length}</span>
       </header>
 
-      <StyleGalleryImageIndex client:load items={items} galleryBasePath={galleryBasePath} labels={labels} />
+      <StyleGalleryImageIndex
+        client:load
+        items={items}
+        galleryBasePath={galleryBasePath}
+        labels={labels}
+        lightboxCopyLabels={lightboxCopyLabels}
+      />
     </div>
   </TwoColumnLayout>
 </Layout>

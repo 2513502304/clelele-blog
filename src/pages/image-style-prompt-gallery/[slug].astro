@@ -1,6 +1,7 @@
 ---
 import HomeSider from '@components/layout/HomeSider.astro';
 import StyleGalleryExamples from '@components/style-gallery/StyleGalleryExamples';
+import StyleGalleryReferenceImages from '@components/style-gallery/StyleGalleryReferenceImages';
 import StyleGalleryStorageHints from '@components/style-gallery/StyleGalleryStorageHints.astro';
 import StylePromptCopy from '@components/style-gallery/StylePromptCopy';
 import Cover from '@components/ui/cover/Cover.astro';
@@ -71,26 +72,19 @@ Astro.response.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-re
           </header>
 
           <div class="rounded-lg border border-rose-100 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-gray-950">
-            <div class:list={['grid gap-3', referenceImages.length > 1 ? 'grid-cols-2 md:grid-cols-1' : 'grid-cols-1']}>
-              {referenceImages.map((image, index) => (
-                <figure class="overflow-hidden rounded-md bg-rose-50 dark:bg-gray-900">
-                  <img
-                    src={image.sourceImage}
-                    alt={image.sourceImageAlt ?? `${data.title} reference image ${index + 1}`}
-                    loading={index === 0 ? 'eager' : 'lazy'}
-                    fetchpriority={index === 0 ? 'high' : 'auto'}
-                    decoding="async"
-                    class="max-h-[68vh] w-full object-contain"
-                  />
-                  {referenceImages.length > 1 && (
-                    <figcaption class="flex items-center justify-between gap-2 px-3 py-2 text-xs text-gray-500 dark:text-gray-300">
-                      <span class="font-bold">Reference {index + 1}</span>
-                      <span class="truncate font-mono" title={image.imageHash}>{image.imageHash.slice(0, 12)}</span>
-                    </figcaption>
-                  )}
-                </figure>
-              ))}
-            </div>
+            <StyleGalleryReferenceImages
+              client:load
+              images={referenceImages}
+              itemSlug={data.slug}
+              prompt={data.prompt}
+              openImageLabel={t(locale, 'image.openLightbox')}
+              referenceImageLabel={t(locale, 'gallery.referenceImage', { index: '{index}' })}
+              lightboxCopyLabels={{
+                copyPrompt: t(locale, 'image.copyPrompt'),
+                copiedPrompt: t(locale, 'image.copiedPrompt'),
+                copyFailed: t(locale, 'image.copyFailed'),
+              }}
+            />
           </div>
           <div class="grid grid-cols-2 gap-3 md:grid-cols-1">
             <div class="rounded-lg border border-rose-100 bg-white p-4 dark:border-gray-800 dark:bg-gray-950">

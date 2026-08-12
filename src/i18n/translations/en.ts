@@ -152,6 +152,7 @@ export const uiStrings: UIStrings = {
   'gallery.sortAscending': 'Ascending',
   'gallery.sortDescending': 'Descending',
   'gallery.imageCount': '{count} reference images',
+  'gallery.referenceImage': 'Reference image {index}',
   'gallery.exampleCount': 'Generated examples: {count}',
   'gallery.likeCount': 'Likes: {count}',
   'gallery.copy': 'Copy',
@@ -252,6 +253,7 @@ export const uiStrings: UIStrings = {
 
   // ── Image Lightbox ──────────────────────────────────────────
   'image.zoomIn': 'Zoom in',
+  'image.openLightbox': 'Open image preview',
   'image.zoomOut': 'Zoom out',
   'image.resetZoom': 'Reset',
   'image.resetZoomRotate': 'Reset zoom and rotation',

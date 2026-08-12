@@ -1,11 +1,14 @@
-import type { ImageLightboxCopyAction, ImageLightboxDeleteAction } from '@store/modal';
+import type { ImageLightboxCopyAction, ImageLightboxData, ImageLightboxDeleteAction } from '@store/modal';
 
 export const STYLE_GALLERY_UPLOAD_TOKEN_STORAGE_KEY = 'style-gallery-upload-token';
 
-export interface StyleGalleryLightboxActionLabels {
+export interface StyleGalleryLightboxCopyLabels {
   copyPrompt: string;
   copiedPrompt: string;
   copyFailed: string;
+}
+
+export interface StyleGalleryLightboxActionLabels extends StyleGalleryLightboxCopyLabels {
   deleteImage: string;
   deletingImage: string;
   deleteFailed: string;
@@ -70,7 +73,7 @@ export async function deleteStyleGalleryExample(sourceSlug: string, exampleId: s
 /** 为任意 Gallery 图片构造可复制完整 prompt 的 lightbox 动作。 */
 export function createStyleGalleryCopyAction(
   getText: () => string | Promise<string>,
-  labels: StyleGalleryLightboxActionLabels,
+  labels: StyleGalleryLightboxCopyLabels,
 ): ImageLightboxCopyAction {
   return {
     label: labels.copyPrompt,
@@ -78,6 +81,39 @@ export function createStyleGalleryCopyAction(
     failedLabel: labels.copyFailed,
     getText,
   };
+}
+
+export interface StyleGallerySourceLightboxItem {
+  id: string;
+  src: string;
+  previewSrc?: string;
+  alt: string;
+  getPrompt: () => string | Promise<string>;
+}
+
+/**
+ * 为参考原图构造统一 lightbox 导航数据。高清原图加载完成前可以复用触发页缓存的 `previewSrc`；
+ * 刻意不附加点赞与删除动作，避免把生成示例的业务权限误用于父 item。
+ */
+export function createStyleGallerySourceLightboxData(
+  items: readonly StyleGallerySourceLightboxItem[],
+  currentId: string,
+  labels: StyleGalleryLightboxCopyLabels,
+): ImageLightboxData {
+  if (items.length === 0) throw new Error('Style Gallery source lightbox requires at least one image.');
+  const images = items.map((item) => ({
+    id: item.id,
+    src: item.src,
+    previewSrc: item.previewSrc,
+    alt: item.alt,
+    copy: createStyleGalleryCopyAction(item.getPrompt, labels),
+  }));
+  const currentIndex = Math.max(
+    0,
+    images.findIndex((image) => image.id === currentId),
+  );
+  const current = images[currentIndex];
+  return { src: current.src, alt: current.alt, images, currentIndex };
 }
 
 /** 复用详情页权限与确认文案，构造单张示例图的 lightbox 删除动作。 */

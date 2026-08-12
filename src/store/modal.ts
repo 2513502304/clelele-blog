@@ -87,6 +87,8 @@ export interface ImageLightboxDeleteAction {
 export interface ImageLightboxImage {
   id?: string;
   src: string;
+  /** 已在触发页面显示过的低成本预览图；高清原图加载完成前用于避免空白等待。 */
+  previewSrc?: string;
   alt: string;
   like?: ImageLightboxLikeAction;
   copy?: ImageLightboxCopyAction;

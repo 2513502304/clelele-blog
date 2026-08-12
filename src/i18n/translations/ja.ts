@@ -152,6 +152,7 @@ export const uiStrings: UIStrings = {
   'gallery.sortAscending': '昇順',
   'gallery.sortDescending': '降順',
   'gallery.imageCount': '参考画像 {count} 枚',
+  'gallery.referenceImage': '参考画像 {index}',
   'gallery.exampleCount': '生成例 {count} 枚',
   'gallery.likeCount': 'いいね数: {count}',
   'gallery.copy': 'コピー',
@@ -252,6 +253,7 @@ export const uiStrings: UIStrings = {
 
   // ── Lightboxでの画像表示 ──────────────────────────────────────────
   'image.zoomIn': '拡大',
+  'image.openLightbox': '画像を拡大表示',
   'image.zoomOut': '縮小',
   'image.resetZoom': 'リセット',
   'image.resetZoomRotate': '回転と拡大をリセット',

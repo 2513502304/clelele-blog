@@ -22,7 +22,7 @@ import {
   openModal,
   removeImageFromLightbox,
 } from '@store/modal';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { LightboxLikeButton, NavButton, ToolbarButton, ToolbarLink, ZoomHint } from './ImageLightboxControls';
 
@@ -33,6 +33,7 @@ const MAX_ZOOM_SENSITIVITY = 1.25;
 
 export default function ImageLightbox() {
   const { t } = useTranslation();
+  const shouldReduceMotion = useReducedMotion();
   const data = useStore($imageLightboxData);
   const isOpen = data !== null;
   const currentImage = data?.images[data.currentIndex];
@@ -41,6 +42,7 @@ export default function ImageLightbox() {
   const currentDelete = currentImage?.delete;
   const downloadAction = currentImage ? createImageLightboxDownloadAction(currentImage.src) : null;
   const currentImageKey = currentImage?.id ?? `${data?.currentIndex ?? 0}:${currentImage?.src ?? ''}`;
+  const previewSrc = currentImage?.previewSrc !== currentImage?.src ? currentImage?.previewSrc : undefined;
   const [imageLoaded, setImageLoaded] = useState(false);
   const [rotation, setRotation] = useState(0);
   const [zoomSensitivity, setZoomSensitivity] = useState(DEFAULT_ZOOM_SENSITIVITY);
@@ -421,27 +423,46 @@ export default function ImageLightbox() {
                     exit={{ scale: 0.95 }}
                     transition={{ duration: 0.2 }}
                   >
-                    <motion.img
-                      src={data.src}
-                      alt={data.alt}
-                      loading="eager"
-                      fetchPriority="high"
-                      decoding="async"
-                      className="max-h-[80vh] max-w-[90vw] origin-center rounded-lg object-contain shadow-2xl will-change-transform"
-                      animate={{ scale: state.scale, rotate: rotation, opacity: imageLoaded ? 1 : 0 }}
+                    <motion.div
+                      className="grid origin-center place-items-center rounded-lg shadow-2xl will-change-transform"
+                      animate={{ scale: state.scale, rotate: rotation }}
                       transition={{
                         scale: { type: 'tween', duration: 0.15, ease: 'easeOut' },
                         rotate: { type: 'spring', stiffness: 300, damping: 25 },
-                        opacity: { duration: 0.2 },
                       }}
                       style={{
                         x: state.translateX,
                         y: state.translateY,
                         cursor: state.scale > 1.05 ? 'grab' : 'zoom-in',
                       }}
-                      onLoad={() => setImageLoaded(true)}
-                      draggable={false}
-                    />
+                    >
+                      {previewSrc && (
+                        <motion.img
+                          src={previewSrc}
+                          alt=""
+                          aria-hidden="true"
+                          loading="eager"
+                          decoding="async"
+                          className="col-start-1 row-start-1 max-h-[80vh] max-w-[90vw] rounded-lg object-contain"
+                          animate={{ opacity: imageLoaded ? 0 : 1 }}
+                          transition={{ opacity: { duration: shouldReduceMotion ? 0 : 0.18 } }}
+                          draggable={false}
+                        />
+                      )}
+                      <motion.img
+                        key={`${currentImageKey}:source`}
+                        src={data.src}
+                        alt={data.alt}
+                        loading="eager"
+                        fetchPriority="high"
+                        decoding="async"
+                        className="col-start-1 row-start-1 max-h-[80vh] max-w-[90vw] rounded-lg object-contain"
+                        animate={{ opacity: imageLoaded ? 1 : 0 }}
+                        transition={{ opacity: { duration: shouldReduceMotion ? 0 : 0.2 } }}
+                        onLoad={() => setImageLoaded(true)}
+                        draggable={false}
+                      />
+                    </motion.div>
                   </motion.div>
                 </div>
 
