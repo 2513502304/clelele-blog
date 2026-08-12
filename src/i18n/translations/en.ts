@@ -274,6 +274,8 @@ export const uiStrings: UIStrings = {
   'image.close': 'Close',
   'image.prev': 'Previous',
   'image.next': 'Next',
+  'image.loadingOriginal': 'Loading full resolution',
+  'image.loadFailed': 'Full-resolution image failed to load',
   'image.counter': '{current} / {total}',
   'image.hintDesktop': 'Double-click to zoom · Scroll/pinch to scale',
   'image.hintMobile': 'Double-tap to zoom · Pinch to scale',
