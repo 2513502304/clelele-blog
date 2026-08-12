@@ -1,8 +1,19 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { groupStyleGalleryPromptsByModel, toggleStyleGalleryPromptModel } from './style-gallery-prompt-groups';
+import {
+  getStyleGalleryPromptCacheKey,
+  groupStyleGalleryPromptsByModel,
+  toggleStyleGalleryPromptModel,
+} from './style-gallery-prompt-groups';
 
 describe('style gallery prompt groups', () => {
+  it('versions prompt cache entries when the catalog prompt count changes', () => {
+    assert.notEqual(
+      getStyleGalleryPromptCacheKey('2026-08-08-161b8ebf9dc1', 1),
+      getStyleGalleryPromptCacheKey('2026-08-08-161b8ebf9dc1', 2),
+    );
+  });
+
   it('keeps model order and numbers prompts inside each model independently', () => {
     const groups = groupStyleGalleryPromptsByModel([
       { id: 'terra-1', model: 'gpt-5.6-terra' },

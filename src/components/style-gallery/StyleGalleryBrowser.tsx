@@ -2,6 +2,7 @@ import { ErrorBoundary, InlineErrorFallback } from '@components/common';
 import { useCollectionPagination } from '@hooks/useCollectionPagination';
 import { Icon } from '@iconify/react';
 import {
+  getStyleGalleryPromptCacheKey,
   groupStyleGalleryPromptsByModel,
   type StyleGalleryPromptDisclosureState,
   toggleStyleGalleryPromptModel,
@@ -76,6 +77,8 @@ interface PromptPickerState {
   item: StyleGalleryBrowserItem;
   prompts: PromptChoice[] | null;
   failed: boolean;
+  disclosure: StyleGalleryPromptDisclosureState;
+  copiedPromptId: string | null;
 }
 // 桌面端固定三列：前两行主动加载，但只让首行占用高网络优先级。
 const EAGER_CARD_COUNT = 6;
@@ -83,6 +86,24 @@ const HIGH_PRIORITY_CARD_COUNT = 3;
 
 function normalize(value: string) {
   return value.toLowerCase().trim();
+}
+
+function createPromptPickerState(
+  item: StyleGalleryBrowserItem,
+  prompts: PromptChoice[] | null,
+  failed = false,
+): PromptPickerState {
+  const firstPrompt = prompts?.[0];
+  return {
+    item,
+    prompts,
+    failed,
+    disclosure: {
+      expandedModels: firstPrompt ? new Set([firstPrompt.model?.trim() ?? '']) : new Set(),
+      expandedPromptIds: firstPrompt ? new Set([firstPrompt.id]) : new Set(),
+    },
+    copiedPromptId: null,
+  };
 }
 
 /**
@@ -105,11 +126,6 @@ function StyleGalleryBrowserContent({
   const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
   const [copyErrorSlug, setCopyErrorSlug] = useState<string | null>(null);
   const [promptPicker, setPromptPicker] = useState<PromptPickerState | null>(null);
-  const [promptDisclosure, setPromptDisclosure] = useState<StyleGalleryPromptDisclosureState>(() => ({
-    expandedModels: new Set(),
-    expandedPromptIds: new Set(),
-  }));
-  const [copiedPromptId, setCopiedPromptId] = useState<string | null>(null);
   const promptCache = useRef(new Map<string, PromptChoice[]>());
   const promptRequests = useRef(new Map<string, Promise<PromptChoice[]>>());
   const dateFormatter = useMemo(() => new Intl.DateTimeFormat(dateLocale, { timeZone: 'Asia/Shanghai' }), [dateLocale]);
@@ -122,25 +138,27 @@ function StyleGalleryBrowserContent({
     likes: labels.sortLikeCount,
   };
 
-  useEffect(() => {
-    const firstPrompt = promptPicker?.prompts?.[0];
-    setPromptDisclosure({
-      expandedModels: firstPrompt ? new Set([firstPrompt.model?.trim() ?? '']) : new Set(),
-      expandedPromptIds: firstPrompt ? new Set([firstPrompt.id]) : new Set(),
-    });
-    setCopiedPromptId(null);
-  }, [promptPicker?.prompts]);
-
   function togglePromptModelExpanded(model: string, promptIds: readonly string[]) {
-    setPromptDisclosure((current) => toggleStyleGalleryPromptModel(current, model, promptIds));
+    setPromptPicker((current) =>
+      current
+        ? {
+            ...current,
+            disclosure: toggleStyleGalleryPromptModel(current.disclosure, model, promptIds),
+          }
+        : current,
+    );
   }
 
   function togglePromptExpanded(promptId: string) {
-    setPromptDisclosure((current) => {
-      const next = new Set(current.expandedPromptIds);
+    setPromptPicker((current) => {
+      if (!current) return current;
+      const next = new Set(current.disclosure.expandedPromptIds);
       if (next.has(promptId)) next.delete(promptId);
       else next.add(promptId);
-      return { ...current, expandedPromptIds: next };
+      return {
+        ...current,
+        disclosure: { ...current.disclosure, expandedPromptIds: next },
+      };
     });
   }
 
@@ -171,9 +189,10 @@ function StyleGalleryBrowserContent({
 
   /** 复用 hover 预取与点击请求，避免同一 item 在请求尚未完成时重复访问 Vercel/HF。 */
   const loadPromptChoices = useCallback(async (item: StyleGalleryBrowserItem): Promise<PromptChoice[]> => {
-    const cached = promptCache.current.get(item.slug);
+    const cacheKey = getStyleGalleryPromptCacheKey(item.slug, item.promptCount);
+    const cached = promptCache.current.get(cacheKey);
     if (cached) return cached;
-    const pending = promptRequests.current.get(item.slug);
+    const pending = promptRequests.current.get(cacheKey);
     if (pending) return pending;
 
     const request = (async () => {
@@ -186,15 +205,15 @@ function StyleGalleryBrowserContent({
       if (!response.ok) throw new Error(`Prompt request failed with HTTP ${response.status}.`);
       const data = (await response.json()) as { prompts?: PromptChoice[] };
       if (!data.prompts?.length) throw new Error('Prompt response was empty.');
-      promptCache.current.set(item.slug, data.prompts);
+      promptCache.current.set(cacheKey, data.prompts);
       return data.prompts;
     })();
 
-    promptRequests.current.set(item.slug, request);
+    promptRequests.current.set(cacheKey, request);
     try {
       return await request;
     } finally {
-      if (promptRequests.current.get(item.slug) === request) promptRequests.current.delete(item.slug);
+      if (promptRequests.current.get(cacheKey) === request) promptRequests.current.delete(cacheKey);
     }
   }, []);
 
@@ -254,22 +273,46 @@ function StyleGalleryBrowserContent({
       return;
     }
 
-    const cached = promptCache.current.get(item.slug);
-    setPromptPicker({ item, prompts: cached ?? null, failed: false });
+    const cacheKey = getStyleGalleryPromptCacheKey(item.slug, item.promptCount);
+    const cached = promptCache.current.get(cacheKey);
+    setPromptPicker(createPromptPickerState(item, cached ?? null));
     if (cached) return;
     try {
       const prompts = await loadPromptChoices(item);
-      setPromptPicker((current) => (current?.item.slug === item.slug ? { ...current, prompts, failed: false } : current));
+      setPromptPicker((current) =>
+        current && getStyleGalleryPromptCacheKey(current.item.slug, current.item.promptCount) === cacheKey
+          ? createPromptPickerState(item, prompts)
+          : current,
+      );
     } catch {
-      setPromptPicker((current) => (current?.item.slug === item.slug ? { ...current, prompts: null, failed: true } : current));
+      setPromptPicker((current) =>
+        current && getStyleGalleryPromptCacheKey(current.item.slug, current.item.promptCount) === cacheKey
+          ? createPromptPickerState(item, null, true)
+          : current,
+      );
     }
   }
 
   async function copySelectedPrompt(prompt: PromptChoice) {
     if (!promptPicker) return;
+    const pickerCacheKey = getStyleGalleryPromptCacheKey(promptPicker.item.slug, promptPicker.item.promptCount);
     if (!(await copyPromptText(promptPicker.item, prompt.prompt))) return;
-    setCopiedPromptId(prompt.id);
-    window.setTimeout(() => setCopiedPromptId((current) => (current === prompt.id ? null : current)), 1800);
+    setPromptPicker((current) =>
+      current && getStyleGalleryPromptCacheKey(current.item.slug, current.item.promptCount) === pickerCacheKey
+        ? { ...current, copiedPromptId: prompt.id }
+        : current,
+    );
+    window.setTimeout(
+      () =>
+        setPromptPicker((current) =>
+          current &&
+          getStyleGalleryPromptCacheKey(current.item.slug, current.item.promptCount) === pickerCacheKey &&
+          current.copiedPromptId === prompt.id
+            ? { ...current, copiedPromptId: null }
+            : current,
+        ),
+      1800,
+    );
   }
 
   return (
@@ -491,7 +534,7 @@ function StyleGalleryBrowserContent({
               <div className="space-y-5 pt-4">
                 {promptGroups.map((group) => {
                   const groupKey = group.model ?? '';
-                  const groupExpanded = promptDisclosure.expandedModels.has(groupKey);
+                  const groupExpanded = promptPicker.disclosure.expandedModels.has(groupKey);
                   return (
                     <section
                       key={groupKey || '__unknown__'}
@@ -523,8 +566,8 @@ function StyleGalleryBrowserContent({
                       {groupExpanded && (
                         <div className="space-y-2 border-border border-t bg-muted/20 p-2 pl-5">
                           {group.prompts.map(({ prompt, modelIndex }) => {
-                            const promptExpanded = promptDisclosure.expandedPromptIds.has(prompt.id);
-                            const promptCopied = copiedPromptId === prompt.id;
+                            const promptExpanded = promptPicker.disclosure.expandedPromptIds.has(prompt.id);
+                            const promptCopied = promptPicker.copiedPromptId === prompt.id;
                             return (
                               <article
                                 key={prompt.id}

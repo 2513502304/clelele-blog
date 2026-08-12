@@ -13,6 +13,11 @@ export interface StyleGalleryPromptDisclosureState {
   expandedPromptIds: Set<string>;
 }
 
+/** 将 catalog 中的 prompt 版本纳入客户端缓存键，避免同一图片新增 prompt 后继续复用旧响应。 */
+export function getStyleGalleryPromptCacheKey(slug: string, promptCount: number): string {
+  return `${slug}:${promptCount}`;
+}
+
 /**
  * 按模型首次出现顺序分组，并为同模型内的 prompt 独立编号。
  * 未知模型统一进入一个分组，避免候选增多后平铺成难以辨认的长列表。
