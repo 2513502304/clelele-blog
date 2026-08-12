@@ -274,6 +274,8 @@ export const uiStrings: UIStrings = {
   'image.close': '閉じる',
   'image.prev': '前へ',
   'image.next': '次へ',
+  'image.loadingOriginal': '高解像度画像を読み込み中',
+  'image.loadFailed': '高解像度画像を読み込めませんでした',
   'image.counter': '{current} / {total}',
   'image.hintDesktop': 'ダブルクリックで拡大、スクロール/ピンチで大きさを変更',
   'image.hintMobile': 'ダブルタップで拡大、ピンチで大きさを変更',

@@ -272,6 +272,8 @@ export const uiStrings = {
   'image.close': '关闭',
   'image.prev': '上一张',
   'image.next': '下一张',
+  'image.loadingOriginal': '正在加载高清原图',
+  'image.loadFailed': '高清原图加载失败',
   'image.counter': '{current} / {total}',
   'image.hintDesktop': '双击放大 · 滚轮/双指缩放',
   'image.hintMobile': '双击放大 · 双指缩放',

@@ -11,6 +11,7 @@ import { useBackdropClickDismiss } from '@hooks/useBackdropClickDismiss';
 import { useKeyboardShortcut } from '@hooks/useKeyboardShortcut';
 import { useTranslation } from '@hooks/useTranslation';
 import { useZoomPan } from '@hooks/useZoomPan';
+import { Icon } from '@iconify/react';
 import { createImageLightboxDownloadAction } from '@lib/image-lightbox-download';
 import { getLive2DFocusNodes, isLive2DOwnedTarget } from '@lib/live2d/focus-scope';
 import { useStore } from '@nanostores/react';
@@ -18,6 +19,7 @@ import {
   $imageLightboxData,
   closeModal,
   type ImageLightboxData,
+  type ImageLightboxImage,
   navigateImage,
   openModal,
   removeImageFromLightbox,
@@ -31,6 +33,98 @@ const DEFAULT_ZOOM_SENSITIVITY = 0.55;
 const MIN_ZOOM_SENSITIVITY = 0.25;
 const MAX_ZOOM_SENSITIVITY = 1.25;
 
+interface LightboxImageStageProps {
+  image: ImageLightboxImage;
+  shouldReduceMotion: boolean | null;
+}
+
+/**
+ * 每个导航目标拥有独立加载生命周期。父级以当前图片键重建该组件，可同时阻止浏览器保留上一张位图，
+ * 并隔离已经卸载图片的迟到 load/decode 回调，避免快速切换时错误显示后续图片为已加载。
+ */
+function LightboxImageStage({ image, shouldReduceMotion }: LightboxImageStageProps) {
+  const { t } = useTranslation();
+  const previewSrc = image.previewSrc !== image.src ? image.previewSrc : undefined;
+  const [sourceState, setSourceState] = useState<'loading' | 'loaded' | 'failed'>('loading');
+  const [previewFailed, setPreviewFailed] = useState(false);
+
+  const finishSourceLoad = useCallback(async (element: HTMLImageElement) => {
+    try {
+      await element.decode();
+    } catch {
+      // 部分浏览器会在图片已经可绘制时拒绝重复 decode；naturalWidth 才是最终可用性判断。
+    }
+    setSourceState(element.naturalWidth > 0 ? 'loaded' : 'failed');
+  }, []);
+
+  const isLoading = sourceState === 'loading';
+  const hasPreview = Boolean(previewSrc) && !previewFailed;
+  const hasVisibleImage = hasPreview || sourceState === 'loaded';
+
+  return (
+    <div className="relative grid place-items-center" aria-busy={isLoading}>
+      {!hasVisibleImage && isLoading && (
+        <output
+          className="col-start-1 row-start-1 flex size-44 flex-col items-center justify-center gap-3 rounded-lg bg-black/30 text-white/70 backdrop-blur-sm"
+          aria-live="polite"
+        >
+          <Icon icon="ri:loader-4-line" className={shouldReduceMotion ? 'size-6' : 'size-6 animate-spin'} />
+          <span className="text-xs">{t('common.loading')}</span>
+        </output>
+      )}
+      {hasPreview && (
+        <motion.img
+          src={previewSrc}
+          alt=""
+          aria-hidden="true"
+          loading="eager"
+          decoding="async"
+          className="col-start-1 row-start-1 max-h-[80vh] max-w-[90vw] rounded-lg object-contain shadow-2xl"
+          initial={{ opacity: 1 }}
+          animate={{ opacity: sourceState === 'loaded' ? 0 : 1 }}
+          transition={{ opacity: { duration: shouldReduceMotion ? 0 : 0.18 } }}
+          onError={() => setPreviewFailed(true)}
+          draggable={false}
+        />
+      )}
+      <motion.img
+        src={image.src}
+        alt={image.alt}
+        loading="eager"
+        fetchPriority="high"
+        decoding="async"
+        className="col-start-1 row-start-1 max-h-[80vh] max-w-[90vw] rounded-lg object-contain shadow-2xl"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: sourceState === 'loaded' ? 1 : 0 }}
+        transition={{ opacity: { duration: shouldReduceMotion ? 0 : 0.2 } }}
+        onLoad={(event) => void finishSourceLoad(event.currentTarget)}
+        onError={() => setSourceState('failed')}
+        draggable={false}
+      />
+      {isLoading && hasPreview && (
+        <output
+          className="pointer-events-none absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full bg-black/60 px-3 py-1.5 text-white/80 text-xs backdrop-blur-sm"
+          aria-live="polite"
+        >
+          <Icon icon="ri:loader-4-line" className={shouldReduceMotion ? 'size-3.5' : 'size-3.5 animate-spin'} />
+          <span>{t('image.loadingOriginal')}</span>
+        </output>
+      )}
+      {sourceState === 'failed' && (
+        <div
+          className={`pointer-events-none flex items-center gap-2 rounded-full bg-black/70 px-3 py-1.5 text-rose-200 text-xs backdrop-blur-sm ${
+            hasPreview ? 'absolute bottom-3 left-1/2 -translate-x-1/2' : 'col-start-1 row-start-1'
+          }`}
+          role="alert"
+        >
+          <Icon icon="ri:error-warning-line" className="size-4" />
+          <span>{t('image.loadFailed')}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ImageLightbox() {
   const { t } = useTranslation();
   const shouldReduceMotion = useReducedMotion();
@@ -42,8 +136,6 @@ export default function ImageLightbox() {
   const currentDelete = currentImage?.delete;
   const downloadAction = currentImage ? createImageLightboxDownloadAction(currentImage.src) : null;
   const currentImageKey = currentImage?.id ?? `${data?.currentIndex ?? 0}:${currentImage?.src ?? ''}`;
-  const previewSrc = currentImage?.previewSrc !== currentImage?.src ? currentImage?.previewSrc : undefined;
-  const [imageLoaded, setImageLoaded] = useState(false);
   const [rotation, setRotation] = useState(0);
   const [zoomSensitivity, setZoomSensitivity] = useState(DEFAULT_ZOOM_SENSITIVITY);
   const [showSensitivity, setShowSensitivity] = useState(false);
@@ -123,7 +215,6 @@ export default function ImageLightbox() {
         setDeleteState(null);
         reset();
         setRotation(0);
-        setImageLoaded(false);
         return;
       }
       setDeleteState({ key, status: 'failed' });
@@ -145,7 +236,6 @@ export default function ImageLightbox() {
       if (!navigateImage(dir)) return;
       reset();
       setRotation(0);
-      setImageLoaded(false);
     },
     [isDeleting, reset],
   );
@@ -218,7 +308,6 @@ export default function ImageLightbox() {
     if (isOpen) {
       reset();
       setRotation(0);
-      setImageLoaded(false);
       setShowSensitivity(false);
       setCopyState(null);
       setDeleteState(null);
@@ -228,6 +317,21 @@ export default function ImageLightbox() {
       window.clearTimeout(deleteTimerRef.current);
     };
   }, [isOpen, reset]);
+
+  const previousImage = data?.images[data.currentIndex - 1];
+  const nextImage = data?.images[data.currentIndex + 1];
+  const previousPreviewSrc = previousImage?.previewSrc !== previousImage?.src ? previousImage?.previewSrc : undefined;
+  const nextPreviewSrc = nextImage?.previewSrc !== nextImage?.src ? nextImage?.previewSrc : undefined;
+
+  // 只预取相邻项已经提供的低成本预览图；不主动请求高清原图，避免为了导航手感增加大图带宽。
+  useEffect(() => {
+    for (const previewSrc of [previousPreviewSrc, nextPreviewSrc]) {
+      if (!previewSrc) continue;
+      const preload = new Image();
+      preload.decoding = 'async';
+      preload.src = previewSrc;
+    }
+  }, [nextPreviewSrc, previousPreviewSrc]);
 
   const updateZoomSensitivity = (value: number) => {
     const next = Math.min(MAX_ZOOM_SENSITIVITY, Math.max(MIN_ZOOM_SENSITIVITY, value));
@@ -258,7 +362,7 @@ export default function ImageLightbox() {
     }
   };
 
-  if (!data) return null;
+  if (!data || !currentImage) return null;
 
   return (
     <FloatingPortal>
@@ -424,7 +528,7 @@ export default function ImageLightbox() {
                     transition={{ duration: 0.2 }}
                   >
                     <motion.div
-                      className="grid origin-center place-items-center rounded-lg shadow-2xl will-change-transform"
+                      className="grid origin-center place-items-center rounded-lg will-change-transform"
                       animate={{ scale: state.scale, rotate: rotation }}
                       transition={{
                         scale: { type: 'tween', duration: 0.15, ease: 'easeOut' },
@@ -436,32 +540,7 @@ export default function ImageLightbox() {
                         cursor: state.scale > 1.05 ? 'grab' : 'zoom-in',
                       }}
                     >
-                      {previewSrc && (
-                        <motion.img
-                          src={previewSrc}
-                          alt=""
-                          aria-hidden="true"
-                          loading="eager"
-                          decoding="async"
-                          className="col-start-1 row-start-1 max-h-[80vh] max-w-[90vw] rounded-lg object-contain"
-                          animate={{ opacity: imageLoaded ? 0 : 1 }}
-                          transition={{ opacity: { duration: shouldReduceMotion ? 0 : 0.18 } }}
-                          draggable={false}
-                        />
-                      )}
-                      <motion.img
-                        key={`${currentImageKey}:source`}
-                        src={data.src}
-                        alt={data.alt}
-                        loading="eager"
-                        fetchPriority="high"
-                        decoding="async"
-                        className="col-start-1 row-start-1 max-h-[80vh] max-w-[90vw] rounded-lg object-contain"
-                        animate={{ opacity: imageLoaded ? 1 : 0 }}
-                        transition={{ opacity: { duration: shouldReduceMotion ? 0 : 0.2 } }}
-                        onLoad={() => setImageLoaded(true)}
-                        draggable={false}
-                      />
+                      <LightboxImageStage key={currentImageKey} image={currentImage} shouldReduceMotion={shouldReduceMotion} />
                     </motion.div>
                   </motion.div>
                 </div>
