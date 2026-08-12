@@ -10,6 +10,7 @@ import TwoColumnLayout from '@layouts/TwoColumnLayout.astro';
 import { getStyleGalleryExampleOverview } from '@lib/style-gallery';
 import { Icon } from 'astro-icon/components';
 import { getLocaleFromUrl, localizedPath, t } from '@/i18n';
+import { createStyleGalleryDateRangeLabels } from '@/lib/style-gallery-date-range-labels';
 
 export const prerender = false;
 
@@ -39,6 +40,7 @@ const overviewLabels = {
     loginRequired: t(locale, 'gallery.likeLoginRequired'),
     unavailable: t(locale, 'gallery.likeUnavailable'),
   },
+  dateRange: createStyleGalleryDateRangeLabels(locale),
 };
 Astro.response.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=300');
 ---

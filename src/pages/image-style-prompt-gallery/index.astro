@@ -10,6 +10,7 @@ import TwoColumnLayout from '@layouts/TwoColumnLayout.astro';
 import { getStyleGalleryData, toStyleGalleryCardDataList } from '@lib/style-gallery';
 import { Icon } from 'astro-icon/components';
 import { getLocaleFromUrl, localizedPath, t } from '@/i18n';
+import { createStyleGalleryDateRangeLabels } from '@/lib/style-gallery-date-range-labels';
 
 export const prerender = false;
 
@@ -48,6 +49,7 @@ const browserLabels = {
   view: t(locale, 'gallery.view'),
   noMatches: t(locale, 'gallery.noMatches'),
   openImage: t(locale, 'image.openLightbox'),
+  dateRange: createStyleGalleryDateRangeLabels(locale),
 };
 const lightboxCopyLabels = {
   copyPrompt: t(locale, 'image.copyPrompt'),

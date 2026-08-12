@@ -1,5 +1,8 @@
 import { ErrorBoundary, InlineErrorFallback } from '@components/common';
+import StyleGalleryDateRangeFilter from '@components/style-gallery/StyleGalleryDateRangeFilter';
 import { Icon } from '@iconify/react';
+import { createStyleGalleryDateRangeMatcher, getStyleGalleryDateKey } from '@lib/style-gallery-date-range';
+import type { StyleGalleryDateRangeLabels } from '@lib/style-gallery-date-range-labels';
 import {
   createStyleGalleryCopyAction,
   createStyleGalleryDeleteAction,
@@ -10,7 +13,7 @@ import {
 } from '@lib/style-gallery-lightbox-actions';
 import { STYLE_GALLERY_PLATFORMS } from '@lib/style-gallery-platforms';
 import { openModal } from '@store/modal';
-import { parseAsString, parseAsStringLiteral, useQueryState } from 'nuqs';
+import { parseAsString, parseAsStringLiteral, useQueryState, useQueryStates } from 'nuqs';
 import { NuqsAdapter } from 'nuqs/adapters/react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useProgressiveList } from '@/hooks/useProgressiveList';
@@ -48,6 +51,7 @@ export interface StyleGalleryExamplesOverviewLabels {
   sortAscending: string;
   sortDescending: string;
   likes: StyleGalleryLikeLabels;
+  dateRange: StyleGalleryDateRangeLabels;
 }
 
 const INITIAL_EXAMPLE_COUNT = 24;
@@ -81,6 +85,10 @@ function StyleGalleryExamplesOverviewContent({
   const [query, setQuery] = useQueryState('q', parseAsString.withDefault(''));
   const [sortKey, setSortKey] = useQueryState('sort', parseAsStringLiteral(sortKeys).withDefault('default'));
   const [sortDirection, setSortDirection] = useQueryState('dir', parseAsStringLiteral(sortDirections).withDefault('asc'));
+  const [{ from: dateFrom, to: dateTo }, setDateRange] = useQueryStates({
+    from: parseAsString.withDefault(''),
+    to: parseAsString.withDefault(''),
+  });
   const likes = useStyleGalleryLikes(Object.fromEntries(examples.map((example) => [example.id, example.likeCount])));
   useEffect(() => {
     setUploadToken(localStorage.getItem(STYLE_GALLERY_UPLOAD_TOKEN_STORAGE_KEY) ?? '');
@@ -97,8 +105,26 @@ function StyleGalleryExamplesOverviewContent({
     likes: labels.sortLikeCount,
   };
   const dateFormatter = useMemo(
-    () => new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'numeric', day: 'numeric', timeZone: 'UTC' }),
+    () =>
+      new Intl.DateTimeFormat(locale, {
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+        timeZone: 'Asia/Shanghai',
+      }),
     [locale],
+  );
+  const availableDateKeys = useMemo(
+    () => [
+      ...new Set(
+        examples.map((example) => getStyleGalleryDateKey(example.uploadedAt)).filter((date): date is string => date !== null),
+      ),
+    ],
+    [examples],
+  );
+  const matchesDateRange = useMemo(
+    () => createStyleGalleryDateRangeMatcher({ from: dateFrom, to: dateTo }),
+    [dateFrom, dateTo],
   );
   const filtered = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -106,7 +132,8 @@ function StyleGalleryExamplesOverviewContent({
       const matchesPlatform = platform === 'all' || example.model === platform;
       const matchesQuery =
         !normalizedQuery || `${example.sourceTitle} ${example.note ?? ''}`.toLowerCase().includes(normalizedQuery);
-      return matchesPlatform && matchesQuery;
+      const matchesDate = matchesDateRange(example.uploadedAt);
+      return matchesPlatform && matchesQuery && matchesDate;
     });
     const sorted = [...matches];
     if (sortKey !== 'default') {
@@ -118,7 +145,7 @@ function StyleGalleryExamplesOverviewContent({
       });
     }
     return sortDirection === 'desc' ? sorted.reverse() : sorted;
-  }, [examples, likeSortCounts, platform, query, sortDirection, sortKey]);
+  }, [examples, likeSortCounts, matchesDateRange, platform, query, sortDirection, sortKey]);
   const hasPendingLikeSort =
     sortKey === 'likes' && examples.some((example) => (likeSortCounts[example.id] ?? 0) !== likes.getCount(example.id));
   const deleteOverviewExample = useCallback(
@@ -161,7 +188,7 @@ function StyleGalleryExamplesOverviewContent({
   const { hasMore, loadMore, loadMoreRef, visibleItems } = useProgressiveList(filtered, {
     initialCount: INITIAL_EXAMPLE_COUNT,
     batchSize: EXAMPLE_BATCH_SIZE,
-    resetKey: `${platform}\u0000${query.trim().toLowerCase()}\u0000${sortKey}\u0000${sortDirection}`,
+    resetKey: `${platform}\u0000${query.trim().toLowerCase()}\u0000${dateFrom}\u0000${dateTo}\u0000${sortKey}\u0000${sortDirection}`,
   });
 
   function refreshLikeSortCounts() {
@@ -212,6 +239,13 @@ function StyleGalleryExamplesOverviewContent({
             className="pointer-events-none absolute top-1/2 right-2 size-4 -translate-y-1/2 text-muted-foreground"
           />
         </div>
+        <StyleGalleryDateRangeFilter
+          value={{ from: dateFrom, to: dateTo }}
+          locale={locale}
+          labels={labels.dateRange}
+          availableDateKeys={availableDateKeys}
+          onApply={(range) => void setDateRange(range).catch(reportUrlStateError)}
+        />
         <span className="text-muted-foreground text-sm tabular-nums">
           {filtered.length} / {examples.length}
         </span>

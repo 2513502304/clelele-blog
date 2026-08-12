@@ -1,9 +1,12 @@
 import { ErrorBoundary, InlineErrorFallback } from '@components/common';
+import StyleGalleryDateRangeFilter from '@components/style-gallery/StyleGalleryDateRangeFilter';
 import { Icon } from '@iconify/react';
+import { createStyleGalleryDateRangeMatcher, getStyleGalleryDateKey } from '@lib/style-gallery-date-range';
+import type { StyleGalleryDateRangeLabels } from '@lib/style-gallery-date-range-labels';
 import { createStyleGallerySourceLightboxData, type StyleGalleryLightboxCopyLabels } from '@lib/style-gallery-lightbox-actions';
 import { getSelectedStyleGalleryPrompt } from '@lib/style-gallery-prompt-selection';
 import { openModal } from '@store/modal';
-import { parseAsString, parseAsStringLiteral, useQueryState } from 'nuqs';
+import { parseAsString, parseAsStringLiteral, useQueryState, useQueryStates } from 'nuqs';
 import { NuqsAdapter } from 'nuqs/adapters/react';
 import { useMemo } from 'react';
 import { useProgressiveList } from '@/hooks/useProgressiveList';
@@ -12,6 +15,7 @@ import type { StyleGalleryCardData } from '@/types/style-gallery';
 interface StyleGalleryImageIndexProps {
   items: StyleGalleryCardData[];
   galleryBasePath: string;
+  locale: string;
   labels: StyleGalleryImageIndexLabels;
   lightboxCopyLabels: StyleGalleryLightboxCopyLabels;
 }
@@ -33,6 +37,7 @@ export interface StyleGalleryImageIndexLabels {
   view: string;
   loadMore: string;
   openImage: string;
+  dateRange: StyleGalleryDateRangeLabels;
 }
 
 const sortKeys = ['default', 'date', 'id', 'examples', 'likes'] as const;
@@ -56,10 +61,20 @@ function reportUrlStateError(error: unknown) {
  * 高密度图片矩阵。筛选和排序后采用渐进挂载，未挂载的图片不会发出请求；已挂载卡片使用固定比例占位，
  * 防止后到图片改变网格位置。
  */
-function StyleGalleryImageIndexContent({ items, galleryBasePath, labels, lightboxCopyLabels }: StyleGalleryImageIndexProps) {
+function StyleGalleryImageIndexContent({
+  items,
+  galleryBasePath,
+  locale,
+  labels,
+  lightboxCopyLabels,
+}: StyleGalleryImageIndexProps) {
   const [query, setQuery] = useQueryState('q', parseAsString.withDefault(''));
   const [sortKey, setSortKey] = useQueryState('sort', parseAsStringLiteral(sortKeys).withDefault('default'));
   const [sortDirection, setSortDirection] = useQueryState('dir', parseAsStringLiteral(sortDirections).withDefault('asc'));
+  const [{ from: dateFrom, to: dateTo }, setDateRange] = useQueryStates({
+    from: parseAsString.withDefault(''),
+    to: parseAsString.withDefault(''),
+  });
   const sortLabels: Record<SortKey, string> = {
     default: labels.sortDefault,
     date: labels.sortImportedAt,
@@ -67,14 +82,22 @@ function StyleGalleryImageIndexContent({ items, galleryBasePath, labels, lightbo
     examples: labels.sortExampleCount,
     likes: labels.sortLikeCount,
   };
+  const availableDateKeys = useMemo(
+    () => [...new Set(items.map((item) => getStyleGalleryDateKey(item.date)).filter((date): date is string => date !== null))],
+    [items],
+  );
+  const matchesDateRange = useMemo(
+    () => createStyleGalleryDateRangeMatcher({ from: dateFrom, to: dateTo }),
+    [dateFrom, dateTo],
+  );
 
   const visibleItems = useMemo(() => {
     const normalizedQuery = normalize(query);
-    const filtered = normalizedQuery
-      ? items.filter((item) =>
-          normalize(`${item.title} ${item.prompt} ${item.imageHash} ${item.slug}`).includes(normalizedQuery),
-        )
-      : items;
+    const filtered = items.filter((item) => {
+      const matchesQuery =
+        !normalizedQuery || normalize(`${item.title} ${item.prompt} ${item.imageHash} ${item.slug}`).includes(normalizedQuery);
+      return matchesQuery && matchesDateRange(item.date);
+    });
     const sorted = [...filtered];
 
     if (sortKey !== 'default') {
@@ -87,7 +110,7 @@ function StyleGalleryImageIndexContent({ items, galleryBasePath, labels, lightbo
     }
 
     return sortDirection === 'desc' ? sorted.reverse() : sorted;
-  }, [items, query, sortDirection, sortKey]);
+  }, [items, matchesDateRange, query, sortDirection, sortKey]);
   const {
     hasMore,
     loadMore,
@@ -96,7 +119,7 @@ function StyleGalleryImageIndexContent({ items, galleryBasePath, labels, lightbo
   } = useProgressiveList(visibleItems, {
     initialCount: INITIAL_INDEX_ITEM_COUNT,
     batchSize: INDEX_ITEM_BATCH_SIZE,
-    resetKey: `${query.trim().toLowerCase()}\u0000${sortKey}\u0000${sortDirection}`,
+    resetKey: `${query.trim().toLowerCase()}\u0000${dateFrom}\u0000${dateTo}\u0000${sortKey}\u0000${sortDirection}`,
     rootMargin: '-120px 0px',
   });
 
@@ -127,6 +150,14 @@ function StyleGalleryImageIndexContent({ items, galleryBasePath, labels, lightbo
             className="h-10 w-full rounded-md border border-border bg-background pr-3 pl-9 text-sm outline-none transition-colors focus:border-primary"
           />
         </label>
+
+        <StyleGalleryDateRangeFilter
+          value={{ from: dateFrom, to: dateTo }}
+          locale={locale}
+          labels={labels.dateRange}
+          availableDateKeys={availableDateKeys}
+          onApply={(range) => void setDateRange(range).catch(reportUrlStateError)}
+        />
 
         <div className="flex items-center gap-2 md:justify-between">
           <span className="shrink-0 text-muted-foreground text-sm tabular-nums">
