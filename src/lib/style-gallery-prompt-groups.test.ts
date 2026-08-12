@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { groupStyleGalleryPromptsByModel } from './style-gallery-prompt-groups';
+import { groupStyleGalleryPromptsByModel, toggleStyleGalleryPromptModel } from './style-gallery-prompt-groups';
 
 describe('style gallery prompt groups', () => {
   it('keeps model order and numbers prompts inside each model independently', () => {
@@ -48,5 +48,34 @@ describe('style gallery prompt groups', () => {
         },
       ],
     );
+  });
+
+  it('opens only the first prompt when a model group is expanded', () => {
+    const initial = {
+      expandedModels: new Set(['gpt-5.6-terra']),
+      expandedPromptIds: new Set(['terra-1', 'terra-2']),
+    };
+
+    const collapsed = toggleStyleGalleryPromptModel(initial, 'gpt-5.6-terra', ['terra-1', 'terra-2']);
+    assert.deepEqual([...collapsed.expandedModels], []);
+    assert.deepEqual([...collapsed.expandedPromptIds], []);
+
+    const reopened = toggleStyleGalleryPromptModel(collapsed, 'gpt-5.6-terra', ['terra-1', 'terra-2']);
+    assert.deepEqual([...reopened.expandedModels], ['gpt-5.6-terra']);
+    assert.deepEqual([...reopened.expandedPromptIds], ['terra-1']);
+  });
+
+  it('keeps other model disclosures unchanged', () => {
+    const next = toggleStyleGalleryPromptModel(
+      {
+        expandedModels: new Set(['gpt-5.6-terra']),
+        expandedPromptIds: new Set(['terra-1', 'sol-2']),
+      },
+      'gpt-5.6-sol',
+      ['sol-1', 'sol-2'],
+    );
+
+    assert.deepEqual([...next.expandedModels], ['gpt-5.6-terra', 'gpt-5.6-sol']);
+    assert.deepEqual([...next.expandedPromptIds], ['terra-1', 'sol-1']);
   });
 });
