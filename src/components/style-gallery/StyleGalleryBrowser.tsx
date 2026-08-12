@@ -1,9 +1,13 @@
 import { ErrorBoundary, InlineErrorFallback } from '@components/common';
 import { useCollectionPagination } from '@hooks/useCollectionPagination';
 import { Icon } from '@iconify/react';
-import { groupStyleGalleryPromptsByModel } from '@lib/style-gallery-prompt-groups';
+import {
+  groupStyleGalleryPromptsByModel,
+  type StyleGalleryPromptDisclosureState,
+  toggleStyleGalleryPromptModel,
+} from '@lib/style-gallery-prompt-groups';
 import { useReducedMotion } from 'motion/react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CollectionPaginationSettings, CollectionPaginator } from '../collection/CollectionPagination';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog';
 
@@ -101,10 +105,13 @@ function StyleGalleryBrowserContent({
   const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
   const [copyErrorSlug, setCopyErrorSlug] = useState<string | null>(null);
   const [promptPicker, setPromptPicker] = useState<PromptPickerState | null>(null);
-  const [expandedPromptModels, setExpandedPromptModels] = useState<Set<string>>(() => new Set());
-  const [expandedPromptIds, setExpandedPromptIds] = useState<Set<string>>(() => new Set());
+  const [promptDisclosure, setPromptDisclosure] = useState<StyleGalleryPromptDisclosureState>(() => ({
+    expandedModels: new Set(),
+    expandedPromptIds: new Set(),
+  }));
   const [copiedPromptId, setCopiedPromptId] = useState<string | null>(null);
   const promptCache = useRef(new Map<string, PromptChoice[]>());
+  const promptRequests = useRef(new Map<string, Promise<PromptChoice[]>>());
   const dateFormatter = useMemo(() => new Intl.DateTimeFormat(dateLocale, { timeZone: 'Asia/Shanghai' }), [dateLocale]);
   const promptGroups = useMemo(() => groupStyleGalleryPromptsByModel(promptPicker?.prompts ?? []), [promptPicker?.prompts]);
   const sortLabels: Record<SortKey, string> = {
@@ -117,26 +124,23 @@ function StyleGalleryBrowserContent({
 
   useEffect(() => {
     const firstPrompt = promptPicker?.prompts?.[0];
-    setExpandedPromptModels(firstPrompt ? new Set([firstPrompt.model?.trim() ?? '']) : new Set());
-    setExpandedPromptIds(firstPrompt ? new Set([firstPrompt.id]) : new Set());
+    setPromptDisclosure({
+      expandedModels: firstPrompt ? new Set([firstPrompt.model?.trim() ?? '']) : new Set(),
+      expandedPromptIds: firstPrompt ? new Set([firstPrompt.id]) : new Set(),
+    });
     setCopiedPromptId(null);
   }, [promptPicker?.prompts]);
 
-  function togglePromptModelExpanded(model: string) {
-    setExpandedPromptModels((current) => {
-      const next = new Set(current);
-      if (next.has(model)) next.delete(model);
-      else next.add(model);
-      return next;
-    });
+  function togglePromptModelExpanded(model: string, promptIds: readonly string[]) {
+    setPromptDisclosure((current) => toggleStyleGalleryPromptModel(current, model, promptIds));
   }
 
   function togglePromptExpanded(promptId: string) {
-    setExpandedPromptIds((current) => {
-      const next = new Set(current);
+    setPromptDisclosure((current) => {
+      const next = new Set(current.expandedPromptIds);
       if (next.has(promptId)) next.delete(promptId);
       else next.add(promptId);
-      return next;
+      return { ...current, expandedPromptIds: next };
     });
   }
 
@@ -164,6 +168,51 @@ function StyleGalleryBrowserContent({
   }, [activeTag, items, modelTargets, query, sortDirection, sortKey, tags]);
   const { currentPage, isPaginated, pageSize, setCurrentPage, setIsPaginated, setPageSize, totalPages, visibleItems } =
     useCollectionPagination(filteredItems, 'style-gallery-pagination-settings');
+
+  /** 复用 hover 预取与点击请求，避免同一 item 在请求尚未完成时重复访问 Vercel/HF。 */
+  const loadPromptChoices = useCallback(async (item: StyleGalleryBrowserItem): Promise<PromptChoice[]> => {
+    const cached = promptCache.current.get(item.slug);
+    if (cached) return cached;
+    const pending = promptRequests.current.get(item.slug);
+    if (pending) return pending;
+
+    const request = (async () => {
+      const response = await fetch(
+        `/api/style-gallery/prompts/${encodeURIComponent(item.slug)}?v=${encodeURIComponent(item.promptCount)}`,
+        {
+          credentials: 'same-origin',
+        },
+      );
+      if (!response.ok) throw new Error(`Prompt request failed with HTTP ${response.status}.`);
+      const data = (await response.json()) as { prompts?: PromptChoice[] };
+      if (!data.prompts?.length) throw new Error('Prompt response was empty.');
+      promptCache.current.set(item.slug, data.prompts);
+      return data.prompts;
+    })();
+
+    promptRequests.current.set(item.slug, request);
+    try {
+      return await request;
+    } finally {
+      if (promptRequests.current.get(item.slug) === request) promptRequests.current.delete(item.slug);
+    }
+  }, []);
+
+  const prefetchPromptChoices = useCallback(
+    (item: StyleGalleryBrowserItem) => {
+      if (item.promptCount > 1) void loadPromptChoices(item).catch(() => undefined);
+    },
+    [loadPromptChoices],
+  );
+
+  useEffect(() => {
+    const candidates = visibleItems.slice(0, EAGER_CARD_COUNT).filter((item) => item.promptCount > 1);
+    // React island 已在浏览器空闲时 hydration；再让首屏布局稳定一帧后预取最多两行的多 prompt 元数据。
+    const timer = window.setTimeout(() => {
+      for (const item of candidates) prefetchPromptChoices(item);
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [prefetchPromptChoices, visibleItems]);
 
   function handleQueryChange(value: string) {
     setQuery(value);
@@ -209,16 +258,8 @@ function StyleGalleryBrowserContent({
     setPromptPicker({ item, prompts: cached ?? null, failed: false });
     if (cached) return;
     try {
-      const response = await fetch(`/api/style-gallery/prompts/${encodeURIComponent(item.slug)}`, {
-        credentials: 'same-origin',
-      });
-      if (!response.ok) throw new Error(`Prompt request failed with HTTP ${response.status}.`);
-      const data = (await response.json()) as { prompts?: PromptChoice[] };
-      if (!data.prompts?.length) throw new Error('Prompt response was empty.');
-      promptCache.current.set(item.slug, data.prompts);
-      setPromptPicker((current) =>
-        current?.item.slug === item.slug ? { ...current, prompts: data.prompts ?? [], failed: false } : current,
-      );
+      const prompts = await loadPromptChoices(item);
+      setPromptPicker((current) => (current?.item.slug === item.slug ? { ...current, prompts, failed: false } : current));
     } catch {
       setPromptPicker((current) => (current?.item.slug === item.slug ? { ...current, prompts: null, failed: true } : current));
     }
@@ -313,6 +354,8 @@ function StyleGalleryBrowserContent({
         {visibleItems.map((item, index) => (
           <article
             key={item.slug}
+            onPointerEnter={() => prefetchPromptChoices(item)}
+            onFocusCapture={() => prefetchPromptChoices(item)}
             className="group overflow-hidden rounded-lg border border-rose-100 bg-white shadow-sm transition hover:-translate-y-1 hover:border-rose-200 hover:shadow-lg dark:border-gray-800 dark:bg-gray-950"
           >
             <a
@@ -374,6 +417,7 @@ function StyleGalleryBrowserContent({
                 <button
                   type="button"
                   onClick={() => copyPrompt(item)}
+                  onPointerDown={() => prefetchPromptChoices(item)}
                   className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-rose-100 bg-white px-3 font-bold text-gray-700 text-sm transition hover:border-rose-200 hover:text-rose-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-rose-800 dark:hover:text-rose-200"
                   aria-label={`Copy prompt for ${item.title}`}
                   title="Copy prompt"
@@ -419,14 +463,14 @@ function StyleGalleryBrowserContent({
 
       <Dialog open={Boolean(promptPicker)} onOpenChange={(open) => !open && setPromptPicker(null)}>
         <DialogContent
-          className="max-h-[min(80vh,44rem)] max-w-2xl overflow-hidden p-0"
+          className="max-h-[min(80dvh,44rem)] max-w-2xl grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden p-0"
           overlayClassName="bg-black/55 backdrop-blur-sm"
         >
           <DialogHeader className="border-border border-b px-6 pt-6 pr-14 pb-4">
             <DialogTitle>{labels.promptChooserTitle}</DialogTitle>
             <DialogDescription>{labels.promptChooserDescription}</DialogDescription>
           </DialogHeader>
-          <div className="overflow-y-auto px-4 pb-5">
+          <div className="min-h-0 overflow-y-auto overscroll-contain px-4 pb-5 [scrollbar-color:hsl(var(--border))_transparent] [scrollbar-gutter:stable] [scrollbar-width:thin] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-2">
             {!promptPicker?.prompts && !promptPicker?.failed && (
               <div className="flex min-h-32 items-center justify-center gap-2 text-muted-foreground text-sm">
                 <Icon icon="ri:loader-4-line" className={`size-4 ${shouldReduceMotion ? '' : 'animate-spin'}`} />
@@ -447,7 +491,7 @@ function StyleGalleryBrowserContent({
               <div className="space-y-5 pt-4">
                 {promptGroups.map((group) => {
                   const groupKey = group.model ?? '';
-                  const groupExpanded = expandedPromptModels.has(groupKey);
+                  const groupExpanded = promptDisclosure.expandedModels.has(groupKey);
                   return (
                     <section
                       key={groupKey || '__unknown__'}
@@ -457,7 +501,12 @@ function StyleGalleryBrowserContent({
                       <button
                         type="button"
                         aria-expanded={groupExpanded}
-                        onClick={() => togglePromptModelExpanded(groupKey)}
+                        onClick={() =>
+                          togglePromptModelExpanded(
+                            groupKey,
+                            group.prompts.map(({ prompt }) => prompt.id),
+                          )
+                        }
                         className="flex w-full items-center gap-2 px-4 py-3 text-left transition hover:bg-muted/60"
                       >
                         <span className="min-w-0 flex-1 truncate font-bold text-sm">
@@ -474,7 +523,7 @@ function StyleGalleryBrowserContent({
                       {groupExpanded && (
                         <div className="space-y-2 border-border border-t bg-muted/20 p-2 pl-5">
                           {group.prompts.map(({ prompt, modelIndex }) => {
-                            const promptExpanded = expandedPromptIds.has(prompt.id);
+                            const promptExpanded = promptDisclosure.expandedPromptIds.has(prompt.id);
                             const promptCopied = copiedPromptId === prompt.id;
                             return (
                               <article

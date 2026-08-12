@@ -16,6 +16,7 @@ export const GET: APIRoute = async ({ params }) => {
       slug: item.slug,
       prompts: item.prompts.map(({ id, prompt, model, importedAt }) => ({ id, prompt, model, importedAt })),
     },
-    { headers: { 'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=300' } },
+    // 客户端以 catalog.promptCount 作为查询版本；追加候选会使用新 URL，因此旧版本可长期由浏览器/CDN 复用。
+    { headers: { 'Cache-Control': 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800' } },
   );
 };
