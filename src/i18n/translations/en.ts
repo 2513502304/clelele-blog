@@ -161,7 +161,7 @@ export const uiStrings: UIStrings = {
   'gallery.previousMonth': 'Previous month',
   'gallery.nextMonth': 'Next month',
   'gallery.dateTimeSupported': 'Date and time supported',
-  'gallery.followToday': 'Keep end time current',
+  'gallery.followToday': 'Set end time to now',
   'gallery.resetDateFilter': 'Reset',
   'gallery.cancelDateFilter': 'Cancel',
   'gallery.applyDateFilter': 'Apply',

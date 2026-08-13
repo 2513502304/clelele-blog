@@ -24,6 +24,15 @@ interface StyleGalleryDateRangeFilterProps {
   triggerClassName?: string;
 }
 
+interface DateRangeActionsProps {
+  layout: 'desktop' | 'mobile';
+  labels: Pick<StyleGalleryDateRangeLabels, 'apply' | 'cancel' | 'reset'>;
+  resetDisabled: boolean;
+  onReset: () => void;
+  onCancel: () => void;
+  onApply: () => void;
+}
+
 const QUICK_RANGES = [1, 7, 14, 30] as const;
 
 function dateKeyToUtcDate(value: string): Date {
@@ -63,6 +72,54 @@ function getCalendarDays(month: Date): Date[] {
     date.setUTCDate(start.getUTCDate() + index);
     return date;
   });
+}
+
+/** 桌面与移动布局共用同一套提交语义，仅保留容器和按钮宽度差异。 */
+function DateRangeActions({ layout, labels, resetDisabled, onReset, onCancel, onApply }: DateRangeActionsProps) {
+  const desktop = layout === 'desktop';
+  return (
+    <div
+      className={cn(
+        desktop
+          ? 'hidden shrink-0 items-center justify-between gap-3 border-border border-t bg-background/95 p-3 backdrop-blur-xl md:flex'
+          : 'mt-auto flex items-center justify-between gap-2 pt-3 md:hidden',
+      )}
+    >
+      <button
+        type="button"
+        onClick={onReset}
+        disabled={resetDisabled}
+        className={cn(
+          'h-9 rounded-md font-medium text-muted-foreground text-xs transition hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40',
+          desktop ? 'px-2.5' : 'px-2',
+        )}
+      >
+        {labels.reset}
+      </button>
+      <div className={cn('flex', desktop ? 'gap-2' : 'gap-1.5')}>
+        <button
+          type="button"
+          onClick={onCancel}
+          className={cn(
+            'h-9 rounded-md border border-border font-medium text-xs transition hover:bg-muted',
+            desktop ? 'px-3' : 'px-2.5',
+          )}
+        >
+          {labels.cancel}
+        </button>
+        <button
+          type="button"
+          onClick={onApply}
+          className={cn(
+            'h-9 rounded-md bg-primary font-bold text-primary-foreground text-xs transition hover:opacity-90',
+            desktop ? 'px-4' : 'px-3',
+          )}
+        >
+          {labels.apply}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -204,230 +261,194 @@ export default function StyleGalleryDateRangeFilter({
       enableFlip={false}
       constrainToAvailableHeight
       className="z-[100] w-[min(36rem,calc(100vw-1rem))] overflow-hidden rounded-lg border border-border bg-background/95 p-0 shadow-xl backdrop-blur-xl"
-      render={({ close }) => (
-        <div className="flex max-h-[inherit] flex-col">
-          <div className="min-h-0 overflow-y-auto p-3">
-            <div className="flex flex-wrap gap-1.5 border-border border-b pb-3">
-              <button
-                type="button"
-                onClick={applyTodayRange}
-                className={cn(
-                  'h-8 rounded-md border px-2.5 font-medium text-xs transition',
-                  isTodayActive()
-                    ? 'border-primary bg-primary text-primary-foreground'
-                    : 'border-border hover:border-primary/40 hover:text-primary',
-                )}
-              >
-                {labels.today}
-              </button>
-              {QUICK_RANGES.map((days) => (
+      render={({ close }) => {
+        const resetAndClose = () => {
+          onApply({ from: '', to: '' });
+          close();
+        };
+        const applyAndClose = () => {
+          const finalDraft = followToday ? { ...draft, to: getStyleGalleryTodayRange().to } : draft;
+          onApply(normalizeStyleGalleryDateRange(finalDraft));
+          close();
+        };
+
+        return (
+          <div className="flex max-h-[inherit] flex-col">
+            <div className="min-h-0 overflow-y-auto p-3">
+              <div className="flex flex-wrap gap-1.5 border-border border-b pb-3">
                 <button
-                  key={days}
                   type="button"
-                  onClick={() => applyQuickRange(days)}
+                  onClick={applyTodayRange}
                   className={cn(
                     'h-8 rounded-md border px-2.5 font-medium text-xs transition',
-                    isQuickRangeActive(days)
+                    isTodayActive()
                       ? 'border-primary bg-primary text-primary-foreground'
                       : 'border-border hover:border-primary/40 hover:text-primary',
                   )}
                 >
-                  {days === 1 ? labels.lastDay : labels.lastDays.replace('{days}', String(days))}
+                  {labels.today}
                 </button>
-              ))}
-            </div>
+                {QUICK_RANGES.map((days) => (
+                  <button
+                    key={days}
+                    type="button"
+                    onClick={() => applyQuickRange(days)}
+                    className={cn(
+                      'h-8 rounded-md border px-2.5 font-medium text-xs transition',
+                      isQuickRangeActive(days)
+                        ? 'border-primary bg-primary text-primary-foreground'
+                        : 'border-border hover:border-primary/40 hover:text-primary',
+                    )}
+                  >
+                    {days === 1 ? labels.lastDay : labels.lastDays.replace('{days}', String(days))}
+                  </button>
+                ))}
+              </div>
 
-            <div className="grid grid-cols-[14rem_minmax(18rem,1fr)] items-stretch gap-3 pt-3 md:grid-cols-1">
-              <div className="flex min-h-full flex-col gap-2.5">
-                <p className="px-0.5 text-muted-foreground text-xs">{labels.dateTimeSupported}</p>
-                {(['from', 'to'] as const).map((boundary) => {
-                  const formatted = formatBoundaryValue(draft[boundary], boundary);
-                  return (
-                    <label
-                      key={boundary}
-                      className={cn(
-                        'relative block cursor-pointer overflow-hidden rounded-md border bg-background transition',
-                        activeBoundary === boundary
-                          ? 'border-primary bg-primary/5 ring-2 ring-primary/30'
-                          : 'border-border hover:border-primary/40',
-                      )}
+              <div className="grid grid-cols-[14rem_minmax(18rem,1fr)] items-stretch gap-3 pt-3 md:grid-cols-1">
+                <div className="flex min-h-full flex-col gap-2.5">
+                  <p className="px-0.5 text-muted-foreground text-xs">{labels.dateTimeSupported}</p>
+                  {(['from', 'to'] as const).map((boundary) => {
+                    const formatted = formatBoundaryValue(draft[boundary], boundary);
+                    return (
+                      <label
+                        key={boundary}
+                        className={cn(
+                          'relative block cursor-pointer overflow-hidden rounded-md border bg-background transition',
+                          activeBoundary === boundary
+                            ? 'border-primary bg-primary/5 ring-2 ring-primary/30'
+                            : 'border-border hover:border-primary/40',
+                        )}
+                      >
+                        <input
+                          type="datetime-local"
+                          value={getDateTimeInputValue(draft[boundary], boundary)}
+                          onFocus={() => setActiveBoundary(boundary)}
+                          onPointerDown={() => setActiveBoundary(boundary)}
+                          onChange={(event) => updateBoundary(boundary, event.currentTarget.value)}
+                          aria-label={boundaryLabels[boundary]}
+                          className="absolute inset-0 z-10 size-full cursor-pointer opacity-0"
+                        />
+                        <span className="pointer-events-none flex h-18 flex-col justify-center gap-1 px-3">
+                          <span className="font-medium text-[11px] text-muted-foreground">{boundaryLabels[boundary]}</span>
+                          <span
+                            className={cn(
+                              'flex items-center justify-between gap-3 text-sm tabular-nums',
+                              !draft[boundary] && 'text-muted-foreground',
+                            )}
+                          >
+                            <span>{formatted.date}</span>
+                            <span>{formatted.time}</span>
+                          </span>
+                        </span>
+                      </label>
+                    );
+                  })}
+
+                  <label className="flex cursor-pointer items-center gap-2 px-0.5 text-muted-foreground text-xs">
+                    <input
+                      type="checkbox"
+                      checked={followToday}
+                      onChange={(event) => toggleFollowToday(event.currentTarget.checked)}
+                      className="size-4 rounded border-border accent-primary"
+                    />
+                    <span>{labels.followToday}</span>
+                  </label>
+
+                  <DateRangeActions
+                    layout="mobile"
+                    labels={labels}
+                    resetDisabled={!hasRange && !draft.from && !draft.to}
+                    onReset={resetAndClose}
+                    onCancel={close}
+                    onApply={applyAndClose}
+                  />
+                </div>
+
+                <div className="rounded-lg border border-border p-2.5">
+                  <div className="mb-2 flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={() => setVisibleMonth((month) => addMonths(month, -1))}
+                      className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                      aria-label={labels.previousMonth}
+                      title={labels.previousMonth}
                     >
-                      <input
-                        type="datetime-local"
-                        value={getDateTimeInputValue(draft[boundary], boundary)}
-                        onFocus={() => setActiveBoundary(boundary)}
-                        onPointerDown={() => setActiveBoundary(boundary)}
-                        onChange={(event) => updateBoundary(boundary, event.currentTarget.value)}
-                        aria-label={boundaryLabels[boundary]}
-                        className="absolute inset-0 z-10 size-full cursor-pointer opacity-0"
-                      />
-                      <span className="pointer-events-none flex h-18 flex-col justify-center gap-1 px-3">
-                        <span className="font-medium text-[11px] text-muted-foreground">{boundaryLabels[boundary]}</span>
-                        <span
+                      <Icon icon="ri:arrow-left-s-line" className="size-5" />
+                    </button>
+                    <strong className="text-sm">{monthFormatter.format(visibleMonth)}</strong>
+                    <button
+                      type="button"
+                      onClick={() => setVisibleMonth((month) => addMonths(month, 1))}
+                      className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                      aria-label={labels.nextMonth}
+                      title={labels.nextMonth}
+                    >
+                      <Icon icon="ri:arrow-right-s-line" className="size-5" />
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-7 text-center text-[11px] text-muted-foreground">
+                    {weekdays.map((weekday) => (
+                      <span key={weekday.key} className="py-0.5 font-medium">
+                        {weekday.label}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-7 gap-y-0.5">
+                    {calendarDays.map((day) => {
+                      const dateKey = utcDateToKey(day);
+                      const isCurrentMonth = day.getUTCMonth() === visibleMonth.getUTCMonth();
+                      const isAvailable = availableDates.has(dateKey);
+                      const isBoundary = dateKey === calendarFromDate || dateKey === calendarToDate;
+                      const isActiveBoundary = dateKey === activeBoundaryDate;
+                      const isInRange = Boolean(
+                        calendarFromDate && calendarToDate && dateKey >= calendarFromDate && dateKey <= calendarToDate,
+                      );
+                      return (
+                        <button
+                          key={dateKey}
+                          type="button"
+                          onClick={() => selectDay(dateKey)}
+                          disabled={!isAvailable}
+                          title={!isAvailable ? labels.noItemsOnDate : undefined}
+                          aria-label={`${fullDateFormatter.format(day)}${!isAvailable ? `, ${labels.noItemsOnDate}` : ''}`}
+                          aria-pressed={isInRange}
                           className={cn(
-                            'flex items-center justify-between gap-3 text-sm tabular-nums',
-                            !draft[boundary] && 'text-muted-foreground',
+                            'mx-auto flex size-7.5 items-center justify-center rounded-md text-xs tabular-nums transition',
+                            !isAvailable
+                              ? 'cursor-not-allowed text-muted-foreground/25'
+                              : isBoundary
+                                ? 'bg-primary font-bold text-primary-foreground shadow-sm'
+                                : isInRange
+                                  ? 'bg-primary/12 text-primary'
+                                  : isCurrentMonth
+                                    ? 'text-foreground hover:bg-muted'
+                                    : 'text-muted-foreground/45 hover:bg-muted',
+                            isActiveBoundary &&
+                              calendarRange.from !== calendarRange.to &&
+                              'ring-2 ring-primary/35 ring-offset-1',
                           )}
                         >
-                          <span>{formatted.date}</span>
-                          <span>{formatted.time}</span>
-                        </span>
-                      </span>
-                    </label>
-                  );
-                })}
-
-                <label className="flex cursor-pointer items-center gap-2 px-0.5 text-muted-foreground text-xs">
-                  <input
-                    type="checkbox"
-                    checked={followToday}
-                    onChange={(event) => toggleFollowToday(event.currentTarget.checked)}
-                    className="size-4 rounded border-border accent-primary"
-                  />
-                  <span>{labels.followToday}</span>
-                </label>
-
-                <div className="mt-auto flex items-center justify-between gap-2 pt-3 md:hidden">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onApply({ from: '', to: '' });
-                      close();
-                    }}
-                    disabled={!hasRange && !draft.from && !draft.to}
-                    className="h-9 rounded-md px-2 font-medium text-muted-foreground text-xs transition hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    {labels.reset}
-                  </button>
-                  <div className="flex gap-1.5">
-                    <button
-                      type="button"
-                      onClick={close}
-                      className="h-9 rounded-md border border-border px-2.5 font-medium text-xs transition hover:bg-muted"
-                    >
-                      {labels.cancel}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const finalDraft = followToday ? { ...draft, to: getStyleGalleryTodayRange().to } : draft;
-                        onApply(normalizeStyleGalleryDateRange(finalDraft));
-                        close();
-                      }}
-                      className="h-9 rounded-md bg-primary px-3 font-bold text-primary-foreground text-xs transition hover:opacity-90"
-                    >
-                      {labels.apply}
-                    </button>
+                          {day.getUTCDate()}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
-
-              <div className="rounded-lg border border-border p-2.5">
-                <div className="mb-2 flex items-center justify-between">
-                  <button
-                    type="button"
-                    onClick={() => setVisibleMonth((month) => addMonths(month, -1))}
-                    className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                    aria-label={labels.previousMonth}
-                    title={labels.previousMonth}
-                  >
-                    <Icon icon="ri:arrow-left-s-line" className="size-5" />
-                  </button>
-                  <strong className="text-sm">{monthFormatter.format(visibleMonth)}</strong>
-                  <button
-                    type="button"
-                    onClick={() => setVisibleMonth((month) => addMonths(month, 1))}
-                    className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                    aria-label={labels.nextMonth}
-                    title={labels.nextMonth}
-                  >
-                    <Icon icon="ri:arrow-right-s-line" className="size-5" />
-                  </button>
-                </div>
-                <div className="grid grid-cols-7 text-center text-[11px] text-muted-foreground">
-                  {weekdays.map((weekday) => (
-                    <span key={weekday.key} className="py-0.5 font-medium">
-                      {weekday.label}
-                    </span>
-                  ))}
-                </div>
-                <div className="grid grid-cols-7 gap-y-0.5">
-                  {calendarDays.map((day) => {
-                    const dateKey = utcDateToKey(day);
-                    const isCurrentMonth = day.getUTCMonth() === visibleMonth.getUTCMonth();
-                    const isAvailable = availableDates.has(dateKey);
-                    const isBoundary = dateKey === calendarFromDate || dateKey === calendarToDate;
-                    const isActiveBoundary = dateKey === activeBoundaryDate;
-                    const isInRange = Boolean(
-                      calendarFromDate && calendarToDate && dateKey >= calendarFromDate && dateKey <= calendarToDate,
-                    );
-                    return (
-                      <button
-                        key={dateKey}
-                        type="button"
-                        onClick={() => selectDay(dateKey)}
-                        disabled={!isAvailable}
-                        title={!isAvailable ? labels.noItemsOnDate : undefined}
-                        aria-label={`${fullDateFormatter.format(day)}${!isAvailable ? `, ${labels.noItemsOnDate}` : ''}`}
-                        aria-pressed={isInRange}
-                        className={cn(
-                          'mx-auto flex size-7.5 items-center justify-center rounded-md text-xs tabular-nums transition',
-                          !isAvailable
-                            ? 'cursor-not-allowed text-muted-foreground/25'
-                            : isBoundary
-                              ? 'bg-primary font-bold text-primary-foreground shadow-sm'
-                              : isInRange
-                                ? 'bg-primary/12 text-primary'
-                                : isCurrentMonth
-                                  ? 'text-foreground hover:bg-muted'
-                                  : 'text-muted-foreground/45 hover:bg-muted',
-                          isActiveBoundary && calendarRange.from !== calendarRange.to && 'ring-2 ring-primary/35 ring-offset-1',
-                        )}
-                      >
-                        {day.getUTCDate()}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
             </div>
-          </div>
 
-          <div className="hidden shrink-0 items-center justify-between gap-3 border-border border-t bg-background/95 p-3 backdrop-blur-xl md:flex">
-            <button
-              type="button"
-              onClick={() => {
-                onApply({ from: '', to: '' });
-                close();
-              }}
-              disabled={!hasRange && !draft.from && !draft.to}
-              className="h-9 rounded-md px-2.5 font-medium text-muted-foreground text-xs transition hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {labels.reset}
-            </button>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={close}
-                className="h-9 rounded-md border border-border px-3 font-medium text-xs transition hover:bg-muted"
-              >
-                {labels.cancel}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const finalDraft = followToday ? { ...draft, to: getStyleGalleryTodayRange().to } : draft;
-                  onApply(normalizeStyleGalleryDateRange(finalDraft));
-                  close();
-                }}
-                className="h-9 rounded-md bg-primary px-4 font-bold text-primary-foreground text-xs transition hover:opacity-90"
-              >
-                {labels.apply}
-              </button>
-            </div>
+            <DateRangeActions
+              layout="desktop"
+              labels={labels}
+              resetDisabled={!hasRange && !draft.from && !draft.to}
+              onReset={resetAndClose}
+              onCancel={close}
+              onApply={applyAndClose}
+            />
           </div>
-        </div>
-      )}
+        );
+      }}
     >
       <button
         type="button"

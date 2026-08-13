@@ -41,7 +41,7 @@ interface StyleGalleryBrowserProps {
   tags: string[];
   modelTargets: string[];
   galleryBasePath: string;
-  dateLocale: string;
+  locale: string;
   labels: StyleGalleryBrowserLabels;
   lightboxCopyLabels: StyleGalleryLightboxCopyLabels;
 }
@@ -99,6 +99,10 @@ function normalize(value: string) {
   return value.toLowerCase().trim();
 }
 
+function reportUrlStateError(error: unknown) {
+  console.error('Failed to update style gallery URL state:', error);
+}
+
 function createPromptPickerState(
   item: StyleGalleryBrowserItem,
   prompts: PromptChoice[] | null,
@@ -126,7 +130,7 @@ function StyleGalleryBrowserContent({
   tags,
   modelTargets,
   galleryBasePath,
-  dateLocale,
+  locale,
   labels,
   lightboxCopyLabels,
 }: StyleGalleryBrowserProps) {
@@ -144,7 +148,7 @@ function StyleGalleryBrowserContent({
   const [promptPicker, setPromptPicker] = useState<PromptPickerState | null>(null);
   const promptCache = useRef(new Map<string, PromptChoice[]>());
   const promptRequests = useRef(new Map<string, Promise<PromptChoice[]>>());
-  const dateFormatter = useMemo(() => new Intl.DateTimeFormat(dateLocale, { timeZone: 'Asia/Shanghai' }), [dateLocale]);
+  const dateFormatter = useMemo(() => new Intl.DateTimeFormat(locale, { timeZone: 'Asia/Shanghai' }), [locale]);
   const promptGroups = useMemo(() => groupStyleGalleryPromptsByModel(promptPicker?.prompts ?? []), [promptPicker?.prompts]);
   const sortLabels: Record<SortKey, string> = {
     default: labels.sortDefault,
@@ -397,13 +401,13 @@ function StyleGalleryBrowserContent({
           <div className="flex flex-wrap justify-end gap-2">
             <StyleGalleryDateRangeFilter
               value={{ from: dateFrom, to: dateTo }}
-              locale={dateLocale}
+              locale={locale}
               labels={labels.dateRange}
               availableDateKeys={availableDateKeys}
               triggerClassName="h-9"
               onApply={(range) => {
                 setCurrentPage(1);
-                void setDateRange(range).catch((error) => console.error('Failed to update Gallery date range:', error));
+                void setDateRange(range).catch(reportUrlStateError);
               }}
             />
             <label htmlFor="style-gallery-sort" className="sr-only">
