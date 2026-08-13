@@ -1,3 +1,4 @@
+import { ErrorBoundary, InlineErrorFallback } from '@components/common';
 import Popover from '@components/ui/popover';
 import { Icon } from '@iconify/react';
 import {
@@ -126,7 +127,7 @@ function DateRangeActions({ layout, labels, resetDisabled, onReset, onCancel, on
  * 三个 Gallery 集合页共享的日期范围选择器。弹窗内使用草稿值，关闭或取消不会改变当前列表；
  * 日历会持续扩展或收缩同一个范围，区间内的歧义由当前激活的开始/结束字段决定。
  */
-export default function StyleGalleryDateRangeFilter({
+function StyleGalleryDateRangeFilterContent({
   value,
   locale,
   labels,
@@ -470,5 +471,14 @@ export default function StyleGalleryDateRangeFilter({
         <Icon icon="ri:arrow-down-s-line" className="size-4 shrink-0" />
       </button>
     </Popover>
+  );
+}
+
+/** 将日期控件自身的渲染异常限制在筛选器内，避免连带卸载所在 Gallery 的其余交互。 */
+export default function StyleGalleryDateRangeFilter(props: StyleGalleryDateRangeFilterProps) {
+  return (
+    <ErrorBoundary FallbackComponent={InlineErrorFallback}>
+      <StyleGalleryDateRangeFilterContent {...props} />
+    </ErrorBoundary>
   );
 }
