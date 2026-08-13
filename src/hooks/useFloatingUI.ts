@@ -45,6 +45,7 @@ import {
   offset as offsetMiddleware,
   type Placement,
   shift,
+  size,
   type UseFloatingReturn,
   useFloating as useFloatingBase,
 } from '@floating-ui/react';
@@ -71,6 +72,8 @@ export interface UseFloatingUIOptions {
   flipFallbackDirection?: 'start' | 'end';
   /** Arrow element ref for tooltip arrows */
   arrowRef?: RefObject<HTMLElement | null>;
+  /** Limit the floating element to the available height on its chosen side. */
+  constrainToAvailableHeight?: boolean;
 }
 
 /**
@@ -90,6 +93,7 @@ export function useFloatingUI({
   transform = true,
   flipFallbackDirection = 'end',
   arrowRef,
+  constrainToAvailableHeight = false,
 }: UseFloatingUIOptions = {}): UseFloatingReturn {
   // Build middleware array
   const middleware = useMemo(() => {
@@ -108,8 +112,19 @@ export function useFloatingUI({
       middlewares.push(flip({ fallbackAxisSideDirection: flipFallbackDirection }));
     }
 
+    if (constrainToAvailableHeight) {
+      middlewares.push(
+        size({
+          padding: 8,
+          apply({ availableHeight, elements }) {
+            elements.floating.style.maxHeight = `${Math.max(0, availableHeight)}px`;
+          },
+        }),
+      );
+    }
+
     return middlewares;
-  }, [offset, enableFlip, enableShift, flipFallbackDirection, arrowRef]);
+  }, [offset, enableFlip, enableShift, flipFallbackDirection, arrowRef, constrainToAvailableHeight]);
 
   // Configure floating
   const floating = useFloatingBase({

@@ -25,6 +25,11 @@ type PopoverProps = {
   offset?: number;
   motionProps?: MotionProps;
   trigger?: 'click' | 'hover';
+  /** 可滚动表单应关闭该行为，避免内部滚动或重新定位被误判为离开浮层。 */
+  dismissOnAncestorScroll?: boolean;
+  enableFlip?: boolean;
+  /** 将浮层最大高度限制在锚点当前方向的可用视口内，由内容区负责滚动。 */
+  constrainToAvailableHeight?: boolean;
 };
 
 function Popover({
@@ -37,6 +42,9 @@ function Popover({
   offset: offsetNum = 10,
   motionProps,
   trigger = 'click',
+  dismissOnAncestorScroll = true,
+  enableFlip = true,
+  constrainToAvailableHeight = false,
 }: React.PropsWithChildren<PopoverProps>) {
   // Use useControlledState for open/close state management
   const [isOpen, setIsOpen] = useControlledState({
@@ -52,6 +60,8 @@ function Popover({
     placement,
     offset: offsetNum,
     transform: false,
+    enableFlip,
+    constrainToAvailableHeight,
   });
 
   // Configure interaction hooks based on trigger type
@@ -66,7 +76,7 @@ function Popover({
   const { getReferenceProps, getFloatingProps } = useInteractions([
     hover,
     click,
-    useDismiss(context, { ancestorScroll: true }),
+    useDismiss(context, { ancestorScroll: dismissOnAncestorScroll }),
     useRole(context),
   ]);
 
@@ -81,7 +91,7 @@ function Popover({
                 className={cn('z-30 rounded-ss-2xl rounded-ee-2xl bg-black/30 backdrop-blur-sm', className)}
                 initial={{ opacity: 0, scale: 0.85 }}
                 animate={{ opacity: 1, scale: 1, originY: 0 }}
-                exit={{ opacity: 0, scale: 0.85 }}
+                exit={{ opacity: 0, scale: 0.85, pointerEvents: 'none' }}
                 transition={animation.spring.popoverContent}
                 style={{ ...floatingStyles }}
                 {...motionProps}

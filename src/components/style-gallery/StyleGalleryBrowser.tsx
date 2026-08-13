@@ -1,6 +1,9 @@
 import { ErrorBoundary, InlineErrorFallback } from '@components/common';
+import StyleGalleryDateRangeFilter from '@components/style-gallery/StyleGalleryDateRangeFilter';
 import { useCollectionPagination } from '@hooks/useCollectionPagination';
 import { Icon } from '@iconify/react';
+import { createStyleGalleryDateRangeMatcher, getStyleGalleryDateKey } from '@lib/style-gallery-date-range';
+import type { StyleGalleryDateRangeLabels } from '@lib/style-gallery-date-range-labels';
 import { createStyleGallerySourceLightboxData, type StyleGalleryLightboxCopyLabels } from '@lib/style-gallery-lightbox-actions';
 import {
   getStyleGalleryPromptCacheKey,
@@ -11,6 +14,8 @@ import {
 import { getSelectedStyleGalleryPrompt } from '@lib/style-gallery-prompt-selection';
 import { openModal } from '@store/modal';
 import { useReducedMotion } from 'motion/react';
+import { parseAsString, useQueryStates } from 'nuqs';
+import { NuqsAdapter } from 'nuqs/adapters/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CollectionPaginationSettings, CollectionPaginator } from '../collection/CollectionPagination';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog';
@@ -36,7 +41,7 @@ interface StyleGalleryBrowserProps {
   tags: string[];
   modelTargets: string[];
   galleryBasePath: string;
-  dateLocale: string;
+  locale: string;
   labels: StyleGalleryBrowserLabels;
   lightboxCopyLabels: StyleGalleryLightboxCopyLabels;
 }
@@ -67,6 +72,7 @@ export interface StyleGalleryBrowserLabels {
   view: string;
   noMatches: string;
   openImage: string;
+  dateRange: StyleGalleryDateRangeLabels;
 }
 
 type SortKey = 'default' | 'date' | 'id' | 'examples' | 'likes';
@@ -91,6 +97,10 @@ const HIGH_PRIORITY_CARD_COUNT = 3;
 
 function normalize(value: string) {
   return value.toLowerCase().trim();
+}
+
+function reportUrlStateError(error: unknown) {
+  console.error('Failed to update style gallery URL state:', error);
 }
 
 function createPromptPickerState(
@@ -120,7 +130,7 @@ function StyleGalleryBrowserContent({
   tags,
   modelTargets,
   galleryBasePath,
-  dateLocale,
+  locale,
   labels,
   lightboxCopyLabels,
 }: StyleGalleryBrowserProps) {
@@ -129,12 +139,16 @@ function StyleGalleryBrowserContent({
   const [activeTag, setActiveTag] = useState<string>('all');
   const [sortKey, setSortKey] = useState<SortKey>('default');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+  const [{ from: dateFrom, to: dateTo }, setDateRange] = useQueryStates({
+    from: parseAsString.withDefault(''),
+    to: parseAsString.withDefault(''),
+  });
   const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
   const [copyErrorSlug, setCopyErrorSlug] = useState<string | null>(null);
   const [promptPicker, setPromptPicker] = useState<PromptPickerState | null>(null);
   const promptCache = useRef(new Map<string, PromptChoice[]>());
   const promptRequests = useRef(new Map<string, Promise<PromptChoice[]>>());
-  const dateFormatter = useMemo(() => new Intl.DateTimeFormat(dateLocale, { timeZone: 'Asia/Shanghai' }), [dateLocale]);
+  const dateFormatter = useMemo(() => new Intl.DateTimeFormat(locale, { timeZone: 'Asia/Shanghai' }), [locale]);
   const promptGroups = useMemo(() => groupStyleGalleryPromptsByModel(promptPicker?.prompts ?? []), [promptPicker?.prompts]);
   const sortLabels: Record<SortKey, string> = {
     default: labels.sortDefault,
@@ -143,6 +157,14 @@ function StyleGalleryBrowserContent({
     examples: labels.sortExampleCount,
     likes: labels.sortLikeCount,
   };
+  const availableDateKeys = useMemo(
+    () => [...new Set(items.map((item) => getStyleGalleryDateKey(item.date)).filter((date): date is string => date !== null))],
+    [items],
+  );
+  const matchesDateRange = useMemo(
+    () => createStyleGalleryDateRangeMatcher({ from: dateFrom, to: dateTo }),
+    [dateFrom, dateTo],
+  );
 
   function togglePromptModelExpanded(model: string, promptIds: readonly string[]) {
     setPromptPicker((current) =>
@@ -176,7 +198,8 @@ function StyleGalleryBrowserContent({
         .filter(Boolean)
         .join(' ');
       const matchesQuery = !q || normalize(searchable).includes(q);
-      return matchesTag && matchesQuery;
+      const matchesDate = matchesDateRange(item.date);
+      return matchesTag && matchesQuery && matchesDate;
     });
 
     const sorted = [...filtered];
@@ -189,7 +212,7 @@ function StyleGalleryBrowserContent({
       });
     }
     return sortDirection === 'desc' ? sorted.reverse() : sorted;
-  }, [activeTag, items, modelTargets, query, sortDirection, sortKey, tags]);
+  }, [activeTag, items, matchesDateRange, modelTargets, query, sortDirection, sortKey, tags]);
   const { currentPage, isPaginated, pageSize, setCurrentPage, setIsPaginated, setPageSize, totalPages, visibleItems } =
     useCollectionPagination(filteredItems, 'style-gallery-pagination-settings');
 
@@ -375,7 +398,18 @@ function StyleGalleryBrowserContent({
             onModeChange={setIsPaginated}
             onPageSizeChange={setPageSize}
           />
-          <div className="flex gap-2">
+          <div className="flex flex-wrap justify-end gap-2">
+            <StyleGalleryDateRangeFilter
+              value={{ from: dateFrom, to: dateTo }}
+              locale={locale}
+              labels={labels.dateRange}
+              availableDateKeys={availableDateKeys}
+              triggerClassName="h-9"
+              onApply={(range) => {
+                setCurrentPage(1);
+                void setDateRange(range).catch(reportUrlStateError);
+              }}
+            />
             <label htmlFor="style-gallery-sort" className="sr-only">
               {labels.sortItems}
             </label>
@@ -654,7 +688,9 @@ function StyleGalleryBrowserContent({
 export default function StyleGalleryBrowser(props: StyleGalleryBrowserProps) {
   return (
     <ErrorBoundary FallbackComponent={InlineErrorFallback}>
-      <StyleGalleryBrowserContent {...props} />
+      <NuqsAdapter>
+        <StyleGalleryBrowserContent {...props} />
+      </NuqsAdapter>
     </ErrorBoundary>
   );
 }
