@@ -1,6 +1,7 @@
 interface PromptWithModel {
   id: string;
   model?: string;
+  importedAt?: string;
 }
 
 export interface StyleGalleryPromptGroup<T extends PromptWithModel> {
@@ -16,6 +17,21 @@ export interface StyleGalleryPromptDisclosureState {
 /** 将 catalog 中的内容修订号纳入客户端缓存键，避免元数据原地更新后继续复用旧响应。 */
 export function getStyleGalleryPromptCacheKey(slug: string, promptRevision: string): string {
   return `${slug}:${promptRevision}`;
+}
+
+/**
+ * Prompt 选择器的局部状态只在加载阶段或候选身份变化时重建。将身份放进 React key，避免先渲染
+ * 上一批展开状态、再通过 effect 补同步造成一次可感知的额外重绘。
+ */
+export function getStyleGalleryPromptChooserKey(
+  baseKey: string,
+  prompts: readonly PromptWithModel[] | null,
+  failed: boolean,
+): string {
+  if (!prompts) return `${baseKey}:${failed ? 'failed' : 'loading'}`;
+  return `${baseKey}:ready:${prompts
+    .map((prompt) => `${prompt.id}:${prompt.model?.trim() ?? ''}:${prompt.importedAt ?? ''}`)
+    .join('|')}`;
 }
 
 /**

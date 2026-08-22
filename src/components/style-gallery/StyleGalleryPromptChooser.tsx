@@ -6,7 +6,7 @@ import {
   type StyleGalleryPromptDisclosureState,
   toggleStyleGalleryPromptModel,
 } from '@lib/style-gallery-prompt-groups';
-import { memo, useEffect, useMemo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 
 export interface StyleGalleryPromptChooserLabels {
   title: string;
@@ -47,11 +47,6 @@ function StyleGalleryPromptChooserComponent({ prompts, failed, labels, onRetry, 
   const [disclosure, setDisclosure] = useState<StyleGalleryPromptDisclosureState>(() => createInitialDisclosure(prompts));
   const [copiedPromptId, setCopiedPromptId] = useState<string | null>(null);
   const promptGroups = useMemo(() => groupStyleGalleryPromptsByModel(prompts ?? []), [prompts]);
-
-  useEffect(() => {
-    setDisclosure(createInitialDisclosure(prompts));
-    setCopiedPromptId(null);
-  }, [prompts]);
 
   function toggleModel(model: string, promptIds: readonly string[]) {
     setDisclosure((current) => toggleStyleGalleryPromptModel(current, model, promptIds));

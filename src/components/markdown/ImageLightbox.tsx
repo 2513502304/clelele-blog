@@ -18,6 +18,7 @@ import { invalidateStyleGalleryImageUrl, resolveStyleGalleryImageUrls } from '@l
 import { createLightboxPrefetchPlan } from '@lib/style-gallery-lightbox-prefetch';
 import { canConsumeLightboxWheel } from '@lib/style-gallery-lightbox-wheel';
 import type { StyleGalleryPromptChoice } from '@lib/style-gallery-prompt-client';
+import { getStyleGalleryPromptChooserKey } from '@lib/style-gallery-prompt-groups';
 import { useStore } from '@nanostores/react';
 import {
   $imageLightboxData,
@@ -44,13 +45,14 @@ const MAX_ZOOM_SENSITIVITY = 1.25;
 interface LightboxImageStageProps {
   image: ImageLightboxImage;
   shouldReduceMotion: boolean | null;
+  onResolvedSourceFailure: (source: string) => void;
 }
 
 /**
  * 每个导航目标拥有独立加载生命周期。父级以当前图片键重建该组件，可同时阻止浏览器保留上一张位图，
  * 并隔离已经卸载图片的迟到 load/decode 回调，避免快速切换时错误显示后续图片为已加载。
  */
-function LightboxImageStage({ image, shouldReduceMotion }: LightboxImageStageProps) {
+function LightboxImageStage({ image, shouldReduceMotion, onResolvedSourceFailure }: LightboxImageStageProps) {
   const { t } = useTranslation();
   const sourceSrc = image.resolvedSrc ?? image.src;
   const previewSrc = image.previewSrc !== sourceSrc ? image.previewSrc : undefined;
@@ -109,6 +111,7 @@ function LightboxImageStage({ image, shouldReduceMotion }: LightboxImageStagePro
         onLoad={(event) => void finishSourceLoad(event.currentTarget)}
         onError={() => {
           if (image.resolvedSrc && sourceSrc === image.resolvedSrc) {
+            onResolvedSourceFailure(image.src);
             invalidateStyleGalleryImageUrl(image.src);
             clearImageLightboxResolvedSource(image.src, image.resolvedSrc);
             return;
@@ -170,8 +173,14 @@ export default function ImageLightbox() {
   const deleteAttemptRef = useRef(0);
   const copyTimerRef = useRef(0);
   const deleteTimerRef = useRef(0);
+  // 同一 popup 会话内，签名 URL 失败后回退 canonical 302 路径；关闭再打开时才允许重新尝试。
+  const failedResolvedSourcesRef = useRef(new Set<string>());
 
   const { containerRef, state, reset, zoomTo, zoomLevel } = useZoomPan(isOpen && !promptPicker, { zoomSensitivity });
+
+  const handleResolvedSourceFailure = useCallback((source: string) => {
+    failedResolvedSourcesRef.current.add(source);
+  }, []);
 
   // Use a ref so the outsidePress callback always reads the latest scale
   const scaleRef = useRef(state.scale);
@@ -389,6 +398,7 @@ export default function ImageLightbox() {
     window.clearTimeout(copyTimerRef.current);
     window.clearTimeout(deleteTimerRef.current);
     if (isOpen) {
+      failedResolvedSourcesRef.current.clear();
       reset();
       setRotation(0);
       setShowSensitivity(false);
@@ -438,7 +448,9 @@ export default function ImageLightbox() {
     () =>
       prefetchPlan.signIndexes
         .map((index) => data?.images[index])
-        .filter((image): image is ImageLightboxImage => Boolean(image && !image.resolvedSrc))
+        .filter((image): image is ImageLightboxImage =>
+          Boolean(image && !image.resolvedSrc && !failedResolvedSourcesRef.current.has(image.src)),
+        )
         .map((image) => image.src),
     [data?.images, prefetchPlan.signIndexes],
   );
@@ -450,7 +462,11 @@ export default function ImageLightbox() {
     let active = true;
     void resolveStyleGalleryImageUrls(unresolvedSignSources)
       .then((resolved) => {
-        if (active) updateImageLightboxResolvedSources(resolved);
+        if (!active) return;
+        const usable = Object.fromEntries(
+          Object.entries(resolved).filter(([source]) => !failedResolvedSourcesRef.current.has(source)),
+        );
+        updateImageLightboxResolvedSources(usable);
       })
       .catch((error) => console.warn('[image-lightbox] Failed to pre-sign navigation window.', error));
     return () => {
@@ -678,7 +694,7 @@ export default function ImageLightbox() {
                   >
                     {promptPicker && currentCopy?.getPrompts && (
                       <StyleGalleryPromptChooser
-                        key={promptPicker.key}
+                        key={getStyleGalleryPromptChooserKey(promptPicker.key, promptPicker.prompts, promptPicker.failed)}
                         prompts={promptPicker.prompts}
                         failed={promptPicker.failed}
                         labels={{
@@ -731,6 +747,7 @@ export default function ImageLightbox() {
                         key={`${currentImageKey}:${currentImage.resolvedSrc ?? ''}`}
                         image={currentImage}
                         shouldReduceMotion={shouldReduceMotion}
+                        onResolvedSourceFailure={handleResolvedSourceFailure}
                       />
                     </motion.div>
                   </motion.div>

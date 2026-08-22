@@ -11,8 +11,10 @@ const SOURCE = '/api/style-gallery/image/source/012345abcdef.jpg';
 test('deduplicates concurrent image signing requests', async () => {
   const previousFetch = globalThis.fetch;
   let requests = 0;
-  globalThis.fetch = async () => {
+  let requestedKeys: string[] = [];
+  globalThis.fetch = async (_input, init) => {
     requests += 1;
+    requestedKeys = (JSON.parse(String(init?.body)) as { keys: string[] }).keys;
     return Response.json({ images: { [SOURCE]: 'https://s3.example.test/signed' } });
   };
   resetStyleGalleryImageUrlCache();
@@ -24,6 +26,9 @@ test('deduplicates concurrent image signing requests', async () => {
     ]);
     assert.equal(requests, 1);
     assert.deepEqual(first, duplicate);
+    assert.deepEqual(requestedKeys, ['source/012345abcdef.jpg']);
+    assert.equal((await resolveStyleGalleryImageUrls([SOURCE]))[SOURCE], 'https://s3.example.test/signed');
+    assert.equal(requests, 1);
   } finally {
     resetStyleGalleryImageUrlCache();
     globalThis.fetch = previousFetch;
@@ -76,6 +81,33 @@ test('retries transient signing failures without retrying invalid requests', asy
     };
     await assert.rejects(() => resolveStyleGalleryImageUrls([SOURCE]), /HTTP 400/);
     assert.equal(requests, 1);
+  } finally {
+    resetStyleGalleryImageUrlCache();
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test('chunks signing requests at the shared server limit', async () => {
+  const previousFetch = globalThis.fetch;
+  const sources = Array.from(
+    { length: 49 },
+    (_, index) => `/api/style-gallery/image/source/${index.toString(16).padStart(12, '0')}.jpg`,
+  );
+  const batchSizes: number[] = [];
+  globalThis.fetch = async (_input, init) => {
+    const body = JSON.parse(String(init?.body)) as { keys: string[] };
+    batchSizes.push(body.keys.length);
+    return Response.json({
+      images: Object.fromEntries(body.keys.map((key) => [`/api/style-gallery/image/${key}`, `https://s3.example.test/${key}`])),
+      expiresAt: Date.now() + 60_000,
+    });
+  };
+  resetStyleGalleryImageUrlCache();
+
+  try {
+    const resolved = await resolveStyleGalleryImageUrls(sources);
+    assert.deepEqual(batchSizes, [48, 1]);
+    assert.equal(Object.keys(resolved).length, sources.length);
   } finally {
     resetStyleGalleryImageUrlCache();
     globalThis.fetch = previousFetch;

@@ -1,4 +1,4 @@
-import { parseStyleGalleryImageApiPath } from './style-gallery-image-key';
+import { parseStyleGalleryImageApiPath, STYLE_GALLERY_IMAGE_SIGN_BATCH_SIZE } from './style-gallery-image-key';
 
 const BATCH_SIGN_TIMEOUT_MS = 15_000;
 const BATCH_SIGN_ATTEMPTS = 3;
@@ -79,21 +79,27 @@ export async function resolveStyleGalleryImageUrls(sources: readonly string[]): 
   }
   if (missing.length === 0) return result;
 
-  const requestKey = missing
-    .map(({ key }) => key)
-    .sort()
-    .join('\n');
-  let request = activeRequests.get(requestKey);
-  if (!request) {
-    request = requestSignedUrls(missing.map(({ key }) => key)).finally(() => activeRequests.delete(requestKey));
-    activeRequests.set(requestKey, request);
+  const requests: Promise<SignedUrlResponse>[] = [];
+  for (let offset = 0; offset < missing.length; offset += STYLE_GALLERY_IMAGE_SIGN_BATCH_SIZE) {
+    const batch = missing.slice(offset, offset + STYLE_GALLERY_IMAGE_SIGN_BATCH_SIZE);
+    const requestKey = batch
+      .map(({ key }) => key)
+      .sort()
+      .join('\n');
+    let request = activeRequests.get(requestKey);
+    if (!request) {
+      request = requestSignedUrls(batch.map(({ key }) => key)).finally(() => activeRequests.delete(requestKey));
+      activeRequests.set(requestKey, request);
+    }
+    requests.push(request);
   }
 
-  const resolved = await request;
-  for (const [source, url] of Object.entries(resolved.images)) {
-    if (!parseStyleGalleryImageApiPath(source) || typeof url !== 'string' || !url) continue;
-    signedUrlCache.set(source, { url, expiresAt: resolved.expiresAt });
-    result[source] = url;
+  for (const resolved of await Promise.all(requests)) {
+    for (const [source, url] of Object.entries(resolved.images)) {
+      if (!parseStyleGalleryImageApiPath(source) || typeof url !== 'string' || !url) continue;
+      signedUrlCache.set(source, { url, expiresAt: resolved.expiresAt });
+      result[source] = url;
+    }
   }
   return result;
 }

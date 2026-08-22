@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { describe, it } from 'node:test';
-import type { StoredStyleGalleryItem } from '@/types/style-gallery';
+import type { StoredStyleGalleryItem, StyleGalleryExample } from '@/types/style-gallery';
 import { mapWithConcurrency } from './map-with-concurrency';
 import { toStyleGalleryCardDataList } from './style-gallery';
 import { assertStyleGalleryItemConsistency, getStyleGalleryItemAssetKeys } from './style-gallery-assets';
@@ -203,7 +203,7 @@ describe('style gallery metadata', () => {
   });
 
   it('updates and removes generated examples without leaving duplicate identities', () => {
-    const gptImage = {
+    const gptImage: StyleGalleryExample = {
       id: 'example-gpt',
       src: `/api/style-gallery/image/examples/images/${firstHash}.png`,
       alt: 'GPT-Image generated example',
@@ -211,7 +211,7 @@ describe('style gallery metadata', () => {
       uploadedAt: '2026-07-13T00:02:00.000Z',
       imageHash: firstHash,
     };
-    const pixaiImage = {
+    const pixaiImage: StyleGalleryExample = {
       ...gptImage,
       id: 'example-pixai',
       model: 'PixAI',
@@ -244,18 +244,20 @@ describe('style gallery metadata', () => {
   });
 
   it('rejects legacy or unknown generated-image platform labels at persistence boundaries', () => {
-    const item = createItem();
-    item.examples = [
-      {
-        id: 'legacy-platform-example',
-        src: `/api/style-gallery/image/examples/images/${firstHash}.png`,
-        alt: 'Legacy platform example',
-        model: 'GPT-Image2',
-        uploadedAt: '2026-07-13T00:02:00.000Z',
-        imageHash: firstHash,
-      },
-    ];
-    assert.throws(() => styleGalleryItemSchema.parse(item), /Invalid enum value/);
+    const legacyItem: unknown = {
+      ...createItem(),
+      examples: [
+        {
+          id: 'legacy-platform-example',
+          src: `/api/style-gallery/image/examples/images/${firstHash}.png`,
+          alt: 'Legacy platform example',
+          model: 'GPT-Image2',
+          uploadedAt: '2026-07-13T00:02:00.000Z',
+          imageHash: firstHash,
+        },
+      ],
+    };
+    assert.throws(() => styleGalleryItemSchema.parse(legacyItem), /Invalid enum value/);
   });
 
   it('maps concurrent work in input order without exceeding the configured limit', async () => {

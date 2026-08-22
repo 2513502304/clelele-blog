@@ -9,6 +9,7 @@ export interface StyleGalleryPromptChoice {
 
 const promptCache = new Map<string, StyleGalleryPromptChoice[]>();
 const promptRequests = new Map<string, Promise<StyleGalleryPromptChoice[]>>();
+const PROMPT_REQUEST_TIMEOUT_MS = 15_000;
 
 /** 所有 Gallery 入口共享候选缓存，避免列表预取、lightbox 和详情交互重复读取同一 item。 */
 export async function loadStyleGalleryPromptChoices(slug: string, promptRevision: string): Promise<StyleGalleryPromptChoice[]> {
@@ -20,6 +21,7 @@ export async function loadStyleGalleryPromptChoices(slug: string, promptRevision
 
   const request = fetch(`/api/style-gallery/prompts/${encodeURIComponent(slug)}?v=${encodeURIComponent(promptRevision)}`, {
     credentials: 'same-origin',
+    signal: AbortSignal.timeout(PROMPT_REQUEST_TIMEOUT_MS),
   })
     .then(async (response) => {
       if (!response.ok) throw new Error(`Prompt request failed with HTTP ${response.status}.`);

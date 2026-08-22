@@ -14,6 +14,8 @@ test('parses only canonical Style Gallery image API paths', () => {
   assert.equal(parseStyleGalleryImageApiPath('/api/style-gallery/image/metadata/catalog.json'), null);
   assert.equal(parseStyleGalleryImageApiPath('https://example.com/image.webp'), null);
   assert.equal(parseStyleGalleryImageApiPath('/api/style-gallery/image/source/../../secret.webp'), null);
+  assert.equal(parseStyleGalleryImageApiPath('/api/style-gallery/image/source/%zz.jpg'), null);
+  assert.equal(parseStyleGalleryImageApiPath('/api/style-gallery/image/source/%2e%2e%2fsecret.webp'), null);
 });
 
 test('signs the current page and begins the next page before navigation reaches the boundary', () => {

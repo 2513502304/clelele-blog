@@ -1,3 +1,5 @@
+import type { StyleGalleryPlatformLabel } from '@/lib/style-gallery-platforms';
+
 /** 一个 prompt item 所引用的原图；多图会按用户单次输入顺序排列。 */
 export interface StyleGalleryImageRef {
   sourceImage: string;
@@ -11,7 +13,7 @@ export interface StyleGalleryExample {
   id: string;
   src: string;
   alt: string;
-  model: string;
+  model: StyleGalleryPlatformLabel;
   note?: string;
   uploadedAt: string;
   imageHash: string;
@@ -63,7 +65,7 @@ export interface StyleGalleryItem extends Omit<StoredStyleGalleryItem, 'examples
   promptRevision: string;
   originalPrompt?: string;
   tags: string[];
-  modelTargets: string[];
+  modelTargets: StyleGalleryPlatformLabel[];
   examples: StyleGalleryExampleView[];
 }
 
@@ -95,7 +97,7 @@ export interface StyleGalleryCatalog {
   version: 4;
   updatedAt: string;
   tags: string[];
-  modelTargets: string[];
+  modelTargets: StyleGalleryPlatformLabel[];
   items: StyleGalleryCatalogItem[];
 }
 
@@ -103,7 +105,7 @@ export interface StyleGalleryCatalog {
 export interface StyleGalleryExampleIndexEntry {
   id: string;
   src: string;
-  model: string;
+  model: StyleGalleryPlatformLabel;
   note?: string;
   uploadedAt: string;
   /** GitHub 数字用户 ID；数组本身是“一位用户一票”的唯一事实源。 */

@@ -15,7 +15,7 @@ import {
   loadStyleGalleryPromptChoices,
   type StyleGalleryPromptChoice,
 } from '@lib/style-gallery-prompt-client';
-import { getStyleGalleryPromptCacheKey } from '@lib/style-gallery-prompt-groups';
+import { getStyleGalleryPromptCacheKey, getStyleGalleryPromptChooserKey } from '@lib/style-gallery-prompt-groups';
 import { getSelectedStyleGalleryPrompt } from '@lib/style-gallery-prompt-selection';
 import { openModal } from '@store/modal';
 import { useReducedMotion } from 'motion/react';
@@ -516,7 +516,11 @@ function StyleGalleryBrowserContent({
         >
           {promptPicker && (
             <StyleGalleryPromptChooser
-              key={getStyleGalleryPromptCacheKey(promptPicker.item.slug, promptPicker.item.promptRevision)}
+              key={getStyleGalleryPromptChooserKey(
+                getStyleGalleryPromptCacheKey(promptPicker.item.slug, promptPicker.item.promptRevision),
+                promptPicker.prompts,
+                promptPicker.failed,
+              )}
               prompts={promptPicker.prompts}
               failed={promptPicker.failed}
               labels={{
