@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  getCachedStyleGalleryImageUrl,
+  getReusableStyleGalleryImageUrl,
   invalidateStyleGalleryImageUrl,
+  rememberLoadedStyleGalleryImage,
   resetStyleGalleryImageUrlCache,
   resolveStyleGalleryImageUrls,
 } from './style-gallery-image-client';
@@ -27,12 +30,27 @@ test('deduplicates concurrent image signing requests', async () => {
     assert.equal(requests, 1);
     assert.deepEqual(first, duplicate);
     assert.deepEqual(requestedKeys, ['source/012345abcdef.jpg']);
+    assert.equal(getCachedStyleGalleryImageUrl(SOURCE), 'https://s3.example.test/signed');
+    assert.equal(getReusableStyleGalleryImageUrl(SOURCE, false), 'https://s3.example.test/signed');
     assert.equal((await resolveStyleGalleryImageUrls([SOURCE]))[SOURCE], 'https://s3.example.test/signed');
     assert.equal(requests, 1);
   } finally {
     resetStyleGalleryImageUrlCache();
     globalThis.fetch = previousFetch;
   }
+});
+
+test('reuses canonical URLs only after the page image has actually loaded', () => {
+  resetStyleGalleryImageUrlCache();
+  assert.equal(getReusableStyleGalleryImageUrl(SOURCE, false), undefined);
+  assert.equal(getReusableStyleGalleryImageUrl(SOURCE, true), SOURCE);
+});
+
+test('detects an image that completed before island hydration attached onLoad', () => {
+  const loaded = new Set<string>();
+  rememberLoadedStyleGalleryImage(loaded, SOURCE, { complete: true, naturalWidth: 1024 });
+  rememberLoadedStyleGalleryImage(loaded, '/still-loading.webp', { complete: false, naturalWidth: 0 });
+  assert.deepEqual([...loaded], [SOURCE]);
 });
 
 test('refreshes expired or explicitly invalidated signed URLs without dropping unrelated cache entries', async () => {
@@ -49,6 +67,7 @@ test('refreshes expired or explicitly invalidated signed URLs without dropping u
 
   try {
     assert.equal((await resolveStyleGalleryImageUrls([SOURCE]))[SOURCE], 'https://s3.example.test/signed-1');
+    assert.equal(getCachedStyleGalleryImageUrl(SOURCE), undefined);
     assert.equal((await resolveStyleGalleryImageUrls([SOURCE]))[SOURCE], 'https://s3.example.test/signed-2');
     invalidateStyleGalleryImageUrl(SOURCE);
     assert.equal((await resolveStyleGalleryImageUrls([SOURCE]))[SOURCE], 'https://s3.example.test/signed-3');

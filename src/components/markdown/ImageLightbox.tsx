@@ -111,7 +111,8 @@ function LightboxImageStage({ image, shouldReduceMotion, onResolvedSourceFailure
         onLoad={(event) => void finishSourceLoad(event.currentTarget)}
         onError={() => {
           if (image.resolvedSrc && sourceSrc === image.resolvedSrc) {
-            onResolvedSourceFailure(image.src);
+            // 直连签名持续失败时本次 popup 不再重签；页面缓存的 canonical URL 失败则允许改走签名恢复。
+            if (image.resolvedSrc !== image.src) onResolvedSourceFailure(image.src);
             invalidateStyleGalleryImageUrl(image.src);
             clearImageLightboxResolvedSource(image.src, image.resolvedSrc);
             return;
@@ -456,7 +457,11 @@ export default function ImageLightbox() {
   );
   const unresolvedSignKey = unresolvedSignSources.join('\n');
 
-  // 预签名只请求尚未解析的窗口；失败时保留单图 302 路径，网络波动不会阻断导航。
+  /**
+   * 预签名只请求没有 `resolvedSrc` 的导航项。调用页面会把真实加载完成的 canonical URL 也写入
+   * `resolvedSrc`，这是刻意的浏览器缓存复用标记，不能在这里强制换成新签名 URL。其余未渲染图片
+   * 仍按窗口批量签名，因此当前图片复用与后续键盘导航预取可以同时成立。
+   */
   useEffect(() => {
     if (!unresolvedSignKey) return;
     let active = true;

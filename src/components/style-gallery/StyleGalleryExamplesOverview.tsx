@@ -3,6 +3,7 @@ import StyleGalleryDateRangeFilter from '@components/style-gallery/StyleGalleryD
 import { Icon } from '@iconify/react';
 import { createStyleGalleryDateRangeMatcher, getStyleGalleryDateKey } from '@lib/style-gallery-date-range';
 import type { StyleGalleryDateRangeLabels } from '@lib/style-gallery-date-range-labels';
+import { getReusableStyleGalleryImageUrl, rememberLoadedStyleGalleryImage } from '@lib/style-gallery-image-client';
 import {
   createStyleGalleryCopyAction,
   createStyleGalleryDeleteAction,
@@ -17,7 +18,7 @@ import { loadStyleGalleryDefaultPrompt, loadStyleGalleryPromptChoices } from '@l
 import { openModal } from '@store/modal';
 import { parseAsString, parseAsStringLiteral, useQueryState, useQueryStates } from 'nuqs';
 import { NuqsAdapter } from 'nuqs/adapters/react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useProgressiveList } from '@/hooks/useProgressiveList';
 import type { StyleGalleryExampleOverviewItem } from '@/types/style-gallery';
 import {
@@ -82,6 +83,8 @@ function StyleGalleryExamplesOverviewContent({
   lightboxActionLabels,
 }: Props) {
   const [examples, setExamples] = useState(initialExamples);
+  // 不放进 state：加载完成只影响下一次打开 Lightbox，不应让数千张卡片重新渲染。
+  const loadedExampleSources = useRef(new Set<string>());
   const [uploadToken, setUploadToken] = useState('');
   const [platform, setPlatform] = useQueryState('platform', parseAsString.withDefault('all'));
   const [query, setQuery] = useQueryState('q', parseAsString.withDefault(''));
@@ -165,6 +168,7 @@ function StyleGalleryExamplesOverviewContent({
     const lightboxImages = filtered.map((candidate) => ({
       id: candidate.id,
       src: candidate.src,
+      resolvedSrc: getReusableStyleGalleryImageUrl(candidate.src, loadedExampleSources.current.has(candidate.src)),
       alt: `${candidate.sourceTitle} ${candidate.model}`,
       like: createStyleGalleryLightboxLikeAction(candidate.id, likes, labels.likes),
       copy: createStyleGalleryCopyAction(
@@ -326,6 +330,7 @@ function StyleGalleryExamplesOverviewContent({
                     className="group block w-full cursor-zoom-in overflow-hidden bg-muted text-left"
                   >
                     <img
+                      ref={(image) => rememberLoadedStyleGalleryImage(loadedExampleSources.current, example.src, image)}
                       src={example.src}
                       alt={`${example.sourceTitle} ${example.model}`}
                       width={4}
@@ -333,6 +338,9 @@ function StyleGalleryExamplesOverviewContent({
                       loading={index < EAGER_EXAMPLE_COUNT ? 'eager' : 'lazy'}
                       fetchPriority={index < HIGH_PRIORITY_EXAMPLE_COUNT ? 'high' : 'auto'}
                       decoding="async"
+                      onLoad={(event) =>
+                        rememberLoadedStyleGalleryImage(loadedExampleSources.current, example.src, event.currentTarget)
+                      }
                       className="aspect-[4/5] w-full object-cover transition duration-200 group-hover:scale-[1.02]"
                     />
                   </button>

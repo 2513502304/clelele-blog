@@ -1,4 +1,5 @@
 import type { ImageLightboxCopyAction, ImageLightboxData, ImageLightboxDeleteAction } from '@store/modal';
+import { getReusableStyleGalleryImageUrl } from './style-gallery-image-client';
 import type { StyleGalleryPromptChoice } from './style-gallery-prompt-client';
 
 export const STYLE_GALLERY_UPLOAD_TOKEN_STORAGE_KEY = 'style-gallery-upload-token';
@@ -103,6 +104,8 @@ export interface StyleGallerySourceLightboxItem {
   id: string;
   src: string;
   previewSrc?: string;
+  /** 触发 Lightbox 前，该高清 src 已在页面中完成加载，可直接复用浏览器图片缓存。 */
+  sourceLoaded?: boolean;
   alt: string;
   getPrompt: () => string | Promise<string>;
   locate?: () => void;
@@ -135,8 +138,8 @@ export function getStyleGalleryLightboxElementId(scope: string, id: string): str
 }
 
 /**
- * 为参考原图构造统一 lightbox 导航数据。高清原图加载完成前可以复用触发页缓存的 `previewSrc`；
- * 刻意不附加点赞与删除动作，避免把生成示例的业务权限误用于父 item。
+ * 为参考原图构造统一 lightbox 导航数据。已加载的高清图和会话内签名地址直接复用；只有未加载
+ * 项才进入批量签名。`previewSrc` 仍负责缩略图到高清图的过渡，并且父 item 不附加点赞与删除动作。
  */
 export function createStyleGallerySourceLightboxData(
   items: readonly StyleGallerySourceLightboxItem[],
@@ -144,18 +147,20 @@ export function createStyleGallerySourceLightboxData(
   labels: StyleGalleryLightboxCopyLabels,
 ): ImageLightboxData {
   if (items.length === 0) throw new Error('Style Gallery source lightbox requires at least one image.');
+  const currentIndex = Math.max(
+    0,
+    items.findIndex((item) => item.id === currentId),
+  );
   const images = items.map((item) => ({
     id: item.id,
     src: item.src,
+    // 已签名缓存优先；每张确认加载完成的高清图都可复用 canonical URL，未加载项继续批量签名。
+    resolvedSrc: getReusableStyleGalleryImageUrl(item.src, Boolean(item.sourceLoaded)),
     previewSrc: item.previewSrc,
     alt: item.alt,
     copy: createStyleGalleryCopyAction(item.getPrompt, labels, item.promptOptions),
     locate: item.locate ? { run: item.locate } : undefined,
   }));
-  const currentIndex = Math.max(
-    0,
-    images.findIndex((image) => image.id === currentId),
-  );
   const current = images[currentIndex];
   return { src: current.src, alt: current.alt, images, currentIndex };
 }

@@ -5,6 +5,7 @@ import {
   STYLE_GALLERY_DIRECT_UPLOAD_MAX_SIZE,
   STYLE_GALLERY_UPLOAD_CHUNK_SIZE,
 } from '@lib/style-gallery-chunk-upload';
+import { getReusableStyleGalleryImageUrl, rememberLoadedStyleGalleryImage } from '@lib/style-gallery-image-client';
 import { getStyleGalleryExampleContentType } from '@lib/style-gallery-image-type';
 import {
   createStyleGalleryCopyAction,
@@ -309,6 +310,8 @@ export default function StyleGalleryExamples({
   const [mutating, setMutating] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const activePrompt = useRef(prompt);
+  // 记录浏览器已经解码成功的高清示例，Lightbox 可复用同一 URL；ref 更新不会扰动图片网格。
+  const loadedExampleSources = useRef(new Set<string>());
 
   useEffect(() => {
     setToken(localStorage.getItem(STYLE_GALLERY_UPLOAD_TOKEN_STORAGE_KEY) ?? '');
@@ -352,6 +355,7 @@ export default function StyleGalleryExamples({
     const lightboxImages = platformExamples.map((candidate) => ({
       id: candidate.id,
       src: candidate.src,
+      resolvedSrc: getReusableStyleGalleryImageUrl(candidate.src, loadedExampleSources.current.has(candidate.src)),
       alt: candidate.alt ?? candidate.model ?? 'Generated example',
       like: createStyleGalleryLightboxLikeAction(candidate.id, likes, likeLabels),
       copy: createStyleGalleryCopyAction(
@@ -880,9 +884,14 @@ export default function StyleGalleryExamples({
                           aria-label={`Open ${example.alt ?? example.model ?? 'generated example'} preview`}
                         >
                           <img
+                            ref={(image) => rememberLoadedStyleGalleryImage(loadedExampleSources.current, example.src, image)}
                             src={example.src}
                             alt={example.alt ?? example.model ?? 'Generated example'}
                             loading="lazy"
+                            decoding="async"
+                            onLoad={(event) =>
+                              rememberLoadedStyleGalleryImage(loadedExampleSources.current, example.src, event.currentTarget)
+                            }
                             className="aspect-square w-full object-cover transition duration-200 group-hover:scale-105"
                           />
                         </button>
