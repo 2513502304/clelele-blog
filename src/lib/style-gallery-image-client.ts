@@ -15,6 +15,7 @@ interface SignedUrlCacheEntry {
 }
 
 const signedUrlCache = new Map<string, SignedUrlCacheEntry>();
+const loadedImageUrls = new Set<string>();
 let activeRequests = new Map<string, Promise<SignedUrlResponse>>();
 
 /**
@@ -38,7 +39,21 @@ export function getCachedStyleGalleryImageUrl(source: string): string | undefine
  * `sourceLoaded` 必须来自真实 img onLoad，而不是“元素已经挂载”的推断。
  */
 export function getReusableStyleGalleryImageUrl(source: string, sourceLoaded: boolean): string | undefined {
-  return getCachedStyleGalleryImageUrl(source) ?? (sourceLoaded ? source : undefined);
+  const cachedUrl = getCachedStyleGalleryImageUrl(source);
+  // 已显示的 URL 优先于“只完成预签名、尚未下载”的直连地址，否则打开 Lightbox 会切换缓存键并重新等待。
+  if (cachedUrl && loadedImageUrls.has(cachedUrl)) return cachedUrl;
+  if (sourceLoaded || loadedImageUrls.has(source)) return source;
+  return cachedUrl;
+}
+
+/** Lightbox 用它同步判断新建 img 是否可以直接复用当前页面已经解码的图片。 */
+export function isStyleGalleryImageUrlLoaded(source: string): boolean {
+  return loadedImageUrls.has(source);
+}
+
+/** 记录 Lightbox 自己加载完成的签名地址，保证键盘返回或关闭后重开时不再显示虚假的 loading。 */
+export function markStyleGalleryImageUrlLoaded(source: string): void {
+  loadedImageUrls.add(source);
 }
 
 /**
@@ -50,7 +65,10 @@ export function rememberLoadedStyleGalleryImage(
   source: string,
   image: Pick<HTMLImageElement, 'complete' | 'naturalWidth'> | null,
 ): void {
-  if (image?.complete && image.naturalWidth > 0) loadedSources.add(source);
+  if (image?.complete && image.naturalWidth > 0) {
+    loadedSources.add(source);
+    markStyleGalleryImageUrlLoaded(source);
+  }
 }
 
 function isRetryableSigningError(error: unknown): boolean {
@@ -147,5 +165,6 @@ export function invalidateStyleGalleryImageUrl(source: string): void {
 /** 测试与 Astro 页面切换时可显式释放会话级缓存。 */
 export function resetStyleGalleryImageUrlCache(): void {
   signedUrlCache.clear();
+  loadedImageUrls.clear();
   activeRequests = new Map();
 }

@@ -14,7 +14,12 @@ import { useZoomPan } from '@hooks/useZoomPan';
 import { Icon } from '@iconify/react';
 import { createImageLightboxDownloadAction } from '@lib/image-lightbox-download';
 import { getLive2DFocusNodes, isLive2DOwnedTarget } from '@lib/live2d/focus-scope';
-import { invalidateStyleGalleryImageUrl, resolveStyleGalleryImageUrls } from '@lib/style-gallery-image-client';
+import {
+  invalidateStyleGalleryImageUrl,
+  isStyleGalleryImageUrlLoaded,
+  markStyleGalleryImageUrlLoaded,
+  resolveStyleGalleryImageUrls,
+} from '@lib/style-gallery-image-client';
 import { createLightboxPrefetchPlan } from '@lib/style-gallery-lightbox-prefetch';
 import { canConsumeLightboxWheel } from '@lib/style-gallery-lightbox-wheel';
 import type { StyleGalleryPromptChoice } from '@lib/style-gallery-prompt-client';
@@ -56,17 +61,43 @@ function LightboxImageStage({ image, shouldReduceMotion, onResolvedSourceFailure
   const { t } = useTranslation();
   const sourceSrc = image.resolvedSrc ?? image.src;
   const previewSrc = image.previewSrc !== sourceSrc ? image.previewSrc : undefined;
-  const [sourceState, setSourceState] = useState<'loading' | 'loaded' | 'failed'>('loading');
+  // 页面卡片已经显示过同一 URL 时，浏览器仍可能异步补发新 img 的 load 事件；此处同步复用已知状态，
+  // 避免在实际可绘制的缓存图片上短暂显示 loading。未登记的导航图片仍走完整 load/decode 生命周期。
+  const [sourceState, setSourceState] = useState<'loading' | 'loaded' | 'failed'>(() =>
+    isStyleGalleryImageUrlLoaded(sourceSrc) ? 'loaded' : 'loading',
+  );
   const [previewFailed, setPreviewFailed] = useState(false);
 
-  const finishSourceLoad = useCallback(async (element: HTMLImageElement) => {
-    try {
-      await element.decode();
-    } catch {
-      // 部分浏览器会在图片已经可绘制时拒绝重复 decode；naturalWidth 才是最终可用性判断。
-    }
-    setSourceState(element.naturalWidth > 0 ? 'loaded' : 'failed');
-  }, []);
+  const finishSourceLoad = useCallback(
+    async (element: HTMLImageElement) => {
+      try {
+        await element.decode();
+      } catch {
+        // 部分浏览器会在图片已经可绘制时拒绝重复 decode；naturalWidth 才是最终可用性判断。
+      }
+      if (element.naturalWidth > 0) {
+        markStyleGalleryImageUrlLoaded(sourceSrc);
+        setSourceState('loaded');
+      } else {
+        setSourceState('failed');
+      }
+    },
+    [sourceSrc],
+  );
+
+  const sourceRef = useCallback(
+    (element: HTMLImageElement | null) => {
+      // 内存/HTTP 缓存命中时 load 可能早于 React effect；ref 与 onLoad 双路径保持和页面卡片一致。
+      if (!element) return;
+      if (element.complete && element.naturalWidth > 0 && !isStyleGalleryImageUrlLoaded(sourceSrc)) {
+        void finishSourceLoad(element);
+      } else if (!element.complete && isStyleGalleryImageUrlLoaded(sourceSrc)) {
+        // 浏览器极少数情况下会逐出已登记资源；此时恢复真实 loading，而不是留下透明空白。
+        setSourceState('loading');
+      }
+    },
+    [finishSourceLoad, sourceSrc],
+  );
 
   const isLoading = sourceState === 'loading';
   const hasPreview = Boolean(previewSrc) && !previewFailed;
@@ -99,6 +130,7 @@ function LightboxImageStage({ image, shouldReduceMotion, onResolvedSourceFailure
         />
       )}
       <motion.img
+        ref={sourceRef}
         src={sourceSrc}
         alt={image.alt}
         loading="eager"

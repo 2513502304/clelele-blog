@@ -4,6 +4,8 @@ import {
   getCachedStyleGalleryImageUrl,
   getReusableStyleGalleryImageUrl,
   invalidateStyleGalleryImageUrl,
+  isStyleGalleryImageUrlLoaded,
+  markStyleGalleryImageUrlLoaded,
   rememberLoadedStyleGalleryImage,
   resetStyleGalleryImageUrlCache,
   resolveStyleGalleryImageUrls,
@@ -46,11 +48,32 @@ test('reuses canonical URLs only after the page image has actually loaded', () =
   assert.equal(getReusableStyleGalleryImageUrl(SOURCE, true), SOURCE);
 });
 
+test('prefers the URL that is already loaded over a signed URL that is only prepared', async () => {
+  const previousFetch = globalThis.fetch;
+  const signed = 'https://s3.example.test/prepared-but-not-loaded';
+  globalThis.fetch = async () => Response.json({ images: { [SOURCE]: signed }, expiresAt: Date.now() + 60_000 });
+  resetStyleGalleryImageUrlCache();
+
+  try {
+    await resolveStyleGalleryImageUrls([SOURCE]);
+    assert.equal(getReusableStyleGalleryImageUrl(SOURCE, true), SOURCE);
+    assert.equal(isStyleGalleryImageUrlLoaded(signed), false);
+
+    markStyleGalleryImageUrlLoaded(signed);
+    assert.equal(getReusableStyleGalleryImageUrl(SOURCE, true), signed);
+  } finally {
+    resetStyleGalleryImageUrlCache();
+    globalThis.fetch = previousFetch;
+  }
+});
+
 test('detects an image that completed before island hydration attached onLoad', () => {
   const loaded = new Set<string>();
   rememberLoadedStyleGalleryImage(loaded, SOURCE, { complete: true, naturalWidth: 1024 });
   rememberLoadedStyleGalleryImage(loaded, '/still-loading.webp', { complete: false, naturalWidth: 0 });
   assert.deepEqual([...loaded], [SOURCE]);
+  assert.equal(isStyleGalleryImageUrlLoaded(SOURCE), true);
+  assert.equal(isStyleGalleryImageUrlLoaded('/still-loading.webp'), false);
 });
 
 test('refreshes expired or explicitly invalidated signed URLs without dropping unrelated cache entries', async () => {
