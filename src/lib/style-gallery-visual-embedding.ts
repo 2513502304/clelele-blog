@@ -1,29 +1,21 @@
 import { STYLE_GALLERY_VISUAL_EMBEDDING_DIMENSION, STYLE_GALLERY_VISUAL_MODEL_ID } from './style-gallery-visual-types';
 
-type ImageFeatureExtractor = (
-  input: Blob | Blob[],
-  options?: Record<string, unknown>,
-) => Promise<{
-  data: Float32Array;
-  dims: number[];
-}>;
+let extractorPromise: ReturnType<typeof createExtractor> | null = null;
 
-let extractorPromise: Promise<ImageFeatureExtractor> | null = null;
-
-async function createExtractor(): Promise<ImageFeatureExtractor> {
+async function createExtractor() {
   const { env, pipeline } = await import('@huggingface/transformers');
   if (typeof window === 'undefined') env.cacheDir = '.cache/transformers';
-  return (await pipeline('image-feature-extraction', STYLE_GALLERY_VISUAL_MODEL_ID, {
+  return pipeline('image-feature-extraction', STYLE_GALLERY_VISUAL_MODEL_ID, {
     // q8 显著减小首次下载和常驻内存；向量最终还会按单位向量 int8 量化，因此不会引入额外索引体积。
     dtype: 'q8',
-  })) as unknown as ImageFeatureExtractor;
+  });
 }
 
 /**
  * 模型只在用户发起以图搜图或上传图片时按需加载。普通 Gallery 浏览不会下载约几十 MB 的 ONNX；
  * 浏览器 Cache Storage 与 Node 的 `.cache/transformers` 会复用权重，单个页面会话只创建一个 pipeline。
  */
-async function getExtractor(): Promise<ImageFeatureExtractor> {
+async function getExtractor(): ReturnType<typeof createExtractor> {
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     const pending = extractorPromise ?? createExtractor();
     extractorPromise = pending;

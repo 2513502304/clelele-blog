@@ -603,7 +603,8 @@ export default function StyleGalleryExamples({
         try {
           updateFileProgress(entry.id, { state: 'processing', loaded: entry.file.size });
           visualRecordById.set(upload.example.id, await computeStyleGalleryVisualFeatureFromFile(entry.file, entry.imageHash));
-          updateFileProgress(entry.id, { state: 'ready', loaded: entry.file.size });
+          // 特征计算不是网络上传进度；重置为 0，避免总进度先显示 100% 再在上传开始时倒退。
+          updateFileProgress(entry.id, { state: 'ready', loaded: 0 });
         } catch (error) {
           prepared[index] = null;
           updateFileProgress(entry.id, { state: 'failed' });

@@ -16,6 +16,32 @@ export interface StyleGalleryVisualRasterSamples {
   rgb64: Uint8Array;
 }
 
+/**
+ * 将 RGB/RGBA 交错像素统一转换为 Rec. 601 灰度。Canvas 与 sharp 的内置灰度权重并不相同，
+ * 因此浏览器查询和 Node 上传都必须经过本函数，才能让同一图片得到可比较的 pHash/dHash。
+ */
+export function convertInterleavedRgbToGrayscale(pixels: ArrayLike<number>, channels: number): Uint8Array {
+  if (channels < 3 || pixels.length % channels !== 0) throw new Error('RGB samples have an invalid channel layout.');
+  const gray = new Uint8Array(pixels.length / channels);
+  for (let source = 0, target = 0; source < pixels.length; source += channels, target += 1) {
+    gray[target] = Math.round(pixels[source] * 0.299 + pixels[source + 1] * 0.587 + pixels[source + 2] * 0.114);
+  }
+  return gray;
+}
+
+/** 从 RGB/RGBA 交错像素中提取固定三通道样本，供调色盘编码复用。 */
+export function extractInterleavedRgb(pixels: ArrayLike<number>, channels: number): Uint8Array {
+  if (channels < 3 || pixels.length % channels !== 0) throw new Error('RGB samples have an invalid channel layout.');
+  if (channels === 3) return Uint8Array.from(pixels);
+  const rgb = new Uint8Array((pixels.length / channels) * 3);
+  for (let source = 0, target = 0; source < pixels.length; source += channels, target += 3) {
+    rgb[target] = pixels[source];
+    rgb[target + 1] = pixels[source + 1];
+    rgb[target + 2] = pixels[source + 2];
+  }
+  return rgb;
+}
+
 /** 浏览器和 Node 图像解码器共用的纯计算入口，保证三条上传路径生成完全相同的特征格式。 */
 export function createStyleGalleryVisualFeature(
   imageHash: string,

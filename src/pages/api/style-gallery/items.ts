@@ -13,7 +13,8 @@ const requestSchema = z.object({
   token: z.string().optional(),
   mode: z.enum(['create', 'upsert']).default('create'),
   items: z.array(styleGalleryItemSchema).min(1).max(100),
-  visualRecords: z.array(styleGalleryVisualRecordInputSchema).min(1).max(500),
+  // 100 个 item 可能各含多张参考图；5000 条紧凑特征仍低于 Vercel 请求体上限，并避免合法批次被误拒。
+  visualRecords: z.array(styleGalleryVisualRecordInputSchema).min(1).max(5000),
 });
 
 export const POST: APIRoute = async ({ request }) => {

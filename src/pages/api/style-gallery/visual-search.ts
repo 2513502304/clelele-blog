@@ -39,6 +39,7 @@ export const POST: APIRoute = async ({ request }) => {
     );
   } catch (error) {
     if (error instanceof z.ZodError) return new Response(error.message, { status: 400 });
-    return new Response(error instanceof Error ? error.message : 'Visual search failed.', { status: 503 });
+    console.error('[style-gallery] Visual search request failed.', error);
+    return new Response('Visual search failed.', { status: 500 });
   }
 };

@@ -252,13 +252,22 @@ async function buildSourceVisualRecords(items, imageBytesByHash) {
     for (const feature of features) featureByHash.set(feature.imageHash, feature);
   }
   return items.flatMap((item) =>
-    item.images.map((image) => ({
+    uniqueImagesByHash(item.images).map((image) => ({
       feature: featureByHash.get(image.imageHash),
       kind: 'source',
       sourceSlug: item.slug,
       imageId: image.imageHash,
     })),
   );
+}
+
+/** 同一轮消息可能重复携带相同 data URI；视觉索引按 item + imageHash 只保留一个引用。 */
+function uniqueImagesByHash(images) {
+  const unique = new Map();
+  for (const image of images) {
+    if (!unique.has(image.imageHash)) unique.set(image.imageHash, image);
+  }
+  return [...unique.values()];
 }
 
 async function requestJson(url, options, timeoutMs = REQUEST_TIMEOUT_MS) {
@@ -457,7 +466,7 @@ async function main() {
   }
 }
 
-export { buildImportData, extractItems, parseArgs };
+export { buildImportData, extractItems, parseArgs, uniqueImagesByHash };
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((error) => {

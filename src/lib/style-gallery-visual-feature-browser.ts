@@ -1,5 +1,10 @@
 import { extractStyleGalleryVisualEmbedding } from './style-gallery-visual-embedding';
-import { createStyleGalleryVisualFeature, type StyleGalleryVisualRasterSamples } from './style-gallery-visual-feature';
+import {
+  convertInterleavedRgbToGrayscale,
+  createStyleGalleryVisualFeature,
+  extractInterleavedRgb,
+  type StyleGalleryVisualRasterSamples,
+} from './style-gallery-visual-feature';
 import type { StyleGalleryVisualFeature } from './style-gallery-visual-types';
 
 /** 浏览器端直接处理本地文件，查询图片不会上传到 Vercel；只有约 1 KB 的量化特征会发送给搜索 API。 */
@@ -79,18 +84,5 @@ function drawPixels(image: CanvasImageSource, width: number, height: number, gra
   if (!context) throw new Error('Canvas 2D is unavailable for visual search.');
   context.drawImage(image, 0, 0, width, height);
   const rgba = context.getImageData(0, 0, width, height).data;
-  if (!grayscale) {
-    const rgb = new Uint8Array(width * height * 3);
-    for (let source = 0, target = 0; source < rgba.length; source += 4, target += 3) {
-      rgb[target] = rgba[source];
-      rgb[target + 1] = rgba[source + 1];
-      rgb[target + 2] = rgba[source + 2];
-    }
-    return rgb;
-  }
-  const gray = new Uint8Array(width * height);
-  for (let source = 0, target = 0; source < rgba.length; source += 4, target += 1) {
-    gray[target] = Math.round(rgba[source] * 0.299 + rgba[source + 1] * 0.587 + rgba[source + 2] * 0.114);
-  }
-  return gray;
+  return grayscale ? convertInterleavedRgbToGrayscale(rgba, 4) : extractInterleavedRgb(rgba, 4);
 }

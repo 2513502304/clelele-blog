@@ -1,5 +1,6 @@
 import Popover from '@components/ui/popover';
 import { Icon } from '@iconify/react';
+import { getRangeValueAtPointer } from '@lib/range-input';
 import { computeStyleGalleryVisualFeatureFromFile } from '@lib/style-gallery-visual-feature-browser';
 import type {
   StyleGalleryVisualFeature,
@@ -16,6 +17,7 @@ interface Props {
   scope: StyleGalleryVisualSearchScope;
   labels: StyleGalleryVisualFilterLabels;
   onResults: (identities: Set<string> | null) => void;
+  triggerClassName?: string;
 }
 
 type VisualTab = 'image' | 'palette';
@@ -26,7 +28,7 @@ const IMAGE_MODES: StyleGalleryVisualSearchMode[] = ['combined', 'near-duplicate
  * 三个 Gallery 列表页共用的视觉筛选器。原图只在浏览器本地解码和推理，API 收到的是固定宽度特征；
  * 结果集继续与页面已有 prompt/平台/日期筛选做交集，不另建一套列表状态或分页实现。
  */
-export default function StyleGalleryVisualFilter({ scope, labels, onResults }: Props) {
+export default function StyleGalleryVisualFilter({ scope, labels, onResults, triggerClassName }: Props) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<VisualTab>('image');
   const [file, setFile] = useState<File | null>(null);
@@ -40,6 +42,7 @@ export default function StyleGalleryVisualFilter({ scope, labels, onResults }: P
   const preparedFeature = useRef<{ file: File; promise: Promise<StyleGalleryVisualFeature> } | null>(null);
   const searchGeneration = useRef(0);
   const searchController = useRef<AbortController | null>(null);
+  const rangePointerId = useRef<number | null>(null);
 
   useEffect(() => {
     if (!file) {
@@ -130,6 +133,11 @@ export default function StyleGalleryVisualFilter({ scope, labels, onResults }: P
     setMatchCount(null);
     setError(null);
     onResults(null);
+  }
+
+  function applyRange(input: HTMLInputElement, next: number) {
+    input.valueAsNumber = next;
+    setRange(next);
   }
 
   const modeLabels: Record<Exclude<StyleGalleryVisualSearchMode, 'palette'>, string> = {
@@ -226,7 +234,7 @@ export default function StyleGalleryVisualFilter({ scope, labels, onResults }: P
             </div>
           )}
 
-          <label className="mt-4 block border-border border-t pt-3" title={labels.rangeHelp}>
+          <div className="mt-4 block border-border border-t pt-3" title={labels.rangeHelp}>
             <span className="mb-2 flex items-center justify-between gap-3 text-xs">
               <span className="font-bold text-foreground">{labels.range}</span>
               <output className="font-mono text-primary tabular-nums">{range}%</output>
@@ -235,12 +243,40 @@ export default function StyleGalleryVisualFilter({ scope, labels, onResults }: P
               type="range"
               min={0}
               max={100}
-              step={5}
+              step={1}
               value={range}
               aria-label={labels.range}
               aria-describedby="style-gallery-visual-range-help"
-              // 24px 命中区覆盖视觉滑块外沿；input 事件保证鼠标和触控拖动时连续更新，而非仅在释放时跳值。
-              onInput={(event) => setRange(Number(event.currentTarget.value))}
+              // 原生 input 作为键盘与浏览器回退；Pointer Capture 负责连续拖动，移出滑轨后也不会中断。
+              onInput={(event) => {
+                if (rangePointerId.current === null) setRange(event.currentTarget.valueAsNumber);
+              }}
+              onPointerDown={(event) => {
+                if (!event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return;
+                event.preventDefault();
+                event.currentTarget.focus();
+                rangePointerId.current = event.pointerId;
+                event.currentTarget.setPointerCapture(event.pointerId);
+                applyRange(event.currentTarget, getRangeValueAtPointer(event.currentTarget, event.clientX));
+              }}
+              onPointerMove={(event) => {
+                if (rangePointerId.current !== event.pointerId) return;
+                applyRange(event.currentTarget, getRangeValueAtPointer(event.currentTarget, event.clientX));
+              }}
+              onPointerUp={(event) => {
+                if (rangePointerId.current !== event.pointerId) return;
+                applyRange(event.currentTarget, getRangeValueAtPointer(event.currentTarget, event.clientX));
+                rangePointerId.current = null;
+              }}
+              onPointerCancel={() => {
+                rangePointerId.current = null;
+              }}
+              onLostPointerCapture={() => {
+                rangePointerId.current = null;
+              }}
+              onBlur={() => {
+                rangePointerId.current = null;
+              }}
               className="block h-6 w-full cursor-ew-resize accent-primary"
               style={{ touchAction: 'none' }}
             />
@@ -248,7 +284,7 @@ export default function StyleGalleryVisualFilter({ scope, labels, onResults }: P
               <span>{labels.rangePrecise}</span>
               <span>{labels.rangeBroad}</span>
             </span>
-          </label>
+          </div>
 
           {error && <p className="mt-3 text-red-500 text-xs">{error}</p>}
           <div className="mt-4 flex items-center justify-between gap-2 border-border border-t pt-3">
@@ -281,6 +317,7 @@ export default function StyleGalleryVisualFilter({ scope, labels, onResults }: P
         className={cn(
           'inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 font-bold text-sm transition hover:border-primary/60',
           matchCount !== null && 'border-primary text-primary',
+          triggerClassName,
         )}
       >
         <Icon icon="ri:scan-2-line" className="size-4" />

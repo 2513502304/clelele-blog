@@ -340,6 +340,7 @@ function StyleGalleryBrowserContent({
             <StyleGalleryVisualFilter
               scope="source"
               labels={labels.visualFilter}
+              triggerClassName="h-9"
               onResults={(matches) => {
                 setVisualMatches(matches);
                 setCurrentPage(1);

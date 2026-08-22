@@ -235,8 +235,8 @@ function StyleGalleryExamplesOverviewContent({
 
   return (
     <section className="space-y-5" aria-label="Generated example overview">
-      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-background/80 p-4 shadow-sm">
-        <label className="relative min-w-64 flex-1 md:min-w-full">
+      <div className="rounded-lg border border-border bg-background/80 p-4 shadow-sm">
+        <label className="relative block w-full">
           <Icon icon="ri:search-line" className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
           <input
             value={query}
@@ -245,86 +245,90 @@ function StyleGalleryExamplesOverviewContent({
             className="h-10 w-full rounded-md border border-border bg-background pr-3 pl-9 text-sm outline-none focus:border-primary"
           />
         </label>
-        <StyleGalleryVisualFilter
-          scope="example"
-          labels={labels.visualFilter}
-          onResults={(matches) => {
-            setVisualMatches(matches);
-            setVisualRevision((revision) => revision + 1);
-          }}
-        />
-        <label className="sr-only" htmlFor="example-platform-filter">
-          {labels.platform}
-        </label>
-        <div className="relative">
-          <select
-            id="example-platform-filter"
-            value={platform}
-            onChange={(event) => setPlatform(event.currentTarget.value).catch(reportUrlStateError)}
-            className="h-10 appearance-none rounded-md border border-border bg-background pr-8 pl-3 text-sm outline-none focus:border-primary"
-          >
-            <option value="all">{labels.allPlatforms}</option>
-            {STYLE_GALLERY_PLATFORMS.map((item) => (
-              <option key={item.slug} value={item.label}>
-                {item.label}
-              </option>
-            ))}
-          </select>
-          <Icon
-            icon="ri:arrow-down-s-line"
-            className="pointer-events-none absolute top-1/2 right-2 size-4 -translate-y-1/2 text-muted-foreground"
+        <div className="mt-3 flex flex-wrap items-center gap-3 border-border border-t pt-3">
+          <StyleGalleryVisualFilter
+            scope="example"
+            labels={labels.visualFilter}
+            onResults={(matches) => {
+              setVisualMatches(matches);
+              setVisualRevision((revision) => revision + 1);
+            }}
           />
-        </div>
-        <StyleGalleryDateRangeFilter
-          value={{ from: dateFrom, to: dateTo }}
-          locale={locale}
-          labels={labels.dateRange}
-          availableDateKeys={availableDateKeys}
-          onApply={(range) => void setDateRange(range).catch(reportUrlStateError)}
-        />
-        <span className="text-muted-foreground text-sm tabular-nums">
-          {filtered.length} / {examples.length}
-        </span>
-        <label className="sr-only" htmlFor="example-sort">
-          {labels.sortItems}
-        </label>
-        <div className="relative min-w-44">
-          <select
-            id="example-sort"
-            value={sortKey}
-            onChange={(event) => changeSortKey(event.currentTarget.value as SortKey)}
-            className="h-10 w-full appearance-none rounded-md border border-border bg-background pr-8 pl-3 text-sm outline-none focus:border-primary"
-          >
-            {sortKeys.map((key) => (
-              <option key={key} value={key}>
-                {sortLabels[key]}
-              </option>
-            ))}
-          </select>
-          <Icon
-            icon="ri:arrow-down-s-line"
-            className="pointer-events-none absolute top-1/2 right-2 size-4 -translate-y-1/2 text-muted-foreground"
+          <label className="sr-only" htmlFor="example-platform-filter">
+            {labels.platform}
+          </label>
+          <div className="relative">
+            <select
+              id="example-platform-filter"
+              value={platform}
+              onChange={(event) => setPlatform(event.currentTarget.value).catch(reportUrlStateError)}
+              className="h-10 appearance-none rounded-md border border-border bg-background pr-8 pl-3 text-sm outline-none focus:border-primary"
+            >
+              <option value="all">{labels.allPlatforms}</option>
+              {STYLE_GALLERY_PLATFORMS.map((item) => (
+                <option key={item.slug} value={item.label}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+            <Icon
+              icon="ri:arrow-down-s-line"
+              className="pointer-events-none absolute top-1/2 right-2 size-4 -translate-y-1/2 text-muted-foreground"
+            />
+          </div>
+          <StyleGalleryDateRangeFilter
+            value={{ from: dateFrom, to: dateTo }}
+            locale={locale}
+            labels={labels.dateRange}
+            availableDateKeys={availableDateKeys}
+            onApply={(range) => void setDateRange(range).catch(reportUrlStateError)}
           />
+          <span className="shrink-0 text-muted-foreground text-sm tabular-nums">
+            {filtered.length} / {examples.length}
+          </span>
+          <div className="ml-auto flex items-center gap-3 md:ml-0 md:flex-wrap">
+            <label className="sr-only" htmlFor="example-sort">
+              {labels.sortItems}
+            </label>
+            <div className="relative min-w-44">
+              <select
+                id="example-sort"
+                value={sortKey}
+                onChange={(event) => changeSortKey(event.currentTarget.value as SortKey)}
+                className="h-10 w-full appearance-none rounded-md border border-border bg-background pr-8 pl-3 text-sm outline-none focus:border-primary"
+              >
+                {sortKeys.map((key) => (
+                  <option key={key} value={key}>
+                    {sortLabels[key]}
+                  </option>
+                ))}
+              </select>
+              <Icon
+                icon="ri:arrow-down-s-line"
+                className="pointer-events-none absolute top-1/2 right-2 size-4 -translate-y-1/2 text-muted-foreground"
+              />
+            </div>
+            {hasPendingLikeSort && (
+              <button
+                type="button"
+                onClick={refreshLikeSortCounts}
+                className="inline-flex h-10 items-center gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 font-medium text-rose-600 text-sm transition hover:border-rose-300 hover:bg-rose-100 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200"
+              >
+                <Icon icon="ri:refresh-line" className="size-4" />
+                {labels.refreshLikeSort}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={toggleSortDirection}
+              title={sortDirection === 'asc' ? labels.sortAscending : labels.sortDescending}
+              aria-label={sortDirection === 'asc' ? labels.sortAscending : labels.sortDescending}
+              className="flex size-10 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground transition hover:border-primary/40 hover:text-foreground"
+            >
+              <Icon icon={sortDirection === 'asc' ? 'ri:sort-asc' : 'ri:sort-desc'} className="size-4" />
+            </button>
+          </div>
         </div>
-        {hasPendingLikeSort && (
-          <button
-            type="button"
-            onClick={refreshLikeSortCounts}
-            className="inline-flex h-10 items-center gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 font-medium text-rose-600 text-sm transition hover:border-rose-300 hover:bg-rose-100 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200"
-          >
-            <Icon icon="ri:refresh-line" className="size-4" />
-            {labels.refreshLikeSort}
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={toggleSortDirection}
-          title={sortDirection === 'asc' ? labels.sortAscending : labels.sortDescending}
-          aria-label={sortDirection === 'asc' ? labels.sortAscending : labels.sortDescending}
-          className="flex size-10 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground transition hover:border-primary/40 hover:text-foreground"
-        >
-          <Icon icon={sortDirection === 'asc' ? 'ri:sort-asc' : 'ri:sort-desc'} className="size-4" />
-        </button>
       </div>
 
       {filtered.length ? (

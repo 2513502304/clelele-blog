@@ -177,7 +177,7 @@ export function mutateStyleGalleryExampleIndex(
         return current;
       }
       const next = styleGalleryExampleIndexSchema.parse(transformed);
-      // 视觉索引是机器读取的派生对象；紧凑 JSON 可减少 HF 往返、序列化内存和冷实例解析成本。
+      // 示例索引已接近 MB 级；紧凑 JSON 可减少 HF 往返、序列化内存和冷实例解析成本。
       const body = new TextEncoder().encode(JSON.stringify(next));
       try {
         const etag = await putStyleGalleryObject(
@@ -283,7 +283,8 @@ export function mutateStyleGalleryVisualIndex(
           : createEmptyStyleGalleryVisualIndex();
       if (!cached && snapshot.text && !snapshot.etag) throw new Error('HF did not return an ETag for the visual index.');
       const next = styleGalleryVisualIndexSchema.parse(transform(current));
-      const body = new TextEncoder().encode(`${JSON.stringify(next, null, 2)}\n`);
+      // 视觉索引包含定长向量，缩进只会增加 HF 传输与冷实例解析成本，不提供运行时价值。
+      const body = new TextEncoder().encode(JSON.stringify(next));
       try {
         const etag = await putStyleGalleryObject(
           STYLE_GALLERY_VISUAL_INDEX_KEY,
