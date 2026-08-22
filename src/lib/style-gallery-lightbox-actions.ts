@@ -29,21 +29,21 @@ const locateHighlightAnimations = new WeakMap<HTMLElement, Animation>();
 function highlightLocatedElement(element: HTMLElement): void {
   locateHighlightAnimations.get(element)?.cancel();
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const glow = '0 0 0 3px rgb(244 63 94 / 0.94), 0 0 26px 10px rgb(244 63 94 / 0.42)';
+  const glow = '0 0 0 4px rgb(244 63 94 / 0.96), 0 0 40px 16px rgb(244 63 94 / 0.44)';
   const clear = '0 0 0 0 rgb(244 63 94 / 0), 0 0 0 0 rgb(244 63 94 / 0)';
   const animation = element.animate(
     reduceMotion
       ? [{ boxShadow: glow }, { boxShadow: clear }]
       : [
           { boxShadow: clear, offset: 0 },
-          { boxShadow: glow, offset: 0.12 },
-          { boxShadow: glow, offset: 0.58 },
-          { boxShadow: '0 0 0 2px rgb(244 63 94 / 0.76), 0 0 18px 7px rgb(244 63 94 / 0.28)', offset: 0.78 },
+          { boxShadow: glow, offset: 0.08 },
+          { boxShadow: glow, offset: 0.68 },
+          { boxShadow: '0 0 0 3px rgb(244 63 94 / 0.78), 0 0 28px 10px rgb(244 63 94 / 0.3)', offset: 0.84 },
           { boxShadow: clear, offset: 1 },
         ],
     {
       delay: reduceMotion ? 0 : 120,
-      duration: reduceMotion ? 1_600 : 2_800,
+      duration: reduceMotion ? 2_400 : 4_200,
       easing: 'ease-out',
     },
   );
