@@ -76,16 +76,19 @@ export interface StyleGallerySourceLightboxItem {
   promptOptions?: { promptCount: number; getPrompts: () => Promise<StyleGalleryPromptChoice[]> };
 }
 
-/** 等 React 先挂载目标分页/渐进批次，再滚动到卡片并短暂聚焦。 */
+/** 等 React 挂载目标分页或渐进批次，再滚动到卡片并短暂聚焦；慢设备上也不会只赌两个渲染帧。 */
 export function locateStyleGalleryElement(elementId: string): void {
-  window.requestAnimationFrame(() => {
-    window.requestAnimationFrame(() => {
-      const element = document.getElementById(elementId);
-      if (!element) return;
+  const maxFrames = 30;
+  function locate(frame: number) {
+    const element = document.getElementById(elementId);
+    if (element) {
       element.scrollIntoView({ behavior: 'smooth', block: 'center' });
       if (element instanceof HTMLElement) element.focus({ preventScroll: true });
-    });
-  });
+      return;
+    }
+    if (frame < maxFrames) window.requestAnimationFrame(() => locate(frame + 1));
+  }
+  window.requestAnimationFrame(() => locate(1));
 }
 
 export function getStyleGalleryLightboxElementId(scope: string, id: string): string {

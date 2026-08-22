@@ -503,6 +503,14 @@ function StyleGalleryBrowserContent({
         <DialogContent
           className="flex max-h-[min(80dvh,44rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0"
           overlayClassName="bg-black/65"
+          onEscapeKeyDown={(event) => {
+            event.preventDefault();
+            setPromptPicker(null);
+          }}
+          onPointerDownOutside={(event) => {
+            event.preventDefault();
+            setPromptPicker(null);
+          }}
         >
           {promptPicker && (
             <StyleGalleryPromptChooser

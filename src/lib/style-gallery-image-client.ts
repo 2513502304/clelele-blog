@@ -1,8 +1,44 @@
 import { parseStyleGalleryImageApiPath } from './style-gallery-image-key';
 
 const BATCH_SIGN_TIMEOUT_MS = 15_000;
+const BATCH_SIGN_ATTEMPTS = 3;
+const BATCH_SIGN_RETRY_BASE_MS = 200;
 const signedUrlCache = new Map<string, string>();
 let activeRequests = new Map<string, Promise<Record<string, string>>>();
+
+function isRetryableSigningError(error: unknown): boolean {
+  if (error instanceof TypeError) return true;
+  if (error instanceof DOMException && ['AbortError', 'TimeoutError'].includes(error.name)) return true;
+  return error instanceof Error && /HTTP (?:408|429|5\d\d)\b/.test(error.message);
+}
+
+async function requestSignedUrls(keys: readonly string[]): Promise<Record<string, string>> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= BATCH_SIGN_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await fetch('/api/style-gallery/images', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ keys }),
+        signal: AbortSignal.timeout(BATCH_SIGN_TIMEOUT_MS),
+      });
+      if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(`Image signing failed with HTTP ${response.status}${detail ? `: ${detail}` : '.'}`);
+      }
+      const body = (await response.json()) as { images?: Record<string, string> };
+      return body.images ?? {};
+    } catch (error) {
+      if (!isRetryableSigningError(error)) throw error;
+      lastError = error;
+      if (attempt < BATCH_SIGN_ATTEMPTS) {
+        await new Promise((resolve) => globalThis.setTimeout(resolve, BATCH_SIGN_RETRY_BASE_MS * 2 ** (attempt - 1)));
+      }
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('Image signing failed after retries.');
+}
 
 /**
  * 将同一导航窗口内尚未签名的图片合并成一次请求。缓存以稳定同源 URL 为 key，
@@ -29,19 +65,7 @@ export async function resolveStyleGalleryImageUrls(sources: readonly string[]): 
     .join('\n');
   let request = activeRequests.get(requestKey);
   if (!request) {
-    request = fetch('/api/style-gallery/images', {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ keys: missing.map(({ key }) => key) }),
-      signal: AbortSignal.timeout(BATCH_SIGN_TIMEOUT_MS),
-    })
-      .then(async (response) => {
-        if (!response.ok) throw new Error((await response.text()) || `Image signing failed with ${response.status}`);
-        const body = (await response.json()) as { images?: Record<string, string> };
-        return body.images ?? {};
-      })
-      .finally(() => activeRequests.delete(requestKey));
+    request = requestSignedUrls(missing.map(({ key }) => key)).finally(() => activeRequests.delete(requestKey));
     activeRequests.set(requestKey, request);
   }
 
