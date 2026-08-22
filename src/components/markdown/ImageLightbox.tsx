@@ -16,6 +16,7 @@ import { createImageLightboxDownloadAction } from '@lib/image-lightbox-download'
 import { getLive2DFocusNodes, isLive2DOwnedTarget } from '@lib/live2d/focus-scope';
 import { invalidateStyleGalleryImageUrl, resolveStyleGalleryImageUrls } from '@lib/style-gallery-image-client';
 import { createLightboxPrefetchPlan } from '@lib/style-gallery-lightbox-prefetch';
+import { canConsumeLightboxWheel } from '@lib/style-gallery-lightbox-wheel';
 import type { StyleGalleryPromptChoice } from '@lib/style-gallery-prompt-client';
 import { useStore } from '@nanostores/react';
 import {
@@ -487,10 +488,15 @@ export default function ImageLightbox() {
     }
   };
 
-  // Lock page scroll while lightbox is open
+  // Lightbox 接管页面滚轮，但显式标记的嵌套面板仍可消费自己的滚动，且不会在边界穿透到底层页面。
   useEffect(() => {
     if (!isOpen) return;
-    const prevent = (e: WheelEvent) => e.preventDefault();
+    const prevent = (event: WheelEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      const scrollRegion = target?.closest<HTMLElement>('[data-lightbox-scroll-region]');
+      if (scrollRegion && canConsumeLightboxWheel(scrollRegion, event.deltaY)) return;
+      event.preventDefault();
+    };
     document.addEventListener('wheel', prevent, { passive: false });
     return () => document.removeEventListener('wheel', prevent);
   }, [isOpen]);

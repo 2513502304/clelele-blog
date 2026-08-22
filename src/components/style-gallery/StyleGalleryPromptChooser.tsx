@@ -89,7 +89,10 @@ function StyleGalleryPromptChooserComponent({ prompts, failed, labels, onRetry, 
           </button>
         )}
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-5 [contain:paint] [scrollbar-color:hsl(var(--border))_transparent] [scrollbar-gutter:stable] [scrollbar-width:thin] [will-change:scroll-position] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-2">
+      <div
+        data-lightbox-scroll-region
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-5 [contain:paint] [scrollbar-color:hsl(var(--border))_transparent] [scrollbar-gutter:stable] [scrollbar-width:thin] [will-change:scroll-position] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-2"
+      >
         {!prompts && !failed && (
           <div className="flex min-h-32 items-center justify-center gap-2 text-muted-foreground text-sm">
             <Icon icon="ri:loader-4-line" className={`size-4 ${reduceMotion ? '' : 'animate-spin'}`} />
