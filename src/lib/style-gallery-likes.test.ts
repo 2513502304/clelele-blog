@@ -14,7 +14,7 @@ let body = JSON.stringify({
         {
           id: exampleId,
           src: '/api/style-gallery/image/examples/images/aaaaaaaa.png',
-          model: 'GPT-Image2',
+          model: 'GPT-Image',
           uploadedAt: '2026-07-22T00:00:00.000Z',
           likedBy: [],
         },

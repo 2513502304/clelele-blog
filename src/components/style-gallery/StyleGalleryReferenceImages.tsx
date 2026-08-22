@@ -1,5 +1,11 @@
 import { ErrorBoundary, InlineErrorFallback } from '@components/common';
-import { createStyleGallerySourceLightboxData, type StyleGalleryLightboxCopyLabels } from '@lib/style-gallery-lightbox-actions';
+import {
+  createStyleGallerySourceLightboxData,
+  getStyleGalleryLightboxElementId,
+  locateStyleGalleryElement,
+  type StyleGalleryLightboxCopyLabels,
+} from '@lib/style-gallery-lightbox-actions';
+import { loadStyleGalleryPromptChoices } from '@lib/style-gallery-prompt-client';
 import { getSelectedStyleGalleryPrompt } from '@lib/style-gallery-prompt-selection';
 import { openModal } from '@store/modal';
 import type { StyleGalleryImageRef } from '@/types/style-gallery';
@@ -8,6 +14,8 @@ interface StyleGalleryReferenceImagesProps {
   images: StyleGalleryImageRef[];
   itemSlug: string;
   prompt: string;
+  promptCount: number;
+  promptRevision: string;
   openImageLabel: string;
   referenceImageLabel: string;
   lightboxCopyLabels: StyleGalleryLightboxCopyLabels;
@@ -21,6 +29,8 @@ function StyleGalleryReferenceImagesContent({
   images,
   itemSlug,
   prompt,
+  promptCount,
+  promptRevision,
   openImageLabel,
   referenceImageLabel,
   lightboxCopyLabels,
@@ -34,6 +44,11 @@ function StyleGalleryReferenceImagesContent({
       previewSrc: image.sourceImage,
       alt: image.sourceImageAlt ?? getReferenceImageLabel(index),
       getPrompt: () => getSelectedStyleGalleryPrompt(itemSlug) ?? prompt,
+      promptOptions:
+        promptCount > 1
+          ? { promptCount, getPrompts: () => loadStyleGalleryPromptChoices(itemSlug, promptRevision) }
+          : undefined,
+      locate: () => locateStyleGalleryElement(getStyleGalleryLightboxElementId('detail-source', `${itemSlug}-${index}`)),
     }));
     openModal(
       'imageLightbox',
@@ -47,7 +62,12 @@ function StyleGalleryReferenceImagesContent({
         const indexedLabel = getReferenceImageLabel(index);
         const alt = image.sourceImageAlt ?? indexedLabel;
         return (
-          <figure key={`${image.imageHash}:${index}`} className="overflow-hidden rounded-md bg-rose-50 dark:bg-gray-900">
+          <figure
+            key={`${image.imageHash}:${index}`}
+            id={getStyleGalleryLightboxElementId('detail-source', `${itemSlug}-${index}`)}
+            tabIndex={-1}
+            className="overflow-hidden rounded-md bg-rose-50 dark:bg-gray-900"
+          >
             <button
               type="button"
               onClick={() => openReferenceImage(index)}

@@ -14,18 +14,27 @@ import { useZoomPan } from '@hooks/useZoomPan';
 import { Icon } from '@iconify/react';
 import { createImageLightboxDownloadAction } from '@lib/image-lightbox-download';
 import { getLive2DFocusNodes, isLive2DOwnedTarget } from '@lib/live2d/focus-scope';
+import { invalidateStyleGalleryImageUrl, resolveStyleGalleryImageUrls } from '@lib/style-gallery-image-client';
+import { createLightboxPrefetchPlan } from '@lib/style-gallery-lightbox-prefetch';
+import { canConsumeLightboxWheel } from '@lib/style-gallery-lightbox-wheel';
+import type { StyleGalleryPromptChoice } from '@lib/style-gallery-prompt-client';
+import { getStyleGalleryPromptChooserKey } from '@lib/style-gallery-prompt-groups';
 import { useStore } from '@nanostores/react';
 import {
   $imageLightboxData,
+  clearImageLightboxResolvedSource,
   closeModal,
   type ImageLightboxData,
   type ImageLightboxImage,
   navigateImage,
   openModal,
   removeImageFromLightbox,
+  updateImageLightboxResolvedSources,
 } from '@store/modal';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { StyleGalleryPromptChooser } from '../style-gallery/StyleGalleryPromptChooser';
+import { Dialog, DialogContent } from '../ui/dialog';
 import { LightboxLikeButton, NavButton, ToolbarButton, ToolbarLink, ZoomHint } from './ImageLightboxControls';
 
 const ZOOM_SENSITIVITY_STORAGE_KEY = 'image-lightbox-zoom-sensitivity';
@@ -36,15 +45,17 @@ const MAX_ZOOM_SENSITIVITY = 1.25;
 interface LightboxImageStageProps {
   image: ImageLightboxImage;
   shouldReduceMotion: boolean | null;
+  onResolvedSourceFailure: (source: string) => void;
 }
 
 /**
  * 每个导航目标拥有独立加载生命周期。父级以当前图片键重建该组件，可同时阻止浏览器保留上一张位图，
  * 并隔离已经卸载图片的迟到 load/decode 回调，避免快速切换时错误显示后续图片为已加载。
  */
-function LightboxImageStage({ image, shouldReduceMotion }: LightboxImageStageProps) {
+function LightboxImageStage({ image, shouldReduceMotion, onResolvedSourceFailure }: LightboxImageStageProps) {
   const { t } = useTranslation();
-  const previewSrc = image.previewSrc !== image.src ? image.previewSrc : undefined;
+  const sourceSrc = image.resolvedSrc ?? image.src;
+  const previewSrc = image.previewSrc !== sourceSrc ? image.previewSrc : undefined;
   const [sourceState, setSourceState] = useState<'loading' | 'loaded' | 'failed'>('loading');
   const [previewFailed, setPreviewFailed] = useState(false);
 
@@ -88,7 +99,7 @@ function LightboxImageStage({ image, shouldReduceMotion }: LightboxImageStagePro
         />
       )}
       <motion.img
-        src={image.src}
+        src={sourceSrc}
         alt={image.alt}
         loading="eager"
         fetchPriority="high"
@@ -98,7 +109,15 @@ function LightboxImageStage({ image, shouldReduceMotion }: LightboxImageStagePro
         animate={{ opacity: sourceState === 'loaded' ? 1 : 0 }}
         transition={{ opacity: { duration: shouldReduceMotion ? 0 : 0.2 } }}
         onLoad={(event) => void finishSourceLoad(event.currentTarget)}
-        onError={() => setSourceState('failed')}
+        onError={() => {
+          if (image.resolvedSrc && sourceSrc === image.resolvedSrc) {
+            onResolvedSourceFailure(image.src);
+            invalidateStyleGalleryImageUrl(image.src);
+            clearImageLightboxResolvedSource(image.src, image.resolvedSrc);
+            return;
+          }
+          setSourceState('failed');
+        }}
         draggable={false}
       />
       {isLoading && hasPreview && (
@@ -134,21 +153,34 @@ export default function ImageLightbox() {
   const currentLike = currentImage?.like;
   const currentCopy = currentImage?.copy;
   const currentDelete = currentImage?.delete;
+  const currentLocate = currentImage?.locate;
   const downloadAction = currentImage ? createImageLightboxDownloadAction(currentImage.src) : null;
   const currentImageKey = currentImage?.id ?? `${data?.currentIndex ?? 0}:${currentImage?.src ?? ''}`;
   const [rotation, setRotation] = useState(0);
   const [zoomSensitivity, setZoomSensitivity] = useState(DEFAULT_ZOOM_SENSITIVITY);
   const [showSensitivity, setShowSensitivity] = useState(false);
   const [copyState, setCopyState] = useState<{ key: string; status: 'copying' | 'copied' | 'failed' } | null>(null);
+  const [promptPicker, setPromptPicker] = useState<{
+    key: string;
+    prompts: StyleGalleryPromptChoice[] | null;
+    failed: boolean;
+  } | null>(null);
   const [deleteState, setDeleteState] = useState<{ key: string; status: 'deleting' | 'failed' } | null>(null);
   const currentCopyStatus = copyState?.key === currentImageKey ? copyState.status : null;
   const currentDeleteStatus = deleteState?.key === currentImageKey ? deleteState.status : null;
   const copyAttemptRef = useRef(0);
+  const promptAttemptRef = useRef(0);
   const deleteAttemptRef = useRef(0);
   const copyTimerRef = useRef(0);
   const deleteTimerRef = useRef(0);
+  // 同一 popup 会话内，签名 URL 失败后回退 canonical 302 路径；关闭再打开时才允许重新尝试。
+  const failedResolvedSourcesRef = useRef(new Set<string>());
 
-  const { containerRef, state, reset, zoomTo, zoomLevel } = useZoomPan(isOpen, { zoomSensitivity });
+  const { containerRef, state, reset, zoomTo, zoomLevel } = useZoomPan(isOpen && !promptPicker, { zoomSensitivity });
+
+  const handleResolvedSourceFailure = useCallback((source: string) => {
+    failedResolvedSourcesRef.current.add(source);
+  }, []);
 
   // Use a ref so the outsidePress callback always reads the latest scale
   const scaleRef = useRef(state.scale);
@@ -163,6 +195,13 @@ export default function ImageLightbox() {
     reset();
     closeModal();
   }, [reset]);
+
+  const handleLocate = useCallback(() => {
+    if (!currentLocate) return;
+    reset();
+    closeModal();
+    currentLocate.run();
+  }, [currentLocate, reset]);
   const backdropPointerHandlers = useBackdropClickDismiss(dismissFromBackdrop);
 
   const handleZoomIn = useCallback(() => {
@@ -187,6 +226,18 @@ export default function ImageLightbox() {
   const handleCopy = useCallback(async () => {
     if (!currentCopy) return;
     const key = currentImageKey;
+    if (currentCopy.promptCount && currentCopy.promptCount > 1 && currentCopy.getPrompts) {
+      const attempt = ++promptAttemptRef.current;
+      setPromptPicker({ key, prompts: null, failed: false });
+      try {
+        const prompts = await currentCopy.getPrompts();
+        if (promptAttemptRef.current === attempt) setPromptPicker({ key, prompts, failed: false });
+      } catch (error) {
+        console.error('[image-lightbox] Failed to load prompt choices.', error);
+        if (promptAttemptRef.current === attempt) setPromptPicker({ key, prompts: null, failed: true });
+      }
+      return;
+    }
     const attempt = ++copyAttemptRef.current;
     window.clearTimeout(copyTimerRef.current);
     setCopyState({ key, status: 'copying' });
@@ -201,6 +252,16 @@ export default function ImageLightbox() {
       if (copyAttemptRef.current === attempt) setCopyState(null);
     }, 2000);
   }, [currentCopy, currentImageKey]);
+
+  const copyPromptChoice = useCallback(async (prompt: StyleGalleryPromptChoice): Promise<boolean> => {
+    try {
+      await navigator.clipboard.writeText(prompt.prompt);
+      return true;
+    } catch (error) {
+      console.error('[image-lightbox] Failed to copy selected prompt.', error);
+      return false;
+    }
+  }, []);
 
   const handleDelete = useCallback(async () => {
     if (!currentDelete?.enabled || !window.confirm(currentDelete.confirmMessage)) return;
@@ -244,7 +305,7 @@ export default function ImageLightbox() {
   useKeyboardShortcut({
     key: 'ArrowLeft',
     handler: () => navigateTo(-1),
-    enabled: isOpen,
+    enabled: isOpen && !promptPicker,
     ignoreInputs: false,
     preventDefault: false,
   });
@@ -252,17 +313,47 @@ export default function ImageLightbox() {
   useKeyboardShortcut({
     key: 'ArrowRight',
     handler: () => navigateTo(1),
-    enabled: isOpen,
+    enabled: isOpen && !promptPicker,
     ignoreInputs: false,
     preventDefault: false,
   });
 
   // Keyboard shortcuts for zoom/rotate
-  useKeyboardShortcut({ key: '=', handler: handleZoomIn, enabled: isOpen, ignoreInputs: false, preventDefault: false });
-  useKeyboardShortcut({ key: '+', handler: handleZoomIn, enabled: isOpen, ignoreInputs: false, preventDefault: false });
-  useKeyboardShortcut({ key: '-', handler: handleZoomOut, enabled: isOpen, ignoreInputs: false, preventDefault: false });
-  useKeyboardShortcut({ key: 'r', handler: handleRotate, enabled: isOpen, ignoreInputs: false, preventDefault: false });
-  useKeyboardShortcut({ key: '0', handler: handleResetShortcut, enabled: isOpen, ignoreInputs: false, preventDefault: false });
+  useKeyboardShortcut({
+    key: '=',
+    handler: handleZoomIn,
+    enabled: isOpen && !promptPicker,
+    ignoreInputs: false,
+    preventDefault: false,
+  });
+  useKeyboardShortcut({
+    key: '+',
+    handler: handleZoomIn,
+    enabled: isOpen && !promptPicker,
+    ignoreInputs: false,
+    preventDefault: false,
+  });
+  useKeyboardShortcut({
+    key: '-',
+    handler: handleZoomOut,
+    enabled: isOpen && !promptPicker,
+    ignoreInputs: false,
+    preventDefault: false,
+  });
+  useKeyboardShortcut({
+    key: 'r',
+    handler: handleRotate,
+    enabled: isOpen && !promptPicker,
+    ignoreInputs: false,
+    preventDefault: false,
+  });
+  useKeyboardShortcut({
+    key: '0',
+    handler: handleResetShortcut,
+    enabled: isOpen && !promptPicker,
+    ignoreInputs: false,
+    preventDefault: false,
+  });
 
   const { refs, context } = useFloating({
     open: isOpen,
@@ -302,14 +393,17 @@ export default function ImageLightbox() {
   // Reset zoom, rotation, and image state when opening/closing
   useEffect(() => {
     copyAttemptRef.current += 1;
+    promptAttemptRef.current += 1;
     deleteAttemptRef.current += 1;
     window.clearTimeout(copyTimerRef.current);
     window.clearTimeout(deleteTimerRef.current);
     if (isOpen) {
+      failedResolvedSourcesRef.current.clear();
       reset();
       setRotation(0);
       setShowSensitivity(false);
       setCopyState(null);
+      setPromptPicker(null);
       setDeleteState(null);
     }
     return () => {
@@ -317,6 +411,19 @@ export default function ImageLightbox() {
       window.clearTimeout(deleteTimerRef.current);
     };
   }, [isOpen, reset]);
+
+  useEffect(() => {
+    if (!promptPicker) return;
+    // Floating UI 与 Radix 都监听 Escape；在 window capture 阶段消费事件，避免一次按键同时关闭内外两层。
+    const closePromptPicker = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopPropagation();
+      setPromptPicker(null);
+    };
+    window.addEventListener('keydown', closePromptPicker, true);
+    return () => window.removeEventListener('keydown', closePromptPicker, true);
+  }, [promptPicker]);
 
   const previousImage = data?.images[data.currentIndex - 1];
   const nextImage = data?.images[data.currentIndex + 1];
@@ -333,6 +440,59 @@ export default function ImageLightbox() {
     }
   }, [nextPreviewSrc, previousPreviewSrc]);
 
+  const prefetchPlan = useMemo(
+    () => createLightboxPrefetchPlan(data?.images.length ?? 0, data?.currentIndex ?? -1),
+    [data?.currentIndex, data?.images.length],
+  );
+  const unresolvedSignSources = useMemo(
+    () =>
+      prefetchPlan.signIndexes
+        .map((index) => data?.images[index])
+        .filter((image): image is ImageLightboxImage =>
+          Boolean(image && !image.resolvedSrc && !failedResolvedSourcesRef.current.has(image.src)),
+        )
+        .map((image) => image.src),
+    [data?.images, prefetchPlan.signIndexes],
+  );
+  const unresolvedSignKey = unresolvedSignSources.join('\n');
+
+  // 预签名只请求尚未解析的窗口；失败时保留单图 302 路径，网络波动不会阻断导航。
+  useEffect(() => {
+    if (!unresolvedSignKey) return;
+    let active = true;
+    void resolveStyleGalleryImageUrls(unresolvedSignSources)
+      .then((resolved) => {
+        if (!active) return;
+        const usable = Object.fromEntries(
+          Object.entries(resolved).filter(([source]) => !failedResolvedSourcesRef.current.has(source)),
+        );
+        updateImageLightboxResolvedSources(usable);
+      })
+      .catch((error) => console.warn('[image-lightbox] Failed to pre-sign navigation window.', error));
+    return () => {
+      active = false;
+    };
+  }, [unresolvedSignKey, unresolvedSignSources]);
+
+  const preloadSources = useMemo(
+    () =>
+      prefetchPlan.preloadIndexes
+        .map((index) => data?.images[index]?.resolvedSrc)
+        .filter((source): source is string => Boolean(source)),
+    [data?.images, prefetchPlan.preloadIndexes],
+  );
+  const preloadKey = preloadSources.join('\n');
+
+  // 浏览器并发解码临近高清图；数量有上限，避免一次预载整个大图库。
+  useEffect(() => {
+    if (!preloadKey) return;
+    for (const source of preloadSources) {
+      const preload = new Image();
+      preload.decoding = 'async';
+      preload.src = source;
+    }
+  }, [preloadKey, preloadSources]);
+
   const updateZoomSensitivity = (value: number) => {
     const next = Math.min(MAX_ZOOM_SENSITIVITY, Math.max(MIN_ZOOM_SENSITIVITY, value));
     setZoomSensitivity(next);
@@ -344,10 +504,15 @@ export default function ImageLightbox() {
     }
   };
 
-  // Lock page scroll while lightbox is open
+  // Lightbox 接管页面滚轮，但显式标记的嵌套面板仍可消费自己的滚动，且不会在边界穿透到底层页面。
   useEffect(() => {
     if (!isOpen) return;
-    const prevent = (e: WheelEvent) => e.preventDefault();
+    const prevent = (event: WheelEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      const scrollRegion = target?.closest<HTMLElement>('[data-lightbox-scroll-region]');
+      if (scrollRegion && canConsumeLightboxWheel(scrollRegion, event.deltaY)) return;
+      event.preventDefault();
+    };
     document.addEventListener('wheel', prevent, { passive: false });
     return () => document.removeEventListener('wheel', prevent);
   }, [isOpen]);
@@ -378,7 +543,7 @@ export default function ImageLightbox() {
             {/* Backdrop */}
             <div className="fixed inset-0 bg-black/90 backdrop-blur-sm" />
             {/* Content */}
-            <FloatingFocusManager context={context} getInsideElements={getLive2DFocusNodes}>
+            <FloatingFocusManager context={context} getInsideElements={getLive2DFocusNodes} disabled={Boolean(promptPicker)}>
               <div ref={refs.setFloating} className="fixed inset-0 flex items-center justify-center" {...getFloatingProps()}>
                 {/* Toolbar: vertical right on desktop, horizontal top on tablet */}
                 <motion.div
@@ -508,9 +673,47 @@ export default function ImageLightbox() {
                       label={downloadAction.opensExternally ? t('image.openOriginal') : t('image.download')}
                     />
                   )}
+                  {currentLocate && <ToolbarButton icon="ri:focus-3-line" label={t('image.locate')} onClick={handleLocate} />}
                   <div className="h-px tablet:h-5 tablet:w-px w-5 shrink-0 bg-white/20" />
                   <ToolbarButton icon="ri:close-line" label={t('image.close')} onClick={() => closeModal()} />
                 </motion.div>
+
+                <Dialog open={Boolean(promptPicker)} onOpenChange={(open) => !open && setPromptPicker(null)}>
+                  <DialogContent
+                    stableScroll
+                    className="z-[70] flex max-h-[min(82dvh,46rem)] max-w-2xl flex-col gap-0 overflow-hidden bg-white p-0 dark:bg-gray-950"
+                    overlayClassName="z-[70] bg-black/65"
+                    onEscapeKeyDown={(event) => {
+                      event.preventDefault();
+                      setPromptPicker(null);
+                    }}
+                    onPointerDownOutside={(event) => {
+                      event.preventDefault();
+                      setPromptPicker(null);
+                    }}
+                  >
+                    {promptPicker && currentCopy?.getPrompts && (
+                      <StyleGalleryPromptChooser
+                        key={getStyleGalleryPromptChooserKey(promptPicker.key, promptPicker.prompts, promptPicker.failed)}
+                        prompts={promptPicker.prompts}
+                        failed={promptPicker.failed}
+                        labels={{
+                          title: t('gallery.promptChooserTitle'),
+                          description: t('gallery.promptChooserDescription'),
+                          promptOption: t('gallery.promptOption'),
+                          unknownModel: t('gallery.promptModelUnknown'),
+                          loading: t('gallery.promptLoading'),
+                          loadFailed: t('gallery.promptLoadFailed'),
+                          copy: t('gallery.copy'),
+                          copied: t('gallery.copied'),
+                        }}
+                        onRetry={() => void handleCopy()}
+                        onCopy={copyPromptChoice}
+                        reduceMotion={shouldReduceMotion}
+                      />
+                    )}
+                  </DialogContent>
+                </Dialog>
 
                 {/* Image viewport with zoom/pan */}
                 <div
@@ -540,7 +743,12 @@ export default function ImageLightbox() {
                         cursor: state.scale > 1.05 ? 'grab' : 'zoom-in',
                       }}
                     >
-                      <LightboxImageStage key={currentImageKey} image={currentImage} shouldReduceMotion={shouldReduceMotion} />
+                      <LightboxImageStage
+                        key={`${currentImageKey}:${currentImage.resolvedSrc ?? ''}`}
+                        image={currentImage}
+                        shouldReduceMotion={shouldReduceMotion}
+                        onResolvedSourceFailure={handleResolvedSourceFailure}
+                      />
                     </motion.div>
                   </motion.div>
                 </div>

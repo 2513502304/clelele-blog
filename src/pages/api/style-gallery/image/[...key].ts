@@ -1,13 +1,8 @@
 import { createStyleGallerySignedImageUrl, getStyleGallerySignedImageRedirectCacheSeconds } from '@lib/hf-s3-presign';
+import { isAllowedStyleGalleryImageKey } from '@lib/style-gallery-image-key';
 import type { APIRoute } from 'astro';
 
 export const prerender = false;
-
-function isAllowedImageKey(key: string): boolean {
-  if (key.includes('..') || key.includes('\\')) return false;
-  if (/^\/?(source|thumb)\/[a-f0-9]{12}\.(jpg|jpeg|png|webp)$/i.test(key)) return true;
-  return /^\/?examples\/images\/[a-f0-9]{64}\.(jpg|jpeg|png|webp)$/i.test(key);
-}
 
 const IMAGE_TRANSFER_TIMEOUT_MS = 60_000;
 
@@ -43,7 +38,7 @@ async function proxyImage(signedUrl: string, downloadFilename?: string): Promise
 
 export const GET: APIRoute = async ({ params, request }) => {
   const key = params.key;
-  if (!key || !isAllowedImageKey(key)) {
+  if (!key || !isAllowedStyleGalleryImageKey(key)) {
     return new Response('Invalid style gallery image key.', { status: 400 });
   }
 

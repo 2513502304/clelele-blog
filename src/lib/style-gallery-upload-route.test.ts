@@ -17,7 +17,7 @@ function createCatalog(): string {
     version: 3,
     updatedAt: '2026-07-19T00:00:00.000Z',
     tags: ['style-prompt'],
-    modelTargets: ['GPT-Image2'],
+    modelTargets: ['GPT-Image', 'Nano Banana', 'PixAI', 'Midjourney', 'NovelAI', 'Flux'],
     items: [
       {
         slug,
@@ -25,6 +25,9 @@ function createCatalog(): string {
         date: '2026-07-19T00:00:00.000Z',
         sourceImage: '/api/style-gallery/image/source/aaaaaaaaaaaa.jpg',
         prompt: 'Reusable style prompt',
+        additionalPrompts: [],
+        promptCount: 1,
+        promptRevision: 'c'.repeat(64),
         imageHash: 'a'.repeat(64),
         imageCount: 1,
         exampleCount: 0,
@@ -97,7 +100,7 @@ describe('style gallery upload route', () => {
       const directHash = sha256(directImage);
       const directUrl = new URL(`https://example.test/api/style-gallery/examples/${slug}/upload`);
       directUrl.search = new URLSearchParams({
-        platform: 'gpt-image2',
+        platform: 'gpt-image',
         action: 'direct',
         imageHash: directHash,
       }).toString();
@@ -114,7 +117,7 @@ describe('style gallery upload route', () => {
       const boundaryHash = sha256(boundaryImage);
       const boundaryUrl = new URL(`https://example.test/api/style-gallery/examples/${slug}/upload`);
       boundaryUrl.search = new URLSearchParams({
-        platform: 'gpt-image2',
+        platform: 'gpt-image',
         action: 'direct',
         imageHash: boundaryHash,
       }).toString();
@@ -125,7 +128,7 @@ describe('style gallery upload route', () => {
       const oversizedDirectImage = new Uint8Array(STYLE_GALLERY_DIRECT_UPLOAD_MAX_SIZE + 1);
       const oversizedUrl = new URL(`https://example.test/api/style-gallery/examples/${slug}/upload`);
       oversizedUrl.search = new URLSearchParams({
-        platform: 'gpt-image2',
+        platform: 'gpt-image',
         action: 'direct',
         imageHash: sha256(oversizedDirectImage),
       }).toString();
@@ -140,7 +143,7 @@ describe('style gallery upload route', () => {
       for (const [index, part] of parts.entries()) {
         const url = new URL(`https://example.test/api/style-gallery/examples/${slug}/upload`);
         url.search = new URLSearchParams({
-          platform: 'gpt-image2',
+          platform: 'gpt-image',
           action: 'chunk',
           uploadId,
           partIndex: index.toString(),
@@ -151,7 +154,7 @@ describe('style gallery upload route', () => {
         assert.equal(response.status, 200, await response.text());
       }
 
-      const completeUrl = new URL(`https://example.test/api/style-gallery/examples/${slug}/upload?platform=gpt-image2`);
+      const completeUrl = new URL(`https://example.test/api/style-gallery/examples/${slug}/upload?platform=gpt-image`);
       const imageHash = sha256(image);
       const completeResponse = await callUpload(
         completeUrl,

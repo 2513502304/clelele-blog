@@ -30,6 +30,18 @@ export function useProgressiveList<T>(items: T[], options: ProgressiveListOption
     });
   }, [batchSize, initialCount, items.length, resetKey]);
 
+  const revealThrough = useCallback(
+    (index: number) => {
+      if (index < 0 || index >= items.length) return;
+      setState((current) => {
+        const currentCount = current.resetKey === resetKey ? current.count : initialCount;
+        const requiredCount = Math.min(items.length, Math.ceil((index + 1) / batchSize) * batchSize);
+        return { resetKey, count: Math.max(currentCount, requiredCount) };
+      });
+    },
+    [batchSize, initialCount, items.length, resetKey],
+  );
+
   useEffect(() => {
     const target = loadMoreRef.current;
     if (!hasMore || !target || typeof IntersectionObserver === 'undefined') return;
@@ -44,5 +56,5 @@ export function useProgressiveList<T>(items: T[], options: ProgressiveListOption
   }, [hasMore, loadMore, rootMargin]);
 
   const visibleItems = useMemo(() => items.slice(0, visibleCount), [items, visibleCount]);
-  return { hasMore, loadMore, loadMoreRef, visibleItems };
+  return { hasMore, loadMore, loadMoreRef, revealThrough, visibleItems };
 }

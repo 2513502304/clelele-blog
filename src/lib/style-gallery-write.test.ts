@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import type { StyleGalleryExampleIndex } from '@/types/style-gallery';
+import type { StyleGalleryExampleIndex, StyleGalleryExampleIndexEntry } from '@/types/style-gallery';
 import { mergeStyleGalleryExampleIndexRollback } from './style-gallery-write';
 
-function entry(id: string, likedBy: number[] = []) {
+function entry(id: string, likedBy: number[] = []): StyleGalleryExampleIndexEntry {
   return {
     id,
     src: `/api/style-gallery/image/examples/images/${id}.webp`,
-    model: 'GPT-Image2',
+    model: 'GPT-Image',
     uploadedAt: '2026-07-22T00:00:00.000Z',
     likedBy,
   };

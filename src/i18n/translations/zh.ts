@@ -120,7 +120,7 @@ export const uiStrings = {
   'gallery.title': 'Image Style Prompt Gallery',
   'gallery.kicker': 'Reference image to reusable prompt',
   'gallery.description':
-    '收藏从参考图反推出的中文风格提示词，每张图都对应一段可直接复制到 GPT-Image2、Nano Banana、PixAI、Midjourney 或 Flux 的 prompt。',
+    '收藏从参考图反推出的中文风格提示词，每张图都对应一段可直接复制到 GPT-Image、Nano Banana、PixAI、Midjourney、NovelAI 或 Flux 的 prompt。',
   'gallery.items': 'style prompts',
   'gallery.prompt': 'Prompt',
   'gallery.promptOption': 'Prompt {index}',
@@ -284,6 +284,7 @@ export const uiStrings = {
   'image.deleteConfirm': '确定永久删除“{name}”吗？',
   'image.download': '下载图片',
   'image.openOriginal': '打开原图',
+  'image.locate': '定位到页面中的当前图片',
   'image.close': '关闭',
   'image.prev': '上一张',
   'image.next': '下一张',

@@ -12,6 +12,20 @@ export function getStyleGalleryPromptId(prompt: string): string {
 }
 
 /**
+ * 为 catalog 中未内联的 prompt 元数据生成稳定修订号。
+ * 数量相同但模型、导入时间或正文被修正时，客户端与 CDN 都会改用新的缓存 URL。
+ */
+export function getStyleGalleryPromptRevision(prompts: readonly StyleGalleryPromptVariant[]): string {
+  const canonical = prompts.map(({ id, prompt, model, importedAt }) => ({
+    id,
+    prompt: normalizeStyleGalleryPrompt(prompt),
+    model: model?.trim() || null,
+    importedAt,
+  }));
+  return createHash('sha256').update(JSON.stringify(canonical)).digest('hex');
+}
+
+/**
  * 合并 prompt 时以规范化全文去重并保持首次出现顺序。
  * 默认 prompt 因此稳定为数组首项，不会因后续模型重新提取而悄悄改变。
  */

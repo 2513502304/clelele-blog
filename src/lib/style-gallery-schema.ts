@@ -1,9 +1,30 @@
 import { z } from 'zod';
 import type { StoredStyleGalleryItem, StyleGalleryCatalogItem } from '@/types/style-gallery';
-import { getPrimaryStyleGalleryPrompt, getStyleGalleryPromptId, normalizeStyleGalleryPrompt } from './style-gallery-prompts';
+import { STYLE_GALLERY_PLATFORMS, type StyleGalleryPlatformLabel } from './style-gallery-platforms';
+import {
+  getPrimaryStyleGalleryPrompt,
+  getStyleGalleryPromptId,
+  getStyleGalleryPromptRevision,
+  normalizeStyleGalleryPrompt,
+} from './style-gallery-prompts';
 
 const imagePathSchema = z.string().regex(/^\/api\/style-gallery\/image\/(source|thumb)\/[a-zA-Z0-9._-]+$/);
 const imageHashSchema = z.string().regex(/^[a-f0-9]{64}$/i);
+const promptRevisionSchema = z.string().regex(/^[a-f0-9]{64}$/i);
+const platformLabels = STYLE_GALLERY_PLATFORMS.map((platform) => platform.label) as [
+  StyleGalleryPlatformLabel,
+  ...StyleGalleryPlatformLabel[],
+];
+export const styleGalleryPlatformLabelSchema = z.enum(platformLabels);
+const styleGalleryModelTargetsSchema = z.array(styleGalleryPlatformLabelSchema).superRefine((targets, context) => {
+  const expected = STYLE_GALLERY_PLATFORMS.map((platform) => platform.label);
+  if (targets.length !== expected.length || targets.some((target, index) => target !== expected[index])) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Model targets must match the canonical platform order.',
+    });
+  }
+});
 
 export const styleGalleryImageSchema = z.object({
   sourceImage: imagePathSchema,
@@ -16,7 +37,7 @@ export const styleGalleryExampleSchema = z.object({
   id: z.string().regex(/^[a-z0-9-]+$/i),
   src: z.string().min(1),
   alt: z.string().min(1),
-  model: z.string().min(1),
+  model: styleGalleryPlatformLabelSchema,
   note: z.string().optional(),
   uploadedAt: z.string().datetime({ offset: true }),
   imageHash: imageHashSchema,
@@ -114,6 +135,7 @@ export const styleGalleryCatalogItemSchema = z
     prompt: z.string().min(1),
     additionalPrompts: z.array(z.string().trim().min(1)).default([]),
     promptCount: z.number().int().positive().default(1),
+    promptRevision: promptRevisionSchema,
     imageHash: imageHashSchema,
     imageCount: z.number().int().positive(),
     exampleCount: z.number().int().nonnegative(),
@@ -139,7 +161,7 @@ export const styleGalleryCatalogItemSchema = z
 const styleGalleryCatalogFields = {
   updatedAt: z.string().datetime({ offset: true }),
   tags: z.array(z.string()),
-  modelTargets: z.array(z.string()),
+  modelTargets: styleGalleryModelTargetsSchema,
   items: z.array(styleGalleryCatalogItemSchema),
 };
 
@@ -185,6 +207,7 @@ export function toStyleGalleryCatalogItem(
     prompt: primaryPrompt.prompt,
     additionalPrompts: item.prompts.slice(1).map((variant) => variant.prompt),
     promptCount: item.prompts.length,
+    promptRevision: getStyleGalleryPromptRevision(item.prompts),
     imageHash: item.imageHash,
     imageCount: item.images.length,
     exampleCount,

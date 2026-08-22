@@ -17,6 +17,7 @@ import {
 } from '@lib/style-gallery-examples';
 import { getStyleGalleryPlatform } from '@lib/style-gallery-platforms';
 import { STYLE_GALLERY_MUTATION_BATCH_SIZE } from '@lib/style-gallery-request-batches';
+import { styleGalleryExampleSchema } from '@lib/style-gallery-schema';
 import { getStoredStyleGalleryItem, getStyleGalleryExampleIndex } from '@lib/style-gallery-store';
 import { updateStyleGalleryItemExamples } from '@lib/style-gallery-write';
 import type { APIRoute } from 'astro';
@@ -26,15 +27,6 @@ import type { StyleGalleryExample } from '@/types/style-gallery';
 export const prerender = false;
 
 const imageHashSchema = z.string().regex(/^[a-f0-9]{64}$/i);
-const exampleSchema = z.object({
-  id: z.string().regex(/^[a-z0-9-]+$/i),
-  src: z.string().min(1),
-  alt: z.string().min(1),
-  model: z.string().min(1),
-  note: z.string().optional(),
-  uploadedAt: z.string().datetime({ offset: true }),
-  imageHash: imageHashSchema,
-});
 const prepareSchema = z.object({
   token: z.string().optional(),
   action: z.literal('prepare'),
@@ -52,7 +44,8 @@ const prepareSchema = z.object({
     .min(1)
     .max(MAX_STYLE_GALLERY_EXAMPLE_FILES),
 });
-const examplesSchema = z.array(exampleSchema).min(1).max(STYLE_GALLERY_MUTATION_BATCH_SIZE);
+// merge/cleanup 也重新校验服务端持久化契约，客户端不能把任意平台标签写入 HF metadata。
+const examplesSchema = z.array(styleGalleryExampleSchema).min(1).max(STYLE_GALLERY_MUTATION_BATCH_SIZE);
 const mergeSchema = z.object({ token: z.string().optional(), action: z.literal('merge'), examples: examplesSchema });
 const cleanupSchema = z.object({ token: z.string().optional(), action: z.literal('cleanup'), examples: examplesSchema });
 const idsSchema = z

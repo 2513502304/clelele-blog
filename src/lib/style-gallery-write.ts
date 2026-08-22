@@ -485,7 +485,8 @@ function assertCatalogContains(catalog: StyleGalleryCatalog, items: StoredStyleG
   const savedByHash = new Map(catalog.items.map((item) => [item.imageHash, item]));
   const missing = items.filter((item) => {
     const saved = savedByHash.get(item.imageHash);
-    return !saved || saved.promptCount < item.prompts.length;
+    const expected = toStyleGalleryCatalogItem(item);
+    return !saved || saved.promptRevision !== expected.promptRevision;
   });
   if (missing.length) throw new Error(`Catalog verification failed for ${missing.length} style gallery item(s).`);
 }

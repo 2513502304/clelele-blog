@@ -11,6 +11,7 @@
  * - Type-safe modal data
  */
 
+import type { StyleGalleryPromptChoice } from '@lib/style-gallery-prompt-client';
 import { atom, computed } from 'nanostores';
 
 /**
@@ -70,6 +71,9 @@ export interface ImageLightboxCopyAction {
   copiedLabel: string;
   failedLabel: string;
   getText: () => string | Promise<string>;
+  /** 仅多 Prompt Gallery 图片提供；普通图片与单 Prompt 继续走快速复制。 */
+  promptCount?: number;
+  getPrompts?: () => Promise<StyleGalleryPromptChoice[]>;
 }
 
 /** 可选的受保护删除动作；调用方负责 API 鉴权与业务状态同步。 */
@@ -84,15 +88,23 @@ export interface ImageLightboxDeleteAction {
   run: () => Promise<boolean>;
 }
 
+/** 用户主动要求离开 lightbox 并定位到页面中的当前图片；默认关闭不会执行。 */
+export interface ImageLightboxLocateAction {
+  run: () => void;
+}
+
 export interface ImageLightboxImage {
   id?: string;
   src: string;
+  /** 批量签名得到的 HF 直连地址；保留 src 作为下载地址和签名失败回退。 */
+  resolvedSrc?: string;
   /** 已在触发页面显示过的低成本预览图；高清原图加载完成前用于避免空白等待。 */
   previewSrc?: string;
   alt: string;
   like?: ImageLightboxLikeAction;
   copy?: ImageLightboxCopyAction;
   delete?: ImageLightboxDeleteAction;
+  locate?: ImageLightboxLocateAction;
 }
 
 export interface ImageLightboxData {
@@ -195,6 +207,40 @@ export function navigateImage(direction: 1 | -1): boolean {
     type: 'imageLightbox',
     data: { ...data, src: target.src, alt: target.alt, currentIndex: newIndex },
   });
+  return true;
+}
+
+/** 批量签名完成后一次更新对应导航项，避免逐张 set 导致 lightbox 连续重渲染。 */
+export function updateImageLightboxResolvedSources(resolved: Readonly<Record<string, string>>): boolean {
+  const modal = $activeModal.get();
+  if (modal.type !== 'imageLightbox') return false;
+  const data = modal.data as ImageLightboxData;
+  let changed = false;
+  const images = data.images.map((image) => {
+    const resolvedSrc = resolved[image.src];
+    if (!resolvedSrc || resolvedSrc === image.resolvedSrc) return image;
+    changed = true;
+    return { ...image, resolvedSrc };
+  });
+  if (!changed) return false;
+  $activeModal.set({ type: 'imageLightbox', data: { ...data, images } });
+  return true;
+}
+
+/** 仅移除当前失败的签名值，使图片立即回退到稳定同源地址，并允许预取逻辑重新签名。 */
+export function clearImageLightboxResolvedSource(source: string, failedUrl: string): boolean {
+  const modal = $activeModal.get();
+  if (modal.type !== 'imageLightbox') return false;
+  const data = modal.data as ImageLightboxData;
+  let changed = false;
+  const images = data.images.map((image) => {
+    if (image.src !== source || image.resolvedSrc !== failedUrl) return image;
+    changed = true;
+    const { resolvedSrc: _resolvedSrc, ...fallbackImage } = image;
+    return fallbackImage;
+  });
+  if (!changed) return false;
+  $activeModal.set({ type: 'imageLightbox', data: { ...data, images } });
   return true;
 }
 

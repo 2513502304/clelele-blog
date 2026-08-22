@@ -2,15 +2,28 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   getStyleGalleryPromptCacheKey,
+  getStyleGalleryPromptChooserKey,
   groupStyleGalleryPromptsByModel,
   toggleStyleGalleryPromptModel,
 } from './style-gallery-prompt-groups';
 
 describe('style gallery prompt groups', () => {
-  it('versions prompt cache entries when the catalog prompt count changes', () => {
+  it('versions prompt cache entries when prompt metadata changes without changing its count', () => {
     assert.notEqual(
-      getStyleGalleryPromptCacheKey('2026-08-08-161b8ebf9dc1', 1),
-      getStyleGalleryPromptCacheKey('2026-08-08-161b8ebf9dc1', 2),
+      getStyleGalleryPromptCacheKey('2026-08-08-161b8ebf9dc1', 'a'.repeat(64)),
+      getStyleGalleryPromptCacheKey('2026-08-08-161b8ebf9dc1', 'b'.repeat(64)),
+    );
+  });
+
+  it('remounts chooser state across loading, failure, and prompt identity changes', () => {
+    const base = 'item:revision';
+    const first = [{ id: 'prompt-a', model: 'terra', importedAt: '2026-08-22' }];
+
+    assert.notEqual(getStyleGalleryPromptChooserKey(base, null, false), getStyleGalleryPromptChooserKey(base, null, true));
+    assert.notEqual(getStyleGalleryPromptChooserKey(base, null, false), getStyleGalleryPromptChooserKey(base, first, false));
+    assert.notEqual(
+      getStyleGalleryPromptChooserKey(base, first, false),
+      getStyleGalleryPromptChooserKey(base, [{ ...first[0], model: 'sol' }], false),
     );
   });
 

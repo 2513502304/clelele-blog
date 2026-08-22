@@ -86,10 +86,15 @@ DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 interface DialogContentProps extends React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> {
   showClose?: boolean;
   overlayClassName?: string;
+  /**
+   * 长文本等内部滚动场景使用稳定坐标与淡入动画。默认的缩放动画会让 Dialog 在动画结束后仍处于
+   * transform 合成层，部分浏览器滚动大段文字时会持续重新栅格化，表现为滚轮卡顿。
+   */
+  stableScroll?: boolean;
 }
 
 const DialogContent = forwardRef<React.ComponentRef<typeof DialogPrimitive.Content>, DialogContentProps>(
-  ({ className, children, showClose = true, overlayClassName, ...props }, ref) => {
+  ({ className, children, showClose = true, overlayClassName, stableScroll = false, ...props }, ref) => {
     const context = useContext(DialogContext);
     const isOpen = context?.isOpen ?? false;
 
@@ -119,12 +124,13 @@ const DialogContent = forwardRef<React.ComponentRef<typeof DialogPrimitive.Conte
                 className={cn(
                   'fixed top-1/2 left-1/2 z-50 grid w-full max-w-lg gap-4 rounded-xl border bg-background p-6 shadow-lg',
                   'duration-200',
+                  stableScroll && '[translate:-50%_-50%]',
                   className,
                 )}
-                initial={{ opacity: 0, scale: 0.95, x: '-50%', y: '-48%' }}
-                animate={{ opacity: 1, scale: 1, x: '-50%', y: '-50%' }}
-                exit={{ opacity: 0, scale: 0.95, x: '-50%', y: '-48%' }}
-                transition={animation.spring.default}
+                initial={stableScroll ? { opacity: 0 } : { opacity: 0, scale: 0.95, x: '-50%', y: '-48%' }}
+                animate={stableScroll ? { opacity: 1 } : { opacity: 1, scale: 1, x: '-50%', y: '-50%' }}
+                exit={stableScroll ? { opacity: 0 } : { opacity: 0, scale: 0.95, x: '-50%', y: '-48%' }}
+                transition={stableScroll ? { duration: animation.duration.fast / 1000 } : animation.spring.default}
               >
                 {children}
                 {showClose && (

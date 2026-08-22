@@ -3,7 +3,13 @@ import StyleGalleryDateRangeFilter from '@components/style-gallery/StyleGalleryD
 import { Icon } from '@iconify/react';
 import { createStyleGalleryDateRangeMatcher, getStyleGalleryDateKey } from '@lib/style-gallery-date-range';
 import type { StyleGalleryDateRangeLabels } from '@lib/style-gallery-date-range-labels';
-import { createStyleGallerySourceLightboxData, type StyleGalleryLightboxCopyLabels } from '@lib/style-gallery-lightbox-actions';
+import {
+  createStyleGallerySourceLightboxData,
+  getStyleGalleryLightboxElementId,
+  locateStyleGalleryElement,
+  type StyleGalleryLightboxCopyLabels,
+} from '@lib/style-gallery-lightbox-actions';
+import { loadStyleGalleryPromptChoices } from '@lib/style-gallery-prompt-client';
 import { getSelectedStyleGalleryPrompt } from '@lib/style-gallery-prompt-selection';
 import { openModal } from '@store/modal';
 import { parseAsString, parseAsStringLiteral, useQueryState, useQueryStates } from 'nuqs';
@@ -115,6 +121,7 @@ function StyleGalleryImageIndexContent({
     hasMore,
     loadMore,
     loadMoreRef,
+    revealThrough,
     visibleItems: renderedItems,
   } = useProgressiveList(visibleItems, {
     initialCount: INITIAL_INDEX_ITEM_COUNT,
@@ -131,6 +138,18 @@ function StyleGalleryImageIndexContent({
         previewSrc: candidate.thumbnailImage ?? candidate.sourceImage,
         alt: candidate.sourceImageAlt ?? candidate.title,
         getPrompt: () => getSelectedStyleGalleryPrompt(candidate.slug) ?? candidate.prompt,
+        promptOptions:
+          candidate.promptCount > 1
+            ? {
+                promptCount: candidate.promptCount,
+                getPrompts: () => loadStyleGalleryPromptChoices(candidate.slug, candidate.promptRevision),
+              }
+            : undefined,
+        locate: () => {
+          const targetIndex = visibleItems.findIndex((entry) => entry.slug === candidate.slug);
+          revealThrough(targetIndex);
+          locateStyleGalleryElement(getStyleGalleryLightboxElementId('index-source', candidate.slug));
+        },
       })),
       item.slug,
       lightboxCopyLabels,
@@ -202,6 +221,8 @@ function StyleGalleryImageIndexContent({
             {renderedItems.map((item, index) => (
               <div
                 key={item.slug}
+                id={getStyleGalleryLightboxElementId('index-source', item.slug)}
+                tabIndex={-1}
                 className="group relative aspect-square min-w-0 overflow-hidden rounded-md border border-border bg-muted shadow-sm transition focus-within:z-10 focus-within:ring-2 focus-within:ring-primary hover:z-10 hover:-translate-y-0.5 hover:border-primary/60 hover:shadow-md"
               >
                 <a

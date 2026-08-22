@@ -1,13 +1,15 @@
 /** 平台数组是标签、筛选和分组排序的唯一顺序来源。 */
 export const STYLE_GALLERY_PLATFORMS = [
-  { label: 'GPT-Image2', slug: 'gpt-image2' },
+  { label: 'GPT-Image', slug: 'gpt-image' },
   { label: 'Nano Banana', slug: 'nano-banana' },
   { label: 'PixAI', slug: 'pixai' },
   { label: 'Midjourney', slug: 'midjourney' },
+  { label: 'NovelAI', slug: 'novelai' },
   { label: 'Flux', slug: 'flux' },
 ] as const;
 
 export type StyleGalleryPlatform = (typeof STYLE_GALLERY_PLATFORMS)[number];
+export type StyleGalleryPlatformLabel = StyleGalleryPlatform['label'];
 
 /** 同时接受稳定 slug 和展示名称，便于 API 与历史元数据互操作。 */
 export function getStyleGalleryPlatform(value: string): StyleGalleryPlatform | undefined {

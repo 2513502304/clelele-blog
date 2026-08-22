@@ -9,10 +9,13 @@ import { getStyleGalleryExampleContentType } from '@lib/style-gallery-image-type
 import {
   createStyleGalleryCopyAction,
   createStyleGalleryDeleteAction,
+  getStyleGalleryLightboxElementId,
+  locateStyleGalleryElement,
   STYLE_GALLERY_UPLOAD_TOKEN_STORAGE_KEY,
   type StyleGalleryLightboxActionLabels,
 } from '@lib/style-gallery-lightbox-actions';
 import { groupStyleGalleryExamplesByPlatform, STYLE_GALLERY_PLATFORMS } from '@lib/style-gallery-platforms';
+import { loadStyleGalleryPromptChoices } from '@lib/style-gallery-prompt-client';
 import {
   getSelectedStyleGalleryPrompt,
   STYLE_GALLERY_PROMPT_SELECTED_EVENT,
@@ -37,6 +40,8 @@ interface StyleGalleryExamplesProps {
   slug: string;
   title: string;
   prompt: string;
+  promptCount: number;
+  promptRevision: string;
   initialExamples: StyleGalleryExampleView[];
   uploadsEnabled: boolean;
   likeLabels: StyleGalleryLikeLabels;
@@ -283,6 +288,8 @@ export default function StyleGalleryExamples({
   slug,
   title,
   prompt,
+  promptCount,
+  promptRevision,
   initialExamples,
   uploadsEnabled,
   likeLabels,
@@ -347,7 +354,11 @@ export default function StyleGalleryExamples({
       src: candidate.src,
       alt: candidate.alt ?? candidate.model ?? 'Generated example',
       like: createStyleGalleryLightboxLikeAction(candidate.id, likes, likeLabels),
-      copy: createStyleGalleryCopyAction(() => activePrompt.current, lightboxActionLabels),
+      copy: createStyleGalleryCopyAction(
+        () => activePrompt.current,
+        lightboxActionLabels,
+        promptCount > 1 ? { promptCount, getPrompts: () => loadStyleGalleryPromptChoices(slug, promptRevision) } : undefined,
+      ),
       delete: createStyleGalleryDeleteAction(
         candidate.id,
         candidate.alt ?? candidate.model ?? 'generated example',
@@ -355,6 +366,9 @@ export default function StyleGalleryExamples({
         () => deleteLightboxExample(candidate.id),
         lightboxActionLabels,
       ),
+      locate: {
+        run: () => locateStyleGalleryElement(getStyleGalleryLightboxElementId('detail-example', candidate.id)),
+      },
     }));
     const currentIndex = Math.max(
       0,
@@ -854,6 +868,8 @@ export default function StyleGalleryExamples({
                   return (
                     <figure
                       key={example.src}
+                      id={getStyleGalleryLightboxElementId('detail-example', example.id)}
+                      tabIndex={-1}
                       className="overflow-hidden rounded-lg border border-gray-100 bg-gray-50 dark:border-gray-800 dark:bg-gray-900"
                     >
                       <div className="relative">
