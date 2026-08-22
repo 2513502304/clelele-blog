@@ -7,7 +7,9 @@ import {
   createStyleGalleryCopyAction,
   createStyleGalleryDeleteAction,
   deleteStyleGalleryExample,
+  getStyleGalleryLightboxElementId,
   loadStyleGalleryPrompt,
+  locateStyleGalleryElement,
   STYLE_GALLERY_UPLOAD_TOKEN_STORAGE_KEY,
   type StyleGalleryLightboxActionLabels,
 } from '@lib/style-gallery-lightbox-actions';
@@ -173,6 +175,13 @@ function StyleGalleryExamplesOverviewContent({
         () => deleteOverviewExample(candidate.sourceSlug, candidate.id),
         lightboxActionLabels,
       ),
+      locate: {
+        run: () => {
+          const targetIndex = filtered.findIndex((item) => item.id === candidate.id);
+          revealThrough(targetIndex);
+          locateStyleGalleryElement(getStyleGalleryLightboxElementId('overview-example', candidate.id));
+        },
+      },
     }));
     const currentIndex = Math.max(
       0,
@@ -185,7 +194,7 @@ function StyleGalleryExamplesOverviewContent({
       currentIndex,
     });
   }
-  const { hasMore, loadMore, loadMoreRef, visibleItems } = useProgressiveList(filtered, {
+  const { hasMore, loadMore, loadMoreRef, revealThrough, visibleItems } = useProgressiveList(filtered, {
     initialCount: INITIAL_EXAMPLE_COUNT,
     batchSize: EXAMPLE_BATCH_SIZE,
     resetKey: `${platform}\u0000${query.trim().toLowerCase()}\u0000${dateFrom}\u0000${dateTo}\u0000${sortKey}\u0000${sortDirection}`,
@@ -297,6 +306,8 @@ function StyleGalleryExamplesOverviewContent({
             {visibleItems.map((example, index) => (
               <figure
                 key={example.id}
+                id={getStyleGalleryLightboxElementId('overview-example', example.id)}
+                tabIndex={-1}
                 className="flex h-full w-full min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-background shadow-sm"
               >
                 <div className="relative">

@@ -14,6 +14,8 @@ import { useZoomPan } from '@hooks/useZoomPan';
 import { Icon } from '@iconify/react';
 import { createImageLightboxDownloadAction } from '@lib/image-lightbox-download';
 import { getLive2DFocusNodes, isLive2DOwnedTarget } from '@lib/live2d/focus-scope';
+import { resolveStyleGalleryImageUrls } from '@lib/style-gallery-image-client';
+import { createLightboxPrefetchPlan } from '@lib/style-gallery-lightbox-prefetch';
 import { useStore } from '@nanostores/react';
 import {
   $imageLightboxData,
@@ -23,9 +25,10 @@ import {
   navigateImage,
   openModal,
   removeImageFromLightbox,
+  updateImageLightboxResolvedSources,
 } from '@store/modal';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { LightboxLikeButton, NavButton, ToolbarButton, ToolbarLink, ZoomHint } from './ImageLightboxControls';
 
 const ZOOM_SENSITIVITY_STORAGE_KEY = 'image-lightbox-zoom-sensitivity';
@@ -44,7 +47,8 @@ interface LightboxImageStageProps {
  */
 function LightboxImageStage({ image, shouldReduceMotion }: LightboxImageStageProps) {
   const { t } = useTranslation();
-  const previewSrc = image.previewSrc !== image.src ? image.previewSrc : undefined;
+  const sourceSrc = image.resolvedSrc ?? image.src;
+  const previewSrc = image.previewSrc !== sourceSrc ? image.previewSrc : undefined;
   const [sourceState, setSourceState] = useState<'loading' | 'loaded' | 'failed'>('loading');
   const [previewFailed, setPreviewFailed] = useState(false);
 
@@ -88,7 +92,7 @@ function LightboxImageStage({ image, shouldReduceMotion }: LightboxImageStagePro
         />
       )}
       <motion.img
-        src={image.src}
+        src={sourceSrc}
         alt={image.alt}
         loading="eager"
         fetchPriority="high"
@@ -134,6 +138,7 @@ export default function ImageLightbox() {
   const currentLike = currentImage?.like;
   const currentCopy = currentImage?.copy;
   const currentDelete = currentImage?.delete;
+  const currentLocate = currentImage?.locate;
   const downloadAction = currentImage ? createImageLightboxDownloadAction(currentImage.src) : null;
   const currentImageKey = currentImage?.id ?? `${data?.currentIndex ?? 0}:${currentImage?.src ?? ''}`;
   const [rotation, setRotation] = useState(0);
@@ -163,6 +168,13 @@ export default function ImageLightbox() {
     reset();
     closeModal();
   }, [reset]);
+
+  const handleLocate = useCallback(() => {
+    if (!currentLocate) return;
+    reset();
+    closeModal();
+    currentLocate.run();
+  }, [currentLocate, reset]);
   const backdropPointerHandlers = useBackdropClickDismiss(dismissFromBackdrop);
 
   const handleZoomIn = useCallback(() => {
@@ -332,6 +344,53 @@ export default function ImageLightbox() {
       preload.src = previewSrc;
     }
   }, [nextPreviewSrc, previousPreviewSrc]);
+
+  const prefetchPlan = useMemo(
+    () => createLightboxPrefetchPlan(data?.images.length ?? 0, data?.currentIndex ?? -1),
+    [data?.currentIndex, data?.images.length],
+  );
+  const unresolvedSignSources = useMemo(
+    () =>
+      prefetchPlan.signIndexes
+        .map((index) => data?.images[index])
+        .filter((image): image is ImageLightboxImage => Boolean(image && !image.resolvedSrc))
+        .map((image) => image.src),
+    [data?.images, prefetchPlan.signIndexes],
+  );
+  const unresolvedSignKey = unresolvedSignSources.join('\n');
+
+  // 预签名只请求尚未解析的窗口；失败时保留单图 302 路径，网络波动不会阻断导航。
+  useEffect(() => {
+    if (!unresolvedSignKey) return;
+    let active = true;
+    void resolveStyleGalleryImageUrls(unresolvedSignSources)
+      .then((resolved) => {
+        if (active) updateImageLightboxResolvedSources(resolved);
+      })
+      .catch((error) => console.warn('[image-lightbox] Failed to pre-sign navigation window.', error));
+    return () => {
+      active = false;
+    };
+  }, [unresolvedSignKey, unresolvedSignSources]);
+
+  const preloadSources = useMemo(
+    () =>
+      prefetchPlan.preloadIndexes
+        .map((index) => data?.images[index]?.resolvedSrc)
+        .filter((source): source is string => Boolean(source)),
+    [data?.images, prefetchPlan.preloadIndexes],
+  );
+  const preloadKey = preloadSources.join('\n');
+
+  // 浏览器并发解码临近高清图；数量有上限，避免一次预载整个大图库。
+  useEffect(() => {
+    if (!preloadKey) return;
+    for (const source of preloadSources) {
+      const preload = new Image();
+      preload.decoding = 'async';
+      preload.src = source;
+    }
+  }, [preloadKey, preloadSources]);
 
   const updateZoomSensitivity = (value: number) => {
     const next = Math.min(MAX_ZOOM_SENSITIVITY, Math.max(MIN_ZOOM_SENSITIVITY, value));
@@ -508,6 +567,7 @@ export default function ImageLightbox() {
                       label={downloadAction.opensExternally ? t('image.openOriginal') : t('image.download')}
                     />
                   )}
+                  {currentLocate && <ToolbarButton icon="ri:focus-3-line" label={t('image.locate')} onClick={handleLocate} />}
                   <div className="h-px tablet:h-5 tablet:w-px w-5 shrink-0 bg-white/20" />
                   <ToolbarButton icon="ri:close-line" label={t('image.close')} onClick={() => closeModal()} />
                 </motion.div>

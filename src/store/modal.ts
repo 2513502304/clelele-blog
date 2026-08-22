@@ -84,15 +84,23 @@ export interface ImageLightboxDeleteAction {
   run: () => Promise<boolean>;
 }
 
+/** 用户主动要求离开 lightbox 并定位到页面中的当前图片；默认关闭不会执行。 */
+export interface ImageLightboxLocateAction {
+  run: () => void;
+}
+
 export interface ImageLightboxImage {
   id?: string;
   src: string;
+  /** 批量签名得到的 HF 直连地址；保留 src 作为下载地址和签名失败回退。 */
+  resolvedSrc?: string;
   /** 已在触发页面显示过的低成本预览图；高清原图加载完成前用于避免空白等待。 */
   previewSrc?: string;
   alt: string;
   like?: ImageLightboxLikeAction;
   copy?: ImageLightboxCopyAction;
   delete?: ImageLightboxDeleteAction;
+  locate?: ImageLightboxLocateAction;
 }
 
 export interface ImageLightboxData {
@@ -195,6 +203,23 @@ export function navigateImage(direction: 1 | -1): boolean {
     type: 'imageLightbox',
     data: { ...data, src: target.src, alt: target.alt, currentIndex: newIndex },
   });
+  return true;
+}
+
+/** 批量签名完成后一次更新对应导航项，避免逐张 set 导致 lightbox 连续重渲染。 */
+export function updateImageLightboxResolvedSources(resolved: Readonly<Record<string, string>>): boolean {
+  const modal = $activeModal.get();
+  if (modal.type !== 'imageLightbox') return false;
+  const data = modal.data as ImageLightboxData;
+  let changed = false;
+  const images = data.images.map((image) => {
+    const resolvedSrc = resolved[image.src];
+    if (!resolvedSrc || resolvedSrc === image.resolvedSrc) return image;
+    changed = true;
+    return { ...image, resolvedSrc };
+  });
+  if (!changed) return false;
+  $activeModal.set({ type: 'imageLightbox', data: { ...data, images } });
   return true;
 }
 

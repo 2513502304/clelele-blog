@@ -10,6 +10,7 @@ import {
   removeImageFromLightbox,
   syncImageLightboxLikes,
   updateImageLightboxLike,
+  updateImageLightboxResolvedSources,
 } from '@store/modal';
 
 function likeAction(exampleId: string): ImageLightboxLikeAction {
@@ -98,6 +99,31 @@ test('keeps an updated like state when navigating away from an image and back', 
   const data = $imageLightboxData.get();
   assert.equal(data?.images[0].like?.liked, true);
   assert.equal(data?.images[0].like?.likeCount, 1);
+  closeModal();
+});
+
+test('merges a batch of signed sources without replacing canonical download paths', () => {
+  openModal('imageLightbox', {
+    src: '/api/style-gallery/image/source/aaaaaaaaaaaa.jpg',
+    alt: 'First',
+    currentIndex: 0,
+    images: [
+      { src: '/api/style-gallery/image/source/aaaaaaaaaaaa.jpg', alt: 'First' },
+      { src: '/api/style-gallery/image/source/bbbbbbbbbbbb.jpg', alt: 'Second' },
+    ],
+  });
+
+  assert.equal(
+    updateImageLightboxResolvedSources({
+      '/api/style-gallery/image/source/aaaaaaaaaaaa.jpg': 'https://s3.example.test/signed-first',
+      '/api/style-gallery/image/source/bbbbbbbbbbbb.jpg': 'https://s3.example.test/signed-second',
+    }),
+    true,
+  );
+  const images = $imageLightboxData.get()?.images;
+  assert.equal(images?.[0].src, '/api/style-gallery/image/source/aaaaaaaaaaaa.jpg');
+  assert.equal(images?.[0].resolvedSrc, 'https://s3.example.test/signed-first');
+  assert.equal(images?.[1].resolvedSrc, 'https://s3.example.test/signed-second');
   closeModal();
 });
 

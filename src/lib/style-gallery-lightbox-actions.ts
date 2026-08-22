@@ -89,6 +89,23 @@ export interface StyleGallerySourceLightboxItem {
   previewSrc?: string;
   alt: string;
   getPrompt: () => string | Promise<string>;
+  locate?: () => void;
+}
+
+/** 等 React 先挂载目标分页/渐进批次，再滚动到卡片并短暂聚焦。 */
+export function locateStyleGalleryElement(elementId: string): void {
+  window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
+      const element = document.getElementById(elementId);
+      if (!element) return;
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (element instanceof HTMLElement) element.focus({ preventScroll: true });
+    });
+  });
+}
+
+export function getStyleGalleryLightboxElementId(scope: string, id: string): string {
+  return `style-gallery-${scope}-${id.replace(/[^a-z0-9_-]/gi, '-')}`;
 }
 
 /**
@@ -107,6 +124,7 @@ export function createStyleGallerySourceLightboxData(
     previewSrc: item.previewSrc,
     alt: item.alt,
     copy: createStyleGalleryCopyAction(item.getPrompt, labels),
+    locate: item.locate ? { run: item.locate } : undefined,
   }));
   const currentIndex = Math.max(
     0,

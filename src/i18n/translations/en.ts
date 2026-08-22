@@ -286,6 +286,7 @@ export const uiStrings: UIStrings = {
   'image.deleteConfirm': 'Permanently delete “{name}”?',
   'image.download': 'Download image',
   'image.openOriginal': 'Open original image',
+  'image.locate': 'Locate current image on page',
   'image.close': 'Close',
   'image.prev': 'Previous',
   'image.next': 'Next',

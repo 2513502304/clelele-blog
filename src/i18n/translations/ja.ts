@@ -286,6 +286,7 @@ export const uiStrings: UIStrings = {
   'image.deleteConfirm': '「{name}」を完全に削除しますか？',
   'image.download': '画像をダウンロード',
   'image.openOriginal': '元の画像を開く',
+  'image.locate': '現在の画像をページ内で表示',
   'image.close': '閉じる',
   'image.prev': '前へ',
   'image.next': '次へ',

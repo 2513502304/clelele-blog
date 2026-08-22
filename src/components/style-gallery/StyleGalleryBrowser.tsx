@@ -4,7 +4,12 @@ import { useCollectionPagination } from '@hooks/useCollectionPagination';
 import { Icon } from '@iconify/react';
 import { createStyleGalleryDateRangeMatcher, getStyleGalleryDateKey } from '@lib/style-gallery-date-range';
 import type { StyleGalleryDateRangeLabels } from '@lib/style-gallery-date-range-labels';
-import { createStyleGallerySourceLightboxData, type StyleGalleryLightboxCopyLabels } from '@lib/style-gallery-lightbox-actions';
+import {
+  createStyleGallerySourceLightboxData,
+  getStyleGalleryLightboxElementId,
+  locateStyleGalleryElement,
+  type StyleGalleryLightboxCopyLabels,
+} from '@lib/style-gallery-lightbox-actions';
 import {
   getStyleGalleryPromptCacheKey,
   groupStyleGalleryPromptsByModel,
@@ -290,6 +295,11 @@ function StyleGalleryBrowserContent({
         previewSrc: candidate.thumbnailImage ?? candidate.sourceImage,
         alt: candidate.sourceImageAlt ?? candidate.title,
         getPrompt: () => getSelectedStyleGalleryPrompt(candidate.slug) ?? candidate.prompt,
+        locate: () => {
+          const targetIndex = filteredItems.findIndex((entry) => entry.slug === candidate.slug);
+          if (isPaginated) setCurrentPage(Math.floor(targetIndex / pageSize) + 1);
+          locateStyleGalleryElement(getStyleGalleryLightboxElementId('preview-source', candidate.slug));
+        },
       })),
       item.slug,
       lightboxCopyLabels,
@@ -452,6 +462,8 @@ function StyleGalleryBrowserContent({
         {visibleItems.map((item, index) => (
           <article
             key={item.slug}
+            id={getStyleGalleryLightboxElementId('preview-source', item.slug)}
+            tabIndex={-1}
             onPointerEnter={() => prefetchPromptChoices(item)}
             onFocusCapture={() => prefetchPromptChoices(item)}
             className="group overflow-hidden rounded-lg border border-rose-100 bg-white shadow-sm transition hover:-translate-y-1 hover:border-rose-200 hover:shadow-lg dark:border-gray-800 dark:bg-gray-950"

@@ -1,5 +1,10 @@
 import { ErrorBoundary, InlineErrorFallback } from '@components/common';
-import { createStyleGallerySourceLightboxData, type StyleGalleryLightboxCopyLabels } from '@lib/style-gallery-lightbox-actions';
+import {
+  createStyleGallerySourceLightboxData,
+  getStyleGalleryLightboxElementId,
+  locateStyleGalleryElement,
+  type StyleGalleryLightboxCopyLabels,
+} from '@lib/style-gallery-lightbox-actions';
 import { getSelectedStyleGalleryPrompt } from '@lib/style-gallery-prompt-selection';
 import { openModal } from '@store/modal';
 import type { StyleGalleryImageRef } from '@/types/style-gallery';
@@ -34,6 +39,7 @@ function StyleGalleryReferenceImagesContent({
       previewSrc: image.sourceImage,
       alt: image.sourceImageAlt ?? getReferenceImageLabel(index),
       getPrompt: () => getSelectedStyleGalleryPrompt(itemSlug) ?? prompt,
+      locate: () => locateStyleGalleryElement(getStyleGalleryLightboxElementId('detail-source', `${itemSlug}-${index}`)),
     }));
     openModal(
       'imageLightbox',
@@ -47,7 +53,12 @@ function StyleGalleryReferenceImagesContent({
         const indexedLabel = getReferenceImageLabel(index);
         const alt = image.sourceImageAlt ?? indexedLabel;
         return (
-          <figure key={`${image.imageHash}:${index}`} className="overflow-hidden rounded-md bg-rose-50 dark:bg-gray-900">
+          <figure
+            key={`${image.imageHash}:${index}`}
+            id={getStyleGalleryLightboxElementId('detail-source', `${itemSlug}-${index}`)}
+            tabIndex={-1}
+            className="overflow-hidden rounded-md bg-rose-50 dark:bg-gray-900"
+          >
             <button
               type="button"
               onClick={() => openReferenceImage(index)}

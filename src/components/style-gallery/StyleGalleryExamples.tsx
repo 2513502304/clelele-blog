@@ -9,6 +9,8 @@ import { getStyleGalleryExampleContentType } from '@lib/style-gallery-image-type
 import {
   createStyleGalleryCopyAction,
   createStyleGalleryDeleteAction,
+  getStyleGalleryLightboxElementId,
+  locateStyleGalleryElement,
   STYLE_GALLERY_UPLOAD_TOKEN_STORAGE_KEY,
   type StyleGalleryLightboxActionLabels,
 } from '@lib/style-gallery-lightbox-actions';
@@ -355,6 +357,9 @@ export default function StyleGalleryExamples({
         () => deleteLightboxExample(candidate.id),
         lightboxActionLabels,
       ),
+      locate: {
+        run: () => locateStyleGalleryElement(getStyleGalleryLightboxElementId('detail-example', candidate.id)),
+      },
     }));
     const currentIndex = Math.max(
       0,
@@ -854,6 +859,8 @@ export default function StyleGalleryExamples({
                   return (
                     <figure
                       key={example.src}
+                      id={getStyleGalleryLightboxElementId('detail-example', example.id)}
+                      tabIndex={-1}
                       className="overflow-hidden rounded-lg border border-gray-100 bg-gray-50 dark:border-gray-800 dark:bg-gray-900"
                     >
                       <div className="relative">
