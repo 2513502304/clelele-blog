@@ -5,7 +5,8 @@ import { groupStyleGalleryExamplesByPlatform } from './style-gallery-platforms';
 test('groups examples by configured platform while preserving upload order inside each group', () => {
   const examples = [
     { id: 'pixai-first', model: 'PixAI' },
-    { id: 'gpt-first', model: 'GPT-Image2' },
+    { id: 'novelai-first', model: 'NovelAI' },
+    { id: 'gpt-first', model: 'GPT-Image' },
     { id: 'pixai-second', model: 'PixAI' },
     { id: 'other', model: 'Custom' },
   ];
@@ -15,8 +16,9 @@ test('groups examples by configured platform while preserving upload order insid
   assert.deepEqual(
     groups.map(([platform, items]) => [platform, items.map((item) => item.id)]),
     [
-      ['GPT-Image2', ['gpt-first']],
+      ['GPT-Image', ['gpt-first']],
       ['PixAI', ['pixai-first', 'pixai-second']],
+      ['NovelAI', ['novelai-first']],
       ['Custom', ['other']],
     ],
   );

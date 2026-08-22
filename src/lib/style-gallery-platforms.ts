@@ -1,9 +1,10 @@
 /** 平台数组是标签、筛选和分组排序的唯一顺序来源。 */
 export const STYLE_GALLERY_PLATFORMS = [
-  { label: 'GPT-Image2', slug: 'gpt-image2' },
+  { label: 'GPT-Image', slug: 'gpt-image' },
   { label: 'Nano Banana', slug: 'nano-banana' },
   { label: 'PixAI', slug: 'pixai' },
   { label: 'Midjourney', slug: 'midjourney' },
+  { label: 'NovelAI', slug: 'novelai' },
   { label: 'Flux', slug: 'flux' },
 ] as const;
 

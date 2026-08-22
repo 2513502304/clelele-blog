@@ -77,7 +77,7 @@ describe('style gallery metadata', () => {
       version: 3,
       updatedAt: '2026-07-13T00:01:00.000Z',
       tags: ['codex-session', 'style-prompt'],
-      modelTargets: ['GPT-Image2', 'Nano Banana', 'PixAI', 'Midjourney', 'Flux'],
+      modelTargets: ['GPT-Image', 'Nano Banana', 'PixAI', 'Midjourney', 'NovelAI', 'Flux'],
       items: [catalogItem],
     });
     assert.equal(catalog.items[0].prompt, item.prompts[0].prompt);
@@ -86,7 +86,7 @@ describe('style gallery metadata', () => {
     assert.equal(catalog.version, 4);
     assert.equal(catalog.items[0].exampleCount, 3);
     assert.equal('tags' in catalog.items[0], false);
-    assert.deepEqual(catalog.modelTargets, ['GPT-Image2', 'Nano Banana', 'PixAI', 'Midjourney', 'Flux']);
+    assert.deepEqual(catalog.modelTargets, ['GPT-Image', 'Nano Banana', 'PixAI', 'Midjourney', 'NovelAI', 'Flux']);
 
     const [card] = toStyleGalleryCardDataList({ ...catalog, parentLikeCounts: { [item.slug]: 4 } });
     assert.equal(card.likeCount, 4);
@@ -117,7 +117,7 @@ describe('style gallery metadata', () => {
       version: 4,
       updatedAt: '2026-07-13T00:01:00.000Z',
       tags: ['codex-session', 'style-prompt'],
-      modelTargets: ['GPT-Image2'],
+      modelTargets: ['GPT-Image'],
       items: [catalogItem],
     };
 
@@ -193,8 +193,8 @@ describe('style gallery metadata', () => {
     const gptImage = {
       id: 'example-gpt',
       src: `/api/style-gallery/image/examples/images/${firstHash}.png`,
-      alt: 'GPT-Image2 generated example',
-      model: 'GPT-Image2',
+      alt: 'GPT-Image generated example',
+      model: 'GPT-Image',
       uploadedAt: '2026-07-13T00:02:00.000Z',
       imageHash: firstHash,
     };

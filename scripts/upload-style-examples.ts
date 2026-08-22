@@ -81,7 +81,7 @@ function usage(): void {
 
 Required:
   -i, --item <value>       Parent item slug, full SHA-256, or unique SHA prefix
-  -p, --platform <value>   GPT-Image2 | Nano Banana | PixAI | Midjourney | Flux
+  -p, --platform <value>   GPT-Image | Nano Banana | PixAI | Midjourney | NovelAI | Flux
 
 Options:
   -n, --note <text>        Shared note stored on every uploaded example (max 500 chars)

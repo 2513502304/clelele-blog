@@ -36,8 +36,8 @@ function createItem(): StoredStyleGalleryItem {
       {
         id: 'first-example',
         src: `/api/style-gallery/image/examples/images/${firstHash}.webp`,
-        alt: 'First GPT-Image2 example',
-        model: 'GPT-Image2',
+        alt: 'First GPT-Image example',
+        model: 'GPT-Image',
         uploadedAt: '2026-08-04T00:01:00.000Z',
         imageHash: firstHash,
       },
@@ -64,7 +64,7 @@ function createIndex(): StyleGalleryExampleIndex {
           {
             id: 'first-example',
             src: `/api/style-gallery/image/examples/images/${firstHash}.webp`,
-            model: 'GPT-Image2',
+            model: 'GPT-Image',
             uploadedAt: '2026-08-04T00:01:00.000Z',
             likedBy: [2513502304],
           },
