@@ -22,27 +22,28 @@ const MUTATION_TIMEOUT_MS = 30_000;
 const locateHighlightAnimations = new WeakMap<HTMLElement, Animation>();
 
 /**
- * 用不参与布局的双层阴影标记 lightbox 返回目标：内层描边负责在密集矩阵中定位，外层小半径柔光
- * 提供用户要求的渐隐效果。半径刻意限制在相邻卡片间距附近，避免遮盖其他缩略图；减少动态效果时
- * 则取消脉冲，只保留一次较短的淡出。
+ * 用不参与布局的双层阴影标记 lightbox 返回目标：内层描边负责在密集矩阵中定位，外层柔光扩大
+ * 视觉搜索范围。动画快速出现后保留一段稳定可见期，再缓慢淡出；减少动态效果时不做脉冲，但仍
+ * 留出足够识别时间。阴影不会改变网格尺寸，也不会让相邻卡片发生位移。
  */
 function highlightLocatedElement(element: HTMLElement): void {
   locateHighlightAnimations.get(element)?.cancel();
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const glow = '0 0 0 2px rgb(244 63 94 / 0.88), 0 0 14px 5px rgb(244 63 94 / 0.28)';
+  const glow = '0 0 0 3px rgb(244 63 94 / 0.94), 0 0 26px 10px rgb(244 63 94 / 0.42)';
   const clear = '0 0 0 0 rgb(244 63 94 / 0), 0 0 0 0 rgb(244 63 94 / 0)';
   const animation = element.animate(
     reduceMotion
       ? [{ boxShadow: glow }, { boxShadow: clear }]
       : [
           { boxShadow: clear, offset: 0 },
-          { boxShadow: glow, offset: 0.2 },
-          { boxShadow: '0 0 0 2px rgb(244 63 94 / 0.72), 0 0 10px 4px rgb(244 63 94 / 0.2)', offset: 0.62 },
+          { boxShadow: glow, offset: 0.12 },
+          { boxShadow: glow, offset: 0.58 },
+          { boxShadow: '0 0 0 2px rgb(244 63 94 / 0.76), 0 0 18px 7px rgb(244 63 94 / 0.28)', offset: 0.78 },
           { boxShadow: clear, offset: 1 },
         ],
     {
-      delay: reduceMotion ? 0 : 180,
-      duration: reduceMotion ? 650 : 1_500,
+      delay: reduceMotion ? 0 : 120,
+      duration: reduceMotion ? 1_600 : 2_800,
       easing: 'ease-out',
     },
   );
