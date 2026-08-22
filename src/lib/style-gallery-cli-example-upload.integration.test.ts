@@ -80,7 +80,7 @@ describe('style gallery example upload CLI integration', () => {
           version: 3,
           updatedAt: '2026-07-26T00:00:00.000Z',
           tags: ['style-prompt'],
-          modelTargets: ['PixAI'],
+          modelTargets: ['GPT-Image', 'Nano Banana', 'PixAI', 'Midjourney', 'NovelAI', 'Flux'],
           items: [
             {
               slug,
@@ -88,6 +88,9 @@ describe('style gallery example upload CLI integration', () => {
               date: '2026-07-26T00:00:00.000Z',
               sourceImage: '/api/style-gallery/image/source/2a256d37220e.jpg',
               prompt: 'Reusable prompt',
+              additionalPrompts: [],
+              promptCount: 1,
+              promptRevision: 'c'.repeat(64),
               imageHash: parentHash,
               imageCount: 1,
               exampleCount: 0,

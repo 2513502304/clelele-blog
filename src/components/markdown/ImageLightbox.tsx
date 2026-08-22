@@ -14,12 +14,13 @@ import { useZoomPan } from '@hooks/useZoomPan';
 import { Icon } from '@iconify/react';
 import { createImageLightboxDownloadAction } from '@lib/image-lightbox-download';
 import { getLive2DFocusNodes, isLive2DOwnedTarget } from '@lib/live2d/focus-scope';
-import { resolveStyleGalleryImageUrls } from '@lib/style-gallery-image-client';
+import { invalidateStyleGalleryImageUrl, resolveStyleGalleryImageUrls } from '@lib/style-gallery-image-client';
 import { createLightboxPrefetchPlan } from '@lib/style-gallery-lightbox-prefetch';
 import type { StyleGalleryPromptChoice } from '@lib/style-gallery-prompt-client';
 import { useStore } from '@nanostores/react';
 import {
   $imageLightboxData,
+  clearImageLightboxResolvedSource,
   closeModal,
   type ImageLightboxData,
   type ImageLightboxImage,
@@ -31,6 +32,7 @@ import {
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleGalleryPromptChooser } from '../style-gallery/StyleGalleryPromptChooser';
+import { Dialog, DialogContent } from '../ui/dialog';
 import { LightboxLikeButton, NavButton, ToolbarButton, ToolbarLink, ZoomHint } from './ImageLightboxControls';
 
 const ZOOM_SENSITIVITY_STORAGE_KEY = 'image-lightbox-zoom-sensitivity';
@@ -104,7 +106,14 @@ function LightboxImageStage({ image, shouldReduceMotion }: LightboxImageStagePro
         animate={{ opacity: sourceState === 'loaded' ? 1 : 0 }}
         transition={{ opacity: { duration: shouldReduceMotion ? 0 : 0.2 } }}
         onLoad={(event) => void finishSourceLoad(event.currentTarget)}
-        onError={() => setSourceState('failed')}
+        onError={() => {
+          if (image.resolvedSrc && sourceSrc === image.resolvedSrc) {
+            invalidateStyleGalleryImageUrl(image.src);
+            clearImageLightboxResolvedSource(image.src, image.resolvedSrc);
+            return;
+          }
+          setSourceState('failed');
+        }}
         draggable={false}
       />
       {isLoading && hasPreview && (
@@ -161,7 +170,7 @@ export default function ImageLightbox() {
   const copyTimerRef = useRef(0);
   const deleteTimerRef = useRef(0);
 
-  const { containerRef, state, reset, zoomTo, zoomLevel } = useZoomPan(isOpen, { zoomSensitivity });
+  const { containerRef, state, reset, zoomTo, zoomLevel } = useZoomPan(isOpen && !promptPicker, { zoomSensitivity });
 
   // Use a ref so the outsidePress callback always reads the latest scale
   const scaleRef = useRef(state.scale);
@@ -300,11 +309,41 @@ export default function ImageLightbox() {
   });
 
   // Keyboard shortcuts for zoom/rotate
-  useKeyboardShortcut({ key: '=', handler: handleZoomIn, enabled: isOpen, ignoreInputs: false, preventDefault: false });
-  useKeyboardShortcut({ key: '+', handler: handleZoomIn, enabled: isOpen, ignoreInputs: false, preventDefault: false });
-  useKeyboardShortcut({ key: '-', handler: handleZoomOut, enabled: isOpen, ignoreInputs: false, preventDefault: false });
-  useKeyboardShortcut({ key: 'r', handler: handleRotate, enabled: isOpen, ignoreInputs: false, preventDefault: false });
-  useKeyboardShortcut({ key: '0', handler: handleResetShortcut, enabled: isOpen, ignoreInputs: false, preventDefault: false });
+  useKeyboardShortcut({
+    key: '=',
+    handler: handleZoomIn,
+    enabled: isOpen && !promptPicker,
+    ignoreInputs: false,
+    preventDefault: false,
+  });
+  useKeyboardShortcut({
+    key: '+',
+    handler: handleZoomIn,
+    enabled: isOpen && !promptPicker,
+    ignoreInputs: false,
+    preventDefault: false,
+  });
+  useKeyboardShortcut({
+    key: '-',
+    handler: handleZoomOut,
+    enabled: isOpen && !promptPicker,
+    ignoreInputs: false,
+    preventDefault: false,
+  });
+  useKeyboardShortcut({
+    key: 'r',
+    handler: handleRotate,
+    enabled: isOpen && !promptPicker,
+    ignoreInputs: false,
+    preventDefault: false,
+  });
+  useKeyboardShortcut({
+    key: '0',
+    handler: handleResetShortcut,
+    enabled: isOpen && !promptPicker,
+    ignoreInputs: false,
+    preventDefault: false,
+  });
 
   const { refs, context } = useFloating({
     open: isOpen,
@@ -361,6 +400,19 @@ export default function ImageLightbox() {
       window.clearTimeout(deleteTimerRef.current);
     };
   }, [isOpen, reset]);
+
+  useEffect(() => {
+    if (!promptPicker) return;
+    // Floating UI 与 Radix 都监听 Escape；在 window capture 阶段消费事件，避免一次按键同时关闭内外两层。
+    const closePromptPicker = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopPropagation();
+      setPromptPicker(null);
+    };
+    window.addEventListener('keydown', closePromptPicker, true);
+    return () => window.removeEventListener('keydown', closePromptPicker, true);
+  }, [promptPicker]);
 
   const previousImage = data?.images[data.currentIndex - 1];
   const nextImage = data?.images[data.currentIndex + 1];
@@ -469,7 +521,7 @@ export default function ImageLightbox() {
             {/* Backdrop */}
             <div className="fixed inset-0 bg-black/90 backdrop-blur-sm" />
             {/* Content */}
-            <FloatingFocusManager context={context} getInsideElements={getLive2DFocusNodes}>
+            <FloatingFocusManager context={context} getInsideElements={getLive2DFocusNodes} disabled={Boolean(promptPicker)}>
               <div ref={refs.setFloating} className="fixed inset-0 flex items-center justify-center" {...getFloatingProps()}>
                 {/* Toolbar: vertical right on desktop, horizontal top on tablet */}
                 <motion.div
@@ -604,20 +656,20 @@ export default function ImageLightbox() {
                   <ToolbarButton icon="ri:close-line" label={t('image.close')} onClick={() => closeModal()} />
                 </motion.div>
 
-                {promptPicker && currentCopy?.getPrompts && (
-                  <div
-                    className="absolute inset-0 z-30 flex items-center justify-center bg-black/65 p-4"
-                    onPointerDown={(event) => {
-                      if (event.target === event.currentTarget) setPromptPicker(null);
-                    }}
-                    onKeyDownCapture={(event) => {
-                      if (event.key !== 'Escape') return;
+                <Dialog open={Boolean(promptPicker)} onOpenChange={(open) => !open && setPromptPicker(null)}>
+                  <DialogContent
+                    className="z-[70] flex max-h-[min(82dvh,46rem)] max-w-2xl flex-col gap-0 overflow-hidden bg-white p-0 dark:bg-gray-950"
+                    overlayClassName="z-[70] bg-black/65"
+                    onEscapeKeyDown={(event) => {
                       event.preventDefault();
-                      event.stopPropagation();
+                      setPromptPicker(null);
+                    }}
+                    onPointerDownOutside={(event) => {
+                      event.preventDefault();
                       setPromptPicker(null);
                     }}
                   >
-                    <div className="flex max-h-[min(82dvh,46rem)] w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-white/15 bg-background shadow-2xl">
+                    {promptPicker && currentCopy?.getPrompts && (
                       <StyleGalleryPromptChooser
                         key={promptPicker.key}
                         prompts={promptPicker.prompts}
@@ -631,16 +683,14 @@ export default function ImageLightbox() {
                           loadFailed: t('gallery.promptLoadFailed'),
                           copy: t('gallery.copy'),
                           copied: t('gallery.copied'),
-                          close: t('image.close'),
                         }}
                         onRetry={() => void handleCopy()}
                         onCopy={copyPromptChoice}
-                        onClose={() => setPromptPicker(null)}
                         reduceMotion={shouldReduceMotion}
                       />
-                    </div>
-                  </div>
-                )}
+                    )}
+                  </DialogContent>
+                </Dialog>
 
                 {/* Image viewport with zoom/pan */}
                 <div
@@ -670,7 +720,11 @@ export default function ImageLightbox() {
                         cursor: state.scale > 1.05 ? 'grab' : 'zoom-in',
                       }}
                     >
-                      <LightboxImageStage key={currentImageKey} image={currentImage} shouldReduceMotion={shouldReduceMotion} />
+                      <LightboxImageStage
+                        key={`${currentImageKey}:${currentImage.resolvedSrc ?? ''}`}
+                        image={currentImage}
+                        shouldReduceMotion={shouldReduceMotion}
+                      />
                     </motion.div>
                   </motion.div>
                 </div>

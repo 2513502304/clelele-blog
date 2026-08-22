@@ -5,15 +5,17 @@ import {
   locateStyleGalleryElement,
   type StyleGalleryLightboxCopyLabels,
 } from '@lib/style-gallery-lightbox-actions';
+import { loadStyleGalleryPromptChoices } from '@lib/style-gallery-prompt-client';
 import { getSelectedStyleGalleryPrompt } from '@lib/style-gallery-prompt-selection';
 import { openModal } from '@store/modal';
-import type { StyleGalleryImageRef, StyleGalleryPromptVariant } from '@/types/style-gallery';
+import type { StyleGalleryImageRef } from '@/types/style-gallery';
 
 interface StyleGalleryReferenceImagesProps {
   images: StyleGalleryImageRef[];
   itemSlug: string;
   prompt: string;
-  prompts: StyleGalleryPromptVariant[];
+  promptCount: number;
+  promptRevision: string;
   openImageLabel: string;
   referenceImageLabel: string;
   lightboxCopyLabels: StyleGalleryLightboxCopyLabels;
@@ -27,7 +29,8 @@ function StyleGalleryReferenceImagesContent({
   images,
   itemSlug,
   prompt,
-  prompts,
+  promptCount,
+  promptRevision,
   openImageLabel,
   referenceImageLabel,
   lightboxCopyLabels,
@@ -41,7 +44,10 @@ function StyleGalleryReferenceImagesContent({
       previewSrc: image.sourceImage,
       alt: image.sourceImageAlt ?? getReferenceImageLabel(index),
       getPrompt: () => getSelectedStyleGalleryPrompt(itemSlug) ?? prompt,
-      promptOptions: prompts.length > 1 ? { promptCount: prompts.length, getPrompts: async () => prompts } : undefined,
+      promptOptions:
+        promptCount > 1
+          ? { promptCount, getPrompts: () => loadStyleGalleryPromptChoices(itemSlug, promptRevision) }
+          : undefined,
       locate: () => locateStyleGalleryElement(getStyleGalleryLightboxElementId('detail-source', `${itemSlug}-${index}`)),
     }));
     openModal(

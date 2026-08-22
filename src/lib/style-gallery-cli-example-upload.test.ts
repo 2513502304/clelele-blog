@@ -12,6 +12,7 @@ function catalogItem(slug: string, imageHash: string): StyleGalleryCatalogItem {
     prompt: 'Reusable prompt',
     additionalPrompts: [],
     promptCount: 1,
+    promptRevision: 'c'.repeat(64),
     imageHash,
     imageCount: 1,
     exampleCount: 0,

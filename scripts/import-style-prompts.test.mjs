@@ -45,6 +45,7 @@ describe('style prompt import variants', () => {
       prompt: `${PLACEHOLDER}, first prompt`,
       additionalPrompts: [`${PLACEHOLDER}, second prompt`],
       promptCount: 2,
+      promptRevision: 'c'.repeat(64),
       imageHash,
       imageCount: 1,
       exampleCount: 0,

@@ -11,14 +11,14 @@ const promptCache = new Map<string, StyleGalleryPromptChoice[]>();
 const promptRequests = new Map<string, Promise<StyleGalleryPromptChoice[]>>();
 
 /** 所有 Gallery 入口共享候选缓存，避免列表预取、lightbox 和详情交互重复读取同一 item。 */
-export async function loadStyleGalleryPromptChoices(slug: string, promptCount: number): Promise<StyleGalleryPromptChoice[]> {
-  const cacheKey = getStyleGalleryPromptCacheKey(slug, promptCount);
+export async function loadStyleGalleryPromptChoices(slug: string, promptRevision: string): Promise<StyleGalleryPromptChoice[]> {
+  const cacheKey = getStyleGalleryPromptCacheKey(slug, promptRevision);
   const cached = promptCache.get(cacheKey);
   if (cached) return cached;
   const pending = promptRequests.get(cacheKey);
   if (pending) return pending;
 
-  const request = fetch(`/api/style-gallery/prompts/${encodeURIComponent(slug)}?v=${encodeURIComponent(promptCount)}`, {
+  const request = fetch(`/api/style-gallery/prompts/${encodeURIComponent(slug)}?v=${encodeURIComponent(promptRevision)}`, {
     credentials: 'same-origin',
   })
     .then(async (response) => {
@@ -33,14 +33,17 @@ export async function loadStyleGalleryPromptChoices(slug: string, promptCount: n
   return request;
 }
 
-export async function loadStyleGalleryDefaultPrompt(slug: string, promptCount: number): Promise<string> {
-  const prompt = (await loadStyleGalleryPromptChoices(slug, promptCount))[0];
+export async function loadStyleGalleryDefaultPrompt(slug: string, promptRevision: string): Promise<string> {
+  const prompt = (await loadStyleGalleryPromptChoices(slug, promptRevision))[0];
   if (!prompt) throw new Error(`Style prompt not found: ${slug}`);
   return prompt.prompt;
 }
 
-export function getCachedStyleGalleryPromptChoices(slug: string, promptCount: number): StyleGalleryPromptChoice[] | undefined {
-  return promptCache.get(getStyleGalleryPromptCacheKey(slug, promptCount));
+export function getCachedStyleGalleryPromptChoices(
+  slug: string,
+  promptRevision: string,
+): StyleGalleryPromptChoice[] | undefined {
+  return promptCache.get(getStyleGalleryPromptCacheKey(slug, promptRevision));
 }
 
 export function resetStyleGalleryPromptClientCache(): void {

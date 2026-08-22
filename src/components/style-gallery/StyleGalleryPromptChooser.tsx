@@ -1,3 +1,4 @@
+import { DialogDescription, DialogTitle } from '@components/ui/dialog';
 import { Icon } from '@iconify/react';
 import type { StyleGalleryPromptChoice } from '@lib/style-gallery-prompt-client';
 import {
@@ -73,8 +74,8 @@ function StyleGalleryPromptChooserComponent({ prompts, failed, labels, onRetry, 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <header className="relative shrink-0 border-border border-b px-6 pt-6 pr-14 pb-4">
-        <h2 className="font-semibold text-lg leading-none tracking-tight">{labels.title}</h2>
-        <p className="mt-2 text-muted-foreground text-sm">{labels.description}</p>
+        <DialogTitle>{labels.title}</DialogTitle>
+        <DialogDescription className="mt-2">{labels.description}</DialogDescription>
         {onClose && (
           <button
             type="button"

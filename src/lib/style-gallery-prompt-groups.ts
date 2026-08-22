@@ -13,9 +13,9 @@ export interface StyleGalleryPromptDisclosureState {
   expandedPromptIds: Set<string>;
 }
 
-/** 将 catalog 中的 prompt 版本纳入客户端缓存键，避免同一图片新增 prompt 后继续复用旧响应。 */
-export function getStyleGalleryPromptCacheKey(slug: string, promptCount: number): string {
-  return `${slug}:${promptCount}`;
+/** 将 catalog 中的内容修订号纳入客户端缓存键，避免元数据原地更新后继续复用旧响应。 */
+export function getStyleGalleryPromptCacheKey(slug: string, promptRevision: string): string {
+  return `${slug}:${promptRevision}`;
 }
 
 /**

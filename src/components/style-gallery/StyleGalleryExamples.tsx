@@ -15,6 +15,7 @@ import {
   type StyleGalleryLightboxActionLabels,
 } from '@lib/style-gallery-lightbox-actions';
 import { groupStyleGalleryExamplesByPlatform, STYLE_GALLERY_PLATFORMS } from '@lib/style-gallery-platforms';
+import { loadStyleGalleryPromptChoices } from '@lib/style-gallery-prompt-client';
 import {
   getSelectedStyleGalleryPrompt,
   STYLE_GALLERY_PROMPT_SELECTED_EVENT,
@@ -27,7 +28,7 @@ import {
 } from '@lib/style-gallery-request-batches';
 import { openModal } from '@store/modal';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { StyleGalleryExample, StyleGalleryExampleView, StyleGalleryPromptVariant } from '@/types/style-gallery';
+import type { StyleGalleryExample, StyleGalleryExampleView } from '@/types/style-gallery';
 import {
   createStyleGalleryLightboxLikeAction,
   StyleGalleryLikeButton,
@@ -39,7 +40,8 @@ interface StyleGalleryExamplesProps {
   slug: string;
   title: string;
   prompt: string;
-  prompts: StyleGalleryPromptVariant[];
+  promptCount: number;
+  promptRevision: string;
   initialExamples: StyleGalleryExampleView[];
   uploadsEnabled: boolean;
   likeLabels: StyleGalleryLikeLabels;
@@ -286,7 +288,8 @@ export default function StyleGalleryExamples({
   slug,
   title,
   prompt,
-  prompts,
+  promptCount,
+  promptRevision,
   initialExamples,
   uploadsEnabled,
   likeLabels,
@@ -354,7 +357,7 @@ export default function StyleGalleryExamples({
       copy: createStyleGalleryCopyAction(
         () => activePrompt.current,
         lightboxActionLabels,
-        prompts.length > 1 ? { promptCount: prompts.length, getPrompts: async () => prompts } : undefined,
+        promptCount > 1 ? { promptCount, getPrompts: () => loadStyleGalleryPromptChoices(slug, promptRevision) } : undefined,
       ),
       delete: createStyleGalleryDeleteAction(
         candidate.id,

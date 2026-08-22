@@ -7,10 +7,10 @@ import {
 } from './style-gallery-prompt-groups';
 
 describe('style gallery prompt groups', () => {
-  it('versions prompt cache entries when the catalog prompt count changes', () => {
+  it('versions prompt cache entries when prompt metadata changes without changing its count', () => {
     assert.notEqual(
-      getStyleGalleryPromptCacheKey('2026-08-08-161b8ebf9dc1', 1),
-      getStyleGalleryPromptCacheKey('2026-08-08-161b8ebf9dc1', 2),
+      getStyleGalleryPromptCacheKey('2026-08-08-161b8ebf9dc1', 'a'.repeat(64)),
+      getStyleGalleryPromptCacheKey('2026-08-08-161b8ebf9dc1', 'b'.repeat(64)),
     );
   });
 

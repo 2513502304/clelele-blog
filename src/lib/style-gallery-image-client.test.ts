@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { resetStyleGalleryImageUrlCache, resolveStyleGalleryImageUrls } from './style-gallery-image-client';
+import {
+  invalidateStyleGalleryImageUrl,
+  resetStyleGalleryImageUrlCache,
+  resolveStyleGalleryImageUrls,
+} from './style-gallery-image-client';
 
 const SOURCE = '/api/style-gallery/image/source/012345abcdef.jpg';
 
@@ -20,6 +24,30 @@ test('deduplicates concurrent image signing requests', async () => {
     ]);
     assert.equal(requests, 1);
     assert.deepEqual(first, duplicate);
+  } finally {
+    resetStyleGalleryImageUrlCache();
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test('refreshes expired or explicitly invalidated signed URLs without dropping unrelated cache entries', async () => {
+  const previousFetch = globalThis.fetch;
+  let requests = 0;
+  globalThis.fetch = async () => {
+    requests += 1;
+    return Response.json({
+      images: { [SOURCE]: `https://s3.example.test/signed-${requests}` },
+      expiresAt: requests === 1 ? Date.now() - 1 : Date.now() + 60_000,
+    });
+  };
+  resetStyleGalleryImageUrlCache();
+
+  try {
+    assert.equal((await resolveStyleGalleryImageUrls([SOURCE]))[SOURCE], 'https://s3.example.test/signed-1');
+    assert.equal((await resolveStyleGalleryImageUrls([SOURCE]))[SOURCE], 'https://s3.example.test/signed-2');
+    invalidateStyleGalleryImageUrl(SOURCE);
+    assert.equal((await resolveStyleGalleryImageUrls([SOURCE]))[SOURCE], 'https://s3.example.test/signed-3');
+    assert.equal(requests, 3);
   } finally {
     resetStyleGalleryImageUrlCache();
     globalThis.fetch = previousFetch;

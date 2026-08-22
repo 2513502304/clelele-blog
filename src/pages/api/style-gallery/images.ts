@@ -1,4 +1,4 @@
-import { createStyleGallerySignedImageUrl } from '@lib/hf-s3-presign';
+import { createStyleGallerySignedImageUrl, getStyleGallerySignedImageRedirectCacheSeconds } from '@lib/hf-s3-presign';
 import { createStyleGalleryImageApiPath, isAllowedStyleGalleryImageKey } from '@lib/style-gallery-image-key';
 import type { APIRoute } from 'astro';
 
@@ -28,6 +28,7 @@ export const POST: APIRoute = async ({ request }) => {
   }
 
   try {
+    const cacheSeconds = getStyleGallerySignedImageRedirectCacheSeconds();
     return Response.json({
       images: Object.fromEntries(
         uniqueKeys.map((key) => [
@@ -35,6 +36,8 @@ export const POST: APIRoute = async ({ request }) => {
           import.meta.env.DEV ? createStyleGalleryImageApiPath(key) : createStyleGallerySignedImageUrl(key),
         ]),
       ),
+      // 客户端按比签名 TTL 更短的安全窗口缓存，避免长期开启的标签页继续使用刚过期的 URL。
+      expiresAt: import.meta.env.DEV ? null : Date.now() + cacheSeconds * 1000,
     });
   } catch (error) {
     return new Response(error instanceof Error ? error.message : 'Failed to sign image URLs.', { status: 500 });

@@ -142,7 +142,7 @@ function StyleGalleryImageIndexContent({
           candidate.promptCount > 1
             ? {
                 promptCount: candidate.promptCount,
-                getPrompts: () => loadStyleGalleryPromptChoices(candidate.slug, candidate.promptCount),
+                getPrompts: () => loadStyleGalleryPromptChoices(candidate.slug, candidate.promptRevision),
               }
             : undefined,
         locate: () => {

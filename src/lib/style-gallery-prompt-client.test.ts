@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { loadStyleGalleryPromptChoices, resetStyleGalleryPromptClientCache } from './style-gallery-prompt-client';
 
-test('deduplicates concurrent prompt requests and versions cache entries by prompt count', async () => {
+test('deduplicates concurrent prompt requests and versions cache entries by prompt revision', async () => {
   const previousFetch = globalThis.fetch;
   let requests = 0;
   globalThis.fetch = async () => {
@@ -15,13 +15,13 @@ test('deduplicates concurrent prompt requests and versions cache entries by prom
 
   try {
     const [first, duplicate] = await Promise.all([
-      loadStyleGalleryPromptChoices('item-a', 1),
-      loadStyleGalleryPromptChoices('item-a', 1),
+      loadStyleGalleryPromptChoices('item-a', 'a'.repeat(64)),
+      loadStyleGalleryPromptChoices('item-a', 'a'.repeat(64)),
     ]);
     assert.equal(requests, 1);
     assert.equal(first, duplicate);
 
-    await loadStyleGalleryPromptChoices('item-a', 2);
+    await loadStyleGalleryPromptChoices('item-a', 'b'.repeat(64));
     assert.equal(requests, 2);
   } finally {
     resetStyleGalleryPromptClientCache();

@@ -60,6 +60,7 @@ export interface StoredStyleGalleryItem {
 export interface StyleGalleryItem extends Omit<StoredStyleGalleryItem, 'examples'> {
   /** 默认 prompt 的兼容读取字段，避免非切换型入口重复选择首项。 */
   prompt: string;
+  promptRevision: string;
   originalPrompt?: string;
   tags: string[];
   modelTargets: string[];
@@ -82,6 +83,8 @@ export interface StyleGalleryCatalogItem {
   additionalPrompts: string[];
   /** 详情 item 中可切换的 prompt 数量。 */
   promptCount: number;
+  /** Prompt 文本及公开来源元数据的内容修订号，用于按需请求的缓存失效。 */
+  promptRevision: string;
   imageHash: string;
   imageCount: number;
   exampleCount: number;
@@ -132,6 +135,7 @@ export interface StyleGalleryExampleOverviewItem extends Omit<StyleGalleryExampl
   sourceImageAlt?: string;
   sourceExampleCount: number;
   sourcePromptCount: number;
+  sourcePromptRevision: string;
   likeCount: number;
 }
 

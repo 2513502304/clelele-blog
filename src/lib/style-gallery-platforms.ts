@@ -9,6 +9,7 @@ export const STYLE_GALLERY_PLATFORMS = [
 ] as const;
 
 export type StyleGalleryPlatform = (typeof STYLE_GALLERY_PLATFORMS)[number];
+export type StyleGalleryPlatformLabel = StyleGalleryPlatform['label'];
 
 /** 同时接受稳定 slug 和展示名称，便于 API 与历史元数据互操作。 */
 export function getStyleGalleryPlatform(value: string): StyleGalleryPlatform | undefined {

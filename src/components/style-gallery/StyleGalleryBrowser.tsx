@@ -32,6 +32,7 @@ export interface StyleGalleryBrowserItem {
   prompt: string;
   additionalPrompts: string[];
   promptCount: number;
+  promptRevision: string;
   date: string;
   sourceImage: string;
   thumbnailImage?: string;
@@ -178,7 +179,7 @@ function StyleGalleryBrowserContent({
 
   /** 复用 hover 预取与点击请求，避免同一 item 在请求尚未完成时重复访问 Vercel/HF。 */
   const loadPromptChoices = useCallback(
-    (item: StyleGalleryBrowserItem) => loadStyleGalleryPromptChoices(item.slug, item.promptCount),
+    (item: StyleGalleryBrowserItem) => loadStyleGalleryPromptChoices(item.slug, item.promptRevision),
     [],
   );
 
@@ -230,7 +231,7 @@ function StyleGalleryBrowserContent({
           candidate.promptCount > 1
             ? {
                 promptCount: candidate.promptCount,
-                getPrompts: () => loadStyleGalleryPromptChoices(candidate.slug, candidate.promptCount),
+                getPrompts: () => loadStyleGalleryPromptChoices(candidate.slug, candidate.promptRevision),
               }
             : undefined,
         locate: () => {
@@ -265,20 +266,20 @@ function StyleGalleryBrowserContent({
       return;
     }
 
-    const cacheKey = getStyleGalleryPromptCacheKey(item.slug, item.promptCount);
-    const cached = getCachedStyleGalleryPromptChoices(item.slug, item.promptCount);
+    const cacheKey = getStyleGalleryPromptCacheKey(item.slug, item.promptRevision);
+    const cached = getCachedStyleGalleryPromptChoices(item.slug, item.promptRevision);
     setPromptPicker(createPromptPickerState(item, cached ?? null));
     if (cached) return;
     try {
       const prompts = await loadPromptChoices(item);
       setPromptPicker((current) =>
-        current && getStyleGalleryPromptCacheKey(current.item.slug, current.item.promptCount) === cacheKey
+        current && getStyleGalleryPromptCacheKey(current.item.slug, current.item.promptRevision) === cacheKey
           ? createPromptPickerState(item, prompts)
           : current,
       );
     } catch {
       setPromptPicker((current) =>
-        current && getStyleGalleryPromptCacheKey(current.item.slug, current.item.promptCount) === cacheKey
+        current && getStyleGalleryPromptCacheKey(current.item.slug, current.item.promptRevision) === cacheKey
           ? createPromptPickerState(item, null, true)
           : current,
       );
@@ -501,7 +502,7 @@ function StyleGalleryBrowserContent({
 
       <Dialog open={Boolean(promptPicker)} onOpenChange={(open) => !open && setPromptPicker(null)}>
         <DialogContent
-          className="flex max-h-[min(80dvh,44rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0"
+          className="flex max-h-[min(80dvh,44rem)] max-w-2xl flex-col gap-0 overflow-hidden bg-white p-0 dark:bg-gray-950"
           overlayClassName="bg-black/65"
           onEscapeKeyDown={(event) => {
             event.preventDefault();
@@ -514,7 +515,7 @@ function StyleGalleryBrowserContent({
         >
           {promptPicker && (
             <StyleGalleryPromptChooser
-              key={getStyleGalleryPromptCacheKey(promptPicker.item.slug, promptPicker.item.promptCount)}
+              key={getStyleGalleryPromptCacheKey(promptPicker.item.slug, promptPicker.item.promptRevision)}
               prompts={promptPicker.prompts}
               failed={promptPicker.failed}
               labels={{

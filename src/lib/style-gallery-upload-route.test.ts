@@ -17,7 +17,7 @@ function createCatalog(): string {
     version: 3,
     updatedAt: '2026-07-19T00:00:00.000Z',
     tags: ['style-prompt'],
-    modelTargets: ['GPT-Image'],
+    modelTargets: ['GPT-Image', 'Nano Banana', 'PixAI', 'Midjourney', 'NovelAI', 'Flux'],
     items: [
       {
         slug,
@@ -25,6 +25,9 @@ function createCatalog(): string {
         date: '2026-07-19T00:00:00.000Z',
         sourceImage: '/api/style-gallery/image/source/aaaaaaaaaaaa.jpg',
         prompt: 'Reusable style prompt',
+        additionalPrompts: [],
+        promptCount: 1,
+        promptRevision: 'c'.repeat(64),
         imageHash: 'a'.repeat(64),
         imageCount: 1,
         exampleCount: 0,

@@ -227,6 +227,23 @@ export function updateImageLightboxResolvedSources(resolved: Readonly<Record<str
   return true;
 }
 
+/** 仅移除当前失败的签名值，使图片立即回退到稳定同源地址，并允许预取逻辑重新签名。 */
+export function clearImageLightboxResolvedSource(source: string, failedUrl: string): boolean {
+  const modal = $activeModal.get();
+  if (modal.type !== 'imageLightbox') return false;
+  const data = modal.data as ImageLightboxData;
+  let changed = false;
+  const images = data.images.map((image) => {
+    if (image.src !== source || image.resolvedSrc !== failedUrl) return image;
+    changed = true;
+    const { resolvedSrc: _resolvedSrc, ...fallbackImage } = image;
+    return fallbackImage;
+  });
+  if (!changed) return false;
+  $activeModal.set({ type: 'imageLightbox', data: { ...data, images } });
+  return true;
+}
+
 /**
  * 删除异步完成时按稳定 ID 移除对应图片。用户若已切换到其他图片，则保持当前视觉焦点；
  * 删除当前图片时优先显示其后一张，删除最后一张后回退到前一张。

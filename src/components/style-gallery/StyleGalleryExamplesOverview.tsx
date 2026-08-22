@@ -168,12 +168,12 @@ function StyleGalleryExamplesOverviewContent({
       alt: `${candidate.sourceTitle} ${candidate.model}`,
       like: createStyleGalleryLightboxLikeAction(candidate.id, likes, labels.likes),
       copy: createStyleGalleryCopyAction(
-        () => loadStyleGalleryDefaultPrompt(candidate.sourceSlug, candidate.sourcePromptCount),
+        () => loadStyleGalleryDefaultPrompt(candidate.sourceSlug, candidate.sourcePromptRevision),
         lightboxActionLabels,
         candidate.sourcePromptCount > 1
           ? {
               promptCount: candidate.sourcePromptCount,
-              getPrompts: () => loadStyleGalleryPromptChoices(candidate.sourceSlug, candidate.sourcePromptCount),
+              getPrompts: () => loadStyleGalleryPromptChoices(candidate.sourceSlug, candidate.sourcePromptRevision),
             }
           : undefined,
       ),

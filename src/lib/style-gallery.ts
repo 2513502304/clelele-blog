@@ -1,5 +1,5 @@
 import { getStyleGalleryParentLikeCounts } from '@lib/style-gallery-likes';
-import { getPrimaryStyleGalleryPrompt } from '@lib/style-gallery-prompts';
+import { getPrimaryStyleGalleryPrompt, getStyleGalleryPromptRevision } from '@lib/style-gallery-prompts';
 import { getStoredStyleGalleryItem, getStyleGalleryCatalog, getStyleGalleryExampleIndex } from '@lib/style-gallery-store';
 import type {
   StyleGalleryCardData,
@@ -38,6 +38,7 @@ export async function getStyleGalleryItemBySlug(slug: string): Promise<StyleGall
   return {
     ...item,
     prompt: primaryPrompt.prompt,
+    promptRevision: getStyleGalleryPromptRevision(item.prompts),
     originalPrompt: primaryPrompt.originalPrompt,
     examples: item.examples.map((example) => ({
       ...example,
@@ -74,6 +75,7 @@ export async function getStyleGalleryExampleOverview(): Promise<StyleGalleryExam
         sourceImageAlt: source.sourceImageAlt,
         sourceExampleCount: source.exampleCount,
         sourcePromptCount: source.promptCount,
+        sourcePromptRevision: source.promptRevision,
         likeCount: likedBy.length,
       }));
     })

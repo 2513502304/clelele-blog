@@ -3,6 +3,7 @@ import test from 'node:test';
 import { createStyleGallerySourceLightboxData } from '@lib/style-gallery-lightbox-actions';
 import {
   $imageLightboxData,
+  clearImageLightboxResolvedSource,
   closeModal,
   type ImageLightboxLikeAction,
   navigateImage,
@@ -124,6 +125,17 @@ test('merges a batch of signed sources without replacing canonical download path
   assert.equal(images?.[0].src, '/api/style-gallery/image/source/aaaaaaaaaaaa.jpg');
   assert.equal(images?.[0].resolvedSrc, 'https://s3.example.test/signed-first');
   assert.equal(images?.[1].resolvedSrc, 'https://s3.example.test/signed-second');
+
+  assert.equal(
+    clearImageLightboxResolvedSource(
+      '/api/style-gallery/image/source/aaaaaaaaaaaa.jpg',
+      'https://s3.example.test/signed-first',
+    ),
+    true,
+  );
+  assert.equal($imageLightboxData.get()?.images[0].resolvedSrc, undefined);
+  assert.equal($imageLightboxData.get()?.images[0].src, '/api/style-gallery/image/source/aaaaaaaaaaaa.jpg');
+  assert.equal($imageLightboxData.get()?.images[1].resolvedSrc, 'https://s3.example.test/signed-second');
   closeModal();
 });
 

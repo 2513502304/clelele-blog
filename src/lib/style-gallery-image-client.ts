@@ -3,8 +3,19 @@ import { parseStyleGalleryImageApiPath } from './style-gallery-image-key';
 const BATCH_SIGN_TIMEOUT_MS = 15_000;
 const BATCH_SIGN_ATTEMPTS = 3;
 const BATCH_SIGN_RETRY_BASE_MS = 200;
-const signedUrlCache = new Map<string, string>();
-let activeRequests = new Map<string, Promise<Record<string, string>>>();
+const LEGACY_RESPONSE_CACHE_MS = 5 * 60 * 1000;
+interface SignedUrlResponse {
+  images: Record<string, string>;
+  expiresAt: number | null;
+}
+
+interface SignedUrlCacheEntry {
+  url: string;
+  expiresAt: number | null;
+}
+
+const signedUrlCache = new Map<string, SignedUrlCacheEntry>();
+let activeRequests = new Map<string, Promise<SignedUrlResponse>>();
 
 function isRetryableSigningError(error: unknown): boolean {
   if (error instanceof TypeError) return true;
@@ -12,7 +23,7 @@ function isRetryableSigningError(error: unknown): boolean {
   return error instanceof Error && /HTTP (?:408|429|5\d\d)\b/.test(error.message);
 }
 
-async function requestSignedUrls(keys: readonly string[]): Promise<Record<string, string>> {
+async function requestSignedUrls(keys: readonly string[]): Promise<SignedUrlResponse> {
   let lastError: unknown;
   for (let attempt = 1; attempt <= BATCH_SIGN_ATTEMPTS; attempt += 1) {
     try {
@@ -27,8 +38,16 @@ async function requestSignedUrls(keys: readonly string[]): Promise<Record<string
         const detail = await response.text();
         throw new Error(`Image signing failed with HTTP ${response.status}${detail ? `: ${detail}` : '.'}`);
       }
-      const body = (await response.json()) as { images?: Record<string, string> };
-      return body.images ?? {};
+      const body = (await response.json()) as { images?: Record<string, string>; expiresAt?: number | null };
+      return {
+        images: body.images ?? {},
+        expiresAt:
+          body.expiresAt === null
+            ? null
+            : typeof body.expiresAt === 'number' && Number.isFinite(body.expiresAt)
+              ? body.expiresAt
+              : Date.now() + LEGACY_RESPONSE_CACHE_MS,
+      };
     } catch (error) {
       if (!isRetryableSigningError(error)) throw error;
       lastError = error;
@@ -42,7 +61,7 @@ async function requestSignedUrls(keys: readonly string[]): Promise<Record<string
 
 /**
  * 将同一导航窗口内尚未签名的图片合并成一次请求。缓存以稳定同源 URL 为 key，
- * 页面生命周期内重复打开 lightbox 不会再次签名；签名本身仍受服务端 TTL 限制。
+ * 在服务端给出的安全过期时间内复用；滚动部署期间的旧响应只短暂缓存，避免把未知 TTL 当成永久有效。
  */
 export async function resolveStyleGalleryImageUrls(sources: readonly string[]): Promise<Record<string, string>> {
   const uniqueSources = [...new Set(sources)];
@@ -50,10 +69,11 @@ export async function resolveStyleGalleryImageUrls(sources: readonly string[]): 
   const missing: Array<{ source: string; key: string }> = [];
   for (const source of uniqueSources) {
     const cached = signedUrlCache.get(source);
-    if (cached) {
-      result[source] = cached;
+    if (cached && (cached.expiresAt === null || cached.expiresAt > Date.now())) {
+      result[source] = cached.url;
       continue;
     }
+    if (cached) signedUrlCache.delete(source);
     const key = parseStyleGalleryImageApiPath(source);
     if (key) missing.push({ source, key });
   }
@@ -70,12 +90,17 @@ export async function resolveStyleGalleryImageUrls(sources: readonly string[]): 
   }
 
   const resolved = await request;
-  for (const [source, url] of Object.entries(resolved)) {
+  for (const [source, url] of Object.entries(resolved.images)) {
     if (!parseStyleGalleryImageApiPath(source) || typeof url !== 'string' || !url) continue;
-    signedUrlCache.set(source, url);
+    signedUrlCache.set(source, { url, expiresAt: resolved.expiresAt });
     result[source] = url;
   }
   return result;
+}
+
+/** 图片服务器提前拒绝签名时只失效对应 URL，其他已加载图片仍可继续复用缓存。 */
+export function invalidateStyleGalleryImageUrl(source: string): void {
+  signedUrlCache.delete(source);
 }
 
 /** 测试与 Astro 页面切换时可显式释放会话级缓存。 */
