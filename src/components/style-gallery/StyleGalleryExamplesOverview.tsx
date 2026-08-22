@@ -8,12 +8,12 @@ import {
   createStyleGalleryDeleteAction,
   deleteStyleGalleryExample,
   getStyleGalleryLightboxElementId,
-  loadStyleGalleryPrompt,
   locateStyleGalleryElement,
   STYLE_GALLERY_UPLOAD_TOKEN_STORAGE_KEY,
   type StyleGalleryLightboxActionLabels,
 } from '@lib/style-gallery-lightbox-actions';
 import { STYLE_GALLERY_PLATFORMS } from '@lib/style-gallery-platforms';
+import { loadStyleGalleryDefaultPrompt, loadStyleGalleryPromptChoices } from '@lib/style-gallery-prompt-client';
 import { openModal } from '@store/modal';
 import { parseAsString, parseAsStringLiteral, useQueryState, useQueryStates } from 'nuqs';
 import { NuqsAdapter } from 'nuqs/adapters/react';
@@ -167,7 +167,16 @@ function StyleGalleryExamplesOverviewContent({
       src: candidate.src,
       alt: `${candidate.sourceTitle} ${candidate.model}`,
       like: createStyleGalleryLightboxLikeAction(candidate.id, likes, labels.likes),
-      copy: createStyleGalleryCopyAction(() => loadStyleGalleryPrompt(candidate.sourceSlug), lightboxActionLabels),
+      copy: createStyleGalleryCopyAction(
+        () => loadStyleGalleryDefaultPrompt(candidate.sourceSlug, candidate.sourcePromptCount),
+        lightboxActionLabels,
+        candidate.sourcePromptCount > 1
+          ? {
+              promptCount: candidate.sourcePromptCount,
+              getPrompts: () => loadStyleGalleryPromptChoices(candidate.sourceSlug, candidate.sourcePromptCount),
+            }
+          : undefined,
+      ),
       delete: createStyleGalleryDeleteAction(
         candidate.id,
         `${candidate.sourceTitle} ${candidate.model}`,

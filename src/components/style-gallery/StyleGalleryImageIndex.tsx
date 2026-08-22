@@ -9,6 +9,7 @@ import {
   locateStyleGalleryElement,
   type StyleGalleryLightboxCopyLabels,
 } from '@lib/style-gallery-lightbox-actions';
+import { loadStyleGalleryPromptChoices } from '@lib/style-gallery-prompt-client';
 import { getSelectedStyleGalleryPrompt } from '@lib/style-gallery-prompt-selection';
 import { openModal } from '@store/modal';
 import { parseAsString, parseAsStringLiteral, useQueryState, useQueryStates } from 'nuqs';
@@ -137,6 +138,13 @@ function StyleGalleryImageIndexContent({
         previewSrc: candidate.thumbnailImage ?? candidate.sourceImage,
         alt: candidate.sourceImageAlt ?? candidate.title,
         getPrompt: () => getSelectedStyleGalleryPrompt(candidate.slug) ?? candidate.prompt,
+        promptOptions:
+          candidate.promptCount > 1
+            ? {
+                promptCount: candidate.promptCount,
+                getPrompts: () => loadStyleGalleryPromptChoices(candidate.slug, candidate.promptCount),
+              }
+            : undefined,
         locate: () => {
           const targetIndex = visibleItems.findIndex((entry) => entry.slug === candidate.slug);
           revealThrough(targetIndex);

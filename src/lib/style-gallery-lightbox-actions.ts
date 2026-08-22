@@ -1,4 +1,5 @@
 import type { ImageLightboxCopyAction, ImageLightboxData, ImageLightboxDeleteAction } from '@store/modal';
+import type { StyleGalleryPromptChoice } from './style-gallery-prompt-client';
 
 export const STYLE_GALLERY_UPLOAD_TOKEN_STORAGE_KEY = 'style-gallery-upload-token';
 
@@ -16,28 +17,8 @@ export interface StyleGalleryLightboxActionLabels extends StyleGalleryLightboxCo
   deleteConfirm: string;
 }
 
-let promptCatalogPromise: Promise<Map<string, string>> | null = null;
 const MUTATION_ATTEMPTS = 3;
 const MUTATION_TIMEOUT_MS = 30_000;
-
-/** Sub-gallery 总览首次复制时才读取 catalog；同一页面生命周期内所有图片共享结果。 */
-export async function loadStyleGalleryPrompt(sourceSlug: string): Promise<string> {
-  if (!promptCatalogPromise) {
-    promptCatalogPromise = fetch('/api/style-gallery/catalog', { credentials: 'same-origin' })
-      .then(async (response) => {
-        if (!response.ok) throw new Error(await response.text());
-        const catalog = (await response.json()) as { items?: Array<{ slug: string; prompt: string }> };
-        return new Map((catalog.items ?? []).map((item) => [item.slug, item.prompt]));
-      })
-      .catch((error) => {
-        promptCatalogPromise = null;
-        throw error;
-      });
-  }
-  const prompt = (await promptCatalogPromise).get(sourceSlug);
-  if (!prompt) throw new Error(`Style prompt not found: ${sourceSlug}`);
-  return prompt;
-}
 
 /** Popup 删除与详情页批量操作使用相同 API 和 bearer token；每次重试都有独立超时。 */
 export async function deleteStyleGalleryExample(sourceSlug: string, exampleId: string, token: string): Promise<void> {
@@ -74,12 +55,14 @@ export async function deleteStyleGalleryExample(sourceSlug: string, exampleId: s
 export function createStyleGalleryCopyAction(
   getText: () => string | Promise<string>,
   labels: StyleGalleryLightboxCopyLabels,
+  promptOptions?: { promptCount: number; getPrompts: () => Promise<StyleGalleryPromptChoice[]> },
 ): ImageLightboxCopyAction {
   return {
     label: labels.copyPrompt,
     copiedLabel: labels.copiedPrompt,
     failedLabel: labels.copyFailed,
     getText,
+    ...promptOptions,
   };
 }
 
@@ -90,6 +73,7 @@ export interface StyleGallerySourceLightboxItem {
   alt: string;
   getPrompt: () => string | Promise<string>;
   locate?: () => void;
+  promptOptions?: { promptCount: number; getPrompts: () => Promise<StyleGalleryPromptChoice[]> };
 }
 
 /** 等 React 先挂载目标分页/渐进批次，再滚动到卡片并短暂聚焦。 */
@@ -123,7 +107,7 @@ export function createStyleGallerySourceLightboxData(
     src: item.src,
     previewSrc: item.previewSrc,
     alt: item.alt,
-    copy: createStyleGalleryCopyAction(item.getPrompt, labels),
+    copy: createStyleGalleryCopyAction(item.getPrompt, labels, item.promptOptions),
     locate: item.locate ? { run: item.locate } : undefined,
   }));
   const currentIndex = Math.max(

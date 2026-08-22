@@ -11,6 +11,7 @@
  * - Type-safe modal data
  */
 
+import type { StyleGalleryPromptChoice } from '@lib/style-gallery-prompt-client';
 import { atom, computed } from 'nanostores';
 
 /**
@@ -70,6 +71,9 @@ export interface ImageLightboxCopyAction {
   copiedLabel: string;
   failedLabel: string;
   getText: () => string | Promise<string>;
+  /** 仅多 Prompt Gallery 图片提供；普通图片与单 Prompt 继续走快速复制。 */
+  promptCount?: number;
+  getPrompts?: () => Promise<StyleGalleryPromptChoice[]>;
 }
 
 /** 可选的受保护删除动作；调用方负责 API 鉴权与业务状态同步。 */

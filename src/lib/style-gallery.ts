@@ -73,6 +73,7 @@ export async function getStyleGalleryExampleOverview(): Promise<StyleGalleryExam
         sourceImage: source.thumbnailImage ?? source.sourceImage,
         sourceImageAlt: source.sourceImageAlt,
         sourceExampleCount: source.exampleCount,
+        sourcePromptCount: source.promptCount,
         likeCount: likedBy.length,
       }));
     })

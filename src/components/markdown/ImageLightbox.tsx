@@ -16,6 +16,7 @@ import { createImageLightboxDownloadAction } from '@lib/image-lightbox-download'
 import { getLive2DFocusNodes, isLive2DOwnedTarget } from '@lib/live2d/focus-scope';
 import { resolveStyleGalleryImageUrls } from '@lib/style-gallery-image-client';
 import { createLightboxPrefetchPlan } from '@lib/style-gallery-lightbox-prefetch';
+import type { StyleGalleryPromptChoice } from '@lib/style-gallery-prompt-client';
 import { useStore } from '@nanostores/react';
 import {
   $imageLightboxData,
@@ -29,6 +30,7 @@ import {
 } from '@store/modal';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { StyleGalleryPromptChooser } from '../style-gallery/StyleGalleryPromptChooser';
 import { LightboxLikeButton, NavButton, ToolbarButton, ToolbarLink, ZoomHint } from './ImageLightboxControls';
 
 const ZOOM_SENSITIVITY_STORAGE_KEY = 'image-lightbox-zoom-sensitivity';
@@ -145,10 +147,16 @@ export default function ImageLightbox() {
   const [zoomSensitivity, setZoomSensitivity] = useState(DEFAULT_ZOOM_SENSITIVITY);
   const [showSensitivity, setShowSensitivity] = useState(false);
   const [copyState, setCopyState] = useState<{ key: string; status: 'copying' | 'copied' | 'failed' } | null>(null);
+  const [promptPicker, setPromptPicker] = useState<{
+    key: string;
+    prompts: StyleGalleryPromptChoice[] | null;
+    failed: boolean;
+  } | null>(null);
   const [deleteState, setDeleteState] = useState<{ key: string; status: 'deleting' | 'failed' } | null>(null);
   const currentCopyStatus = copyState?.key === currentImageKey ? copyState.status : null;
   const currentDeleteStatus = deleteState?.key === currentImageKey ? deleteState.status : null;
   const copyAttemptRef = useRef(0);
+  const promptAttemptRef = useRef(0);
   const deleteAttemptRef = useRef(0);
   const copyTimerRef = useRef(0);
   const deleteTimerRef = useRef(0);
@@ -199,6 +207,18 @@ export default function ImageLightbox() {
   const handleCopy = useCallback(async () => {
     if (!currentCopy) return;
     const key = currentImageKey;
+    if (currentCopy.promptCount && currentCopy.promptCount > 1 && currentCopy.getPrompts) {
+      const attempt = ++promptAttemptRef.current;
+      setPromptPicker({ key, prompts: null, failed: false });
+      try {
+        const prompts = await currentCopy.getPrompts();
+        if (promptAttemptRef.current === attempt) setPromptPicker({ key, prompts, failed: false });
+      } catch (error) {
+        console.error('[image-lightbox] Failed to load prompt choices.', error);
+        if (promptAttemptRef.current === attempt) setPromptPicker({ key, prompts: null, failed: true });
+      }
+      return;
+    }
     const attempt = ++copyAttemptRef.current;
     window.clearTimeout(copyTimerRef.current);
     setCopyState({ key, status: 'copying' });
@@ -213,6 +233,16 @@ export default function ImageLightbox() {
       if (copyAttemptRef.current === attempt) setCopyState(null);
     }, 2000);
   }, [currentCopy, currentImageKey]);
+
+  const copyPromptChoice = useCallback(async (prompt: StyleGalleryPromptChoice): Promise<boolean> => {
+    try {
+      await navigator.clipboard.writeText(prompt.prompt);
+      return true;
+    } catch (error) {
+      console.error('[image-lightbox] Failed to copy selected prompt.', error);
+      return false;
+    }
+  }, []);
 
   const handleDelete = useCallback(async () => {
     if (!currentDelete?.enabled || !window.confirm(currentDelete.confirmMessage)) return;
@@ -256,7 +286,7 @@ export default function ImageLightbox() {
   useKeyboardShortcut({
     key: 'ArrowLeft',
     handler: () => navigateTo(-1),
-    enabled: isOpen,
+    enabled: isOpen && !promptPicker,
     ignoreInputs: false,
     preventDefault: false,
   });
@@ -264,7 +294,7 @@ export default function ImageLightbox() {
   useKeyboardShortcut({
     key: 'ArrowRight',
     handler: () => navigateTo(1),
-    enabled: isOpen,
+    enabled: isOpen && !promptPicker,
     ignoreInputs: false,
     preventDefault: false,
   });
@@ -314,6 +344,7 @@ export default function ImageLightbox() {
   // Reset zoom, rotation, and image state when opening/closing
   useEffect(() => {
     copyAttemptRef.current += 1;
+    promptAttemptRef.current += 1;
     deleteAttemptRef.current += 1;
     window.clearTimeout(copyTimerRef.current);
     window.clearTimeout(deleteTimerRef.current);
@@ -322,6 +353,7 @@ export default function ImageLightbox() {
       setRotation(0);
       setShowSensitivity(false);
       setCopyState(null);
+      setPromptPicker(null);
       setDeleteState(null);
     }
     return () => {
@@ -571,6 +603,44 @@ export default function ImageLightbox() {
                   <div className="h-px tablet:h-5 tablet:w-px w-5 shrink-0 bg-white/20" />
                   <ToolbarButton icon="ri:close-line" label={t('image.close')} onClick={() => closeModal()} />
                 </motion.div>
+
+                {promptPicker && currentCopy?.getPrompts && (
+                  <div
+                    className="absolute inset-0 z-30 flex items-center justify-center bg-black/65 p-4"
+                    onPointerDown={(event) => {
+                      if (event.target === event.currentTarget) setPromptPicker(null);
+                    }}
+                    onKeyDownCapture={(event) => {
+                      if (event.key !== 'Escape') return;
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setPromptPicker(null);
+                    }}
+                  >
+                    <div className="flex max-h-[min(82dvh,46rem)] w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-white/15 bg-background shadow-2xl">
+                      <StyleGalleryPromptChooser
+                        key={promptPicker.key}
+                        prompts={promptPicker.prompts}
+                        failed={promptPicker.failed}
+                        labels={{
+                          title: t('gallery.promptChooserTitle'),
+                          description: t('gallery.promptChooserDescription'),
+                          promptOption: t('gallery.promptOption'),
+                          unknownModel: t('gallery.promptModelUnknown'),
+                          loading: t('gallery.promptLoading'),
+                          loadFailed: t('gallery.promptLoadFailed'),
+                          copy: t('gallery.copy'),
+                          copied: t('gallery.copied'),
+                          close: t('image.close'),
+                        }}
+                        onRetry={() => void handleCopy()}
+                        onCopy={copyPromptChoice}
+                        onClose={() => setPromptPicker(null)}
+                        reduceMotion={shouldReduceMotion}
+                      />
+                    </div>
+                  </div>
+                )}
 
                 {/* Image viewport with zoom/pan */}
                 <div

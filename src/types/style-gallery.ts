@@ -131,6 +131,7 @@ export interface StyleGalleryExampleOverviewItem extends Omit<StyleGalleryExampl
   sourceImage: string;
   sourceImageAlt?: string;
   sourceExampleCount: number;
+  sourcePromptCount: number;
   likeCount: number;
 }
 

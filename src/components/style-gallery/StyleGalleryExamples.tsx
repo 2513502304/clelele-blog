@@ -27,7 +27,7 @@ import {
 } from '@lib/style-gallery-request-batches';
 import { openModal } from '@store/modal';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { StyleGalleryExample, StyleGalleryExampleView } from '@/types/style-gallery';
+import type { StyleGalleryExample, StyleGalleryExampleView, StyleGalleryPromptVariant } from '@/types/style-gallery';
 import {
   createStyleGalleryLightboxLikeAction,
   StyleGalleryLikeButton,
@@ -39,6 +39,7 @@ interface StyleGalleryExamplesProps {
   slug: string;
   title: string;
   prompt: string;
+  prompts: StyleGalleryPromptVariant[];
   initialExamples: StyleGalleryExampleView[];
   uploadsEnabled: boolean;
   likeLabels: StyleGalleryLikeLabels;
@@ -285,6 +286,7 @@ export default function StyleGalleryExamples({
   slug,
   title,
   prompt,
+  prompts,
   initialExamples,
   uploadsEnabled,
   likeLabels,
@@ -349,7 +351,11 @@ export default function StyleGalleryExamples({
       src: candidate.src,
       alt: candidate.alt ?? candidate.model ?? 'Generated example',
       like: createStyleGalleryLightboxLikeAction(candidate.id, likes, likeLabels),
-      copy: createStyleGalleryCopyAction(() => activePrompt.current, lightboxActionLabels),
+      copy: createStyleGalleryCopyAction(
+        () => activePrompt.current,
+        lightboxActionLabels,
+        prompts.length > 1 ? { promptCount: prompts.length, getPrompts: async () => prompts } : undefined,
+      ),
       delete: createStyleGalleryDeleteAction(
         candidate.id,
         candidate.alt ?? candidate.model ?? 'generated example',
