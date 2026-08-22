@@ -14,7 +14,7 @@ function sha256(bytes: Uint8Array): string {
 
 function createCatalog(): string {
   return JSON.stringify({
-    version: 3,
+    version: 4,
     updatedAt: '2026-07-19T00:00:00.000Z',
     tags: ['style-prompt'],
     modelTargets: ['GPT-Image', 'Nano Banana', 'PixAI', 'Midjourney', 'NovelAI', 'Flux'],

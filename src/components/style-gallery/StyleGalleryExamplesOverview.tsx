@@ -1,5 +1,8 @@
 import { ErrorBoundary, InlineErrorFallback } from '@components/common';
 import StyleGalleryDateRangeFilter from '@components/style-gallery/StyleGalleryDateRangeFilter';
+import StyleGalleryVisualFilter, {
+  type StyleGalleryVisualFilterLabels,
+} from '@components/style-gallery/StyleGalleryVisualFilter';
 import { Icon } from '@iconify/react';
 import { createStyleGalleryDateRangeMatcher, getStyleGalleryDateKey } from '@lib/style-gallery-date-range';
 import type { StyleGalleryDateRangeLabels } from '@lib/style-gallery-date-range-labels';
@@ -55,6 +58,7 @@ export interface StyleGalleryExamplesOverviewLabels {
   sortDescending: string;
   likes: StyleGalleryLikeLabels;
   dateRange: StyleGalleryDateRangeLabels;
+  visualFilter: StyleGalleryVisualFilterLabels;
 }
 
 const INITIAL_EXAMPLE_COUNT = 24;
@@ -95,6 +99,8 @@ function StyleGalleryExamplesOverviewContent({
     to: parseAsString.withDefault(''),
   });
   const likes = useStyleGalleryLikes(Object.fromEntries(examples.map((example) => [example.id, example.likeCount])));
+  const [visualMatches, setVisualMatches] = useState<Set<string> | null>(null);
+  const [visualRevision, setVisualRevision] = useState(0);
   useEffect(() => {
     setUploadToken(localStorage.getItem(STYLE_GALLERY_UPLOAD_TOKEN_STORAGE_KEY) ?? '');
   }, []);
@@ -138,7 +144,7 @@ function StyleGalleryExamplesOverviewContent({
       const matchesQuery =
         !normalizedQuery || `${example.sourceTitle} ${example.note ?? ''}`.toLowerCase().includes(normalizedQuery);
       const matchesDate = matchesDateRange(example.uploadedAt);
-      return matchesPlatform && matchesQuery && matchesDate;
+      return matchesPlatform && matchesQuery && matchesDate && (visualMatches === null || visualMatches.has(example.id));
     });
     const sorted = [...matches];
     if (sortKey !== 'default') {
@@ -150,7 +156,7 @@ function StyleGalleryExamplesOverviewContent({
       });
     }
     return sortDirection === 'desc' ? sorted.reverse() : sorted;
-  }, [examples, likeSortCounts, matchesDateRange, platform, query, sortDirection, sortKey]);
+  }, [examples, likeSortCounts, matchesDateRange, platform, query, sortDirection, sortKey, visualMatches]);
   const hasPendingLikeSort =
     sortKey === 'likes' && examples.some((example) => (likeSortCounts[example.id] ?? 0) !== likes.getCount(example.id));
   const deleteOverviewExample = useCallback(
@@ -210,7 +216,7 @@ function StyleGalleryExamplesOverviewContent({
   const { hasMore, loadMore, loadMoreRef, revealThrough, visibleItems } = useProgressiveList(filtered, {
     initialCount: INITIAL_EXAMPLE_COUNT,
     batchSize: EXAMPLE_BATCH_SIZE,
-    resetKey: `${platform}\u0000${query.trim().toLowerCase()}\u0000${dateFrom}\u0000${dateTo}\u0000${sortKey}\u0000${sortDirection}`,
+    resetKey: `${platform}\u0000${query.trim().toLowerCase()}\u0000${dateFrom}\u0000${dateTo}\u0000${sortKey}\u0000${sortDirection}\u0000${visualRevision}`,
   });
 
   function refreshLikeSortCounts() {
@@ -239,6 +245,14 @@ function StyleGalleryExamplesOverviewContent({
             className="h-10 w-full rounded-md border border-border bg-background pr-3 pl-9 text-sm outline-none focus:border-primary"
           />
         </label>
+        <StyleGalleryVisualFilter
+          scope="example"
+          labels={labels.visualFilter}
+          onResults={(matches) => {
+            setVisualMatches(matches);
+            setVisualRevision((revision) => revision + 1);
+          }}
+        />
         <label className="sr-only" htmlFor="example-platform-filter">
           {labels.platform}
         </label>

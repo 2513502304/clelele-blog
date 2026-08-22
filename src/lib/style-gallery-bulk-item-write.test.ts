@@ -3,6 +3,8 @@ import { describe, it } from 'node:test';
 import { getStyleGalleryPromptId } from '@lib/style-gallery-prompts';
 import type { StoredStyleGalleryItem, StyleGalleryExample } from '@/types/style-gallery';
 import { POST as writeItems } from '../pages/api/style-gallery/items';
+import { encodeQuantizedEmbedding } from './style-gallery-visual-feature';
+import { STYLE_GALLERY_VISUAL_EMBEDDING_DIMENSION, type StyleGalleryVisualRecordInput } from './style-gallery-visual-types';
 
 const token = 'test-upload-token';
 const objectPrefix = '/clelele0722/raw-datasets/image-style-prompt-gallery/';
@@ -42,6 +44,25 @@ function createItem(index: number): StoredStyleGalleryItem {
   };
 }
 
+function createVisualRecords(items: StoredStyleGalleryItem[]): StyleGalleryVisualRecordInput[] {
+  const embedding = new Float32Array(STYLE_GALLERY_VISUAL_EMBEDDING_DIMENSION);
+  embedding[0] = 1;
+  return items.flatMap((item) =>
+    item.images.map((image) => ({
+      kind: 'source' as const,
+      sourceSlug: item.slug,
+      imageId: image.imageHash,
+      feature: {
+        imageHash: image.imageHash,
+        perceptualHash: '0'.repeat(16),
+        differenceHash: '0'.repeat(16),
+        palette: 'A'.repeat(32),
+        embedding: encodeQuantizedEmbedding(embedding),
+      },
+    })),
+  );
+}
+
 function bodyText(body: BodyInit | null | undefined): string {
   if (typeof body === 'string') return body;
   if (body instanceof Uint8Array) return new TextDecoder().decode(body);
@@ -65,7 +86,7 @@ describe('style gallery bulk item writes', () => {
       [
         'metadata/catalog.json',
         JSON.stringify({
-          version: 3,
+          version: 4,
           updatedAt: '2026-08-03T00:00:00.000Z',
           tags: ['codex-session', 'style-prompt'],
           modelTargets: ['GPT-Image', 'Nano Banana', 'PixAI', 'Midjourney', 'NovelAI', 'Flux'],
@@ -149,7 +170,7 @@ describe('style gallery bulk item writes', () => {
       const request = new Request('https://example.test/api/style-gallery/items', {
         method: 'POST',
         headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ mode: 'create', items }),
+        body: JSON.stringify({ mode: 'create', items, visualRecords: createVisualRecords(items) }),
       });
       const response = await writeItems({ request } as never);
       const responseBody = await response.text();
@@ -179,7 +200,11 @@ describe('style gallery bulk item writes', () => {
       const appendRequest = new Request('https://example.test/api/style-gallery/items', {
         method: 'POST',
         headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ mode: 'create', items: [alternateItem] }),
+        body: JSON.stringify({
+          mode: 'create',
+          items: [alternateItem],
+          visualRecords: createVisualRecords([alternateItem]),
+        }),
       });
       const appendResponse = await writeItems({ request: appendRequest } as never);
       assert.equal(appendResponse.status, 200);
@@ -194,6 +219,7 @@ describe('style gallery bulk item writes', () => {
         updated: 1,
         addedPrompts: 1,
         skippedDuplicates: 0,
+        visualIndexUpdated: true,
       });
       const appendedItem = JSON.parse(objects.get(`items/${items[0].slug}.json`) ?? '{}') as StoredStyleGalleryItem;
       assert.equal(appendedItem.prompts.length, 2);
@@ -205,7 +231,11 @@ describe('style gallery bulk item writes', () => {
       const duplicateRequest = new Request('https://example.test/api/style-gallery/items', {
         method: 'POST',
         headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ mode: 'create', items: [alternateItem] }),
+        body: JSON.stringify({
+          mode: 'create',
+          items: [alternateItem],
+          visualRecords: createVisualRecords([alternateItem]),
+        }),
       });
       const duplicateResponse = await writeItems({ request: duplicateRequest } as never);
       assert.equal(duplicateResponse.status, 200);

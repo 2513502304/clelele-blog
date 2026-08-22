@@ -1,5 +1,8 @@
 import { ErrorBoundary, InlineErrorFallback } from '@components/common';
 import StyleGalleryDateRangeFilter from '@components/style-gallery/StyleGalleryDateRangeFilter';
+import StyleGalleryVisualFilter, {
+  type StyleGalleryVisualFilterLabels,
+} from '@components/style-gallery/StyleGalleryVisualFilter';
 import { useCollectionPagination } from '@hooks/useCollectionPagination';
 import { Icon } from '@iconify/react';
 import { createStyleGalleryDateRangeMatcher, getStyleGalleryDateKey } from '@lib/style-gallery-date-range';
@@ -80,6 +83,7 @@ export interface StyleGalleryBrowserLabels {
   noMatches: string;
   openImage: string;
   dateRange: StyleGalleryDateRangeLabels;
+  visualFilter: StyleGalleryVisualFilterLabels;
 }
 
 type SortKey = 'default' | 'date' | 'id' | 'examples' | 'likes';
@@ -134,6 +138,7 @@ function StyleGalleryBrowserContent({
   const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
   const [copyErrorSlug, setCopyErrorSlug] = useState<string | null>(null);
   const [promptPicker, setPromptPicker] = useState<PromptPickerState | null>(null);
+  const [visualMatches, setVisualMatches] = useState<Set<string> | null>(null);
   const dateFormatter = useMemo(() => new Intl.DateTimeFormat(locale, { timeZone: 'Asia/Shanghai' }), [locale]);
   const sortLabels: Record<SortKey, string> = {
     default: labels.sortDefault,
@@ -160,7 +165,8 @@ function StyleGalleryBrowserContent({
         .join(' ');
       const matchesQuery = !q || normalize(searchable).includes(q);
       const matchesDate = matchesDateRange(item.date);
-      return matchesTag && matchesQuery && matchesDate;
+      const matchesVisual = visualMatches === null || visualMatches.has(item.slug);
+      return matchesTag && matchesQuery && matchesDate && matchesVisual;
     });
 
     const sorted = [...filtered];
@@ -173,7 +179,7 @@ function StyleGalleryBrowserContent({
       });
     }
     return sortDirection === 'desc' ? sorted.reverse() : sorted;
-  }, [activeTag, items, matchesDateRange, modelTargets, query, sortDirection, sortKey, tags]);
+  }, [activeTag, items, matchesDateRange, modelTargets, query, sortDirection, sortKey, tags, visualMatches]);
   const { currentPage, isPaginated, pageSize, setCurrentPage, setIsPaginated, setPageSize, totalPages, visibleItems } =
     useCollectionPagination(filteredItems, 'style-gallery-pagination-settings');
 
@@ -331,6 +337,14 @@ function StyleGalleryBrowserContent({
             onPageSizeChange={setPageSize}
           />
           <div className="flex flex-wrap justify-end gap-2">
+            <StyleGalleryVisualFilter
+              scope="source"
+              labels={labels.visualFilter}
+              onResults={(matches) => {
+                setVisualMatches(matches);
+                setCurrentPage(1);
+              }}
+            />
             <StyleGalleryDateRangeFilter
               value={{ from: dateFrom, to: dateTo }}
               locale={locale}

@@ -11,6 +11,7 @@ import { getStyleGalleryData, toStyleGalleryCardDataList } from '@lib/style-gall
 import { Icon } from 'astro-icon/components';
 import { getLocaleFromUrl, localizedPath, t } from '@/i18n';
 import { createStyleGalleryDateRangeLabels } from '@/lib/style-gallery-date-range-labels';
+import { createStyleGalleryVisualFilterLabels } from '@/lib/style-gallery-visual-labels';
 
 export const prerender = false;
 
@@ -37,6 +38,7 @@ const labels = {
   loadMore: t(locale, 'search.loadMore'),
   openImage: t(locale, 'image.openLightbox'),
   dateRange: createStyleGalleryDateRangeLabels(locale),
+  visualFilter: createStyleGalleryVisualFilterLabels(locale),
 };
 const lightboxCopyLabels = {
   copyPrompt: t(locale, 'image.copyPrompt'),

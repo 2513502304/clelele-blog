@@ -33,6 +33,7 @@ import {
   styleGalleryCatalogSchema,
   styleGalleryExampleIndexSchema,
   styleGalleryItemSchema,
+  styleGalleryVisualFeatureSchema,
   toStyleGalleryCatalogItem,
 } from './style-gallery-schema';
 
@@ -71,6 +72,19 @@ function createItem(): StoredStyleGalleryItem {
 }
 
 describe('style gallery metadata', () => {
+  it('rejects a fixed-width but directionless zero visual embedding', () => {
+    assert.equal(
+      styleGalleryVisualFeatureSchema.safeParse({
+        imageHash: firstHash,
+        perceptualHash: '0'.repeat(16),
+        differenceHash: '0'.repeat(16),
+        palette: 'A'.repeat(32),
+        embedding: 'A'.repeat(512),
+      }).success,
+      false,
+    );
+  });
+
   it('validates items and creates searchable catalog entries', () => {
     const item = styleGalleryItemSchema.parse(createItem());
     assertStyleGalleryItemConsistency(item);
@@ -78,7 +92,7 @@ describe('style gallery metadata', () => {
 
     const catalogItem = toStyleGalleryCatalogItem(item, 3);
     const catalog = styleGalleryCatalogSchema.parse({
-      version: 3,
+      version: 4,
       updatedAt: '2026-07-13T00:01:00.000Z',
       tags: ['codex-session', 'style-prompt'],
       modelTargets: ['GPT-Image', 'Nano Banana', 'PixAI', 'Midjourney', 'NovelAI', 'Flux'],
@@ -148,20 +162,20 @@ describe('style gallery metadata', () => {
     );
   });
 
-  it('normalizes legacy items and appends only distinct prompt variants', () => {
+  it('rejects legacy metadata and appends only distinct current prompt variants', () => {
     const current = createItem();
-    const { prompts: _prompts, ...legacyFields } = current;
-    const legacy = styleGalleryItemSchema.parse({
-      ...legacyFields,
-      version: 3,
-      prompt: 'Reusable style prompt',
-      originalPrompt: 'Extract this image style.',
-      sourceSession: 'legacy-session.jsonl',
-      sourceLine: 12,
-    });
-    assert.equal(legacy.version, 4);
-    assert.equal(legacy.prompts.length, 1);
-    assert.equal(legacy.prompts[0].originalPrompt, 'Extract this image style.');
+    assert.throws(() => styleGalleryItemSchema.parse({ ...current, version: 3 }), /Invalid literal value/);
+    assert.throws(
+      () =>
+        styleGalleryCatalogSchema.parse({
+          version: 3,
+          updatedAt: current.date,
+          tags: [],
+          modelTargets: ['GPT-Image', 'Nano Banana', 'PixAI', 'Midjourney', 'NovelAI', 'Flux'],
+          items: [],
+        }),
+      /Invalid literal value/,
+    );
 
     const differentPrompt = 'A second reusable style prompt';
     const incoming = [
@@ -171,9 +185,9 @@ describe('style gallery metadata', () => {
         model: 'gpt-5.6-terra',
         importedAt: '2026-07-14T00:00:00.000Z',
       },
-      { ...legacy.prompts[0], model: 'gpt-5.6-sol' },
+      { ...current.prompts[0], model: 'gpt-5.6-sol' },
     ];
-    const merged = mergeStyleGalleryPromptVariants(legacy.prompts, incoming);
+    const merged = mergeStyleGalleryPromptVariants(current.prompts, incoming);
     assert.equal(merged.added, 1);
     assert.equal(merged.skipped, 1);
     assert.equal(merged.prompts[0].prompt, 'Reusable style prompt');
