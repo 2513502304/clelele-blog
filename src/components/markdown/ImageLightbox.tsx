@@ -658,6 +658,7 @@ export default function ImageLightbox() {
 
                 <Dialog open={Boolean(promptPicker)} onOpenChange={(open) => !open && setPromptPicker(null)}>
                   <DialogContent
+                    stableScroll
                     className="z-[70] flex max-h-[min(82dvh,46rem)] max-w-2xl flex-col gap-0 overflow-hidden bg-white p-0 dark:bg-gray-950"
                     overlayClassName="z-[70] bg-black/65"
                     onEscapeKeyDown={(event) => {

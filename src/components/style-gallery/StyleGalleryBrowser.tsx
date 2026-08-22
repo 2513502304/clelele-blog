@@ -502,6 +502,7 @@ function StyleGalleryBrowserContent({
 
       <Dialog open={Boolean(promptPicker)} onOpenChange={(open) => !open && setPromptPicker(null)}>
         <DialogContent
+          stableScroll
           className="flex max-h-[min(80dvh,44rem)] max-w-2xl flex-col gap-0 overflow-hidden bg-white p-0 dark:bg-gray-950"
           overlayClassName="bg-black/65"
           onEscapeKeyDown={(event) => {

@@ -19,6 +19,38 @@ export interface StyleGalleryLightboxActionLabels extends StyleGalleryLightboxCo
 
 const MUTATION_ATTEMPTS = 3;
 const MUTATION_TIMEOUT_MS = 30_000;
+const locateHighlightAnimations = new WeakMap<HTMLElement, Animation>();
+
+/**
+ * 用不参与布局的双层阴影标记 lightbox 返回目标：内层描边负责在密集矩阵中定位，外层小半径柔光
+ * 提供用户要求的渐隐效果。半径刻意限制在相邻卡片间距附近，避免遮盖其他缩略图；减少动态效果时
+ * 则取消脉冲，只保留一次较短的淡出。
+ */
+function highlightLocatedElement(element: HTMLElement): void {
+  locateHighlightAnimations.get(element)?.cancel();
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const glow = '0 0 0 2px rgb(244 63 94 / 0.88), 0 0 14px 5px rgb(244 63 94 / 0.28)';
+  const clear = '0 0 0 0 rgb(244 63 94 / 0), 0 0 0 0 rgb(244 63 94 / 0)';
+  const animation = element.animate(
+    reduceMotion
+      ? [{ boxShadow: glow }, { boxShadow: clear }]
+      : [
+          { boxShadow: clear, offset: 0 },
+          { boxShadow: glow, offset: 0.2 },
+          { boxShadow: '0 0 0 2px rgb(244 63 94 / 0.72), 0 0 10px 4px rgb(244 63 94 / 0.2)', offset: 0.62 },
+          { boxShadow: clear, offset: 1 },
+        ],
+    {
+      delay: reduceMotion ? 0 : 180,
+      duration: reduceMotion ? 650 : 1_500,
+      easing: 'ease-out',
+    },
+  );
+  locateHighlightAnimations.set(element, animation);
+  animation.onfinish = () => {
+    if (locateHighlightAnimations.get(element) === animation) locateHighlightAnimations.delete(element);
+  };
+}
 
 /** Popup 删除与详情页批量操作使用相同 API 和 bearer token；每次重试都有独立超时。 */
 export async function deleteStyleGalleryExample(sourceSlug: string, exampleId: string, token: string): Promise<void> {
@@ -76,14 +108,20 @@ export interface StyleGallerySourceLightboxItem {
   promptOptions?: { promptCount: number; getPrompts: () => Promise<StyleGalleryPromptChoice[]> };
 }
 
-/** 等 React 挂载目标分页或渐进批次，再滚动到卡片并短暂聚焦；慢设备上也不会只赌两个渲染帧。 */
+/**
+ * 等 React 挂载目标分页或渐进批次，再滚动到卡片并短暂聚焦；慢设备上也不会只赌两个渲染帧。
+ * 高亮在 DOM 目标出现后才启动，因此分页切换、渐进加载和 smooth scroll 不会让反馈落到旧位置。
+ */
 export function locateStyleGalleryElement(elementId: string): void {
   const maxFrames = 30;
   function locate(frame: number) {
     const element = document.getElementById(elementId);
     if (element) {
       element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      if (element instanceof HTMLElement) element.focus({ preventScroll: true });
+      if (element instanceof HTMLElement) {
+        element.focus({ preventScroll: true });
+        highlightLocatedElement(element);
+      }
       return;
     }
     if (frame < maxFrames) window.requestAnimationFrame(() => locate(frame + 1));

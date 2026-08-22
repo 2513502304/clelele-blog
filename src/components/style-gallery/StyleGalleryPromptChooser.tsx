@@ -40,7 +40,8 @@ function createInitialDisclosure(prompts: StyleGalleryPromptChoice[] | null): St
 
 /**
  * 两层 Prompt 选择器只在自身维护展开状态，避免每次展开都重渲染 Gallery 的完整卡片网格。
- * 最外层统一滚动，用户可同时展开多个候选进行全文比较。
+ * 最外层统一滚动，用户可同时展开多个候选进行全文比较。Prompt 请求在弹窗打开前完成；滚动容器
+ * 通过 paint containment 限制长文本的重绘范围，并配合 Dialog 的 stableScroll 模式避免 transform 合成层卡顿。
  */
 function StyleGalleryPromptChooserComponent({ prompts, failed, labels, onRetry, onCopy, onClose, reduceMotion }: Props) {
   const [disclosure, setDisclosure] = useState<StyleGalleryPromptDisclosureState>(() => createInitialDisclosure(prompts));
@@ -88,7 +89,7 @@ function StyleGalleryPromptChooserComponent({ prompts, failed, labels, onRetry, 
           </button>
         )}
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-5 [scrollbar-color:hsl(var(--border))_transparent] [scrollbar-gutter:stable] [scrollbar-width:thin] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-2">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-5 [contain:paint] [scrollbar-color:hsl(var(--border))_transparent] [scrollbar-gutter:stable] [scrollbar-width:thin] [will-change:scroll-position] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-2">
         {!prompts && !failed && (
           <div className="flex min-h-32 items-center justify-center gap-2 text-muted-foreground text-sm">
             <Icon icon="ri:loader-4-line" className={`size-4 ${reduceMotion ? '' : 'animate-spin'}`} />
