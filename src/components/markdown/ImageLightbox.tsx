@@ -14,7 +14,12 @@ import { useZoomPan } from '@hooks/useZoomPan';
 import { Icon } from '@iconify/react';
 import { createImageLightboxDownloadAction } from '@lib/image-lightbox-download';
 import { getLive2DFocusNodes, isLive2DOwnedTarget } from '@lib/live2d/focus-scope';
-import { invalidateStyleGalleryImageUrl, resolveStyleGalleryImageUrls } from '@lib/style-gallery-image-client';
+import {
+  invalidateStyleGalleryImageUrl,
+  isStyleGalleryImageUrlLoaded,
+  markStyleGalleryImageUrlLoaded,
+  resolveStyleGalleryImageUrls,
+} from '@lib/style-gallery-image-client';
 import { createLightboxPrefetchPlan } from '@lib/style-gallery-lightbox-prefetch';
 import { canConsumeLightboxWheel } from '@lib/style-gallery-lightbox-wheel';
 import type { StyleGalleryPromptChoice } from '@lib/style-gallery-prompt-client';
@@ -56,17 +61,43 @@ function LightboxImageStage({ image, shouldReduceMotion, onResolvedSourceFailure
   const { t } = useTranslation();
   const sourceSrc = image.resolvedSrc ?? image.src;
   const previewSrc = image.previewSrc !== sourceSrc ? image.previewSrc : undefined;
-  const [sourceState, setSourceState] = useState<'loading' | 'loaded' | 'failed'>('loading');
+  // 页面卡片已经显示过同一 URL 时，浏览器仍可能异步补发新 img 的 load 事件；此处同步复用已知状态，
+  // 避免在实际可绘制的缓存图片上短暂显示 loading。未登记的导航图片仍走完整 load/decode 生命周期。
+  const [sourceState, setSourceState] = useState<'loading' | 'loaded' | 'failed'>(() =>
+    isStyleGalleryImageUrlLoaded(sourceSrc) ? 'loaded' : 'loading',
+  );
   const [previewFailed, setPreviewFailed] = useState(false);
 
-  const finishSourceLoad = useCallback(async (element: HTMLImageElement) => {
-    try {
-      await element.decode();
-    } catch {
-      // 部分浏览器会在图片已经可绘制时拒绝重复 decode；naturalWidth 才是最终可用性判断。
-    }
-    setSourceState(element.naturalWidth > 0 ? 'loaded' : 'failed');
-  }, []);
+  const finishSourceLoad = useCallback(
+    async (element: HTMLImageElement) => {
+      try {
+        await element.decode();
+      } catch {
+        // 部分浏览器会在图片已经可绘制时拒绝重复 decode；naturalWidth 才是最终可用性判断。
+      }
+      if (element.naturalWidth > 0) {
+        markStyleGalleryImageUrlLoaded(sourceSrc);
+        setSourceState('loaded');
+      } else {
+        setSourceState('failed');
+      }
+    },
+    [sourceSrc],
+  );
+
+  const sourceRef = useCallback(
+    (element: HTMLImageElement | null) => {
+      // 内存/HTTP 缓存命中时 load 可能早于 React effect；ref 与 onLoad 双路径保持和页面卡片一致。
+      if (!element) return;
+      if (element.complete && element.naturalWidth > 0 && !isStyleGalleryImageUrlLoaded(sourceSrc)) {
+        void finishSourceLoad(element);
+      } else if (!element.complete && isStyleGalleryImageUrlLoaded(sourceSrc)) {
+        // 浏览器极少数情况下会逐出已登记资源；此时恢复真实 loading，而不是留下透明空白。
+        setSourceState('loading');
+      }
+    },
+    [finishSourceLoad, sourceSrc],
+  );
 
   const isLoading = sourceState === 'loading';
   const hasPreview = Boolean(previewSrc) && !previewFailed;
@@ -99,6 +130,7 @@ function LightboxImageStage({ image, shouldReduceMotion, onResolvedSourceFailure
         />
       )}
       <motion.img
+        ref={sourceRef}
         src={sourceSrc}
         alt={image.alt}
         loading="eager"
@@ -111,7 +143,8 @@ function LightboxImageStage({ image, shouldReduceMotion, onResolvedSourceFailure
         onLoad={(event) => void finishSourceLoad(event.currentTarget)}
         onError={() => {
           if (image.resolvedSrc && sourceSrc === image.resolvedSrc) {
-            onResolvedSourceFailure(image.src);
+            // 直连签名持续失败时本次 popup 不再重签；页面缓存的 canonical URL 失败则允许改走签名恢复。
+            if (image.resolvedSrc !== image.src) onResolvedSourceFailure(image.src);
             invalidateStyleGalleryImageUrl(image.src);
             clearImageLightboxResolvedSource(image.src, image.resolvedSrc);
             return;
@@ -456,7 +489,11 @@ export default function ImageLightbox() {
   );
   const unresolvedSignKey = unresolvedSignSources.join('\n');
 
-  // 预签名只请求尚未解析的窗口；失败时保留单图 302 路径，网络波动不会阻断导航。
+  /**
+   * 预签名只请求没有 `resolvedSrc` 的导航项。调用页面会把真实加载完成的 canonical URL 也写入
+   * `resolvedSrc`，这是刻意的浏览器缓存复用标记，不能在这里强制换成新签名 URL。其余未渲染图片
+   * 仍按窗口批量签名，因此当前图片复用与后续键盘导航预取可以同时成立。
+   */
   useEffect(() => {
     if (!unresolvedSignKey) return;
     let active = true;

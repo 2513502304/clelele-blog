@@ -56,6 +56,22 @@ test('builds source-image lightbox navigation without generated-example mutation
   assert.equal(data.images[0].delete, undefined);
 });
 
+test('reuses every loaded source while leaving unloaded navigation items eligible for batch signing', () => {
+  const data = createStyleGallerySourceLightboxData(
+    [
+      { id: 'first', src: '/source/first.webp', alt: 'First', sourceLoaded: true, getPrompt: () => 'first prompt' },
+      { id: 'second', src: '/source/second.webp', alt: 'Second', sourceLoaded: true, getPrompt: () => 'second prompt' },
+      { id: 'third', src: '/source/third.webp', alt: 'Third', getPrompt: () => 'third prompt' },
+    ],
+    'first',
+    { copyPrompt: 'Copy', copiedPrompt: 'Copied', copyFailed: 'Failed' },
+  );
+
+  assert.equal(data.images[0].resolvedSrc, '/source/first.webp');
+  assert.equal(data.images[1].resolvedSrc, '/source/second.webp');
+  assert.equal(data.images[2].resolvedSrc, undefined);
+});
+
 test('rejects an empty source-image lightbox', () => {
   assert.throws(
     () =>

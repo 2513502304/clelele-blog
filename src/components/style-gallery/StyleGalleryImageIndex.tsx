@@ -1,5 +1,8 @@
 import { ErrorBoundary, InlineErrorFallback } from '@components/common';
 import StyleGalleryDateRangeFilter from '@components/style-gallery/StyleGalleryDateRangeFilter';
+import StyleGalleryVisualFilter, {
+  type StyleGalleryVisualFilterLabels,
+} from '@components/style-gallery/StyleGalleryVisualFilter';
 import { Icon } from '@iconify/react';
 import { createStyleGalleryDateRangeMatcher, getStyleGalleryDateKey } from '@lib/style-gallery-date-range';
 import type { StyleGalleryDateRangeLabels } from '@lib/style-gallery-date-range-labels';
@@ -14,7 +17,7 @@ import { getSelectedStyleGalleryPrompt } from '@lib/style-gallery-prompt-selecti
 import { openModal } from '@store/modal';
 import { parseAsString, parseAsStringLiteral, useQueryState, useQueryStates } from 'nuqs';
 import { NuqsAdapter } from 'nuqs/adapters/react';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useProgressiveList } from '@/hooks/useProgressiveList';
 import type { StyleGalleryCardData } from '@/types/style-gallery';
 
@@ -44,6 +47,7 @@ export interface StyleGalleryImageIndexLabels {
   loadMore: string;
   openImage: string;
   dateRange: StyleGalleryDateRangeLabels;
+  visualFilter: StyleGalleryVisualFilterLabels;
 }
 
 const sortKeys = ['default', 'date', 'id', 'examples', 'likes'] as const;
@@ -81,6 +85,8 @@ function StyleGalleryImageIndexContent({
     from: parseAsString.withDefault(''),
     to: parseAsString.withDefault(''),
   });
+  const [visualMatches, setVisualMatches] = useState<Set<string> | null>(null);
+  const [visualRevision, setVisualRevision] = useState(0);
   const sortLabels: Record<SortKey, string> = {
     default: labels.sortDefault,
     date: labels.sortImportedAt,
@@ -102,7 +108,7 @@ function StyleGalleryImageIndexContent({
     const filtered = items.filter((item) => {
       const matchesQuery =
         !normalizedQuery || normalize(`${item.title} ${item.prompt} ${item.imageHash} ${item.slug}`).includes(normalizedQuery);
-      return matchesQuery && matchesDateRange(item.date);
+      return matchesQuery && matchesDateRange(item.date) && (visualMatches === null || visualMatches.has(item.slug));
     });
     const sorted = [...filtered];
 
@@ -116,7 +122,7 @@ function StyleGalleryImageIndexContent({
     }
 
     return sortDirection === 'desc' ? sorted.reverse() : sorted;
-  }, [items, matchesDateRange, query, sortDirection, sortKey]);
+  }, [items, matchesDateRange, query, sortDirection, sortKey, visualMatches]);
   const {
     hasMore,
     loadMore,
@@ -126,7 +132,8 @@ function StyleGalleryImageIndexContent({
   } = useProgressiveList(visibleItems, {
     initialCount: INITIAL_INDEX_ITEM_COUNT,
     batchSize: INDEX_ITEM_BATCH_SIZE,
-    resetKey: `${query.trim().toLowerCase()}\u0000${dateFrom}\u0000${dateTo}\u0000${sortKey}\u0000${sortDirection}`,
+    // revision 不能只用结果数量：两个不同查询可能恰好命中同样多的图片，仍必须重置渐进列表窗口。
+    resetKey: `${query.trim().toLowerCase()}\u0000${dateFrom}\u0000${dateTo}\u0000${sortKey}\u0000${sortDirection}\u0000${visualRevision}`,
     rootMargin: '-120px 0px',
   });
 
@@ -169,6 +176,15 @@ function StyleGalleryImageIndexContent({
             className="h-10 w-full rounded-md border border-border bg-background pr-3 pl-9 text-sm outline-none transition-colors focus:border-primary"
           />
         </label>
+
+        <StyleGalleryVisualFilter
+          scope="source"
+          labels={labels.visualFilter}
+          onResults={(matches) => {
+            setVisualMatches(matches);
+            setVisualRevision((revision) => revision + 1);
+          }}
+        />
 
         <StyleGalleryDateRangeFilter
           value={{ from: dateFrom, to: dateTo }}

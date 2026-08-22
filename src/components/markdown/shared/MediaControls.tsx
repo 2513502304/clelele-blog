@@ -11,6 +11,7 @@ import { usePlaybackFormattedTime, usePlaybackProgress } from '@hooks/usePlaybac
 import { useTranslation } from '@hooks/useTranslation';
 import { Icon } from '@iconify/react';
 import type { PlaybackTimeStore } from '@lib/playback-time-store';
+import { getRangeValueAtPointer } from '@lib/range-input';
 import { cn } from '@lib/utils';
 import { type CSSProperties, memo, useEffect, useRef } from 'react';
 import type { PlayMode } from '@/store/player';
@@ -47,17 +48,6 @@ const MODE_LABEL_KEYS: Record<PlayMode, 'media.playModeOrder' | 'media.playModeR
 };
 
 const MODE_CYCLE: PlayMode[] = ['order', 'random', 'loop'];
-
-function rangeValueAtPointer(input: HTMLInputElement, clientX: number): number {
-  const rect = input.getBoundingClientRect();
-  const min = Number(input.min) || 0;
-  const max = Number(input.max) || 1;
-  const step = Number(input.step) || 0;
-  const ratio = rect.width > 0 ? Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)) : 0;
-  const raw = min + ratio * (max - min);
-  const stepped = step > 0 ? min + Math.round((raw - min) / step) * step : raw;
-  return Math.max(min, Math.min(max, stepped));
-}
 
 function getVolumeIcon(volume: number, muted: boolean): string {
   if (muted || volume === 0) return 'ri:volume-mute-line';
@@ -202,15 +192,15 @@ export const MediaControls = memo(function MediaControls({
               event.currentTarget.focus();
               volumePointerId.current = event.pointerId;
               event.currentTarget.setPointerCapture(event.pointerId);
-              applyVolume(event.currentTarget, rangeValueAtPointer(event.currentTarget, event.clientX));
+              applyVolume(event.currentTarget, getRangeValueAtPointer(event.currentTarget, event.clientX));
             }}
             onPointerMove={(event) => {
               if (volumePointerId.current !== event.pointerId) return;
-              applyVolume(event.currentTarget, rangeValueAtPointer(event.currentTarget, event.clientX));
+              applyVolume(event.currentTarget, getRangeValueAtPointer(event.currentTarget, event.clientX));
             }}
             onPointerUp={(event) => {
               if (volumePointerId.current !== event.pointerId) return;
-              applyVolume(event.currentTarget, rangeValueAtPointer(event.currentTarget, event.clientX));
+              applyVolume(event.currentTarget, getRangeValueAtPointer(event.currentTarget, event.clientX));
               volumePointerId.current = null;
             }}
             onPointerCancel={() => {
@@ -248,15 +238,15 @@ export const MediaControls = memo(function MediaControls({
               progressPointerId.current = event.pointerId;
               event.currentTarget.dataset.scrubbing = 'true';
               event.currentTarget.setPointerCapture(event.pointerId);
-              applyProgress(event.currentTarget, rangeValueAtPointer(event.currentTarget, event.clientX));
+              applyProgress(event.currentTarget, getRangeValueAtPointer(event.currentTarget, event.clientX));
             }}
             onPointerMove={(event) => {
               if (progressPointerId.current !== event.pointerId) return;
-              applyProgress(event.currentTarget, rangeValueAtPointer(event.currentTarget, event.clientX), 'frame');
+              applyProgress(event.currentTarget, getRangeValueAtPointer(event.currentTarget, event.clientX), 'frame');
             }}
             onPointerUp={(event) => {
               if (progressPointerId.current !== event.pointerId) return;
-              applyProgress(event.currentTarget, rangeValueAtPointer(event.currentTarget, event.clientX));
+              applyProgress(event.currentTarget, getRangeValueAtPointer(event.currentTarget, event.clientX));
               progressPointerId.current = null;
               delete event.currentTarget.dataset.scrubbing;
             }}

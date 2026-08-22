@@ -5,6 +5,7 @@ import {
   STYLE_GALLERY_DIRECT_UPLOAD_MAX_SIZE,
   STYLE_GALLERY_UPLOAD_CHUNK_SIZE,
 } from '@lib/style-gallery-chunk-upload';
+import { getReusableStyleGalleryImageUrl, rememberLoadedStyleGalleryImage } from '@lib/style-gallery-image-client';
 import { getStyleGalleryExampleContentType } from '@lib/style-gallery-image-type';
 import {
   createStyleGalleryCopyAction,
@@ -26,6 +27,7 @@ import {
   STYLE_GALLERY_MUTATION_BATCH_SIZE,
   STYLE_GALLERY_PREPARE_BATCH_SIZE,
 } from '@lib/style-gallery-request-batches';
+import { computeStyleGalleryVisualFeatureFromFile } from '@lib/style-gallery-visual-feature-browser';
 import { openModal } from '@store/modal';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { StyleGalleryExample, StyleGalleryExampleView } from '@/types/style-gallery';
@@ -53,6 +55,7 @@ interface ExamplesResponse {
   uploadsEnabled?: boolean;
   uploaded?: number;
   skippedDuplicates?: number;
+  visualIndexUpdated?: boolean;
 }
 
 interface PreparedUpload {
@@ -309,6 +312,8 @@ export default function StyleGalleryExamples({
   const [mutating, setMutating] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const activePrompt = useRef(prompt);
+  // 记录浏览器已经解码成功的高清示例，Lightbox 可复用同一 URL；ref 更新不会扰动图片网格。
+  const loadedExampleSources = useRef(new Set<string>());
 
   useEffect(() => {
     setToken(localStorage.getItem(STYLE_GALLERY_UPLOAD_TOKEN_STORAGE_KEY) ?? '');
@@ -352,6 +357,7 @@ export default function StyleGalleryExamples({
     const lightboxImages = platformExamples.map((candidate) => ({
       id: candidate.id,
       src: candidate.src,
+      resolvedSrc: getReusableStyleGalleryImageUrl(candidate.src, loadedExampleSources.current.has(candidate.src)),
       alt: candidate.alt ?? candidate.model ?? 'Generated example',
       like: createStyleGalleryLightboxLikeAction(candidate.id, likes, likeLabels),
       copy: createStyleGalleryCopyAction(
@@ -586,8 +592,28 @@ export default function StyleGalleryExamples({
       let nextUploadIndex = 0;
       const uploadFailures: string[] = [];
       const examplesToCommit: StyleGalleryExample[] = [];
+      const visualRecordById = new Map<string, Awaited<ReturnType<typeof computeStyleGalleryVisualFeatureFromFile>>>();
       let committedCount = 0;
       let mergeDuplicateCount = 0;
+      setStatus('Computing visual search features');
+      // 本地特征必须先于图片上传完成。某个文件无法解码时只标记该文件失败，不产生待清理的 HF 孤儿对象。
+      for (const [index, upload] of prepared.entries()) {
+        if (!upload || upload.duplicate) continue;
+        const entry = selected[index];
+        try {
+          updateFileProgress(entry.id, { state: 'processing', loaded: entry.file.size });
+          visualRecordById.set(upload.example.id, await computeStyleGalleryVisualFeatureFromFile(entry.file, entry.imageHash));
+          // 特征计算不是网络上传进度；重置为 0，避免总进度先显示 100% 再在上传开始时倒退。
+          updateFileProgress(entry.id, { state: 'ready', loaded: 0 });
+        } catch (error) {
+          prepared[index] = null;
+          updateFileProgress(entry.id, { state: 'failed' });
+          uploadFailures.push(
+            `${entry.file.name}: ${error instanceof Error ? error.message : 'Visual feature extraction failed'}`,
+          );
+        }
+      }
+
       // 固定数量 worker 从共享游标领取文件；失败文件只记录自身错误，成功文件仍进入本批元数据提交。
       async function uploadWorker() {
         while (nextUploadIndex < selected.length) {
@@ -637,13 +663,25 @@ export default function StyleGalleryExamples({
           const mergeResponse = await fetchWithRetry(`/api/style-gallery/examples/${slug}`, {
             method: 'POST',
             headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
-            body: JSON.stringify({ action: 'merge', examples: exampleBatch }),
+            body: JSON.stringify({
+              action: 'merge',
+              examples: exampleBatch,
+              visualRecords: exampleBatch.map((example) => ({
+                feature: visualRecordById.get(example.id),
+                kind: 'example',
+                sourceSlug: slug,
+                imageId: example.id,
+              })),
+            }),
           });
           if (!mergeResponse.ok) throw new Error(await mergeResponse.text());
           const mergeData = (await mergeResponse.json()) as ExamplesResponse;
           committedCount += mergeData.uploaded ?? exampleBatch.length;
           mergeDuplicateCount += mergeData.skippedDuplicates ?? 0;
           setExamples(mergeData.examples ?? []);
+          if (mergeData.visualIndexUpdated === false) {
+            uploadFailures.push('Visual search index update failed; the saved images require an index rebuild');
+          }
           const committedIds = new Set(exampleBatch.map((example) => example.id));
           for (let index = uploadedExamples.length - 1; index >= 0; index -= 1) {
             if (committedIds.has(uploadedExamples[index].id)) uploadedExamples.splice(index, 1);
@@ -880,9 +918,14 @@ export default function StyleGalleryExamples({
                           aria-label={`Open ${example.alt ?? example.model ?? 'generated example'} preview`}
                         >
                           <img
+                            ref={(image) => rememberLoadedStyleGalleryImage(loadedExampleSources.current, example.src, image)}
                             src={example.src}
                             alt={example.alt ?? example.model ?? 'Generated example'}
                             loading="lazy"
+                            decoding="async"
+                            onLoad={(event) =>
+                              rememberLoadedStyleGalleryImage(loadedExampleSources.current, example.src, event.currentTarget)
+                            }
                             className="aspect-square w-full object-cover transition duration-200 group-hover:scale-105"
                           />
                         </button>

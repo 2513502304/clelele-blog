@@ -17,8 +17,13 @@ import {
 } from '@lib/style-gallery-examples';
 import { getStyleGalleryPlatform } from '@lib/style-gallery-platforms';
 import { STYLE_GALLERY_MUTATION_BATCH_SIZE } from '@lib/style-gallery-request-batches';
-import { styleGalleryExampleSchema } from '@lib/style-gallery-schema';
-import { getStoredStyleGalleryItem, getStyleGalleryExampleIndex } from '@lib/style-gallery-store';
+import { styleGalleryExampleSchema, styleGalleryVisualRecordInputSchema } from '@lib/style-gallery-schema';
+import {
+  getStoredStyleGalleryItem,
+  getStyleGalleryExampleIndex,
+  mutateStyleGalleryVisualIndex,
+} from '@lib/style-gallery-store';
+import { removeStyleGalleryVisualRecords, upsertStyleGalleryVisualRecords } from '@lib/style-gallery-visual-index';
 import { updateStyleGalleryItemExamples } from '@lib/style-gallery-write';
 import type { APIRoute } from 'astro';
 import { z } from 'zod';
@@ -46,7 +51,12 @@ const prepareSchema = z.object({
 });
 // merge/cleanup 也重新校验服务端持久化契约，客户端不能把任意平台标签写入 HF metadata。
 const examplesSchema = z.array(styleGalleryExampleSchema).min(1).max(STYLE_GALLERY_MUTATION_BATCH_SIZE);
-const mergeSchema = z.object({ token: z.string().optional(), action: z.literal('merge'), examples: examplesSchema });
+const mergeSchema = z.object({
+  token: z.string().optional(),
+  action: z.literal('merge'),
+  examples: examplesSchema,
+  visualRecords: z.array(styleGalleryVisualRecordInputSchema).min(1).max(STYLE_GALLERY_MUTATION_BATCH_SIZE),
+});
 const cleanupSchema = z.object({ token: z.string().optional(), action: z.literal('cleanup'), examples: examplesSchema });
 const idsSchema = z
   .array(z.string().regex(/^[a-z0-9-]+$/i))
@@ -142,6 +152,7 @@ export const POST: APIRoute = async ({ params, request }) => {
 
     // 图片全部写入并经 HEAD 校验后，才提交 item、catalog 计数和示例总览索引。
     const body = mergeSchema.parse(rawBody);
+    assertExampleVisualRecords(slug, body.examples, body.visualRecords);
     await validateExampleObjectsExist(body.examples);
     let added = 0;
     const result = await updateStyleGalleryItemExamples(slug, (examples) => {
@@ -149,11 +160,20 @@ export const POST: APIRoute = async ({ params, request }) => {
       added = merged.length - examples.length;
       return merged;
     });
+    let visualIndexUpdated = true;
+    try {
+      await mutateStyleGalleryVisualIndex((current) => upsertStyleGalleryVisualRecords(current, body.visualRecords));
+    } catch (error) {
+      // 示例真相源已提交成功；派生索引失败时保留图片并明确报告，后续全量重建可无损恢复。
+      visualIndexUpdated = false;
+      console.error('[style-gallery] Examples were saved but the visual index update failed.', error);
+    }
     return Response.json({
       examples: result.item.examples,
       uploaded: added,
       skippedDuplicates: body.examples.length - added,
       updatedAt: result.item.updated,
+      visualIndexUpdated,
     });
   } catch (error) {
     if (error instanceof z.ZodError) return new Response(error.message, { status: 400 });
@@ -222,12 +242,30 @@ export const DELETE: APIRoute = async ({ params, request }) => {
     const referenced = new Set(result.index.groups.flatMap((group) => group.examples.map((example) => example.src)));
     // 先提交删除后的元数据，再清理成为孤儿的图片；对象清理失败不会复活已删除的示例记录。
     const orphaned = removed.filter((example) => !referenced.has(example.src));
+    let visualIndexUpdated = true;
+    try {
+      await mutateStyleGalleryVisualIndex((current) =>
+        removeStyleGalleryVisualRecords(
+          current,
+          (record) => record.kind === 'example' && record.sourceSlug === slug && selectedIds.has(record.imageId),
+        ),
+      );
+    } catch (error) {
+      // 过期记录不会在客户端当前 example 数据中命中；记录错误供维护者重建索引，不复活已删除 metadata。
+      visualIndexUpdated = false;
+      console.error('[style-gallery] Examples were deleted but visual index cleanup failed.', error);
+    }
     await mapWithConcurrency(orphaned, 8, (example) =>
       deleteStyleGalleryObject(getStyleGalleryExampleObjectKey(example)).catch((error) => {
         console.error('[style-gallery] Failed to remove an unreferenced example object:', error);
       }),
     );
-    return Response.json({ examples: result.item.examples, deleted: removed.length, updatedAt: result.item.updated });
+    return Response.json({
+      examples: result.item.examples,
+      deleted: removed.length,
+      updatedAt: result.item.updated,
+      visualIndexUpdated,
+    });
   } catch (error) {
     if (error instanceof z.ZodError) return new Response(error.message, { status: 400 });
     const clientErrorResponse = getStyleGalleryClientErrorResponse(error);
@@ -235,3 +273,21 @@ export const DELETE: APIRoute = async ({ params, request }) => {
     return new Response(error instanceof Error ? error.message : 'Failed to delete style gallery examples.', { status: 500 });
   }
 };
+
+function assertExampleVisualRecords(
+  slug: string,
+  examples: StyleGalleryExample[],
+  records: z.infer<typeof styleGalleryVisualRecordInputSchema>[],
+): void {
+  const expected = new Map(examples.map((example) => [example.id, example.imageHash]));
+  const actual = new Set<string>();
+  for (const record of records) {
+    if (record.kind !== 'example' || record.sourceSlug !== slug || expected.get(record.imageId) !== record.feature.imageHash) {
+      throw new StyleGalleryClientError('Example visual records do not match submitted examples.', 400);
+    }
+    actual.add(record.imageId);
+  }
+  if (records.length !== expected.size || actual.size !== expected.size) {
+    throw new StyleGalleryClientError('Every submitted example must include one visual feature.', 400);
+  }
+}

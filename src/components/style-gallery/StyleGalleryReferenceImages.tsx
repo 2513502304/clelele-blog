@@ -1,4 +1,5 @@
 import { ErrorBoundary, InlineErrorFallback } from '@components/common';
+import { rememberLoadedStyleGalleryImage } from '@lib/style-gallery-image-client';
 import {
   createStyleGallerySourceLightboxData,
   getStyleGalleryLightboxElementId,
@@ -8,6 +9,7 @@ import {
 import { loadStyleGalleryPromptChoices } from '@lib/style-gallery-prompt-client';
 import { getSelectedStyleGalleryPrompt } from '@lib/style-gallery-prompt-selection';
 import { openModal } from '@store/modal';
+import { useRef } from 'react';
 import type { StyleGalleryImageRef } from '@/types/style-gallery';
 
 interface StyleGalleryReferenceImagesProps {
@@ -35,6 +37,8 @@ function StyleGalleryReferenceImagesContent({
   referenceImageLabel,
   lightboxCopyLabels,
 }: StyleGalleryReferenceImagesProps) {
+  // 详情页展示的就是高清原图，成功加载后无需在 Lightbox 中换一条签名 URL 再下载一次。
+  const loadedSourceImages = useRef(new Set<string>());
   const getReferenceImageLabel = (index: number) => referenceImageLabel.replace('{index}', String(index + 1));
 
   function openReferenceImage(currentIndex: number) {
@@ -42,6 +46,7 @@ function StyleGalleryReferenceImagesContent({
       id: `${image.imageHash}:${index}`,
       src: image.sourceImage,
       previewSrc: image.sourceImage,
+      sourceLoaded: loadedSourceImages.current.has(image.sourceImage),
       alt: image.sourceImageAlt ?? getReferenceImageLabel(index),
       getPrompt: () => getSelectedStyleGalleryPrompt(itemSlug) ?? prompt,
       promptOptions:
@@ -76,11 +81,17 @@ function StyleGalleryReferenceImagesContent({
               title={openImageLabel}
             >
               <img
+                ref={(sourceImage) =>
+                  rememberLoadedStyleGalleryImage(loadedSourceImages.current, image.sourceImage, sourceImage)
+                }
                 src={image.sourceImage}
                 alt={alt}
                 loading={index === 0 ? 'eager' : 'lazy'}
                 fetchPriority={index === 0 ? 'high' : 'auto'}
                 decoding="async"
+                onLoad={(event) =>
+                  rememberLoadedStyleGalleryImage(loadedSourceImages.current, image.sourceImage, event.currentTarget)
+                }
                 className="max-h-[68vh] w-full object-contain transition duration-200 group-hover:scale-[1.01]"
               />
             </button>

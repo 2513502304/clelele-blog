@@ -6,18 +6,34 @@ import {
   StyleGalleryObjectConflictError,
   type StyleGalleryObjectWriteConditions,
 } from '@lib/hf-s3-presign';
-import { styleGalleryCatalogSchema, styleGalleryExampleIndexSchema, styleGalleryItemSchema } from '@lib/style-gallery-schema';
+import {
+  styleGalleryCatalogSchema,
+  styleGalleryExampleIndexSchema,
+  styleGalleryItemSchema,
+  styleGalleryVisualIndexSchema,
+} from '@lib/style-gallery-schema';
+import {
+  STYLE_GALLERY_VISUAL_EMBEDDING_DIMENSION,
+  STYLE_GALLERY_VISUAL_INDEX_VERSION,
+  STYLE_GALLERY_VISUAL_MODEL_ID,
+  type StyleGalleryVisualIndex,
+} from '@lib/style-gallery-visual-types';
 import type { StoredStyleGalleryItem, StyleGalleryCatalog, StyleGalleryExampleIndex } from '@/types/style-gallery';
 
 export const STYLE_GALLERY_CATALOG_KEY = 'metadata/catalog.json';
 // v2 将点赞事实并入示例索引。使用版本化对象名可让旧生产部署在切换期间继续读取 v1，合并后只使用本对象。
 export const STYLE_GALLERY_EXAMPLE_INDEX_KEY = 'examples/index-v2.json';
 export const STYLE_GALLERY_ITEM_PREFIX = 'items';
+export const STYLE_GALLERY_VISUAL_INDEX_KEY = 'metadata/visual-index-v1.json';
 
 const CACHE_TTL_MS = 30_000;
+const VISUAL_INDEX_TRANSFER_TIMEOUT_MS = 60_000;
 let catalogCache: { value: StyleGalleryCatalog; expiresAt: number } | null = null;
 let exampleIndexCache: { value: StyleGalleryExampleIndex; etag: string | null; expiresAt: number } | null = null;
 let exampleIndexWriteQueue: Promise<unknown> = Promise.resolve();
+let visualIndexCache: { value: StyleGalleryVisualIndex; etag: string | null; expiresAt: number } | null = null;
+let visualIndexWriteQueue: Promise<unknown> = Promise.resolve();
+let visualIndexRefreshPromise: Promise<void> | null = null;
 const itemCache = new Map<string, { value: StoredStyleGalleryItem; expiresAt: number }>();
 
 /** 将经过校验的 slug 转换为 HF 中的详情对象键。 */
@@ -161,7 +177,8 @@ export function mutateStyleGalleryExampleIndex(
         return current;
       }
       const next = styleGalleryExampleIndexSchema.parse(transformed);
-      const body = new TextEncoder().encode(`${JSON.stringify(next, null, 2)}\n`);
+      // 示例索引已接近 MB 级；紧凑 JSON 可减少 HF 往返、序列化内存和冷实例解析成本。
+      const body = new TextEncoder().encode(JSON.stringify(next));
       try {
         const etag = await putStyleGalleryObject(
           STYLE_GALLERY_EXAMPLE_INDEX_KEY,
@@ -188,7 +205,116 @@ export function mutateStyleGalleryExampleIndex(
   return result;
 }
 
-/** 清除当前实例内所有 Gallery 元数据缓存，供多对象写入完成后强制重新校验。 */
+function createEmptyStyleGalleryVisualIndex(): StyleGalleryVisualIndex {
+  return {
+    version: STYLE_GALLERY_VISUAL_INDEX_VERSION,
+    updatedAt: new Date(0).toISOString(),
+    model: {
+      id: STYLE_GALLERY_VISUAL_MODEL_ID,
+      dimensions: STYLE_GALLERY_VISUAL_EMBEDDING_DIMENSION,
+      quantization: 'int8-unit',
+    },
+    features: [],
+    records: [],
+  };
+}
+
+/** 视觉索引只在检索或写入时读取；Gallery SSR、搜索 prompt 和图片列表不会为它承担下载与解析成本。 */
+export async function getStyleGalleryVisualIndex(options: { fresh?: boolean } = {}): Promise<StyleGalleryVisualIndex> {
+  const now = Date.now();
+  if (!options.fresh && visualIndexCache && visualIndexCache.expiresAt > now) return visualIndexCache.value;
+  if (!options.fresh && visualIndexCache) {
+    // 搜索索引过期时先返回旧快照并在后台校验 HF，避免每 30 秒后的首位访客承担整份索引下载延迟。
+    // expectedCache 身份检查可防止并发上传写入的新索引被较早启动的后台读取覆盖。
+    if (!visualIndexRefreshPromise) {
+      const expectedCache = visualIndexCache;
+      visualIndexRefreshPromise = getStyleGalleryObjectTextSnapshot(
+        STYLE_GALLERY_VISUAL_INDEX_KEY,
+        VISUAL_INDEX_TRANSFER_TIMEOUT_MS,
+      )
+        .then((snapshot) => {
+          if (visualIndexCache !== expectedCache) return;
+          const value = snapshot.text
+            ? styleGalleryVisualIndexSchema.parse(JSON.parse(snapshot.text))
+            : createEmptyStyleGalleryVisualIndex();
+          visualIndexCache = { value, etag: snapshot.etag, expiresAt: Date.now() + CACHE_TTL_MS };
+        })
+        .catch((error) => console.warn('[style-gallery] Failed to refresh the visual index in the background.', error))
+        .finally(() => {
+          visualIndexRefreshPromise = null;
+        });
+    }
+    return visualIndexCache.value;
+  }
+  try {
+    const snapshot = await getStyleGalleryObjectTextSnapshot(STYLE_GALLERY_VISUAL_INDEX_KEY, VISUAL_INDEX_TRANSFER_TIMEOUT_MS);
+    const value = snapshot.text
+      ? styleGalleryVisualIndexSchema.parse(JSON.parse(snapshot.text))
+      : createEmptyStyleGalleryVisualIndex();
+    visualIndexCache = { value, etag: snapshot.etag, expiresAt: now + CACHE_TTL_MS };
+    return value;
+  } catch (error) {
+    if (!options.fresh && visualIndexCache) {
+      console.warn('[style-gallery] Serving a stale visual index after an HF storage read failed.', error);
+      return visualIndexCache.value;
+    }
+    throw error;
+  }
+}
+
+/**
+ * 视觉索引采用与点赞索引相同的 ETag 重放策略。它是派生数据，因此调用方必须先提交 item/example 真相源；
+ * 索引写失败时报告可修复错误，绝不能回滚一张已经成功上传且通过对象校验的图片。
+ */
+export function mutateStyleGalleryVisualIndex(
+  transform: (current: StyleGalleryVisualIndex) => StyleGalleryVisualIndex,
+): Promise<StyleGalleryVisualIndex> {
+  const operation = async () => {
+    for (let attempt = 1; attempt <= 6; attempt += 1) {
+      const cached =
+        attempt === 1 && visualIndexCache?.etag && visualIndexCache.expiresAt > Date.now() ? visualIndexCache : null;
+      const snapshot = cached
+        ? { text: null, etag: cached.etag }
+        : await getStyleGalleryObjectTextSnapshot(STYLE_GALLERY_VISUAL_INDEX_KEY, VISUAL_INDEX_TRANSFER_TIMEOUT_MS);
+      const current = cached
+        ? cached.value
+        : snapshot.text
+          ? styleGalleryVisualIndexSchema.parse(JSON.parse(snapshot.text))
+          : createEmptyStyleGalleryVisualIndex();
+      if (!cached && snapshot.text && !snapshot.etag) throw new Error('HF did not return an ETag for the visual index.');
+      const next = styleGalleryVisualIndexSchema.parse(transform(current));
+      // 视觉索引包含定长向量，缩进只会增加 HF 传输与冷实例解析成本，不提供运行时价值。
+      const body = new TextEncoder().encode(JSON.stringify(next));
+      try {
+        const etag = await putStyleGalleryObject(
+          STYLE_GALLERY_VISUAL_INDEX_KEY,
+          body,
+          'application/json; charset=utf-8',
+          snapshot.etag ? { ifMatch: snapshot.etag } : { ifNoneMatch: '*' },
+        );
+        visualIndexCache = { value: next, etag, expiresAt: Date.now() + CACHE_TTL_MS };
+        return next;
+      } catch (error) {
+        if (!(error instanceof StyleGalleryObjectConflictError) || attempt === 6) throw error;
+        visualIndexCache = null;
+        await new Promise((resolve) => setTimeout(resolve, 40 * attempt + Math.floor(Math.random() * 80)));
+      }
+    }
+    throw new Error('Failed to update the visual index after concurrent write retries.');
+  };
+  const result = visualIndexWriteQueue.then(operation, operation);
+  visualIndexWriteQueue = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
+}
+
+/**
+ * 清除 item/catalog/example 真相源缓存，供多对象写入完成后强制重新校验。
+ * 视觉索引是独立派生对象，不在这里连带清除；否则每次图片 metadata 更新后紧接着写索引时，
+ * 都会无意义地重新下载整个向量文件。视觉索引自身用 ETag 冲突重放保证跨实例一致性。
+ */
 export function invalidateStyleGalleryStoreCache(): void {
   catalogCache = null;
   exampleIndexCache = null;
