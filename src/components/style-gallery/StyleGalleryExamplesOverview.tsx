@@ -1,8 +1,12 @@
 import { ErrorBoundary, InlineErrorFallback } from '@components/common';
 import StyleGalleryDateRangeFilter from '@components/style-gallery/StyleGalleryDateRangeFilter';
+import StyleGalleryVisualFilter, {
+  type StyleGalleryVisualFilterLabels,
+} from '@components/style-gallery/StyleGalleryVisualFilter';
 import { Icon } from '@iconify/react';
 import { createStyleGalleryDateRangeMatcher, getStyleGalleryDateKey } from '@lib/style-gallery-date-range';
 import type { StyleGalleryDateRangeLabels } from '@lib/style-gallery-date-range-labels';
+import { getReusableStyleGalleryImageUrl, rememberLoadedStyleGalleryImage } from '@lib/style-gallery-image-client';
 import {
   createStyleGalleryCopyAction,
   createStyleGalleryDeleteAction,
@@ -17,7 +21,7 @@ import { loadStyleGalleryDefaultPrompt, loadStyleGalleryPromptChoices } from '@l
 import { openModal } from '@store/modal';
 import { parseAsString, parseAsStringLiteral, useQueryState, useQueryStates } from 'nuqs';
 import { NuqsAdapter } from 'nuqs/adapters/react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useProgressiveList } from '@/hooks/useProgressiveList';
 import type { StyleGalleryExampleOverviewItem } from '@/types/style-gallery';
 import {
@@ -54,6 +58,7 @@ export interface StyleGalleryExamplesOverviewLabels {
   sortDescending: string;
   likes: StyleGalleryLikeLabels;
   dateRange: StyleGalleryDateRangeLabels;
+  visualFilter: StyleGalleryVisualFilterLabels;
 }
 
 const INITIAL_EXAMPLE_COUNT = 24;
@@ -82,6 +87,8 @@ function StyleGalleryExamplesOverviewContent({
   lightboxActionLabels,
 }: Props) {
   const [examples, setExamples] = useState(initialExamples);
+  // 不放进 state：加载完成只影响下一次打开 Lightbox，不应让数千张卡片重新渲染。
+  const loadedExampleSources = useRef(new Set<string>());
   const [uploadToken, setUploadToken] = useState('');
   const [platform, setPlatform] = useQueryState('platform', parseAsString.withDefault('all'));
   const [query, setQuery] = useQueryState('q', parseAsString.withDefault(''));
@@ -92,6 +99,8 @@ function StyleGalleryExamplesOverviewContent({
     to: parseAsString.withDefault(''),
   });
   const likes = useStyleGalleryLikes(Object.fromEntries(examples.map((example) => [example.id, example.likeCount])));
+  const [visualMatches, setVisualMatches] = useState<Set<string> | null>(null);
+  const [visualRevision, setVisualRevision] = useState(0);
   useEffect(() => {
     setUploadToken(localStorage.getItem(STYLE_GALLERY_UPLOAD_TOKEN_STORAGE_KEY) ?? '');
   }, []);
@@ -135,7 +144,7 @@ function StyleGalleryExamplesOverviewContent({
       const matchesQuery =
         !normalizedQuery || `${example.sourceTitle} ${example.note ?? ''}`.toLowerCase().includes(normalizedQuery);
       const matchesDate = matchesDateRange(example.uploadedAt);
-      return matchesPlatform && matchesQuery && matchesDate;
+      return matchesPlatform && matchesQuery && matchesDate && (visualMatches === null || visualMatches.has(example.id));
     });
     const sorted = [...matches];
     if (sortKey !== 'default') {
@@ -147,7 +156,7 @@ function StyleGalleryExamplesOverviewContent({
       });
     }
     return sortDirection === 'desc' ? sorted.reverse() : sorted;
-  }, [examples, likeSortCounts, matchesDateRange, platform, query, sortDirection, sortKey]);
+  }, [examples, likeSortCounts, matchesDateRange, platform, query, sortDirection, sortKey, visualMatches]);
   const hasPendingLikeSort =
     sortKey === 'likes' && examples.some((example) => (likeSortCounts[example.id] ?? 0) !== likes.getCount(example.id));
   const deleteOverviewExample = useCallback(
@@ -165,6 +174,7 @@ function StyleGalleryExamplesOverviewContent({
     const lightboxImages = filtered.map((candidate) => ({
       id: candidate.id,
       src: candidate.src,
+      resolvedSrc: getReusableStyleGalleryImageUrl(candidate.src, loadedExampleSources.current.has(candidate.src)),
       alt: `${candidate.sourceTitle} ${candidate.model}`,
       like: createStyleGalleryLightboxLikeAction(candidate.id, likes, labels.likes),
       copy: createStyleGalleryCopyAction(
@@ -206,7 +216,7 @@ function StyleGalleryExamplesOverviewContent({
   const { hasMore, loadMore, loadMoreRef, revealThrough, visibleItems } = useProgressiveList(filtered, {
     initialCount: INITIAL_EXAMPLE_COUNT,
     batchSize: EXAMPLE_BATCH_SIZE,
-    resetKey: `${platform}\u0000${query.trim().toLowerCase()}\u0000${dateFrom}\u0000${dateTo}\u0000${sortKey}\u0000${sortDirection}`,
+    resetKey: `${platform}\u0000${query.trim().toLowerCase()}\u0000${dateFrom}\u0000${dateTo}\u0000${sortKey}\u0000${sortDirection}\u0000${visualRevision}`,
   });
 
   function refreshLikeSortCounts() {
@@ -225,8 +235,8 @@ function StyleGalleryExamplesOverviewContent({
 
   return (
     <section className="space-y-5" aria-label="Generated example overview">
-      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-background/80 p-4 shadow-sm">
-        <label className="relative min-w-64 flex-1 md:min-w-full">
+      <div className="rounded-lg border border-border bg-background/80 p-4 shadow-sm">
+        <label className="relative block w-full">
           <Icon icon="ri:search-line" className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
           <input
             value={query}
@@ -235,78 +245,90 @@ function StyleGalleryExamplesOverviewContent({
             className="h-10 w-full rounded-md border border-border bg-background pr-3 pl-9 text-sm outline-none focus:border-primary"
           />
         </label>
-        <label className="sr-only" htmlFor="example-platform-filter">
-          {labels.platform}
-        </label>
-        <div className="relative">
-          <select
-            id="example-platform-filter"
-            value={platform}
-            onChange={(event) => setPlatform(event.currentTarget.value).catch(reportUrlStateError)}
-            className="h-10 appearance-none rounded-md border border-border bg-background pr-8 pl-3 text-sm outline-none focus:border-primary"
-          >
-            <option value="all">{labels.allPlatforms}</option>
-            {STYLE_GALLERY_PLATFORMS.map((item) => (
-              <option key={item.slug} value={item.label}>
-                {item.label}
-              </option>
-            ))}
-          </select>
-          <Icon
-            icon="ri:arrow-down-s-line"
-            className="pointer-events-none absolute top-1/2 right-2 size-4 -translate-y-1/2 text-muted-foreground"
+        <div className="mt-3 flex flex-wrap items-center gap-3 border-border border-t pt-3">
+          <StyleGalleryVisualFilter
+            scope="example"
+            labels={labels.visualFilter}
+            onResults={(matches) => {
+              setVisualMatches(matches);
+              setVisualRevision((revision) => revision + 1);
+            }}
           />
-        </div>
-        <StyleGalleryDateRangeFilter
-          value={{ from: dateFrom, to: dateTo }}
-          locale={locale}
-          labels={labels.dateRange}
-          availableDateKeys={availableDateKeys}
-          onApply={(range) => void setDateRange(range).catch(reportUrlStateError)}
-        />
-        <span className="text-muted-foreground text-sm tabular-nums">
-          {filtered.length} / {examples.length}
-        </span>
-        <label className="sr-only" htmlFor="example-sort">
-          {labels.sortItems}
-        </label>
-        <div className="relative min-w-44">
-          <select
-            id="example-sort"
-            value={sortKey}
-            onChange={(event) => changeSortKey(event.currentTarget.value as SortKey)}
-            className="h-10 w-full appearance-none rounded-md border border-border bg-background pr-8 pl-3 text-sm outline-none focus:border-primary"
-          >
-            {sortKeys.map((key) => (
-              <option key={key} value={key}>
-                {sortLabels[key]}
-              </option>
-            ))}
-          </select>
-          <Icon
-            icon="ri:arrow-down-s-line"
-            className="pointer-events-none absolute top-1/2 right-2 size-4 -translate-y-1/2 text-muted-foreground"
+          <label className="sr-only" htmlFor="example-platform-filter">
+            {labels.platform}
+          </label>
+          <div className="relative">
+            <select
+              id="example-platform-filter"
+              value={platform}
+              onChange={(event) => setPlatform(event.currentTarget.value).catch(reportUrlStateError)}
+              className="h-10 appearance-none rounded-md border border-border bg-background pr-8 pl-3 text-sm outline-none focus:border-primary"
+            >
+              <option value="all">{labels.allPlatforms}</option>
+              {STYLE_GALLERY_PLATFORMS.map((item) => (
+                <option key={item.slug} value={item.label}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+            <Icon
+              icon="ri:arrow-down-s-line"
+              className="pointer-events-none absolute top-1/2 right-2 size-4 -translate-y-1/2 text-muted-foreground"
+            />
+          </div>
+          <StyleGalleryDateRangeFilter
+            value={{ from: dateFrom, to: dateTo }}
+            locale={locale}
+            labels={labels.dateRange}
+            availableDateKeys={availableDateKeys}
+            onApply={(range) => void setDateRange(range).catch(reportUrlStateError)}
           />
+          <span className="shrink-0 text-muted-foreground text-sm tabular-nums">
+            {filtered.length} / {examples.length}
+          </span>
+          <div className="ml-auto flex items-center gap-3 md:ml-0 md:flex-wrap">
+            <label className="sr-only" htmlFor="example-sort">
+              {labels.sortItems}
+            </label>
+            <div className="relative min-w-44">
+              <select
+                id="example-sort"
+                value={sortKey}
+                onChange={(event) => changeSortKey(event.currentTarget.value as SortKey)}
+                className="h-10 w-full appearance-none rounded-md border border-border bg-background pr-8 pl-3 text-sm outline-none focus:border-primary"
+              >
+                {sortKeys.map((key) => (
+                  <option key={key} value={key}>
+                    {sortLabels[key]}
+                  </option>
+                ))}
+              </select>
+              <Icon
+                icon="ri:arrow-down-s-line"
+                className="pointer-events-none absolute top-1/2 right-2 size-4 -translate-y-1/2 text-muted-foreground"
+              />
+            </div>
+            {hasPendingLikeSort && (
+              <button
+                type="button"
+                onClick={refreshLikeSortCounts}
+                className="inline-flex h-10 items-center gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 font-medium text-rose-600 text-sm transition hover:border-rose-300 hover:bg-rose-100 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200"
+              >
+                <Icon icon="ri:refresh-line" className="size-4" />
+                {labels.refreshLikeSort}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={toggleSortDirection}
+              title={sortDirection === 'asc' ? labels.sortAscending : labels.sortDescending}
+              aria-label={sortDirection === 'asc' ? labels.sortAscending : labels.sortDescending}
+              className="flex size-10 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground transition hover:border-primary/40 hover:text-foreground"
+            >
+              <Icon icon={sortDirection === 'asc' ? 'ri:sort-asc' : 'ri:sort-desc'} className="size-4" />
+            </button>
+          </div>
         </div>
-        {hasPendingLikeSort && (
-          <button
-            type="button"
-            onClick={refreshLikeSortCounts}
-            className="inline-flex h-10 items-center gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 font-medium text-rose-600 text-sm transition hover:border-rose-300 hover:bg-rose-100 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200"
-          >
-            <Icon icon="ri:refresh-line" className="size-4" />
-            {labels.refreshLikeSort}
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={toggleSortDirection}
-          title={sortDirection === 'asc' ? labels.sortAscending : labels.sortDescending}
-          aria-label={sortDirection === 'asc' ? labels.sortAscending : labels.sortDescending}
-          className="flex size-10 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground transition hover:border-primary/40 hover:text-foreground"
-        >
-          <Icon icon={sortDirection === 'asc' ? 'ri:sort-asc' : 'ri:sort-desc'} className="size-4" />
-        </button>
       </div>
 
       {filtered.length ? (
@@ -326,6 +348,7 @@ function StyleGalleryExamplesOverviewContent({
                     className="group block w-full cursor-zoom-in overflow-hidden bg-muted text-left"
                   >
                     <img
+                      ref={(image) => rememberLoadedStyleGalleryImage(loadedExampleSources.current, example.src, image)}
                       src={example.src}
                       alt={`${example.sourceTitle} ${example.model}`}
                       width={4}
@@ -333,6 +356,9 @@ function StyleGalleryExamplesOverviewContent({
                       loading={index < EAGER_EXAMPLE_COUNT ? 'eager' : 'lazy'}
                       fetchPriority={index < HIGH_PRIORITY_EXAMPLE_COUNT ? 'high' : 'auto'}
                       decoding="async"
+                      onLoad={(event) =>
+                        rememberLoadedStyleGalleryImage(loadedExampleSources.current, example.src, event.currentTarget)
+                      }
                       className="aspect-[4/5] w-full object-cover transition duration-200 group-hover:scale-[1.02]"
                     />
                   </button>

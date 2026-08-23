@@ -96,7 +96,7 @@ export interface ImageLightboxLocateAction {
 export interface ImageLightboxImage {
   id?: string;
   src: string;
-  /** 批量签名得到的 HF 直连地址；保留 src 作为下载地址和签名失败回退。 */
+  /** 当前实际加载地址：通常是 HF 签名直连，也可暂存页面已加载的 canonical src 以复用浏览器缓存。 */
   resolvedSrc?: string;
   /** 已在触发页面显示过的低成本预览图；高清原图加载完成前用于避免空白等待。 */
   previewSrc?: string;

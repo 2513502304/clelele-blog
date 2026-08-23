@@ -11,6 +11,7 @@ import { getStyleGalleryExampleOverview } from '@lib/style-gallery';
 import { Icon } from 'astro-icon/components';
 import { getLocaleFromUrl, localizedPath, t } from '@/i18n';
 import { createStyleGalleryDateRangeLabels } from '@/lib/style-gallery-date-range-labels';
+import { createStyleGalleryVisualFilterLabels } from '@/lib/style-gallery-visual-labels';
 
 export const prerender = false;
 
@@ -41,6 +42,7 @@ const overviewLabels = {
     unavailable: t(locale, 'gallery.likeUnavailable'),
   },
   dateRange: createStyleGalleryDateRangeLabels(locale),
+  visualFilter: createStyleGalleryVisualFilterLabels(locale),
 };
 Astro.response.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=300');
 ---

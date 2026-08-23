@@ -52,6 +52,9 @@ importers:
       '@hookform/resolvers':
         specifier: ^5.2.2
         version: 5.2.2(react-hook-form@7.71.1(react@19.2.1))
+      '@huggingface/transformers':
+        specifier: ^3.8.1
+        version: 3.8.1
       '@iconify-json/fa6-regular':
         specifier: ^1.2.4
         version: 1.2.4
@@ -278,9 +281,6 @@ importers:
       '@biomejs/biome':
         specifier: ^2.3.10
         version: 2.3.10
-      '@huggingface/transformers':
-        specifier: ^3.8.1
-        version: 3.8.1
       '@iconify/react':
         specifier: ^5.2.1
         version: 5.2.1(react@19.2.1)

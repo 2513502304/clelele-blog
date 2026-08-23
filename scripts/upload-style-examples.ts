@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { createStyleGallerySignedUploadUrl } from '@lib/hf-s3-presign';
 import { mapWithConcurrency } from '@lib/map-with-concurrency';
 import {
@@ -17,7 +18,9 @@ import {
   STYLE_GALLERY_PREPARE_BATCH_SIZE,
 } from '@lib/style-gallery-request-batches';
 import { styleGalleryCatalogSchema, styleGalleryExampleSchema } from '@lib/style-gallery-schema';
+import { computeStyleGalleryVisualFeatureFromBytes } from '@lib/style-gallery-visual-feature-node';
 import { z } from 'zod';
+import type { StyleGalleryVisualFeature } from '@/lib/style-gallery-visual-types';
 import type { StyleGalleryExample } from '@/types/style-gallery';
 import { configureEnvironmentProxy } from './lib/environment-proxy.mjs';
 
@@ -36,6 +39,7 @@ interface PreparedImage {
   exists: boolean;
   file: LocalImage;
   key: string;
+  feature?: StyleGalleryVisualFeature;
 }
 
 interface UploadOutcome {
@@ -48,6 +52,14 @@ interface FileFailure {
   error: Error;
   path: string;
 }
+
+interface UploadDependencies {
+  computeVisualFeature: typeof computeStyleGalleryVisualFeatureFromBytes;
+}
+
+const defaultDependencies: UploadDependencies = {
+  computeVisualFeature: computeStyleGalleryVisualFeatureFromBytes,
+};
 
 class HttpRequestError extends Error {
   constructor(
@@ -73,6 +85,7 @@ const prepareResponseSchema = z.object({
 const mergeResponseSchema = z.object({
   uploaded: z.number().int().nonnegative().optional(),
   skippedDuplicates: z.number().int().nonnegative().optional(),
+  visualIndexUpdated: z.boolean().optional(),
 });
 
 function usage(): void {
@@ -289,13 +302,28 @@ async function mergePreparedImages(
         {
           method: 'POST',
           headers: getBearerHeaders(token),
-          body: JSON.stringify({ action: 'merge', examples: batch.map((entry) => entry.prepared.example) }),
+          body: JSON.stringify({
+            action: 'merge',
+            examples: batch.map((entry) => entry.prepared.example),
+            visualRecords: batch.map((entry) => {
+              if (!entry.prepared.feature) throw new Error('Visual feature is missing before metadata merge.');
+              return {
+                feature: entry.prepared.feature,
+                kind: 'example',
+                sourceSlug: slug,
+                imageId: entry.prepared.example.id,
+              };
+            }),
+          }),
         },
         options,
       );
       const response = mergeResponseSchema.parse(raw);
       committed += response.uploaded ?? batch.length;
       duplicates += response.skippedDuplicates ?? 0;
+      if (response.visualIndexUpdated === false) {
+        console.warn('Warning: examples were saved but the derived visual index needs to be rebuilt.');
+      }
     } catch (error) {
       if (batch.length > 1) {
         const middle = Math.ceil(batch.length / 2);
@@ -323,12 +351,19 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function main(): Promise<void> {
+/**
+ * 可测试的命令主流程。测试通过参数注入确定性特征，生产命令始终使用默认 DINOv2 实现；
+ * 不使用环境变量切换“假特征”，避免误配置把不可检索的数据写入正式 HF 索引。
+ */
+export async function runStyleGalleryExampleUpload(
+  args = process.argv.slice(2),
+  dependencies: UploadDependencies = defaultDependencies,
+): Promise<number> {
   configureEnvironmentProxy();
-  const options = parseStyleGalleryExampleUploadArgs(process.argv.slice(2));
+  const options = parseStyleGalleryExampleUploadArgs(args);
   if (options.help) {
     usage();
-    return;
+    return 0;
   }
 
   const token = process.env.STYLE_GALLERY_UPLOAD_TOKEN;
@@ -362,8 +397,7 @@ async function main(): Promise<void> {
   const inspected = inspectionResults.flatMap((result) => (result.image ? [result.image] : []));
   if (!inspected.length) {
     for (const failure of inspectionFailures) console.error(`- ${failure.path}: ${failure.error.message}`);
-    process.exitCode = 1;
-    return;
+    return 1;
   }
   const uniqueByHash = new Map<string, LocalImage>();
   for (const image of inspected) {
@@ -375,17 +409,40 @@ async function main(): Promise<void> {
   const duplicates = prepared.filter((entry) => entry.duplicate);
   const candidates = prepared.filter((entry) => !entry.duplicate);
 
+  // 先在本机完成不可逆的解码和模型推理，再传图片。单个坏文件不会产生需要补偿删除的 HF 对象，
+  // 其余文件仍可独立上传和提交；这里保持单 pipeline 顺序推理，避免并发复制模型中间张量。
+  const featureFailures: UploadOutcome[] = [];
+  const featureReady: PreparedImage[] = [];
+  for (const entry of candidates) {
+    try {
+      const bytes = await readFile(entry.file.path);
+      if (bytes.byteLength !== entry.file.size || createHash('sha256').update(bytes).digest('hex') !== entry.file.imageHash) {
+        throw new Error('Local file changed before visual feature extraction. Run the command again.');
+      }
+      entry.feature = await dependencies.computeVisualFeature(bytes, entry.file.imageHash);
+      featureReady.push(entry);
+    } catch (error) {
+      featureFailures.push({
+        prepared: entry,
+        uploaded: false,
+        error: error instanceof Error ? error : new Error('Visual feature extraction failed.'),
+      });
+    }
+  }
+
   let completed = 0;
-  const outcomes = await mapWithConcurrency(candidates, options.concurrency, async (entry): Promise<UploadOutcome> => {
+  const outcomes = await mapWithConcurrency(featureReady, options.concurrency, async (entry): Promise<UploadOutcome> => {
     try {
       if (!entry.exists) await uploadImageToHf(entry.file, entry.key, options);
       completed += 1;
-      console.log(`[${completed}/${candidates.length}] ${entry.file.name}: ${entry.exists ? 'reused HF object' : 'uploaded'}`);
+      console.log(
+        `[${completed}/${featureReady.length}] ${entry.file.name}: ${entry.exists ? 'reused HF object' : 'uploaded'}`,
+      );
       return { prepared: entry, uploaded: !entry.exists };
     } catch (error) {
       completed += 1;
       const normalizedError = error instanceof Error ? error : new Error('Upload failed.');
-      console.error(`[${completed}/${candidates.length}] ${entry.file.name}: ${normalizedError.message}`);
+      console.error(`[${completed}/${featureReady.length}] ${entry.file.name}: ${normalizedError.message}`);
       return { prepared: entry, uploaded: false, error: normalizedError };
     }
   });
@@ -407,6 +464,9 @@ async function main(): Promise<void> {
     : { committed: 0, duplicates: 0, failures: [] };
   const allFailures: FileFailure[] = [
     ...inspectionFailures,
+    ...featureFailures.flatMap((failure) =>
+      failure.error ? [{ path: failure.prepared.file.path, error: failure.error }] : [],
+    ),
     ...uploadFailures.flatMap((failure) => (failure.error ? [{ path: failure.prepared.file.path, error: failure.error }] : [])),
     ...merged.failures.flatMap((failure) =>
       failure.error ? [{ path: failure.prepared.file.path, error: failure.error }] : [],
@@ -418,19 +478,26 @@ async function main(): Promise<void> {
     `Finished: ${merged.committed} added, ${skippedDuplicates} duplicate${skippedDuplicates === 1 ? '' : 's'} skipped, ${allFailures.length} failed.`,
   );
   for (const failure of allFailures) console.error(`- ${failure.path}: ${failure.error.message}`);
-  if (allFailures.length) process.exitCode = 1;
+  return allFailures.length ? 1 : 0;
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : error);
-  process.exitCode = 1;
-});
+// 直接执行脚本时才启动 CLI；被测试导入时只暴露可注入主流程，不产生网络或模型副作用。
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  runStyleGalleryExampleUpload()
+    .then((exitCode) => {
+      process.exitCode = exitCode;
+    })
+    .catch((error) => {
+      console.error(error instanceof Error ? error.message : error);
+      process.exitCode = 1;
+    });
+}
 
 /*
 运行示例：
-HTTP_PROXY=http://127.0.0.1:7897 \
-HTTPS_PROXY=http://127.0.0.1:7897 \
 npm run upload:style-examples -- --item 2a256d37220e --platform PixAI /path/to/first.webp /path/to/second.webp
+
+Upload Token 与 HF 凭证自动读取 .env.local；package script 会自动启用 shell 中已有的代理。
 
 获取帮助：
 npm run upload:style-examples -- --help

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { describe, it } from 'node:test';
-import { buildImportData, extractItems, parseArgs } from './import-style-prompts.mjs';
+import { buildImportData, extractItems, parseArgs, uniqueImagesByHash } from './import-style-prompts.mjs';
 
 const PLACEHOLDER = '[在此处替换为您想要生成的主体内容]';
 
@@ -119,5 +119,12 @@ describe('style prompt import variants', () => {
       [firstPrompt, secondPrompt],
     );
     assert.notEqual(prepared.items[0].prompts[0].id, prepared.items[0].prompts[1].id);
+  });
+
+  it('deduplicates repeated image references before creating visual index records', () => {
+    const first = { imageHash: 'a'.repeat(64), sourceImage: 'first' };
+    const duplicate = { imageHash: first.imageHash, sourceImage: 'duplicate' };
+    const second = { imageHash: 'b'.repeat(64), sourceImage: 'second' };
+    assert.deepEqual(uniqueImagesByHash([first, duplicate, second]), [first, second]);
   });
 });

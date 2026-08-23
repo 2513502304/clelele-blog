@@ -7,6 +7,11 @@ import {
   getStyleGalleryPromptRevision,
   normalizeStyleGalleryPrompt,
 } from './style-gallery-prompts';
+import {
+  STYLE_GALLERY_VISUAL_EMBEDDING_DIMENSION,
+  STYLE_GALLERY_VISUAL_INDEX_VERSION,
+  STYLE_GALLERY_VISUAL_MODEL_ID,
+} from './style-gallery-visual-types';
 
 const imagePathSchema = z.string().regex(/^\/api\/style-gallery\/image\/(source|thumb)\/[a-zA-Z0-9._-]+$/);
 const imageHashSchema = z.string().regex(/^[a-f0-9]{64}$/i);
@@ -67,7 +72,7 @@ const styleGalleryItemFields = {
   examples: z.array(styleGalleryExampleSchema).default([]),
 };
 
-const currentStyleGalleryItemSchema = z
+export const styleGalleryItemSchema = z
   .object({
     version: z.literal(4).default(4),
     ...styleGalleryItemFields,
@@ -94,35 +99,6 @@ const currentStyleGalleryItemSchema = z
       seen.add(normalized);
     });
   });
-
-const legacyStyleGalleryItemSchema = z
-  .object({
-    version: z.literal(3),
-    ...styleGalleryItemFields,
-    prompt: z.string().trim().min(1),
-    originalPrompt: z.string().optional(),
-    sourceSession: z.string().optional(),
-    sourceLine: z.number().int().positive().optional(),
-  })
-  .transform(
-    ({ prompt, originalPrompt, sourceSession, sourceLine, ...item }): StoredStyleGalleryItem => ({
-      ...item,
-      version: 4,
-      prompts: [
-        {
-          id: getStyleGalleryPromptId(prompt),
-          prompt,
-          ...(originalPrompt ? { originalPrompt } : {}),
-          importedAt: item.date,
-          ...(sourceSession ? { sourceSession } : {}),
-          ...(sourceLine ? { sourceLine } : {}),
-        },
-      ],
-    }),
-  );
-
-/** 读取时兼容既有 v3 对象；下一次写入该 item 时会自然收敛为 v4。 */
-export const styleGalleryItemSchema = z.union([currentStyleGalleryItemSchema, legacyStyleGalleryItemSchema]);
 
 export const styleGalleryCatalogItemSchema = z
   .object({
@@ -165,13 +141,8 @@ const styleGalleryCatalogFields = {
   items: z.array(styleGalleryCatalogItemSchema),
 };
 
-const currentStyleGalleryCatalogSchema = z.object({ version: z.literal(4), ...styleGalleryCatalogFields });
-const legacyStyleGalleryCatalogSchema = z
-  .object({ version: z.literal(3), ...styleGalleryCatalogFields })
-  .transform(({ version: _version, ...catalog }) => ({ ...catalog, version: 4 as const }));
-
-/** 迁移期间兼容 v3 catalog；所有写路径只会输出 v4。 */
-export const styleGalleryCatalogSchema = z.union([currentStyleGalleryCatalogSchema, legacyStyleGalleryCatalogSchema]);
+/** HF 已一次性迁移到 v4；旧版本必须明确失败，避免读写路径重新分叉并掩盖残留数据。 */
+export const styleGalleryCatalogSchema = z.object({ version: z.literal(4), ...styleGalleryCatalogFields });
 
 export const styleGalleryExampleIndexSchema = z.object({
   version: z.literal(2),
@@ -187,6 +158,81 @@ export const styleGalleryExampleIndexSchema = z.object({
     }),
   ),
 });
+
+export const styleGalleryVisualFeatureSchema = z.object({
+  imageHash: imageHashSchema,
+  perceptualHash: z.string().regex(/^[a-f0-9]{16}$/i),
+  differenceHash: z.string().regex(/^[a-f0-9]{16}$/i),
+  palette: z.string().regex(/^[A-Za-z0-9+/]{32}$/),
+  embedding: z
+    .string()
+    .regex(/^[A-Za-z0-9+/]{512}$/)
+    // 384 个零字节会编码为 512 个 A；它没有方向，余弦相似度分母为零，不能进入查询或持久化索引。
+    .refine((value) => value !== 'A'.repeat(512), 'Visual embedding must contain a non-zero vector.'),
+});
+
+export const styleGalleryVisualRecordInputSchema = z.object({
+  feature: styleGalleryVisualFeatureSchema,
+  kind: z.enum(['source', 'example']),
+  sourceSlug: z.string().regex(/^[a-z0-9-]+$/i),
+  imageId: z.string().min(1),
+});
+
+/**
+ * 视觉索引是可由图片对象和现有 metadata 全量重建的派生数据，不参与 Gallery 正常读取路径。
+ * schema 刻意只接受当前模型与版本，迁移完成后若模型变化必须整体重建，不能静默混用向量空间。
+ */
+export const styleGalleryVisualIndexSchema = z
+  .object({
+    version: z.literal(STYLE_GALLERY_VISUAL_INDEX_VERSION),
+    updatedAt: z.string().datetime({ offset: true }),
+    model: z.object({
+      id: z.literal(STYLE_GALLERY_VISUAL_MODEL_ID),
+      dimensions: z.literal(STYLE_GALLERY_VISUAL_EMBEDDING_DIMENSION),
+      quantization: z.literal('int8-unit'),
+    }),
+    features: z.array(styleGalleryVisualFeatureSchema),
+    records: z.array(
+      z.object({
+        featureIndex: z.number().int().nonnegative(),
+        kind: z.enum(['source', 'example']),
+        sourceSlug: z.string().regex(/^[a-z0-9-]+$/i),
+        imageId: z.string().min(1),
+      }),
+    ),
+  })
+  .superRefine((index, context) => {
+    const hashes = new Set<string>();
+    index.features.forEach((feature, featureIndex) => {
+      if (hashes.has(feature.imageHash)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Visual feature image hashes must be unique.',
+          path: ['features', featureIndex, 'imageHash'],
+        });
+      }
+      hashes.add(feature.imageHash);
+    });
+    const identities = new Set<string>();
+    index.records.forEach((record, recordIndex) => {
+      if (record.featureIndex >= index.features.length) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Visual record references an unknown feature.',
+          path: ['records', recordIndex, 'featureIndex'],
+        });
+      }
+      const identity = `${record.kind}\n${record.sourceSlug}\n${record.imageId}`;
+      if (identities.has(identity)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Visual record identities must be unique.',
+          path: ['records', recordIndex],
+        });
+      }
+      identities.add(identity);
+    });
+  });
 
 /**
  * 从完整 item 派生列表索引条目。

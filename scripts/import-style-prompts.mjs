@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import sharp from 'sharp';
+import { computeStyleGalleryVisualFeaturesFromBytes } from '../src/lib/style-gallery-visual-feature-node.ts';
 import { configureEnvironmentProxy } from './lib/environment-proxy.mjs';
 
 const PLACEHOLDER = '[在此处替换为您想要生成的主体内容]';
@@ -12,7 +13,9 @@ const REQUEST_TIMEOUT_MS = positiveInteger(process.env.STYLE_GALLERY_IMPORT_REQU
 const UPLOAD_TIMEOUT_MS = positiveInteger(process.env.STYLE_GALLERY_IMPORT_UPLOAD_TIMEOUT_MS, 300_000);
 const REQUEST_ATTEMPTS = positiveInteger(process.env.STYLE_GALLERY_IMPORT_ATTEMPTS, 3);
 const UPLOAD_CONCURRENCY = positiveInteger(process.env.STYLE_GALLERY_IMPORT_UPLOAD_CONCURRENCY, 5);
-const ITEM_BATCH_SIZE = Math.min(positiveInteger(process.env.STYLE_GALLERY_IMPORT_ITEM_BATCH_SIZE, 50), 100);
+// API 单批上限就是 100；默认填满可避免常见的 50-100 条 session 重复改写全量 catalog/视觉索引。
+const ITEM_BATCH_SIZE = Math.min(positiveInteger(process.env.STYLE_GALLERY_IMPORT_ITEM_BATCH_SIZE, 100), 100);
+const VISUAL_INFERENCE_BATCH_SIZE = Math.min(positiveInteger(process.env.STYLE_GALLERY_VISUAL_INFERENCE_BATCH_SIZE, 8), 16);
 
 class NonRetryableRequestError extends Error {}
 
@@ -143,6 +146,7 @@ function extractItems(records) {
  */
 async function buildImportData(extractedItems, sessionPath, existingByHash, metadataOnly, promptModelOverride) {
   const assets = new Map();
+  const imageBytesByHash = new Map();
   const itemsByHash = new Map();
   let skippedDuplicates = 0;
   let skippedNewMetadata = 0;
@@ -173,6 +177,7 @@ async function buildImportData(extractedItems, sessionPath, existingByHash, meta
     for (let index = 0; index < parsedImages.length; index += 1) {
       const image = parsedImages[index];
       const imageHash = imageHashes[index];
+      imageBytesByHash.set(imageHash, image.bytes);
       const imageName = `${imageHash.slice(0, 12)}.${image.extension}`;
       const thumbnailName = `${imageHash.slice(0, 12)}.webp`;
       const sourceKey = `source/${imageName}`;
@@ -225,7 +230,44 @@ async function buildImportData(extractedItems, sessionPath, existingByHash, meta
       examples: [],
     });
   }
-  return { assets, items: [...itemsByHash.values()], skippedDuplicates, skippedNewMetadata };
+  return { assets, imageBytesByHash, items: [...itemsByHash.values()], skippedDuplicates, skippedNewMetadata };
+}
+
+/**
+ * 视觉特征在本机从与上传对象相同的字节预计算。单个 ONNX pipeline 内做有界批处理，既减少逐图
+ * 调度开销，也避免并发创建多个模型与中间张量；网络上传仍保持原有并发，Vercel 不参与图片推理。
+ */
+async function buildSourceVisualRecords(items, imageBytesByHash) {
+  const uniqueImages = new Map();
+  for (const item of items) {
+    for (const image of item.images) {
+      const bytes = imageBytesByHash.get(image.imageHash);
+      if (!bytes) throw new Error(`Missing local image bytes for visual feature ${image.imageHash}.`);
+      uniqueImages.set(image.imageHash, { bytes, imageHash: image.imageHash });
+    }
+  }
+  const featureByHash = new Map();
+  for (const batch of chunks([...uniqueImages.values()], VISUAL_INFERENCE_BATCH_SIZE)) {
+    const features = await computeStyleGalleryVisualFeaturesFromBytes(batch);
+    for (const feature of features) featureByHash.set(feature.imageHash, feature);
+  }
+  return items.flatMap((item) =>
+    uniqueImagesByHash(item.images).map((image) => ({
+      feature: featureByHash.get(image.imageHash),
+      kind: 'source',
+      sourceSlug: item.slug,
+      imageId: image.imageHash,
+    })),
+  );
+}
+
+/** 同一轮消息可能重复携带相同 data URI；视觉索引按 item + imageHash 只保留一个引用。 */
+function uniqueImagesByHash(images) {
+  const unique = new Map();
+  for (const image of images) {
+    if (!unique.has(image.imageHash)) unique.set(image.imageHash, image);
+  }
+  return [...unique.values()];
 }
 
 async function requestJson(url, options, timeoutMs = REQUEST_TIMEOUT_MS) {
@@ -367,6 +409,14 @@ async function main() {
   }
   let uploadedKeys = [];
   try {
+    console.log(`Computing visual features for ${prepared.items.length} metadata item(s)...`);
+    const visualRecords = await buildSourceVisualRecords(prepared.items, prepared.imageBytesByHash);
+    const visualRecordsBySlug = new Map();
+    for (const record of visualRecords) {
+      const current = visualRecordsBySlug.get(record.sourceSlug) ?? [];
+      current.push(record);
+      visualRecordsBySlug.set(record.sourceSlug, current);
+    }
     uploadedKeys = await prepareAndUploadAssets(apiBaseUrl, token, prepared.assets);
     let written = 0;
     let created = 0;
@@ -376,13 +426,18 @@ async function main() {
     const itemChunks = chunks(prepared.items, ITEM_BATCH_SIZE);
     for (let index = 0; index < itemChunks.length; index += 1) {
       const itemChunk = itemChunks[index];
+      const batchVisualRecords = itemChunk.flatMap((item) => visualRecordsBySlug.get(item.slug) ?? []);
       console.log(`Writing metadata batch ${index + 1}/${itemChunks.length} (${itemChunk.length} item(s))...`);
       const result = await requestJson(
         `${apiBaseUrl}/api/style-gallery/items`,
         {
           method: 'POST',
           headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-          body: JSON.stringify({ mode: metadataOnly ? 'upsert' : 'create', items: itemChunk }),
+          body: JSON.stringify({
+            mode: metadataOnly ? 'upsert' : 'create',
+            items: itemChunk,
+            visualRecords: batchVisualRecords,
+          }),
         },
         UPLOAD_TIMEOUT_MS,
       );
@@ -391,6 +446,9 @@ async function main() {
       updated += result.updated ?? 0;
       addedPrompts += result.addedPrompts ?? 0;
       apiDuplicates += result.skippedDuplicates ?? 0;
+      if (result.visualIndexUpdated === false) {
+        console.warn('Warning: metadata was saved but the derived visual index needs to be rebuilt.');
+      }
       console.log(
         `Completed metadata batch ${index + 1}/${itemChunks.length}: ${result.created ?? 0} new item(s), ${result.updated ?? 0} existing item(s) updated, ${result.addedPrompts ?? 0} prompt(s) added, ${result.skippedDuplicates ?? 0} duplicate prompt(s).`,
       );
@@ -408,7 +466,7 @@ async function main() {
   }
 }
 
-export { buildImportData, extractItems, parseArgs };
+export { buildImportData, extractItems, parseArgs, uniqueImagesByHash };
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((error) => {
@@ -418,37 +476,20 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 }
 
 /*
-HTTP_PROXY=http://127.0.0.1:7897 \
-HTTPS_PROXY=http://127.0.0.1:7897 \
-STYLE_GALLERY_UPLOAD_TOKEN='...' \
-STYLE_GALLERY_IMPORT_ATTEMPTS=5 \
 npm run import:style-prompts -- <session.jsonl> --prompt-model='gpt-5.6-sol'
 
 # JSONL 的 turn_context 已包含正确模型时，可省略 --prompt-model；该参数用于缺失或手动覆盖来源模型。
 # 写入前只核对新建/更新/重复数量时追加 --dry-run；该模式不需要 Upload Token，也不会修改 HF。
+# Upload Token、HF 凭证和可选调优项自动读取 .env.local；package script 会自动启用 shell 中已有的代理。
 */
 
 /*
 完整本地功能启动方式（首次运行及 Vercel Development 环境变量变化后，先执行第一行）：
-NODE_USE_ENV_PROXY=1 \
-NODE_OPTIONS=--use-env-proxy \
-HTTP_PROXY=http://127.0.0.1:7897 \
-HTTPS_PROXY=http://127.0.0.1:7897 \
 npm exec --yes --package=node@24 --package=vercel -- vercel env pull .env.local --environment=development --yes
 
-set -a
-source .env.local
-set +a
-# 本地开发可复用 Gallery 的 HF 凭证读取 Live2D；Vercel 仍应配置独立只读凭证。
-export LIVE2D_HF_S3_READ_ACCESS_KEY_ID="${LIVE2D_HF_S3_READ_ACCESS_KEY_ID:-$HF_S3_ACCESS_KEY_ID}"
-export LIVE2D_HF_S3_READ_SECRET_ACCESS_KEY="${LIVE2D_HF_S3_READ_SECRET_ACCESS_KEY:-$HF_S3_SECRET_ACCESS_KEY}"
-NODE_USE_ENV_PROXY=1 \
-NODE_OPTIONS=--use-env-proxy \
-HTTP_PROXY=http://127.0.0.1:7897 \
-HTTPS_PROXY=http://127.0.0.1:7897 \
-npm exec --yes --package=node@24 --package=pnpm@9.15.1 -- pnpm dev --host 127.0.0.1 --port 4324
+npm run dev -- --host 127.0.0.1 --port 4324
 
-服务端写入逻辑读取 process.env，因此启动前需要 source 被 gitignore 的 .env.local 并导出变量。
+dev/import/upload script 都会读取被 gitignore 的 .env.local；代理地址沿用当前 shell 的 HTTP_PROXY/HTTPS_PROXY。
 不要把 Upload Token、HF S3 密钥、GitHub OAuth Secret 或 Session Secret 直接写进本文件；
 Vercel Development 中配置完整后，上述启动方式会启用全部功能。
 */
