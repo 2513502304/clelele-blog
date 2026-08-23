@@ -140,6 +140,10 @@ export function getStyleGalleryLightboxElementId(scope: string, id: string): str
 /**
  * 为参考原图构造统一 lightbox 导航数据。已加载的高清图和会话内签名地址直接复用；只有未加载
  * 项才进入批量签名。`previewSrc` 仍负责缩略图到高清图的过渡，并且父 item 不附加点赞与删除动作。
+ *
+ * 预览页和索引页的卡片只加载 thumb，因此首次打开时等待 source 高清图是预期的渐进加载；详情页
+ * 展示的本身就是 source，会通过 `sourceLoaded` 跳过这次等待。高清图一旦在 Lightbox 加载成功，后续
+ * 打开同一图片也会复用会话级 URL 与浏览器缓存，不能再退回只显示 thumb 的初始状态。
  */
 export function createStyleGallerySourceLightboxData(
   items: readonly StyleGallerySourceLightboxItem[],

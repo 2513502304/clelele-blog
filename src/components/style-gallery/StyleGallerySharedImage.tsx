@@ -14,8 +14,11 @@ interface StyleGallerySharedImageProps extends Omit<ImgHTMLAttributes<HTMLImageE
 }
 
 /**
- * Sub-gallery 卡片与 Lightbox 的共享图片入口。后台预加载某个签名 URL 后，仅尚未完成加载的卡片
- * 切换到该地址；已经显示完成的卡片保持原 URL，避免为了统一地址反而触发一次重复加载。
+ * Sub-gallery 卡片与 Lightbox 的共享原图入口。两处展示的是同一 example URL，因此卡片一旦加载完成，
+ * Lightbox 新建 DOM 节点时也必须沿用全局 loaded 状态，不能因节点短暂 `complete === false` 重新转圈。
+ * 后台预加载签名 URL 时，仅尚未完成加载的卡片切换地址；已经显示的卡片保持原 URL，避免重复加载。
+ *
+ * 预览页和索引页不使用这条契约：它们有意先展示 thumb，再在 Lightbox 中渐进加载高清 source。
  */
 export default function StyleGallerySharedImage({ source, loadedSources, alt, ...imageProps }: StyleGallerySharedImageProps) {
   const [subscribedUrl, setSubscribedUrl] = useState<{ source: string; url: string } | null>(null);
