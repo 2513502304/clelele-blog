@@ -8,6 +8,8 @@ export function createStyleGalleryVisualFilterLabels(locale: Locale): StyleGalle
     imageTab: t(locale, 'gallery.visualImageTab'),
     paletteTab: t(locale, 'gallery.visualPaletteTab'),
     chooseImage: t(locale, 'gallery.visualChooseImage'),
+    pasteImageHint: t(locale, 'gallery.visualPasteImageHint'),
+    unsupportedImage: t(locale, 'gallery.visualUnsupportedImage'),
     combined: t(locale, 'gallery.visualCombined'),
     combinedHelp: t(locale, 'gallery.visualCombinedHelp'),
     nearDuplicate: t(locale, 'gallery.visualNearDuplicate'),

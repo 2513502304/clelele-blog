@@ -1,13 +1,14 @@
 import { decodePalette, decodeQuantizedEmbedding, hammingDistance } from './style-gallery-visual-feature';
-import type {
-  StyleGalleryVisualFeature,
-  StyleGalleryVisualIndex,
-  StyleGalleryVisualRecord,
-  StyleGalleryVisualRecordInput,
-  StyleGalleryVisualSearchMode,
-  StyleGalleryVisualSearchRange,
-  StyleGalleryVisualSearchResult,
-  StyleGalleryVisualSearchScope,
+import {
+  STYLE_GALLERY_VISUAL_DEFAULT_RANGE,
+  type StyleGalleryVisualFeature,
+  type StyleGalleryVisualIndex,
+  type StyleGalleryVisualRecord,
+  type StyleGalleryVisualRecordInput,
+  type StyleGalleryVisualSearchMode,
+  type StyleGalleryVisualSearchRange,
+  type StyleGalleryVisualSearchResult,
+  type StyleGalleryVisualSearchScope,
 } from './style-gallery-visual-types';
 
 /**
@@ -214,14 +215,14 @@ export function searchStyleGalleryVisualIndex(
 }
 
 function normalizeRange(value: number | undefined): number {
-  return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 50;
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.max(0, Math.min(100, value))
+    : STYLE_GALLERY_VISUAL_DEFAULT_RANGE;
 }
 
-/** 0/50/100 分别锚定原来的严格/适中/宽泛参数，区间内线性插值，避免滑块出现难以解释的跳变。 */
-function interpolateRange(range: number, strict: number, recommended: number, broad: number): number {
-  return range <= 50
-    ? strict + (recommended - strict) * (range / 50)
-    : recommended + (broad - recommended) * ((range - 50) / 50);
+/** 0/50/100 分别锚定严格/中点/宽泛参数；UI 默认 20%，但仍沿同一连续曲线插值。 */
+function interpolateRange(range: number, strict: number, midpoint: number, broad: number): number {
+  return range <= 50 ? strict + (midpoint - strict) * (range / 50) : midpoint + (broad - midpoint) * ((range - 50) / 50);
 }
 
 function getPreparedScope(index: StyleGalleryVisualIndex, scope: StyleGalleryVisualSearchScope): PreparedScope {
