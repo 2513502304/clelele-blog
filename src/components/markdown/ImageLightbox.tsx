@@ -17,6 +17,7 @@ import { getLive2DFocusNodes, isLive2DOwnedTarget } from '@lib/live2d/focus-scop
 import {
   getReusableStyleGalleryImageUrl,
   invalidateStyleGalleryImageUrl,
+  isStyleGalleryImageRenderable,
   isStyleGalleryImageUrlLoaded,
   markStyleGalleryImageUrlLoaded,
   preloadStyleGalleryImages,
@@ -68,7 +69,7 @@ function LightboxImageStage({ image, shouldReduceMotion, onResolvedSourceFailure
   // 页面卡片已经显示过同一 URL 时，浏览器仍可能异步补发新 img 的 load 事件；此处同步复用已知状态，
   // 避免在实际可绘制的缓存图片上短暂显示 loading。未登记的导航图片仍走完整 load/decode 生命周期。
   const [sourceState, setSourceState] = useState<'loading' | 'loaded' | 'failed'>(() =>
-    isStyleGalleryImageUrlLoaded(sourceSrc) ? 'loaded' : 'loading',
+    isStyleGalleryImageRenderable(sourceSrc) ? 'loaded' : 'loading',
   );
   const [previewFailed, setPreviewFailed] = useState(false);
 
@@ -95,9 +96,9 @@ function LightboxImageStage({ image, shouldReduceMotion, onResolvedSourceFailure
       if (!element) return;
       if (element.complete && element.naturalWidth > 0 && !isStyleGalleryImageUrlLoaded(sourceSrc)) {
         void finishSourceLoad(element);
-      } else if (!element.complete && isStyleGalleryImageUrlLoaded(sourceSrc)) {
-        // 浏览器极少数情况下会逐出已登记资源；此时恢复真实 loading，而不是留下透明空白。
-        setSourceState('loading');
+      } else if (isStyleGalleryImageRenderable(sourceSrc, element)) {
+        // 新 img 刚挂载时 complete 可能仍是 false；共享资源已经加载完成时必须保持立即可见。
+        setSourceState('loaded');
       }
     },
     [finishSourceLoad, sourceSrc],
@@ -798,7 +799,7 @@ export default function ImageLightbox() {
                       }}
                     >
                       <LightboxImageStage
-                        key={`${currentImageKey}:${currentImage.resolvedSrc ?? ''}`}
+                        key={currentImageKey}
                         image={currentImage}
                         shouldReduceMotion={shouldReduceMotion}
                         onResolvedSourceFailure={handleResolvedSourceFailure}

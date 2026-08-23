@@ -21,8 +21,9 @@ const loadedImageUrls = new Set<string>();
 const loadedUrlBySource = new Map<string, string>();
 const sourceListeners = new Map<string, Set<(url: string) => void>>();
 const retainedPreloads = new Map<string, { image: HTMLImageElement; pixels: number }>();
-const activePreloads = new Map<string, Promise<boolean>>();
+let activePreloads = new Map<string, Promise<boolean>>();
 let retainedPreloadPixels = 0;
+let preloadGeneration = 0;
 let activeRequests = new Map<string, Promise<SignedUrlResponse>>();
 
 /**
@@ -59,6 +60,18 @@ export function getReusableStyleGalleryImageUrl(source: string, sourceLoaded: bo
 /** Lightbox 用它同步判断新建 img 是否可以直接复用当前页面已经解码的图片。 */
 export function isStyleGalleryImageUrlLoaded(source: string): boolean {
   return loadedImageUrls.has(source);
+}
+
+/**
+ * 判断新挂载的 img 是否可以立即显示。共享缓存中的 loaded 状态优先于新 DOM 节点短暂的
+ * `complete === false`：同一资源从卡片切到 Lightbox 或在 Lightbox 中往返时，新节点尚未完成
+ * 初始化不代表图片资源失效，不能因此重新显示 loading。
+ */
+export function isStyleGalleryImageRenderable(
+  source: string,
+  image: Pick<HTMLImageElement, 'complete' | 'naturalWidth'> | null = null,
+): boolean {
+  return loadedImageUrls.has(source) || Boolean(image?.complete && image.naturalWidth > 0);
 }
 
 /** 记录 Lightbox 自己加载完成的签名地址，保证键盘返回或关闭后重开时不再显示虚假的 loading。 */
@@ -126,12 +139,11 @@ function retainPreload(url: string, image: HTMLImageElement): void {
   if (previous) retainedPreloadPixels -= previous.pixels;
   retainedPreloads.delete(url);
   const pixels = Math.max(1, image.naturalWidth || 1) * Math.max(1, image.naturalHeight || 1);
+  // 单张异常大图也不能突破预算；它仍可留在浏览器 HTTP 缓存，但不保留强引用占用解码内存。
+  if (pixels > RETAINED_PRELOAD_PIXEL_BUDGET) return;
   retainedPreloads.set(url, { image, pixels });
   retainedPreloadPixels += pixels;
-  while (
-    retainedPreloads.size > 1 &&
-    (retainedPreloads.size > RETAINED_PRELOAD_LIMIT || retainedPreloadPixels > RETAINED_PRELOAD_PIXEL_BUDGET)
-  ) {
+  while (retainedPreloads.size > RETAINED_PRELOAD_LIMIT || retainedPreloadPixels > RETAINED_PRELOAD_PIXEL_BUDGET) {
     const oldest = retainedPreloads.keys().next().value;
     if (typeof oldest !== 'string') break;
     retainedPreloadPixels -= retainedPreloads.get(oldest)?.pixels ?? 0;
@@ -145,12 +157,14 @@ function retainPreload(url: string, image: HTMLImageElement): void {
  */
 export async function preloadStyleGalleryImages(images: readonly StyleGalleryImagePreload[]): Promise<void> {
   if (typeof Image === 'undefined') return;
+  const generation = preloadGeneration;
+  const generationJobs = activePreloads;
   const jobs = images.map(({ source, url, priority }) => {
     if (loadedImageUrls.has(url)) {
       markStyleGalleryImageUrlLoaded(url, source);
       return Promise.resolve(true);
     }
-    let job = activePreloads.get(url);
+    let job = generationJobs.get(url);
     if (!job) {
       job = new Promise<boolean>((resolve) => {
         const image = new Image();
@@ -167,6 +181,10 @@ export async function preloadStyleGalleryImages(images: readonly StyleGalleryIma
                 resolve(false);
                 return;
               }
+              if (generation !== preloadGeneration) {
+                resolve(false);
+                return;
+              }
               retainPreload(url, image);
               markStyleGalleryImageUrlLoaded(url, source);
               resolve(true);
@@ -178,11 +196,16 @@ export async function preloadStyleGalleryImages(images: readonly StyleGalleryIma
           resolve(false);
         };
         image.src = url;
-      }).finally(() => activePreloads.delete(url));
-      activePreloads.set(url, job);
+      }).finally(() => {
+        // reset 会替换整张任务表；旧任务只能清理自己所属代际，不能删掉同 URL 的新任务。
+        if (generation === preloadGeneration && activePreloads === generationJobs && generationJobs.get(url) === job) {
+          generationJobs.delete(url);
+        }
+      });
+      generationJobs.set(url, job);
     }
     return job.then((loaded) => {
-      if (loaded) markStyleGalleryImageUrlLoaded(url, source);
+      if (loaded && generation === preloadGeneration) markStyleGalleryImageUrlLoaded(url, source);
       return loaded;
     });
   });
@@ -284,12 +307,13 @@ export function invalidateStyleGalleryImageUrl(source: string): void {
 
 /** 测试与 Astro 页面切换时可显式释放会话级缓存。 */
 export function resetStyleGalleryImageUrlCache(): void {
+  preloadGeneration += 1;
   signedUrlCache.clear();
   loadedImageUrls.clear();
   loadedUrlBySource.clear();
   sourceListeners.clear();
   retainedPreloads.clear();
   retainedPreloadPixels = 0;
-  activePreloads.clear();
+  activePreloads = new Map();
   activeRequests = new Map();
 }

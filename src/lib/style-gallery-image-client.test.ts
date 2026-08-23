@@ -4,6 +4,7 @@ import {
   getCachedStyleGalleryImageUrl,
   getReusableStyleGalleryImageUrl,
   invalidateStyleGalleryImageUrl,
+  isStyleGalleryImageRenderable,
   isStyleGalleryImageUrlLoaded,
   markStyleGalleryImageUrlLoaded,
   preloadStyleGalleryImages,
@@ -78,6 +79,14 @@ test('detects an image that completed before island hydration attached onLoad', 
   assert.equal(isStyleGalleryImageUrlLoaded('/still-loading.webp'), false);
 });
 
+test('keeps a shared loaded image renderable while a new lightbox img node initializes', () => {
+  resetStyleGalleryImageUrlCache();
+  markStyleGalleryImageUrlLoaded(SOURCE);
+
+  assert.equal(isStyleGalleryImageRenderable(SOURCE, { complete: false, naturalWidth: 0 }), true);
+  assert.equal(isStyleGalleryImageRenderable('/not-loaded.webp', { complete: false, naturalWidth: 0 }), false);
+});
+
 test('shares a completed signed preload with cards and deduplicates the browser download', async () => {
   const previousImage = globalThis.Image;
   const previousFetch = globalThis.fetch;
@@ -121,6 +130,45 @@ test('shares a completed signed preload with cards and deduplicates the browser 
     resetStyleGalleryImageUrlCache();
     globalThis.Image = previousImage;
     globalThis.fetch = previousFetch;
+  }
+});
+
+test('ignores preload completions from before a cache reset without deleting the new job', async () => {
+  const previousImage = globalThis.Image;
+  const instances: FakeImage[] = [];
+  class FakeImage {
+    decoding = '';
+    fetchPriority = '';
+    naturalWidth = 1024;
+    naturalHeight = 768;
+    onload: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    async decode() {}
+    set src(_value: string) {
+      instances.push(this);
+    }
+  }
+  globalThis.Image = FakeImage as unknown as typeof Image;
+  resetStyleGalleryImageUrlCache();
+
+  try {
+    const stale = preloadStyleGalleryImages([{ source: SOURCE, url: SOURCE }]);
+    resetStyleGalleryImageUrlCache();
+    const current = preloadStyleGalleryImages([{ source: SOURCE, url: SOURCE }]);
+    assert.equal(instances.length, 2);
+
+    instances[0]?.onload?.();
+    await stale;
+    assert.equal(isStyleGalleryImageUrlLoaded(SOURCE), false);
+
+    const duplicateCurrent = preloadStyleGalleryImages([{ source: SOURCE, url: SOURCE }]);
+    assert.equal(instances.length, 2);
+    instances[1]?.onload?.();
+    await Promise.all([current, duplicateCurrent]);
+    assert.equal(isStyleGalleryImageUrlLoaded(SOURCE), true);
+  } finally {
+    resetStyleGalleryImageUrlCache();
+    globalThis.Image = previousImage;
   }
 });
 

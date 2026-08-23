@@ -18,14 +18,22 @@ interface StyleGallerySharedImageProps extends Omit<ImgHTMLAttributes<HTMLImageE
  * 切换到该地址；已经显示完成的卡片保持原 URL，避免为了统一地址反而触发一次重复加载。
  */
 export default function StyleGallerySharedImage({ source, loadedSources, alt, ...imageProps }: StyleGallerySharedImageProps) {
-  const [renderedUrl, setRenderedUrl] = useState(() => getReusableStyleGalleryImageUrl(source, false) ?? source);
+  const [subscribedUrl, setSubscribedUrl] = useState<{ source: string; url: string } | null>(null);
+  const [fallbackSource, setFallbackSource] = useState<string | null>(null);
+  const reusableUrl = getReusableStyleGalleryImageUrl(source, loadedSources.has(source));
+  // 状态必须与 canonical source 绑定。虚拟列表复用 React 节点时，旧 source 的 URL 不能短暂提交到新图片，
+  // 否则 callback ref 会把旧 URL 错误登记为新 source 已加载。
+  const renderedUrl =
+    fallbackSource === source ? source : subscribedUrl?.source === source ? subscribedUrl.url : (reusableUrl ?? source);
 
   useEffect(() => {
-    setRenderedUrl(getReusableStyleGalleryImageUrl(source, loadedSources.has(source)) ?? source);
     return subscribeStyleGalleryImageSource(source, (loadedUrl) => {
-      setRenderedUrl((current) => (isStyleGalleryImageUrlLoaded(current) ? current : loadedUrl));
+      setSubscribedUrl((current) => {
+        const currentUrl = current?.source === source ? current.url : renderedUrl;
+        return isStyleGalleryImageUrlLoaded(currentUrl) ? current : { source, url: loadedUrl };
+      });
     });
-  }, [loadedSources, source]);
+  }, [renderedUrl, source]);
 
   const remember = useCallback(
     (image: HTMLImageElement | null) => rememberLoadedStyleGalleryImage(loadedSources, source, image, renderedUrl),
@@ -42,7 +50,7 @@ export default function StyleGallerySharedImage({ source, loadedSources, alt, ..
       onError={() => {
         if (renderedUrl === source) return;
         invalidateStyleGalleryImageUrl(source);
-        setRenderedUrl(source);
+        setFallbackSource(source);
       }}
     />
   );
