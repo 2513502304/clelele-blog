@@ -176,14 +176,14 @@ describe('style gallery visual index', () => {
     );
   });
 
-  it('uses a continuous match range while preserving the calibrated default', () => {
+  it('uses a continuous match range while preserving the shared precise default', () => {
     const red = feature('a'.repeat(64), 0, [240, 32, 48]);
     const nearbyRed = feature('b'.repeat(64), 1, [210, 70, 75]);
     const index = upsertStyleGalleryVisualRecords(emptyIndex(), [record(nearbyRed, 'nearby', nearbyRed.imageHash)]);
 
     assert.deepEqual(
       searchStyleGalleryVisualIndex(index, { mode: 'palette', scope: 'source', color: '#ef2030' }),
-      searchStyleGalleryVisualIndex(index, { mode: 'palette', scope: 'source', color: '#ef2030', range: 50 }),
+      searchStyleGalleryVisualIndex(index, { mode: 'palette', scope: 'source', color: '#ef2030', range: 20 }),
     );
     assert.ok(
       searchStyleGalleryVisualIndex(index, { mode: 'palette', scope: 'source', color: '#ef2030', range: 100 }).length >=

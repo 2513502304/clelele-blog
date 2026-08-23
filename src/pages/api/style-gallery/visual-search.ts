@@ -1,6 +1,7 @@
 import { styleGalleryVisualFeatureSchema } from '@lib/style-gallery-schema';
 import { getStyleGalleryVisualIndex } from '@lib/style-gallery-store';
 import { searchStyleGalleryVisualIndex } from '@lib/style-gallery-visual-index';
+import { STYLE_GALLERY_VISUAL_DEFAULT_RANGE } from '@lib/style-gallery-visual-types';
 import type { APIRoute } from 'astro';
 import { z } from 'zod';
 
@@ -10,14 +11,14 @@ const imageSearchSchema = z.object({
   mode: z.enum(['combined', 'near-duplicate', 'semantic']),
   scope: z.enum(['source', 'example']),
   feature: styleGalleryVisualFeatureSchema,
-  range: z.number().int().min(0).max(100).default(50),
+  range: z.number().int().min(0).max(100).default(STYLE_GALLERY_VISUAL_DEFAULT_RANGE),
   limit: z.number().int().min(1).max(10_000).optional(),
 });
 const paletteSearchSchema = z.object({
   mode: z.literal('palette'),
   scope: z.enum(['source', 'example']),
   color: z.string().regex(/^#[a-f0-9]{6}$/i),
-  range: z.number().int().min(0).max(100).default(50),
+  range: z.number().int().min(0).max(100).default(STYLE_GALLERY_VISUAL_DEFAULT_RANGE),
   limit: z.number().int().min(1).max(10_000).optional(),
 });
 const requestSchema = z.union([imageSearchSchema, paletteSearchSchema]);

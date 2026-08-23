@@ -3,11 +3,13 @@ export const STYLE_GALLERY_VISUAL_MODEL_ID = 'Xenova/dinov2-small';
 export const STYLE_GALLERY_VISUAL_EMBEDDING_DIMENSION = 384;
 export const STYLE_GALLERY_VISUAL_INDEX_VERSION = 1 as const;
 export const STYLE_GALLERY_VISUAL_PALETTE_SIZE = 6;
+/** 默认保持偏精准的 20% 召回范围；视觉筛选与调色盘必须共用该值，避免切换标签时语义漂移。 */
+export const STYLE_GALLERY_VISUAL_DEFAULT_RANGE = 20;
 
 export type StyleGalleryVisualImageKind = 'source' | 'example';
 export type StyleGalleryVisualSearchMode = 'combined' | 'near-duplicate' | 'semantic' | 'palette';
 export type StyleGalleryVisualSearchScope = 'source' | 'example';
-/** 0 表示最严格、100 表示召回最宽；50 对应经过现有图库校准的推荐范围。 */
+/** 0 表示最严格、100 表示召回最宽；默认值由 STYLE_GALLERY_VISUAL_DEFAULT_RANGE 统一定义。 */
 export type StyleGalleryVisualSearchRange = number;
 
 /** 视觉筛选器的跨页面文案契约放在 lib 层，避免数据模块反向依赖 React 组件。 */
@@ -16,6 +18,8 @@ export interface StyleGalleryVisualFilterLabels {
   imageTab: string;
   paletteTab: string;
   chooseImage: string;
+  pasteImageHint: string;
+  unsupportedImage: string;
   combined: string;
   combinedHelp: string;
   nearDuplicate: string;

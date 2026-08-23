@@ -1,15 +1,17 @@
 import Popover from '@components/ui/popover';
 import { Icon } from '@iconify/react';
 import { getRangeValueAtPointer } from '@lib/range-input';
+import { getStyleGalleryClipboardImage } from '@lib/style-gallery-visual-clipboard';
 import { computeStyleGalleryVisualFeatureFromFile } from '@lib/style-gallery-visual-feature-browser';
-import type {
-  StyleGalleryVisualFeature,
-  StyleGalleryVisualFilterLabels,
-  StyleGalleryVisualSearchMode,
-  StyleGalleryVisualSearchScope,
+import {
+  STYLE_GALLERY_VISUAL_DEFAULT_RANGE,
+  type StyleGalleryVisualFeature,
+  type StyleGalleryVisualFilterLabels,
+  type StyleGalleryVisualSearchMode,
+  type StyleGalleryVisualSearchScope,
 } from '@lib/style-gallery-visual-types';
 import { cn } from '@lib/utils';
-import { useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 
 export type { StyleGalleryVisualFilterLabels } from '@lib/style-gallery-visual-types';
 
@@ -35,7 +37,7 @@ export default function StyleGalleryVisualFilter({ scope, labels, onResults, tri
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [mode, setMode] = useState<Exclude<StyleGalleryVisualSearchMode, 'palette'>>('combined');
   const [color, setColor] = useState('#ef7894');
-  const [range, setRange] = useState(50);
+  const [range, setRange] = useState(STYLE_GALLERY_VISUAL_DEFAULT_RANGE);
   const [loading, setLoading] = useState(false);
   const [matchCount, setMatchCount] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -43,6 +45,7 @@ export default function StyleGalleryVisualFilter({ scope, labels, onResults, tri
   const searchGeneration = useRef(0);
   const searchController = useRef<AbortController | null>(null);
   const rangePointerId = useRef<number | null>(null);
+  const pasteZoneActive = useRef(false);
   const rangeHelpId = useId();
 
   useEffect(() => {
@@ -63,14 +66,14 @@ export default function StyleGalleryVisualFilter({ scope, labels, onResults, tri
     [],
   );
 
-  function cancelPendingSearch() {
+  const cancelPendingSearch = useCallback(() => {
     searchGeneration.current += 1;
     searchController.current?.abort();
     searchController.current = null;
     setLoading(false);
-  }
+  }, []);
 
-  function prepareFeature(nextFile: File): Promise<StyleGalleryVisualFeature> {
+  const prepareFeature = useCallback((nextFile: File): Promise<StyleGalleryVisualFeature> => {
     if (preparedFeature.current?.file === nextFile) return preparedFeature.current.promise;
     const entry = { file: nextFile, promise: computeStyleGalleryVisualFeatureFromFile(nextFile) };
     preparedFeature.current = entry;
@@ -79,15 +82,38 @@ export default function StyleGalleryVisualFilter({ scope, labels, onResults, tri
       if (preparedFeature.current === entry) preparedFeature.current = null;
     });
     return entry.promise;
-  }
+  }, []);
 
-  function selectFile(nextFile: File | null) {
-    cancelPendingSearch();
-    setFile(nextFile);
-    setError(null);
-    preparedFeature.current = null;
-    if (nextFile) void prepareFeature(nextFile);
-  }
+  const selectFile = useCallback(
+    (nextFile: File | null) => {
+      cancelPendingSearch();
+      setFile(nextFile);
+      setError(null);
+      preparedFeature.current = null;
+      if (nextFile) void prepareFeature(nextFile);
+    },
+    [cancelPendingSearch, prepareFeature],
+  );
+
+  useEffect(() => {
+    if (!open || tab !== 'image') {
+      pasteZoneActive.current = false;
+      return;
+    }
+    const handlePaste = (event: ClipboardEvent) => {
+      if (!pasteZoneActive.current || !event.clipboardData) return;
+      const result = getStyleGalleryClipboardImage(event.clipboardData);
+      if (result.status === 'empty') return;
+      event.preventDefault();
+      if (result.status === 'unsupported') {
+        setError(labels.unsupportedImage);
+        return;
+      }
+      selectFile(result.file);
+    };
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [labels.unsupportedImage, open, selectFile, tab]);
 
   async function runSearch() {
     if (loading || (tab === 'image' && !file)) return;
@@ -181,7 +207,15 @@ export default function StyleGalleryVisualFilter({ scope, labels, onResults, tri
 
           {tab === 'image' ? (
             <div className="space-y-4">
-              <label className="grid cursor-pointer grid-cols-[5rem_1fr] items-center gap-3 rounded-md border border-border p-3 transition hover:border-primary/60">
+              <label
+                onPointerEnter={() => {
+                  pasteZoneActive.current = true;
+                }}
+                onPointerLeave={() => {
+                  pasteZoneActive.current = false;
+                }}
+                className="grid cursor-pointer grid-cols-[5rem_1fr] items-center gap-3 rounded-md border border-border p-3 transition hover:border-primary/60"
+              >
                 <span className="flex aspect-square items-center justify-center overflow-hidden rounded-sm bg-muted">
                   {previewUrl ? (
                     <img src={previewUrl} alt="" className="size-full object-cover" />
@@ -192,6 +226,10 @@ export default function StyleGalleryVisualFilter({ scope, labels, onResults, tri
                 <span className="min-w-0">
                   <span className="block font-bold text-sm">{labels.chooseImage}</span>
                   <span className="block truncate text-muted-foreground text-xs">{file?.name ?? 'PNG / JPEG / WebP'}</span>
+                  <span className="mt-1 flex items-center gap-1 text-muted-foreground text-xs">
+                    <Icon icon="ri:clipboard-line" className="size-3.5 shrink-0" />
+                    <span>{labels.pasteImageHint}</span>
+                  </span>
                 </span>
                 <input
                   type="file"
