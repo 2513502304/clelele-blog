@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { POST } from '../pages/api/style-gallery/visual-search';
+import { createStyleGalleryVisualSearchHandler, POST } from '../pages/api/style-gallery/visual-search';
 import { encodeQuantizedEmbedding } from './style-gallery-visual-feature';
 import { STYLE_GALLERY_VISUAL_EMBEDDING_DIMENSION } from './style-gallery-visual-types';
 
@@ -35,7 +35,11 @@ describe('style gallery visual search route', () => {
     const logged: unknown[][] = [];
     console.error = (...args) => logged.push(args);
     try {
-      const response = await POST({ request: validRequest } as never);
+      const storageError = new Error('deliberate visual-index read failure');
+      const failingPost = createStyleGalleryVisualSearchHandler(async () => {
+        throw storageError;
+      });
+      const response = await failingPost({ request: validRequest } as never);
       assert.equal(response.status, 500);
       assert.equal(await response.text(), 'Visual search failed.');
       assert.equal(logged.length, 1);

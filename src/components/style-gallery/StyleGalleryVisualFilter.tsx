@@ -9,7 +9,7 @@ import type {
   StyleGalleryVisualSearchScope,
 } from '@lib/style-gallery-visual-types';
 import { cn } from '@lib/utils';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 
 export type { StyleGalleryVisualFilterLabels } from '@lib/style-gallery-visual-types';
 
@@ -43,6 +43,7 @@ export default function StyleGalleryVisualFilter({ scope, labels, onResults, tri
   const searchGeneration = useRef(0);
   const searchController = useRef<AbortController | null>(null);
   const rangePointerId = useRef<number | null>(null);
+  const rangeHelpId = useId();
 
   useEffect(() => {
     if (!file) {
@@ -246,7 +247,7 @@ export default function StyleGalleryVisualFilter({ scope, labels, onResults, tri
               step={1}
               value={range}
               aria-label={labels.range}
-              aria-describedby="style-gallery-visual-range-help"
+              aria-describedby={rangeHelpId}
               // 原生 input 作为键盘与浏览器回退；Pointer Capture 负责连续拖动，移出滑轨后也不会中断。
               onInput={(event) => {
                 if (rangePointerId.current === null) setRange(event.currentTarget.valueAsNumber);
@@ -280,7 +281,7 @@ export default function StyleGalleryVisualFilter({ scope, labels, onResults, tri
               className="block h-6 w-full cursor-ew-resize accent-primary"
               style={{ touchAction: 'none' }}
             />
-            <span id="style-gallery-visual-range-help" className="mt-2 flex justify-between text-muted-foreground text-xs">
+            <span id={rangeHelpId} className="mt-2 flex justify-between text-muted-foreground text-xs">
               <span>{labels.rangePrecise}</span>
               <span>{labels.rangeBroad}</span>
             </span>

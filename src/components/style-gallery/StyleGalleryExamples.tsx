@@ -593,6 +593,7 @@ export default function StyleGalleryExamples({
       const uploadFailures: string[] = [];
       const examplesToCommit: StyleGalleryExample[] = [];
       const visualRecordById = new Map<string, Awaited<ReturnType<typeof computeStyleGalleryVisualFeatureFromFile>>>();
+      const featureFailureIndexes = new Set<number>();
       let committedCount = 0;
       let mergeDuplicateCount = 0;
       setStatus('Computing visual search features');
@@ -607,6 +608,7 @@ export default function StyleGalleryExamples({
           updateFileProgress(entry.id, { state: 'ready', loaded: 0 });
         } catch (error) {
           prepared[index] = null;
+          featureFailureIndexes.add(index);
           updateFileProgress(entry.id, { state: 'failed' });
           uploadFailures.push(
             `${entry.file.name}: ${error instanceof Error ? error.message : 'Visual feature extraction failed'}`,
@@ -622,7 +624,10 @@ export default function StyleGalleryExamples({
           const entry = selected[index];
           const upload = prepared[index];
           if (!upload) {
-            updateFileProgress(entry.id, { state: 'skipped', loaded: entry.file.size });
+            // null 同时表示本地重复和特征提取失败；失败项已写入终态，不能再覆盖成带勾的 skipped。
+            if (!featureFailureIndexes.has(index)) {
+              updateFileProgress(entry.id, { state: 'skipped', loaded: entry.file.size });
+            }
             continue;
           }
           if (upload.duplicate) {

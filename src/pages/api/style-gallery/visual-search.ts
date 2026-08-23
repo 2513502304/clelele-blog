@@ -27,19 +27,25 @@ const requestSchema = z.union([imageSearchSchema, paletteSearchSchema]);
  * 返回可映射到当前页面数据的稳定 ID；分数只在服务端用于截断和排序，不传输页面当前不使用的字段。
  * 即使索引稍后于图片 metadata，页面也只会忽略无对应项的结果。
  */
-export const POST: APIRoute = async ({ request }) => {
-  try {
-    const body = requestSchema.parse(await request.json());
-    const index = await getStyleGalleryVisualIndex();
-    const results = searchStyleGalleryVisualIndex(index, body);
-    const matches = results.map((result) => (body.scope === 'source' ? result.sourceSlug : result.imageId));
-    return Response.json(
-      { matches, indexedImages: index.records.length, updatedAt: index.updatedAt },
-      { headers: { 'Cache-Control': 'private, no-store' } },
-    );
-  } catch (error) {
-    if (error instanceof z.ZodError) return new Response(error.message, { status: 400 });
-    console.error('[style-gallery] Visual search request failed.', error);
-    return new Response('Visual search failed.', { status: 500 });
-  }
-};
+export function createStyleGalleryVisualSearchHandler(
+  readVisualIndex: typeof getStyleGalleryVisualIndex = getStyleGalleryVisualIndex,
+): APIRoute {
+  return async ({ request }) => {
+    try {
+      const body = requestSchema.parse(await request.json());
+      const index = await readVisualIndex();
+      const results = searchStyleGalleryVisualIndex(index, body);
+      const matches = results.map((result) => (body.scope === 'source' ? result.sourceSlug : result.imageId));
+      return Response.json(
+        { matches, indexedImages: index.records.length, updatedAt: index.updatedAt },
+        { headers: { 'Cache-Control': 'private, no-store' } },
+      );
+    } catch (error) {
+      if (error instanceof z.ZodError) return new Response(error.message, { status: 400 });
+      console.error('[style-gallery] Visual search request failed.', error);
+      return new Response('Visual search failed.', { status: 500 });
+    }
+  };
+}
+
+export const POST = createStyleGalleryVisualSearchHandler();

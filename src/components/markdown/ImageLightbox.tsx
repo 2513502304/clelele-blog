@@ -144,7 +144,12 @@ function LightboxImageStage({ image, shouldReduceMotion, onResolvedSourceFailure
         onError={() => {
           if (image.resolvedSrc && sourceSrc === image.resolvedSrc) {
             // 直连签名持续失败时本次 popup 不再重签；页面缓存的 canonical URL 失败则允许改走签名恢复。
-            if (image.resolvedSrc !== image.src) onResolvedSourceFailure(image.src);
+            if (image.resolvedSrc !== image.src) {
+              onResolvedSourceFailure(image.src);
+            } else {
+              // resolvedSrc 与 canonical 相同时不存在下一层回退，必须结束 loading，避免永久透明转圈。
+              setSourceState('failed');
+            }
             invalidateStyleGalleryImageUrl(image.src);
             clearImageLightboxResolvedSource(image.src, image.resolvedSrc);
             return;
