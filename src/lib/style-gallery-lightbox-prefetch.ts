@@ -1,6 +1,14 @@
 export const LIGHTBOX_SIGN_BATCH_SIZE = 24;
 export const LIGHTBOX_PRELOAD_AHEAD_COUNT = 6;
 export const LIGHTBOX_NEXT_BATCH_THRESHOLD = 8;
+/**
+ * Sub-gallery 仍提前签完整页，但只解码临近 6 张。签名响应很小，批量准备不会争抢图片解码资源；
+ * 全页预解码则容易挤出当前卡片已经持有的位图，反而让 Lightbox 返回旧图时再次解码。
+ */
+export const STYLE_GALLERY_EXAMPLE_LIGHTBOX_PREFETCH = {
+  preloadAhead: LIGHTBOX_PRELOAD_AHEAD_COUNT,
+  nextBatchThreshold: LIGHTBOX_NEXT_BATCH_THRESHOLD,
+} as const;
 
 export interface LightboxPrefetchPlan {
   signIndexes: number[];

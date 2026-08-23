@@ -38,3 +38,12 @@ test('clamps signing and preloading at the final image', () => {
   assert.deepEqual(plan.preloadIndexes, [26]);
   assert.deepEqual(createLightboxPrefetchPlan(0, 0), { signIndexes: [], preloadIndexes: [] });
 });
+
+test('keeps sub-gallery signing batched while bounding decoded lookahead', () => {
+  const initial = createLightboxPrefetchPlan(70, 0, 24, 6, 8);
+  assert.deepEqual(initial.preloadIndexes, [1, 2, 3, 4, 5, 6]);
+
+  const nearBoundary = createLightboxPrefetchPlan(70, 16, 24, 6, 8);
+  assert.equal(nearBoundary.signIndexes.at(-1), 47);
+  assert.deepEqual(nearBoundary.preloadIndexes, [17, 18, 19, 20, 21, 22]);
+});

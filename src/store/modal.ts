@@ -112,6 +112,11 @@ export interface ImageLightboxData {
   alt: string;
   images: ImageLightboxImage[];
   currentIndex: number;
+  /** Sub-gallery 可扩大预下载窗口；参考原图继续采用保守默认值，避免批量下载未浏览的高清大图。 */
+  prefetch?: {
+    preloadAhead: number;
+    nextBatchThreshold: number;
+  };
 }
 
 export type ModalType = 'drawer' | 'search' | 'codeFullscreen' | 'diagramFullscreen' | 'imageLightbox' | null;
@@ -216,9 +221,12 @@ export function updateImageLightboxResolvedSources(resolved: Readonly<Record<str
   if (modal.type !== 'imageLightbox') return false;
   const data = modal.data as ImageLightboxData;
   let changed = false;
-  const images = data.images.map((image) => {
+  const images = data.images.map((image, index) => {
     const resolvedSrc = resolved[image.src];
     if (!resolvedSrc || resolvedSrc === image.resolvedSrc) return image;
+    // 当前 canonical 图片可能已经在下载或解码；中途替换为签名 URL 会重建 img 并从头等待。
+    // 签名结果仍保存在全局缓存，离开后再返回该图片时即可使用，不需要污染当前加载生命周期。
+    if (index === data.currentIndex && !image.resolvedSrc) return image;
     changed = true;
     return { ...image, resolvedSrc };
   });

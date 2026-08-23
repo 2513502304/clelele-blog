@@ -6,9 +6,11 @@ import {
   invalidateStyleGalleryImageUrl,
   isStyleGalleryImageUrlLoaded,
   markStyleGalleryImageUrlLoaded,
+  preloadStyleGalleryImages,
   rememberLoadedStyleGalleryImage,
   resetStyleGalleryImageUrlCache,
   resolveStyleGalleryImageUrls,
+  subscribeStyleGalleryImageSource,
 } from './style-gallery-image-client';
 
 const SOURCE = '/api/style-gallery/image/source/012345abcdef.jpg';
@@ -48,7 +50,7 @@ test('reuses canonical URLs only after the page image has actually loaded', () =
   assert.equal(getReusableStyleGalleryImageUrl(SOURCE, true), SOURCE);
 });
 
-test('prefers the URL that is already loaded over a signed URL that is only prepared', async () => {
+test('keeps the exact URL displayed by a loaded card when a signed preload also exists', async () => {
   const previousFetch = globalThis.fetch;
   const signed = 'https://s3.example.test/prepared-but-not-loaded';
   globalThis.fetch = async () => Response.json({ images: { [SOURCE]: signed }, expiresAt: Date.now() + 60_000 });
@@ -59,8 +61,10 @@ test('prefers the URL that is already loaded over a signed URL that is only prep
     assert.equal(getReusableStyleGalleryImageUrl(SOURCE, true), SOURCE);
     assert.equal(isStyleGalleryImageUrlLoaded(signed), false);
 
-    markStyleGalleryImageUrlLoaded(signed);
-    assert.equal(getReusableStyleGalleryImageUrl(SOURCE, true), signed);
+    const loadedSources = new Set<string>();
+    rememberLoadedStyleGalleryImage(loadedSources, SOURCE, { complete: true, naturalWidth: 1024 }, SOURCE);
+    markStyleGalleryImageUrlLoaded(signed, SOURCE);
+    assert.equal(getReusableStyleGalleryImageUrl(SOURCE, true), SOURCE);
   } finally {
     resetStyleGalleryImageUrlCache();
     globalThis.fetch = previousFetch;
@@ -74,6 +78,100 @@ test('detects an image that completed before island hydration attached onLoad', 
   assert.deepEqual([...loaded], [SOURCE]);
   assert.equal(isStyleGalleryImageUrlLoaded(SOURCE), true);
   assert.equal(isStyleGalleryImageUrlLoaded('/still-loading.webp'), false);
+});
+
+test('remembers the exact signed URL rendered by a page card', () => {
+  resetStyleGalleryImageUrlCache();
+  const signed = 'https://s3.example.test/card-signed';
+  const loadedSources = new Set<string>();
+  rememberLoadedStyleGalleryImage(loadedSources, SOURCE, { complete: true, naturalWidth: 1024 }, signed);
+
+  assert.equal(getReusableStyleGalleryImageUrl(SOURCE, true), signed);
+});
+
+test('shares a completed signed preload with cards and deduplicates the browser download', async () => {
+  const previousImage = globalThis.Image;
+  const previousFetch = globalThis.fetch;
+  const signed = 'https://s3.example.test/shared-signed';
+  let imageInstances = 0;
+  let decodes = 0;
+  class FakeImage {
+    decoding = '';
+    fetchPriority = '';
+    naturalWidth = 1024;
+    naturalHeight = 768;
+    onload: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    async decode() {
+      decodes += 1;
+    }
+    set src(_value: string) {
+      imageInstances += 1;
+      queueMicrotask(() => this.onload?.());
+    }
+  }
+  globalThis.Image = FakeImage as unknown as typeof Image;
+  globalThis.fetch = async () => Response.json({ images: { [SOURCE]: signed }, expiresAt: Date.now() + 60_000 });
+  resetStyleGalleryImageUrlCache();
+  const notifications: string[] = [];
+  const unsubscribe = subscribeStyleGalleryImageSource(SOURCE, (url) => notifications.push(url));
+
+  try {
+    await resolveStyleGalleryImageUrls([SOURCE]);
+    await Promise.all([
+      preloadStyleGalleryImages([{ source: SOURCE, url: signed }]),
+      preloadStyleGalleryImages([{ source: SOURCE, url: signed }]),
+    ]);
+    assert.equal(imageInstances, 1);
+    assert.equal(decodes, 1);
+    assert.equal(isStyleGalleryImageUrlLoaded(signed), true);
+    assert.equal(getReusableStyleGalleryImageUrl(SOURCE, false), signed);
+    assert.deepEqual(notifications, [signed]);
+  } finally {
+    unsubscribe();
+    resetStyleGalleryImageUrlCache();
+    globalThis.Image = previousImage;
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test('ignores preload completions from before a cache reset without deleting the new job', async () => {
+  const previousImage = globalThis.Image;
+  const instances: FakeImage[] = [];
+  class FakeImage {
+    decoding = '';
+    fetchPriority = '';
+    naturalWidth = 1024;
+    naturalHeight = 768;
+    onload: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    async decode() {}
+    set src(_value: string) {
+      instances.push(this);
+    }
+  }
+  globalThis.Image = FakeImage as unknown as typeof Image;
+  resetStyleGalleryImageUrlCache();
+
+  try {
+    const stale = preloadStyleGalleryImages([{ source: SOURCE, url: SOURCE }]);
+    resetStyleGalleryImageUrlCache();
+    const current = preloadStyleGalleryImages([{ source: SOURCE, url: SOURCE }]);
+    assert.equal(instances.length, 2);
+
+    instances[0]?.onload?.();
+    await stale;
+    assert.equal(isStyleGalleryImageUrlLoaded(SOURCE), false);
+
+    const duplicateCurrent = preloadStyleGalleryImages([{ source: SOURCE, url: SOURCE }]);
+    assert.equal(instances.length, 2);
+    instances[1]?.onload?.();
+    await Promise.all([current, duplicateCurrent]);
+    assert.equal(isStyleGalleryImageUrlLoaded(SOURCE), true);
+  } finally {
+    resetStyleGalleryImageUrlCache();
+    globalThis.Image = previousImage;
+  }
 });
 
 test('refreshes expired or explicitly invalidated signed URLs without dropping unrelated cache entries', async () => {
