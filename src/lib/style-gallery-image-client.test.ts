@@ -4,7 +4,6 @@ import {
   getCachedStyleGalleryImageUrl,
   getReusableStyleGalleryImageUrl,
   invalidateStyleGalleryImageUrl,
-  isStyleGalleryImageRenderable,
   isStyleGalleryImageUrlLoaded,
   markStyleGalleryImageUrlLoaded,
   preloadStyleGalleryImages,
@@ -51,7 +50,7 @@ test('reuses canonical URLs only after the page image has actually loaded', () =
   assert.equal(getReusableStyleGalleryImageUrl(SOURCE, true), SOURCE);
 });
 
-test('prefers the URL that is already loaded over a signed URL that is only prepared', async () => {
+test('keeps the exact URL displayed by a loaded card when a signed preload also exists', async () => {
   const previousFetch = globalThis.fetch;
   const signed = 'https://s3.example.test/prepared-but-not-loaded';
   globalThis.fetch = async () => Response.json({ images: { [SOURCE]: signed }, expiresAt: Date.now() + 60_000 });
@@ -62,8 +61,10 @@ test('prefers the URL that is already loaded over a signed URL that is only prep
     assert.equal(getReusableStyleGalleryImageUrl(SOURCE, true), SOURCE);
     assert.equal(isStyleGalleryImageUrlLoaded(signed), false);
 
-    markStyleGalleryImageUrlLoaded(signed);
-    assert.equal(getReusableStyleGalleryImageUrl(SOURCE, true), signed);
+    const loadedSources = new Set<string>();
+    rememberLoadedStyleGalleryImage(loadedSources, SOURCE, { complete: true, naturalWidth: 1024 }, SOURCE);
+    markStyleGalleryImageUrlLoaded(signed, SOURCE);
+    assert.equal(getReusableStyleGalleryImageUrl(SOURCE, true), SOURCE);
   } finally {
     resetStyleGalleryImageUrlCache();
     globalThis.fetch = previousFetch;
@@ -79,12 +80,13 @@ test('detects an image that completed before island hydration attached onLoad', 
   assert.equal(isStyleGalleryImageUrlLoaded('/still-loading.webp'), false);
 });
 
-test('keeps a shared loaded image renderable while a new lightbox img node initializes', () => {
+test('remembers the exact signed URL rendered by a page card', () => {
   resetStyleGalleryImageUrlCache();
-  markStyleGalleryImageUrlLoaded(SOURCE);
+  const signed = 'https://s3.example.test/card-signed';
+  const loadedSources = new Set<string>();
+  rememberLoadedStyleGalleryImage(loadedSources, SOURCE, { complete: true, naturalWidth: 1024 }, signed);
 
-  assert.equal(isStyleGalleryImageRenderable(SOURCE, { complete: false, naturalWidth: 0 }), true);
-  assert.equal(isStyleGalleryImageRenderable('/not-loaded.webp', { complete: false, naturalWidth: 0 }), false);
+  assert.equal(getReusableStyleGalleryImageUrl(SOURCE, true), signed);
 });
 
 test('shares a completed signed preload with cards and deduplicates the browser download', async () => {

@@ -19,6 +19,7 @@ interface SignedUrlCacheEntry {
 const signedUrlCache = new Map<string, SignedUrlCacheEntry>();
 const loadedImageUrls = new Set<string>();
 const loadedUrlBySource = new Map<string, string>();
+const displayedUrlBySource = new Map<string, string>();
 const sourceListeners = new Map<string, Set<(url: string) => void>>();
 const retainedPreloads = new Map<string, { image: HTMLImageElement; pixels: number }>();
 let activePreloads = new Map<string, Promise<boolean>>();
@@ -36,19 +37,26 @@ export function getCachedStyleGalleryImageUrl(source: string): string | undefine
   if (cached.expiresAt === null || cached.expiresAt > Date.now()) return cached.url;
   signedUrlCache.delete(source);
   if (loadedUrlBySource.get(source) === cached.url) loadedUrlBySource.delete(source);
+  if (displayedUrlBySource.get(source) === cached.url) displayedUrlBySource.delete(source);
   return undefined;
 }
 
 /**
  * Lightbox 图片地址复用的唯一决策入口：
- * 1. 会话内仍有效的 HF 签名 URL 优先，避免关闭后重开又先请求 canonical 302；
- * 2. 页面已经确认加载完成的高清 canonical URL 可以直接复用浏览器缓存；
- * 3. 未加载过的 canonical URL不得伪装成 resolved，否则会跳过后续图片的批量签名与预加载。
+ * 1. 页面卡片已经显示完成时，精确复用该 DOM 节点实际使用的 URL；同一对象的 canonical URL 与
+ *    HF 签名 URL 是两个浏览器缓存键，不能因为后台预加载了签名 URL 就替换当前可见卡片的地址；
+ * 2. 没有可见卡片时优先复用已经加载完成的 HF 签名 URL，再使用已加载的 canonical URL；
+ * 3. 未加载过的 canonical URL 不得伪装成 resolved，否则会跳过后续图片的批量签名与预加载。
  *
  * `sourceLoaded` 必须来自真实 img onLoad，而不是“元素已经挂载”的推断。
  */
 export function getReusableStyleGalleryImageUrl(source: string, sourceLoaded: boolean): string | undefined {
   const cachedUrl = getCachedStyleGalleryImageUrl(source);
+  if (sourceLoaded) {
+    const displayedUrl = displayedUrlBySource.get(source);
+    if (displayedUrl && loadedImageUrls.has(displayedUrl)) return displayedUrl;
+    if (loadedImageUrls.has(source)) return source;
+  }
   const loadedUrl = loadedUrlBySource.get(source);
   if (loadedUrl && (loadedUrl === source || loadedUrl === cachedUrl) && loadedImageUrls.has(loadedUrl)) return loadedUrl;
   // 已显示的 URL 优先于“只完成预签名、尚未下载”的直连地址，否则打开 Lightbox 会切换缓存键并重新等待。
@@ -57,21 +65,9 @@ export function getReusableStyleGalleryImageUrl(source: string, sourceLoaded: bo
   return cachedUrl;
 }
 
-/** Lightbox 用它同步判断新建 img 是否可以直接复用当前页面已经解码的图片。 */
+/** Lightbox 用它同步判断 URL 是否已经在当前页面完成加载。 */
 export function isStyleGalleryImageUrlLoaded(source: string): boolean {
   return loadedImageUrls.has(source);
-}
-
-/**
- * 判断新挂载的 img 是否可以立即显示。共享缓存中的 loaded 状态优先于新 DOM 节点短暂的
- * `complete === false`：同一资源从卡片切到 Lightbox 或在 Lightbox 中往返时，新节点尚未完成
- * 初始化不代表图片资源失效，不能因此重新显示 loading。
- */
-export function isStyleGalleryImageRenderable(
-  source: string,
-  image: Pick<HTMLImageElement, 'complete' | 'naturalWidth'> | null = null,
-): boolean {
-  return loadedImageUrls.has(source) || Boolean(image?.complete && image.naturalWidth > 0);
 }
 
 /** 记录 Lightbox 自己加载完成的签名地址，保证键盘返回或关闭后重开时不再显示虚假的 loading。 */
@@ -102,6 +98,7 @@ export function rememberLoadedStyleGalleryImage(
 ): void {
   if (image?.complete && image.naturalWidth > 0) {
     loadedSources.add(source);
+    displayedUrlBySource.set(source, renderedUrl);
     markStyleGalleryImageUrlLoaded(renderedUrl, source);
   }
 }
@@ -303,6 +300,8 @@ export function invalidateStyleGalleryImageUrl(source: string): void {
   signedUrlCache.delete(source);
   const loadedUrl = loadedUrlBySource.get(source);
   if (loadedUrl && loadedUrl !== source) loadedUrlBySource.delete(source);
+  const displayedUrl = displayedUrlBySource.get(source);
+  if (displayedUrl && displayedUrl !== source) displayedUrlBySource.delete(source);
 }
 
 /** 测试与 Astro 页面切换时可显式释放会话级缓存。 */
@@ -311,6 +310,7 @@ export function resetStyleGalleryImageUrlCache(): void {
   signedUrlCache.clear();
   loadedImageUrls.clear();
   loadedUrlBySource.clear();
+  displayedUrlBySource.clear();
   sourceListeners.clear();
   retainedPreloads.clear();
   retainedPreloadPixels = 0;
