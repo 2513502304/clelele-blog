@@ -1,6 +1,11 @@
 export const LIGHTBOX_SIGN_BATCH_SIZE = 24;
 export const LIGHTBOX_PRELOAD_AHEAD_COUNT = 6;
 export const LIGHTBOX_NEXT_BATCH_THRESHOLD = 8;
+/** Sub-gallery 图片与卡片使用同一高清资源，可预解码完整签名页；参考原图仍使用上面的保守默认值。 */
+export const STYLE_GALLERY_EXAMPLE_LIGHTBOX_PREFETCH = {
+  preloadAhead: LIGHTBOX_SIGN_BATCH_SIZE - 1,
+  nextBatchThreshold: LIGHTBOX_SIGN_BATCH_SIZE / 2,
+} as const;
 
 export interface LightboxPrefetchPlan {
   signIndexes: number[];

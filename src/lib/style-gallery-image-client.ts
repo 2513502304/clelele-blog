@@ -4,6 +4,8 @@ const BATCH_SIGN_TIMEOUT_MS = 15_000;
 const BATCH_SIGN_ATTEMPTS = 3;
 const BATCH_SIGN_RETRY_BASE_MS = 200;
 const LEGACY_RESPONSE_CACHE_MS = 5 * 60 * 1000;
+const RETAINED_PRELOAD_LIMIT = 48;
+const RETAINED_PRELOAD_PIXEL_BUDGET = 64 * 1024 * 1024;
 interface SignedUrlResponse {
   images: Record<string, string>;
   expiresAt: number | null;
@@ -16,6 +18,11 @@ interface SignedUrlCacheEntry {
 
 const signedUrlCache = new Map<string, SignedUrlCacheEntry>();
 const loadedImageUrls = new Set<string>();
+const loadedUrlBySource = new Map<string, string>();
+const sourceListeners = new Map<string, Set<(url: string) => void>>();
+const retainedPreloads = new Map<string, { image: HTMLImageElement; pixels: number }>();
+const activePreloads = new Map<string, Promise<boolean>>();
+let retainedPreloadPixels = 0;
 let activeRequests = new Map<string, Promise<SignedUrlResponse>>();
 
 /**
@@ -27,6 +34,7 @@ export function getCachedStyleGalleryImageUrl(source: string): string | undefine
   if (!cached) return undefined;
   if (cached.expiresAt === null || cached.expiresAt > Date.now()) return cached.url;
   signedUrlCache.delete(source);
+  if (loadedUrlBySource.get(source) === cached.url) loadedUrlBySource.delete(source);
   return undefined;
 }
 
@@ -40,6 +48,8 @@ export function getCachedStyleGalleryImageUrl(source: string): string | undefine
  */
 export function getReusableStyleGalleryImageUrl(source: string, sourceLoaded: boolean): string | undefined {
   const cachedUrl = getCachedStyleGalleryImageUrl(source);
+  const loadedUrl = loadedUrlBySource.get(source);
+  if (loadedUrl && (loadedUrl === source || loadedUrl === cachedUrl) && loadedImageUrls.has(loadedUrl)) return loadedUrl;
   // 已显示的 URL 优先于“只完成预签名、尚未下载”的直连地址，否则打开 Lightbox 会切换缓存键并重新等待。
   if (cachedUrl && loadedImageUrls.has(cachedUrl)) return cachedUrl;
   if (sourceLoaded || loadedImageUrls.has(source)) return source;
@@ -52,8 +62,19 @@ export function isStyleGalleryImageUrlLoaded(source: string): boolean {
 }
 
 /** 记录 Lightbox 自己加载完成的签名地址，保证键盘返回或关闭后重开时不再显示虚假的 loading。 */
-export function markStyleGalleryImageUrlLoaded(source: string): void {
-  loadedImageUrls.add(source);
+export function markStyleGalleryImageUrlLoaded(url: string, source = url): void {
+  loadedImageUrls.add(url);
+  const current = loadedUrlBySource.get(source);
+  const cachedUrl = getCachedStyleGalleryImageUrl(source);
+  // 已完成的签名直连优先于 canonical 302；后到的卡片 load 事件不能把共享地址切回重定向路径。
+  if (!current || url === cachedUrl || !loadedImageUrls.has(current)) {
+    loadedUrlBySource.set(source, url);
+    if (current !== url) {
+      sourceListeners.get(source)?.forEach((listener) => {
+        listener(url);
+      });
+    }
+  }
 }
 
 /**
@@ -64,11 +85,108 @@ export function rememberLoadedStyleGalleryImage(
   loadedSources: Set<string>,
   source: string,
   image: Pick<HTMLImageElement, 'complete' | 'naturalWidth'> | null,
+  renderedUrl = source,
 ): void {
   if (image?.complete && image.naturalWidth > 0) {
     loadedSources.add(source);
-    markStyleGalleryImageUrlLoaded(source);
+    markStyleGalleryImageUrlLoaded(renderedUrl, source);
   }
+}
+
+/**
+ * 订阅某个 canonical 图片实际完成加载后的共享地址。只有对应卡片会更新，不会为了后台预加载
+ * 重渲染整个瀑布流；订阅者若已经显示可用图片，可以自行忽略通知以避免无意义的 src 切换。
+ */
+export function subscribeStyleGalleryImageSource(source: string, listener: (url: string) => void): () => void {
+  let listeners = sourceListeners.get(source);
+  if (!listeners) {
+    listeners = new Set();
+    sourceListeners.set(source, listeners);
+  }
+  listeners.add(listener);
+  const loadedUrl = getReusableStyleGalleryImageUrl(source, false);
+  if (loadedUrl && loadedImageUrls.has(loadedUrl)) listener(loadedUrl);
+  return () => {
+    listeners?.delete(listener);
+    if (listeners?.size === 0) sourceListeners.delete(source);
+  };
+}
+
+export interface StyleGalleryImagePreload {
+  /** 稳定的同源 API 地址，用于让卡片、Lightbox 和签名缓存关联到同一张图片。 */
+  source: string;
+  /** 本轮实际下载的签名直连地址。 */
+  url: string;
+  /** 当前导航附近使用高优先级，其余保持自动调度，避免大批预载抢占当前图片。 */
+  priority?: 'high' | 'auto';
+}
+
+function retainPreload(url: string, image: HTMLImageElement): void {
+  const previous = retainedPreloads.get(url);
+  if (previous) retainedPreloadPixels -= previous.pixels;
+  retainedPreloads.delete(url);
+  const pixels = Math.max(1, image.naturalWidth || 1) * Math.max(1, image.naturalHeight || 1);
+  retainedPreloads.set(url, { image, pixels });
+  retainedPreloadPixels += pixels;
+  while (
+    retainedPreloads.size > 1 &&
+    (retainedPreloads.size > RETAINED_PRELOAD_LIMIT || retainedPreloadPixels > RETAINED_PRELOAD_PIXEL_BUDGET)
+  ) {
+    const oldest = retainedPreloads.keys().next().value;
+    if (typeof oldest !== 'string') break;
+    retainedPreloadPixels -= retainedPreloads.get(oldest)?.pixels ?? 0;
+    retainedPreloads.delete(oldest);
+  }
+}
+
+/**
+ * 并发预下载并解码已签名图片，再把完成状态回写到全局图片注册表。热缓存同时受数量与约
+ * 64M 像素预算约束；更早的图片仍使用 HTTP 缓存，避免高清图库无限占用解码内存。
+ */
+export async function preloadStyleGalleryImages(images: readonly StyleGalleryImagePreload[]): Promise<void> {
+  if (typeof Image === 'undefined') return;
+  const jobs = images.map(({ source, url, priority }) => {
+    if (loadedImageUrls.has(url)) {
+      markStyleGalleryImageUrlLoaded(url, source);
+      return Promise.resolve(true);
+    }
+    let job = activePreloads.get(url);
+    if (!job) {
+      job = new Promise<boolean>((resolve) => {
+        const image = new Image();
+        image.decoding = 'async';
+        image.fetchPriority = priority ?? 'auto';
+        image.onload = () => {
+          image.onload = null;
+          image.onerror = null;
+          void image
+            .decode()
+            .catch(() => undefined)
+            .then(() => {
+              if (image.naturalWidth <= 0) {
+                resolve(false);
+                return;
+              }
+              retainPreload(url, image);
+              markStyleGalleryImageUrlLoaded(url, source);
+              resolve(true);
+            });
+        };
+        image.onerror = () => {
+          image.onload = null;
+          image.onerror = null;
+          resolve(false);
+        };
+        image.src = url;
+      }).finally(() => activePreloads.delete(url));
+      activePreloads.set(url, job);
+    }
+    return job.then((loaded) => {
+      if (loaded) markStyleGalleryImageUrlLoaded(url, source);
+      return loaded;
+    });
+  });
+  await Promise.allSettled(jobs);
 }
 
 function isRetryableSigningError(error: unknown): boolean {
@@ -160,11 +278,18 @@ export async function resolveStyleGalleryImageUrls(sources: readonly string[]): 
 /** 图片服务器提前拒绝签名时只失效对应 URL，其他已加载图片仍可继续复用缓存。 */
 export function invalidateStyleGalleryImageUrl(source: string): void {
   signedUrlCache.delete(source);
+  const loadedUrl = loadedUrlBySource.get(source);
+  if (loadedUrl && loadedUrl !== source) loadedUrlBySource.delete(source);
 }
 
 /** 测试与 Astro 页面切换时可显式释放会话级缓存。 */
 export function resetStyleGalleryImageUrlCache(): void {
   signedUrlCache.clear();
   loadedImageUrls.clear();
+  loadedUrlBySource.clear();
+  sourceListeners.clear();
+  retainedPreloads.clear();
+  retainedPreloadPixels = 0;
+  activePreloads.clear();
   activeRequests = new Map();
 }

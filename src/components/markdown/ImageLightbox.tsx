@@ -15,9 +15,11 @@ import { Icon } from '@iconify/react';
 import { createImageLightboxDownloadAction } from '@lib/image-lightbox-download';
 import { getLive2DFocusNodes, isLive2DOwnedTarget } from '@lib/live2d/focus-scope';
 import {
+  getReusableStyleGalleryImageUrl,
   invalidateStyleGalleryImageUrl,
   isStyleGalleryImageUrlLoaded,
   markStyleGalleryImageUrlLoaded,
+  preloadStyleGalleryImages,
   resolveStyleGalleryImageUrls,
 } from '@lib/style-gallery-image-client';
 import { createLightboxPrefetchPlan } from '@lib/style-gallery-lightbox-prefetch';
@@ -59,7 +61,9 @@ interface LightboxImageStageProps {
  */
 function LightboxImageStage({ image, shouldReduceMotion, onResolvedSourceFailure }: LightboxImageStageProps) {
   const { t } = useTranslation();
-  const sourceSrc = image.resolvedSrc ?? image.src;
+  // 当前 Stage 生命周期内固定实际地址。批量签名或后台预加载完成会触发父级重渲染，但不能因此
+  // 把正在下载/解码的 canonical 图片中途换成签名 URL；导航到其他图片时 key 会自然重建 Stage。
+  const [sourceSrc] = useState(() => getReusableStyleGalleryImageUrl(image.src, false) ?? image.resolvedSrc ?? image.src);
   const previewSrc = image.previewSrc !== sourceSrc ? image.previewSrc : undefined;
   // 页面卡片已经显示过同一 URL 时，浏览器仍可能异步补发新 img 的 load 事件；此处同步复用已知状态，
   // 避免在实际可绘制的缓存图片上短暂显示 loading。未登记的导航图片仍走完整 load/decode 生命周期。
@@ -76,13 +80,13 @@ function LightboxImageStage({ image, shouldReduceMotion, onResolvedSourceFailure
         // 部分浏览器会在图片已经可绘制时拒绝重复 decode；naturalWidth 才是最终可用性判断。
       }
       if (element.naturalWidth > 0) {
-        markStyleGalleryImageUrlLoaded(sourceSrc);
+        markStyleGalleryImageUrlLoaded(sourceSrc, image.src);
         setSourceState('loaded');
       } else {
         setSourceState('failed');
       }
     },
-    [sourceSrc],
+    [image.src, sourceSrc],
   );
 
   const sourceRef = useCallback(
@@ -479,18 +483,25 @@ export default function ImageLightbox() {
   }, [nextPreviewSrc, previousPreviewSrc]);
 
   const prefetchPlan = useMemo(
-    () => createLightboxPrefetchPlan(data?.images.length ?? 0, data?.currentIndex ?? -1),
-    [data?.currentIndex, data?.images.length],
+    () =>
+      createLightboxPrefetchPlan(
+        data?.images.length ?? 0,
+        data?.currentIndex ?? -1,
+        undefined,
+        data?.prefetch?.preloadAhead,
+        data?.prefetch?.nextBatchThreshold,
+      ),
+    [data?.currentIndex, data?.images.length, data?.prefetch?.nextBatchThreshold, data?.prefetch?.preloadAhead],
   );
   const unresolvedSignSources = useMemo(
     () =>
       prefetchPlan.signIndexes
-        .map((index) => data?.images[index])
+        .map((index) => (index === data?.currentIndex ? undefined : data?.images[index]))
         .filter((image): image is ImageLightboxImage =>
           Boolean(image && !image.resolvedSrc && !failedResolvedSourcesRef.current.has(image.src)),
         )
         .map((image) => image.src),
-    [data?.images, prefetchPlan.signIndexes],
+    [data?.currentIndex, data?.images, prefetchPlan.signIndexes],
   );
   const unresolvedSignKey = unresolvedSignSources.join('\n');
 
@@ -516,24 +527,25 @@ export default function ImageLightbox() {
     };
   }, [unresolvedSignKey, unresolvedSignSources]);
 
-  const preloadSources = useMemo(
+  const preloadImages = useMemo(
     () =>
       prefetchPlan.preloadIndexes
-        .map((index) => data?.images[index]?.resolvedSrc)
-        .filter((source): source is string => Boolean(source)),
+        .map((index) => data?.images[index])
+        .filter((image): image is ImageLightboxImage => Boolean(image?.resolvedSrc))
+        .map((image, index) => ({
+          source: image.src,
+          url: image.resolvedSrc as string,
+          priority: index < 6 ? ('high' as const) : ('auto' as const),
+        })),
     [data?.images, prefetchPlan.preloadIndexes],
   );
-  const preloadKey = preloadSources.join('\n');
+  const preloadKey = preloadImages.map(({ source, url }) => `${source}\u0000${url}`).join('\n');
 
-  // 浏览器并发解码临近高清图；数量有上限，避免一次预载整个大图库。
+  // 共享预加载器会登记成功状态并保留有界解码热缓存，卡片与键盘返回都能复用同一资源。
   useEffect(() => {
     if (!preloadKey) return;
-    for (const source of preloadSources) {
-      const preload = new Image();
-      preload.decoding = 'async';
-      preload.src = source;
-    }
-  }, [preloadKey, preloadSources]);
+    void preloadStyleGalleryImages(preloadImages);
+  }, [preloadImages, preloadKey]);
 
   const updateZoomSensitivity = (value: number) => {
     const next = Math.min(MAX_ZOOM_SENSITIVITY, Math.max(MIN_ZOOM_SENSITIVITY, value));

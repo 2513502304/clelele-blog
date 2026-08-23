@@ -38,3 +38,18 @@ test('clamps signing and preloading at the final image', () => {
   assert.deepEqual(plan.preloadIndexes, [26]);
   assert.deepEqual(createLightboxPrefetchPlan(0, 0), { signIndexes: [], preloadIndexes: [] });
 });
+
+test('preloads a complete signed page for sub-gallery keyboard navigation', () => {
+  const initial = createLightboxPrefetchPlan(70, 0, 24, 23, 12);
+  assert.deepEqual(
+    initial.preloadIndexes,
+    Array.from({ length: 23 }, (_, index) => index + 1),
+  );
+
+  const nearBoundary = createLightboxPrefetchPlan(70, 12, 24, 23, 12);
+  assert.equal(nearBoundary.signIndexes.at(-1), 47);
+  assert.deepEqual(
+    nearBoundary.preloadIndexes,
+    Array.from({ length: 23 }, (_, index) => index + 13),
+  );
+});

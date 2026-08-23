@@ -5,7 +5,7 @@ import {
   STYLE_GALLERY_DIRECT_UPLOAD_MAX_SIZE,
   STYLE_GALLERY_UPLOAD_CHUNK_SIZE,
 } from '@lib/style-gallery-chunk-upload';
-import { getReusableStyleGalleryImageUrl, rememberLoadedStyleGalleryImage } from '@lib/style-gallery-image-client';
+import { getReusableStyleGalleryImageUrl } from '@lib/style-gallery-image-client';
 import { getStyleGalleryExampleContentType } from '@lib/style-gallery-image-type';
 import {
   createStyleGalleryCopyAction,
@@ -15,6 +15,7 @@ import {
   STYLE_GALLERY_UPLOAD_TOKEN_STORAGE_KEY,
   type StyleGalleryLightboxActionLabels,
 } from '@lib/style-gallery-lightbox-actions';
+import { STYLE_GALLERY_EXAMPLE_LIGHTBOX_PREFETCH } from '@lib/style-gallery-lightbox-prefetch';
 import { groupStyleGalleryExamplesByPlatform, STYLE_GALLERY_PLATFORMS } from '@lib/style-gallery-platforms';
 import { loadStyleGalleryPromptChoices } from '@lib/style-gallery-prompt-client';
 import {
@@ -37,6 +38,7 @@ import {
   type StyleGalleryLikeLabels,
   useStyleGalleryLikes,
 } from './StyleGalleryLikeButton';
+import StyleGallerySharedImage from './StyleGallerySharedImage';
 
 interface StyleGalleryExamplesProps {
   slug: string;
@@ -385,6 +387,7 @@ export default function StyleGalleryExamples({
       alt: example.alt ?? example.model ?? 'Generated example',
       images: lightboxImages,
       currentIndex,
+      prefetch: STYLE_GALLERY_EXAMPLE_LIGHTBOX_PREFETCH,
     });
   }
 
@@ -922,15 +925,12 @@ export default function StyleGalleryExamples({
                           className="group block w-full cursor-zoom-in overflow-hidden text-left"
                           aria-label={`Open ${example.alt ?? example.model ?? 'generated example'} preview`}
                         >
-                          <img
-                            ref={(image) => rememberLoadedStyleGalleryImage(loadedExampleSources.current, example.src, image)}
-                            src={example.src}
+                          <StyleGallerySharedImage
+                            source={example.src}
+                            loadedSources={loadedExampleSources.current}
                             alt={example.alt ?? example.model ?? 'Generated example'}
                             loading="lazy"
                             decoding="async"
-                            onLoad={(event) =>
-                              rememberLoadedStyleGalleryImage(loadedExampleSources.current, example.src, event.currentTarget)
-                            }
                             className="aspect-square w-full object-cover transition duration-200 group-hover:scale-105"
                           />
                         </button>

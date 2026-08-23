@@ -6,7 +6,7 @@ import StyleGalleryVisualFilter, {
 import { Icon } from '@iconify/react';
 import { createStyleGalleryDateRangeMatcher, getStyleGalleryDateKey } from '@lib/style-gallery-date-range';
 import type { StyleGalleryDateRangeLabels } from '@lib/style-gallery-date-range-labels';
-import { getReusableStyleGalleryImageUrl, rememberLoadedStyleGalleryImage } from '@lib/style-gallery-image-client';
+import { getReusableStyleGalleryImageUrl } from '@lib/style-gallery-image-client';
 import {
   createStyleGalleryCopyAction,
   createStyleGalleryDeleteAction,
@@ -16,6 +16,7 @@ import {
   STYLE_GALLERY_UPLOAD_TOKEN_STORAGE_KEY,
   type StyleGalleryLightboxActionLabels,
 } from '@lib/style-gallery-lightbox-actions';
+import { STYLE_GALLERY_EXAMPLE_LIGHTBOX_PREFETCH } from '@lib/style-gallery-lightbox-prefetch';
 import { STYLE_GALLERY_PLATFORMS } from '@lib/style-gallery-platforms';
 import { loadStyleGalleryDefaultPrompt, loadStyleGalleryPromptChoices } from '@lib/style-gallery-prompt-client';
 import { openModal } from '@store/modal';
@@ -30,6 +31,7 @@ import {
   type StyleGalleryLikeLabels,
   useStyleGalleryLikes,
 } from './StyleGalleryLikeButton';
+import StyleGallerySharedImage from './StyleGallerySharedImage';
 
 interface Props {
   examples: StyleGalleryExampleOverviewItem[];
@@ -211,6 +213,7 @@ function StyleGalleryExamplesOverviewContent({
       alt: `${example.sourceTitle} ${example.model}`,
       images: lightboxImages,
       currentIndex,
+      prefetch: STYLE_GALLERY_EXAMPLE_LIGHTBOX_PREFETCH,
     });
   }
   const { hasMore, loadMore, loadMoreRef, revealThrough, visibleItems } = useProgressiveList(filtered, {
@@ -347,18 +350,15 @@ function StyleGalleryExamplesOverviewContent({
                     onClick={() => openLightbox(example)}
                     className="group block w-full cursor-zoom-in overflow-hidden bg-muted text-left"
                   >
-                    <img
-                      ref={(image) => rememberLoadedStyleGalleryImage(loadedExampleSources.current, example.src, image)}
-                      src={example.src}
+                    <StyleGallerySharedImage
+                      source={example.src}
+                      loadedSources={loadedExampleSources.current}
                       alt={`${example.sourceTitle} ${example.model}`}
                       width={4}
                       height={5}
                       loading={index < EAGER_EXAMPLE_COUNT ? 'eager' : 'lazy'}
                       fetchPriority={index < HIGH_PRIORITY_EXAMPLE_COUNT ? 'high' : 'auto'}
                       decoding="async"
-                      onLoad={(event) =>
-                        rememberLoadedStyleGalleryImage(loadedExampleSources.current, example.src, event.currentTarget)
-                      }
                       className="aspect-[4/5] w-full object-cover transition duration-200 group-hover:scale-[1.02]"
                     />
                   </button>

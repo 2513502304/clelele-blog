@@ -119,7 +119,7 @@ test('keeps an updated like state when navigating away from an image and back', 
   closeModal();
 });
 
-test('merges a batch of signed sources without replacing canonical download paths', () => {
+test('merges future signed sources without restarting the current canonical download', () => {
   openModal('imageLightbox', {
     src: '/api/style-gallery/image/source/aaaaaaaaaaaa.jpg',
     alt: 'First',
@@ -139,19 +139,20 @@ test('merges a batch of signed sources without replacing canonical download path
   );
   const images = $imageLightboxData.get()?.images;
   assert.equal(images?.[0].src, '/api/style-gallery/image/source/aaaaaaaaaaaa.jpg');
-  assert.equal(images?.[0].resolvedSrc, 'https://s3.example.test/signed-first');
+  assert.equal(images?.[0].resolvedSrc, undefined);
   assert.equal(images?.[1].resolvedSrc, 'https://s3.example.test/signed-second');
 
+  assert.equal(navigateImage(1), true);
   assert.equal(
     clearImageLightboxResolvedSource(
-      '/api/style-gallery/image/source/aaaaaaaaaaaa.jpg',
-      'https://s3.example.test/signed-first',
+      '/api/style-gallery/image/source/bbbbbbbbbbbb.jpg',
+      'https://s3.example.test/signed-second',
     ),
     true,
   );
   assert.equal($imageLightboxData.get()?.images[0].resolvedSrc, undefined);
   assert.equal($imageLightboxData.get()?.images[0].src, '/api/style-gallery/image/source/aaaaaaaaaaaa.jpg');
-  assert.equal($imageLightboxData.get()?.images[1].resolvedSrc, 'https://s3.example.test/signed-second');
+  assert.equal($imageLightboxData.get()?.images[1].resolvedSrc, undefined);
   closeModal();
 });
 
