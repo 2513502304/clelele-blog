@@ -6,6 +6,8 @@ import StyleGalleryVisualFilter, {
 import { Icon } from '@iconify/react';
 import { createStyleGalleryDateRangeMatcher, getStyleGalleryDateKey } from '@lib/style-gallery-date-range';
 import type { StyleGalleryDateRangeLabels } from '@lib/style-gallery-date-range-labels';
+import { createStyleGalleryExampleQueryMatcher } from '@lib/style-gallery-example-search';
+import { loadStyleGalleryExampleSearchIndex } from '@lib/style-gallery-example-search-client';
 import { getReusableStyleGalleryImageUrl } from '@lib/style-gallery-image-client';
 import {
   createStyleGalleryCopyAction,
@@ -71,6 +73,7 @@ const HIGH_PRIORITY_EXAMPLE_COUNT = 3;
 const sortKeys = ['default', 'date', 'id', 'examples', 'likes'] as const;
 const sortDirections = ['asc', 'desc'] as const;
 type SortKey = (typeof sortKeys)[number];
+const EMPTY_SOURCE_SEARCH_INDEX: Readonly<Record<string, string>> = Object.freeze({});
 
 function reportUrlStateError(error: unknown) {
   console.error('Failed to update sub-gallery overview URL state:', error);
@@ -103,6 +106,8 @@ function StyleGalleryExamplesOverviewContent({
   const likes = useStyleGalleryLikes(Object.fromEntries(examples.map((example) => [example.id, example.likeCount])));
   const [visualMatches, setVisualMatches] = useState<Set<string> | null>(null);
   const [visualRevision, setVisualRevision] = useState(0);
+  const [sourceSearchIndex, setSourceSearchIndex] = useState<Record<string, string> | null>(null);
+  const [searchIndexStatus, setSearchIndexStatus] = useState<'idle' | 'loading' | 'ready' | 'failed'>('idle');
   useEffect(() => {
     setUploadToken(localStorage.getItem(STYLE_GALLERY_UPLOAD_TOKEN_STORAGE_KEY) ?? '');
   }, []);
@@ -139,14 +144,31 @@ function StyleGalleryExamplesOverviewContent({
     () => createStyleGalleryDateRangeMatcher({ from: dateFrom, to: dateTo }),
     [dateFrom, dateTo],
   );
+  const ensureSearchIndex = useCallback(async () => {
+    if (sourceSearchIndex || searchIndexStatus === 'loading') return;
+    setSearchIndexStatus('loading');
+    try {
+      setSourceSearchIndex(await loadStyleGalleryExampleSearchIndex());
+      setSearchIndexStatus('ready');
+    } catch (error) {
+      console.error('Failed to load the Sub-gallery prompt search index:', error);
+      setSearchIndexStatus('failed');
+    }
+  }, [searchIndexStatus, sourceSearchIndex]);
+  useEffect(() => {
+    if (query.trim() && searchIndexStatus === 'idle') void ensureSearchIndex();
+  }, [ensureSearchIndex, query, searchIndexStatus]);
+  const matchesTextQuery = useMemo(
+    () => createStyleGalleryExampleQueryMatcher(sourceSearchIndex ?? EMPTY_SOURCE_SEARCH_INDEX, query),
+    [query, sourceSearchIndex],
+  );
   const filtered = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
     const matches = examples.filter((example) => {
       const matchesPlatform = platform === 'all' || example.model === platform;
-      const matchesQuery =
-        !normalizedQuery || `${example.sourceTitle} ${example.note ?? ''}`.toLowerCase().includes(normalizedQuery);
       const matchesDate = matchesDateRange(example.uploadedAt);
-      return matchesPlatform && matchesQuery && matchesDate && (visualMatches === null || visualMatches.has(example.id));
+      return (
+        matchesPlatform && matchesTextQuery(example) && matchesDate && (visualMatches === null || visualMatches.has(example.id))
+      );
     });
     const sorted = [...matches];
     if (sortKey !== 'default') {
@@ -158,7 +180,7 @@ function StyleGalleryExamplesOverviewContent({
       });
     }
     return sortDirection === 'desc' ? sorted.reverse() : sorted;
-  }, [examples, likeSortCounts, matchesDateRange, platform, query, sortDirection, sortKey, visualMatches]);
+  }, [examples, likeSortCounts, matchesDateRange, matchesTextQuery, platform, sortDirection, sortKey, visualMatches]);
   const hasPendingLikeSort =
     sortKey === 'likes' && examples.some((example) => (likeSortCounts[example.id] ?? 0) !== likes.getCount(example.id));
   const deleteOverviewExample = useCallback(
@@ -243,10 +265,18 @@ function StyleGalleryExamplesOverviewContent({
           <Icon icon="ri:search-line" className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
           <input
             value={query}
+            aria-busy={searchIndexStatus === 'loading'}
+            onFocus={() => void ensureSearchIndex()}
             onChange={(event) => setQuery(event.currentTarget.value).catch(reportUrlStateError)}
             placeholder={labels.searchPlaceholder}
-            className="h-10 w-full rounded-md border border-border bg-background pr-3 pl-9 text-sm outline-none focus:border-primary"
+            className="h-10 w-full rounded-md border border-border bg-background pr-9 pl-9 text-sm outline-none focus:border-primary"
           />
+          {searchIndexStatus === 'loading' && (
+            <Icon
+              icon="ri:loader-4-line"
+              className="absolute top-1/2 right-3 size-4 -translate-y-1/2 text-muted-foreground motion-safe:animate-spin"
+            />
+          )}
         </label>
         <div className="mt-3 flex flex-wrap items-center gap-3 border-border border-t pt-3">
           <StyleGalleryVisualFilter
