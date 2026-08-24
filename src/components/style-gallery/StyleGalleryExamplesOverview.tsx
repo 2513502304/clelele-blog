@@ -274,7 +274,7 @@ function StyleGalleryExamplesOverviewContent({
           {searchIndexStatus === 'loading' && (
             <Icon
               icon="ri:loader-4-line"
-              className="absolute top-1/2 right-3 size-4 -translate-y-1/2 animate-spin text-muted-foreground"
+              className="absolute top-1/2 right-3 size-4 -translate-y-1/2 text-muted-foreground motion-safe:animate-spin"
             />
           )}
         </label>

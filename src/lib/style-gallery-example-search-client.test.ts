@@ -45,3 +45,29 @@ test('rejects malformed index entries without caching them', async () => {
     globalThis.fetch = previousFetch;
   }
 });
+
+test('refreshes the in-memory index after the browser cache interval', async () => {
+  const previousFetch = globalThis.fetch;
+  const previousDateNow = Date.now;
+  let now = 1_000;
+  let requests = 0;
+  Date.now = () => now;
+  globalThis.fetch = async () => {
+    requests += 1;
+    return Response.json({ 'source-a': `prompt-${requests}` });
+  };
+  resetStyleGalleryExampleSearchClientCache();
+
+  try {
+    assert.equal((await loadStyleGalleryExampleSearchIndex())['source-a'], 'prompt-1');
+    now += 299_999;
+    assert.equal((await loadStyleGalleryExampleSearchIndex())['source-a'], 'prompt-1');
+    now += 1;
+    assert.equal((await loadStyleGalleryExampleSearchIndex())['source-a'], 'prompt-2');
+    assert.equal(requests, 2);
+  } finally {
+    resetStyleGalleryExampleSearchClientCache();
+    globalThis.fetch = previousFetch;
+    Date.now = previousDateNow;
+  }
+});
