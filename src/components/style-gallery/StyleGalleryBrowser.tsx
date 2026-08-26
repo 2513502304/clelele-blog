@@ -24,10 +24,11 @@ import { openModal } from '@store/modal';
 import { useReducedMotion } from 'motion/react';
 import { parseAsString, useQueryStates } from 'nuqs';
 import { NuqsAdapter } from 'nuqs/adapters/react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CollectionPaginationSettings, CollectionPaginator } from '../collection/CollectionPagination';
 import { Dialog, DialogContent } from '../ui/dialog';
 import { StyleGalleryPromptChooser } from './StyleGalleryPromptChooser';
+import StyleGallerySharedImage from './StyleGallerySharedImage';
 
 export interface StyleGalleryBrowserItem {
   slug: string;
@@ -139,6 +140,7 @@ function StyleGalleryBrowserContent({
   const [copyErrorSlug, setCopyErrorSlug] = useState<string | null>(null);
   const [promptPicker, setPromptPicker] = useState<PromptPickerState | null>(null);
   const [visualMatches, setVisualMatches] = useState<Set<string> | null>(null);
+  const loadedSourceImages = useRef(new Set<string>()).current;
   const dateFormatter = useMemo(() => new Intl.DateTimeFormat(locale, { timeZone: 'Asia/Shanghai' }), [locale]);
   const sortLabels: Record<SortKey, string> = {
     default: labels.sortDefault,
@@ -230,7 +232,8 @@ function StyleGalleryBrowserContent({
       filteredItems.map((candidate) => ({
         id: candidate.slug,
         src: candidate.sourceImage,
-        previewSrc: candidate.thumbnailImage ?? candidate.sourceImage,
+        sourceLoaded: loadedSourceImages.has(candidate.sourceImage),
+        previewSrc: candidate.sourceImage,
         alt: candidate.sourceImageAlt ?? candidate.title,
         getPrompt: () => getSelectedStyleGalleryPrompt(candidate.slug) ?? candidate.prompt,
         promptOptions:
@@ -407,8 +410,9 @@ function StyleGalleryBrowserContent({
           >
             <div className="relative aspect-[4/5] overflow-hidden bg-rose-50 dark:bg-gray-900">
               <a href={`${galleryBasePath}/${item.slug}`} data-astro-prefetch="false" className="block h-full w-full">
-                <img
-                  src={item.thumbnailImage ?? item.sourceImage}
+                <StyleGallerySharedImage
+                  source={item.sourceImage}
+                  loadedSources={loadedSourceImages}
                   alt={item.sourceImageAlt ?? item.title}
                   width={4}
                   height={5}
