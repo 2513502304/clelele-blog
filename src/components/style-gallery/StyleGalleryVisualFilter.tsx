@@ -2,7 +2,6 @@ import Popover from '@components/ui/popover';
 import { Icon } from '@iconify/react';
 import { getRangeValueAtPointer } from '@lib/range-input';
 import { getStyleGalleryClipboardImage } from '@lib/style-gallery-visual-clipboard';
-import { computeStyleGalleryVisualFeatureFromFile } from '@lib/style-gallery-visual-feature-browser';
 import {
   STYLE_GALLERY_VISUAL_DEFAULT_RANGE,
   type StyleGalleryVisualFeature,
@@ -23,6 +22,14 @@ interface Props {
 }
 
 type VisualTab = 'image' | 'palette';
+
+async function computeVisualFeature(nextFile: File): Promise<StyleGalleryVisualFeature> {
+  // 视觉模型属于纯浏览器能力。保持这个 import 在用户选图后的调用边界内，避免 Transformers.js
+  // 及 onnxruntime-node 被 Astro SSR 追踪进 Vercel Function；普通浏览 Gallery 不应承担其冷启动成本。
+  if (import.meta.env.SSR) throw new Error('Visual feature extraction is only available in the browser.');
+  const { computeStyleGalleryVisualFeatureFromFile } = await import('@lib/style-gallery-visual-feature-browser');
+  return computeStyleGalleryVisualFeatureFromFile(nextFile);
+}
 
 const IMAGE_MODES: StyleGalleryVisualSearchMode[] = ['combined', 'near-duplicate', 'semantic'];
 
@@ -75,7 +82,7 @@ export default function StyleGalleryVisualFilter({ scope, labels, onResults, tri
 
   const prepareFeature = useCallback((nextFile: File): Promise<StyleGalleryVisualFeature> => {
     if (preparedFeature.current?.file === nextFile) return preparedFeature.current.promise;
-    const entry = { file: nextFile, promise: computeStyleGalleryVisualFeatureFromFile(nextFile) };
+    const entry = { file: nextFile, promise: computeVisualFeature(nextFile) };
     preparedFeature.current = entry;
     // 选图后立即后台准备；失败项必须丢弃，点击重试时才能重新初始化模型和特征计算。
     void entry.promise.catch(() => {
