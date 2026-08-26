@@ -1,4 +1,5 @@
 import { getStyleGalleryExampleSearchIndex } from '@lib/style-gallery';
+import { STYLE_GALLERY_LIST_CACHE_TAG, setStyleGalleryPublicCacheHeaders } from '@lib/style-gallery-public-cache';
 import type { APIRoute } from 'astro';
 
 export const prerender = false;
@@ -9,9 +10,9 @@ export const prerender = false;
  */
 export const GET: APIRoute = async () => {
   try {
-    return Response.json(await getStyleGalleryExampleSearchIndex(), {
-      headers: { 'Cache-Control': 'public, max-age=300, s-maxage=3600, stale-while-revalidate=86400' },
-    });
+    const headers = new Headers();
+    setStyleGalleryPublicCacheHeaders(headers, [STYLE_GALLERY_LIST_CACHE_TAG]);
+    return Response.json(await getStyleGalleryExampleSearchIndex(), { headers });
   } catch (error) {
     console.error('Failed to build the Sub-gallery prompt search index:', error);
     return new Response('Failed to load the Sub-gallery prompt search index.', { status: 503 });

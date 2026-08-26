@@ -1,3 +1,4 @@
+import { getStyleGalleryItemCacheTag, setStyleGalleryPublicCacheHeaders } from '@lib/style-gallery-public-cache';
 import { getStoredStyleGalleryItem } from '@lib/style-gallery-store';
 import type { APIRoute } from 'astro';
 
@@ -11,12 +12,14 @@ export const GET: APIRoute = async ({ params }) => {
   const item = await getStoredStyleGalleryItem(slug);
   if (!item) return new Response('Style gallery item not found.', { status: 404 });
 
+  const headers = new Headers();
+  setStyleGalleryPublicCacheHeaders(headers, [getStyleGalleryItemCacheTag(slug)]);
   return Response.json(
     {
       slug: item.slug,
       prompts: item.prompts.map(({ id, prompt, model, importedAt }) => ({ id, prompt, model, importedAt })),
     },
-    // 客户端以 catalog.promptRevision 作为查询版本；元数据变化会使用新 URL，旧版本可长期由浏览器/CDN 复用。
-    { headers: { 'Cache-Control': 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800' } },
+    // 客户端以 catalog.promptRevision 作为查询版本；写入还会精准清除此 item 的 CDN tag。
+    { headers },
   );
 };

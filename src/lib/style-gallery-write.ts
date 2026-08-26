@@ -11,6 +11,7 @@ import { assertStyleGalleryItemConsistency, getStyleGalleryItemAssetKeys } from 
 import { StyleGalleryClientError } from '@lib/style-gallery-errors';
 import { toStyleGalleryExampleIndexGroup } from '@lib/style-gallery-examples';
 import { mergeStyleGalleryPromptVariants } from '@lib/style-gallery-prompts';
+import { invalidateStyleGalleryPublicCache } from '@lib/style-gallery-public-cache';
 import { styleGalleryItemSchema, toStyleGalleryCatalogItem } from '@lib/style-gallery-schema';
 import {
   getStoredStyleGalleryItem,
@@ -202,6 +203,7 @@ export async function writeStyleGalleryItems(
           savedCatalog,
           writtenItems.filter((item) => !item.draft),
         );
+        await invalidateStyleGalleryPublicCache(writtenItems.map((item) => item.slug));
       }
 
       return {
@@ -363,6 +365,7 @@ export async function reconcileStyleGalleryExampleCounts(): Promise<{ checked: n
           ),
         };
       });
+      await invalidateStyleGalleryPublicCache(catalog.items.map((item) => item.slug));
     }
     return { checked: catalog.items.length, updated };
   });
@@ -417,6 +420,7 @@ export async function updateStyleGalleryItemExamples(
         if (attemptedGroup) groups.push(attemptedGroup);
         return { version: 2, updatedAt, groups };
       });
+      await invalidateStyleGalleryPublicCache([slug]);
       return { item, index };
     } catch (error) {
       // 只在 item 仍是本次写入版本时回滚；若另一实例已追加 prompt 或更新 examples，宁可报告
