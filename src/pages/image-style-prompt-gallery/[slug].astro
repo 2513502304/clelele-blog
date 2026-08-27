@@ -11,6 +11,7 @@ import Layout from '@layouts/Layout.astro';
 import TwoColumnLayout from '@layouts/TwoColumnLayout.astro';
 import { displayDate } from '@lib/date';
 import { getStyleGalleryItemBySlug } from '@lib/style-gallery';
+import { getStyleGalleryItemCacheTag, setStyleGalleryPublicCacheHeaders } from '@lib/style-gallery-public-cache';
 import { Icon } from 'astro-icon/components';
 import { getLocaleFromUrl, localizedPath, t } from '@/i18n';
 
@@ -35,7 +36,7 @@ const referenceImages = data.images?.length
         imageHash: data.imageHash,
       },
     ];
-Astro.response.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=300');
+setStyleGalleryPublicCacheHeaders(Astro.response.headers, [getStyleGalleryItemCacheTag(item.slug)]);
 ---
 
 <Layout title={title} description={description}>

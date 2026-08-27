@@ -11,6 +11,7 @@ import { getStyleGalleryData, toStyleGalleryCardDataList } from '@lib/style-gall
 import { Icon } from 'astro-icon/components';
 import { getLocaleFromUrl, localizedPath, t } from '@/i18n';
 import { createStyleGalleryDateRangeLabels } from '@/lib/style-gallery-date-range-labels';
+import { STYLE_GALLERY_LIST_CACHE_TAG, setStyleGalleryPublicCacheHeaders } from '@/lib/style-gallery-public-cache';
 import { createStyleGalleryVisualFilterLabels } from '@/lib/style-gallery-visual-labels';
 
 export const prerender = false;
@@ -45,7 +46,7 @@ const lightboxCopyLabels = {
   copiedPrompt: t(locale, 'image.copiedPrompt'),
   copyFailed: t(locale, 'image.copyFailed'),
 };
-Astro.response.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=300');
+setStyleGalleryPublicCacheHeaders(Astro.response.headers, [STYLE_GALLERY_LIST_CACHE_TAG]);
 ---
 
 <Layout title={title} description={t(locale, 'gallery.imageIndexDescription')}>

@@ -1,3 +1,4 @@
+import { invalidateStyleGalleryPublicCache } from '@lib/style-gallery-public-cache';
 import { mutateStyleGalleryExampleIndex } from '@lib/style-gallery-store';
 import type { StyleGalleryExampleIndex } from '@/types/style-gallery';
 
@@ -25,6 +26,7 @@ export async function setStyleGalleryExampleLike(input: {
   liked: boolean;
 }): Promise<{ liked: boolean; likeCount: number; sourceSlug: string }> {
   let result: { liked: boolean; likeCount: number; sourceSlug: string } | undefined;
+  let changed = false;
   await mutateStyleGalleryExampleIndex((current) => {
     const groupIndex = current.groups.findIndex((group) => group.examples.some((example) => example.id === input.exampleId));
     if (groupIndex < 0) throw new Error(`Style gallery example not found: ${input.exampleId}`);
@@ -34,6 +36,7 @@ export async function setStyleGalleryExampleLike(input: {
     const alreadyLiked = example.likedBy.includes(input.userId);
     result = { liked: input.liked, likeCount: example.likedBy.length, sourceSlug: group.sourceSlug };
     if (alreadyLiked === input.liked) return current;
+    changed = true;
 
     const likedBy = new Set(example.likedBy);
     input.liked ? likedBy.add(input.userId) : likedBy.delete(input.userId);
@@ -46,6 +49,7 @@ export async function setStyleGalleryExampleLike(input: {
     return { version: 2, updatedAt: new Date().toISOString(), groups };
   });
   if (!result) throw new Error(`Style gallery example not found: ${input.exampleId}`);
+  if (changed) await invalidateStyleGalleryPublicCache([result.sourceSlug]);
   return result;
 }
 

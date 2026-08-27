@@ -7,7 +7,6 @@ import { Icon } from '@iconify/react';
 import { createStyleGalleryDateRangeMatcher, getStyleGalleryDateKey } from '@lib/style-gallery-date-range';
 import type { StyleGalleryDateRangeLabels } from '@lib/style-gallery-date-range-labels';
 import { createStyleGalleryExampleQueryMatcher } from '@lib/style-gallery-example-search';
-import { loadStyleGalleryExampleSearchIndex } from '@lib/style-gallery-example-search-client';
 import { getReusableStyleGalleryImageUrl } from '@lib/style-gallery-image-client';
 import {
   createStyleGalleryCopyAction,
@@ -21,6 +20,7 @@ import {
 import { STYLE_GALLERY_EXAMPLE_LIGHTBOX_PREFETCH } from '@lib/style-gallery-lightbox-prefetch';
 import { STYLE_GALLERY_PLATFORMS } from '@lib/style-gallery-platforms';
 import { loadStyleGalleryDefaultPrompt, loadStyleGalleryPromptChoices } from '@lib/style-gallery-prompt-client';
+import { loadStyleGalleryPromptSearchIndex } from '@lib/style-gallery-prompt-search-client';
 import { openModal } from '@store/modal';
 import { parseAsString, parseAsStringLiteral, useQueryState, useQueryStates } from 'nuqs';
 import { NuqsAdapter } from 'nuqs/adapters/react';
@@ -148,7 +148,7 @@ function StyleGalleryExamplesOverviewContent({
     if (sourceSearchIndex || searchIndexStatus === 'loading') return;
     setSearchIndexStatus('loading');
     try {
-      setSourceSearchIndex(await loadStyleGalleryExampleSearchIndex());
+      setSourceSearchIndex(await loadStyleGalleryPromptSearchIndex());
       setSearchIndexStatus('ready');
     } catch (error) {
       console.error('Failed to load the Sub-gallery prompt search index:', error);
@@ -372,7 +372,7 @@ function StyleGalleryExamplesOverviewContent({
                 key={example.id}
                 id={getStyleGalleryLightboxElementId('overview-example', example.id)}
                 tabIndex={-1}
-                className="flex h-full w-full min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-background shadow-sm"
+                className="flex h-full w-full min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-background shadow-sm [contain-intrinsic-size:auto_560px] [content-visibility:auto]"
               >
                 <div className="relative">
                   <button

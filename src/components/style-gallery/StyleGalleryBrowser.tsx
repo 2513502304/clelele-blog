@@ -15,25 +15,27 @@ import {
 } from '@lib/style-gallery-lightbox-actions';
 import {
   getCachedStyleGalleryPromptChoices,
+  loadStyleGalleryDefaultPrompt,
   loadStyleGalleryPromptChoices,
   type StyleGalleryPromptChoice,
 } from '@lib/style-gallery-prompt-client';
 import { getStyleGalleryPromptCacheKey, getStyleGalleryPromptChooserKey } from '@lib/style-gallery-prompt-groups';
+import { loadStyleGalleryPromptSearchIndex } from '@lib/style-gallery-prompt-search-client';
 import { getSelectedStyleGalleryPrompt } from '@lib/style-gallery-prompt-selection';
 import { openModal } from '@store/modal';
 import { useReducedMotion } from 'motion/react';
 import { parseAsString, useQueryStates } from 'nuqs';
 import { NuqsAdapter } from 'nuqs/adapters/react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CollectionPaginationSettings, CollectionPaginator } from '../collection/CollectionPagination';
 import { Dialog, DialogContent } from '../ui/dialog';
 import { StyleGalleryPromptChooser } from './StyleGalleryPromptChooser';
+import StyleGallerySharedImage from './StyleGallerySharedImage';
 
 export interface StyleGalleryBrowserItem {
   slug: string;
   title: string;
-  prompt: string;
-  additionalPrompts: string[];
+  promptExcerpt: string;
   promptCount: number;
   promptRevision: string;
   date: string;
@@ -114,8 +116,8 @@ function createPromptPickerState(
 }
 
 /**
- * Gallery 主预览页：在 catalog 的全部 prompt 文本上搜索，再执行标签筛选、排序和本地分页。
- * 单 prompt 复制不读取详情；多 prompt 只在用户打开选择器时按需请求一次并缓存在浏览器内。
+ * Gallery 主预览页：普通浏览只接收轻量 Catalog，用户开始搜索后再加载完整 prompt 索引。
+ * 复制从详情接口读取完整文本；只有多 prompt 候选值得在 hover/focus 时提前请求并缓存。
  */
 function StyleGalleryBrowserContent({
   items,
@@ -139,6 +141,9 @@ function StyleGalleryBrowserContent({
   const [copyErrorSlug, setCopyErrorSlug] = useState<string | null>(null);
   const [promptPicker, setPromptPicker] = useState<PromptPickerState | null>(null);
   const [visualMatches, setVisualMatches] = useState<Set<string> | null>(null);
+  const [promptSearchIndex, setPromptSearchIndex] = useState<Record<string, string> | null>(null);
+  const [promptSearchStatus, setPromptSearchStatus] = useState<'idle' | 'loading' | 'ready' | 'failed'>('idle');
+  const loadedSourceImages = useRef(new Set<string>()).current;
   const dateFormatter = useMemo(() => new Intl.DateTimeFormat(locale, { timeZone: 'Asia/Shanghai' }), [locale]);
   const sortLabels: Record<SortKey, string> = {
     default: labels.sortDefault,
@@ -156,14 +161,31 @@ function StyleGalleryBrowserContent({
     [dateFrom, dateTo],
   );
 
+  const ensurePromptSearchIndex = useCallback(async () => {
+    if (promptSearchIndex || promptSearchStatus === 'loading') return;
+    setPromptSearchStatus('loading');
+    try {
+      setPromptSearchIndex(await loadStyleGalleryPromptSearchIndex());
+      setPromptSearchStatus('ready');
+    } catch (error) {
+      console.error('[style-gallery] Failed to load the prompt search index.', error);
+      setPromptSearchStatus('failed');
+    }
+  }, [promptSearchIndex, promptSearchStatus]);
+
+  useEffect(() => {
+    if (query.trim() && promptSearchStatus === 'idle') void ensurePromptSearchIndex();
+  }, [ensurePromptSearchIndex, promptSearchStatus, query]);
+
   const filteredItems = useMemo(() => {
     const q = normalize(query);
     const filtered = items.filter((item) => {
       const matchesTag = activeTag === 'all' || tags.includes(activeTag);
-      const searchable = [item.title, item.prompt, ...item.additionalPrompts, ...tags, ...modelTargets]
-        .filter(Boolean)
-        .join(' ');
-      const matchesQuery = !q || normalize(searchable).includes(q);
+      const localSearchable = [item.title, item.imageHash, item.slug, ...tags, ...modelTargets].filter(Boolean).join(' ');
+      const matchesQuery =
+        !q ||
+        normalize(localSearchable).includes(q) ||
+        (promptSearchIndex ? promptSearchIndex[item.slug]?.includes(q) : promptSearchStatus !== 'failed');
       const matchesDate = matchesDateRange(item.date);
       const matchesVisual = visualMatches === null || visualMatches.has(item.slug);
       return matchesTag && matchesQuery && matchesDate && matchesVisual;
@@ -179,7 +201,19 @@ function StyleGalleryBrowserContent({
       });
     }
     return sortDirection === 'desc' ? sorted.reverse() : sorted;
-  }, [activeTag, items, matchesDateRange, modelTargets, query, sortDirection, sortKey, tags, visualMatches]);
+  }, [
+    activeTag,
+    items,
+    matchesDateRange,
+    modelTargets,
+    promptSearchIndex,
+    promptSearchStatus,
+    query,
+    sortDirection,
+    sortKey,
+    tags,
+    visualMatches,
+  ]);
   const { currentPage, isPaginated, pageSize, setCurrentPage, setIsPaginated, setPageSize, totalPages, visibleItems } =
     useCollectionPagination(filteredItems, 'style-gallery-pagination-settings');
 
@@ -191,6 +225,8 @@ function StyleGalleryBrowserContent({
 
   const prefetchPromptChoices = useCallback(
     (item: StyleGalleryBrowserItem) => {
+      // 单 prompt 的复制本身只需一次按需读取；仅候选选择器值得在 hover/focus 时提前准备。
+      // 否则用户滚动经过大量卡片会制造无意义的详情请求，反向增加 Vercel Function CPU。
       if (item.promptCount > 1) void loadPromptChoices(item).catch(() => undefined);
     },
     [loadPromptChoices],
@@ -230,9 +266,12 @@ function StyleGalleryBrowserContent({
       filteredItems.map((candidate) => ({
         id: candidate.slug,
         src: candidate.sourceImage,
-        previewSrc: candidate.thumbnailImage ?? candidate.sourceImage,
+        sourceLoaded: loadedSourceImages.has(candidate.sourceImage),
+        previewSrc: candidate.sourceImage,
         alt: candidate.sourceImageAlt ?? candidate.title,
-        getPrompt: () => getSelectedStyleGalleryPrompt(candidate.slug) ?? candidate.prompt,
+        getPrompt: () =>
+          getSelectedStyleGalleryPrompt(candidate.slug) ??
+          loadStyleGalleryDefaultPrompt(candidate.slug, candidate.promptRevision),
         promptOptions:
           candidate.promptCount > 1
             ? {
@@ -268,7 +307,12 @@ function StyleGalleryBrowserContent({
 
   async function copyPrompt(item: StyleGalleryBrowserItem) {
     if (item.promptCount <= 1) {
-      await copyPromptText(item, item.prompt);
+      try {
+        await copyPromptText(item, await loadStyleGalleryDefaultPrompt(item.slug, item.promptRevision));
+      } catch {
+        setCopyErrorSlug(item.slug);
+        window.setTimeout(() => setCopyErrorSlug((current) => (current === item.slug ? null : current)), 2400);
+      }
       return;
     }
 
@@ -306,6 +350,7 @@ function StyleGalleryBrowserContent({
             <input
               value={query}
               onChange={(event) => handleQueryChange(event.currentTarget.value)}
+              onFocus={() => void ensurePromptSearchIndex()}
               placeholder={labels.searchPlaceholder}
               className="h-11 w-full rounded-lg border border-rose-100 bg-white pr-3 pl-10 text-sm outline-none transition focus:border-rose-300 focus:ring-4 focus:ring-rose-100 dark:border-gray-800 dark:bg-gray-900 dark:focus:border-rose-700 dark:focus:ring-rose-950"
             />
@@ -403,12 +448,13 @@ function StyleGalleryBrowserContent({
             tabIndex={-1}
             onPointerEnter={() => prefetchPromptChoices(item)}
             onFocusCapture={() => prefetchPromptChoices(item)}
-            className="group overflow-hidden rounded-lg border border-rose-100 bg-white shadow-sm transition hover:-translate-y-1 hover:border-rose-200 hover:shadow-lg dark:border-gray-800 dark:bg-gray-950"
+            className="group overflow-hidden rounded-lg border border-rose-100 bg-white shadow-sm transition [contain-intrinsic-size:auto_720px] [content-visibility:auto] hover:-translate-y-1 hover:border-rose-200 hover:shadow-lg dark:border-gray-800 dark:bg-gray-950"
           >
             <div className="relative aspect-[4/5] overflow-hidden bg-rose-50 dark:bg-gray-900">
               <a href={`${galleryBasePath}/${item.slug}`} data-astro-prefetch="false" className="block h-full w-full">
-                <img
-                  src={item.thumbnailImage ?? item.sourceImage}
+                <StyleGallerySharedImage
+                  source={item.sourceImage}
+                  loadedSources={loadedSourceImages}
                   alt={item.sourceImageAlt ?? item.title}
                   width={4}
                   height={5}
@@ -465,7 +511,7 @@ function StyleGalleryBrowserContent({
                 </div>
               </div>
               <p className="line-clamp-3 min-h-18 text-pretty text-gray-600 text-sm leading-6 dark:text-gray-300">
-                {item.prompt}
+                {item.promptExcerpt}
               </p>
               <div className="grid grid-cols-2 gap-2 pt-1">
                 <button

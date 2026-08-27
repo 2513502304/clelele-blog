@@ -18,7 +18,8 @@ interface StyleGallerySharedImageProps extends Omit<ImgHTMLAttributes<HTMLImageE
  * Lightbox 新建 DOM 节点时也必须沿用全局 loaded 状态，不能因节点短暂 `complete === false` 重新转圈。
  * 后台预加载签名 URL 时，仅尚未完成加载的卡片切换地址；已经显示的卡片保持原 URL，避免重复加载。
  *
- * 预览页和索引页不使用这条契约：它们有意先展示 thumb，再在 Lightbox 中渐进加载高清 source。
+ * Gallery 预览页与 Sub-gallery 都直接显示高清原图，因此共享这条契约；只有密集图片矩阵有意先展示
+ * thumb，再在 Lightbox 中渐进加载高清 source。不要把矩阵策略反向扩散到三列卡片页面。
  */
 export default function StyleGallerySharedImage({ source, loadedSources, alt, ...imageProps }: StyleGallerySharedImageProps) {
   const [subscribedUrl, setSubscribedUrl] = useState<{ source: string; url: string } | null>(null);

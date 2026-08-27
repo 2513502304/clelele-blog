@@ -4,8 +4,8 @@ const DEFAULT_ENDPOINT = 'https://s3.hf.co/clelele0722';
 const DEFAULT_BUCKET = 'raw-datasets';
 const DEFAULT_PREFIX = 'image-style-prompt-gallery';
 const DEFAULT_REGION = 'us-east-1';
-const DEFAULT_TTL_SECONDS = 60 * 60 * 24;
 const MAX_TTL_SECONDS = 60 * 60 * 24 * 7;
+const DEFAULT_TTL_SECONDS = MAX_TTL_SECONDS;
 const DEFAULT_UPLOAD_TTL_SECONDS = 15 * 60;
 const SIGNED_URL_CACHE_SAFETY_SECONDS = 5 * 60;
 
@@ -22,7 +22,7 @@ export function getStyleGalleryImageStorageOrigin(): string {
 
 /**
  * 让 Vercel CDN 缓存图片重定向，同时确保缓存至少比预签名 URL 提前一段时间失效。
- * 很短的自定义 TTL 保留一半有效期作为余量；默认 24 小时 TTL 保留 5 分钟余量。
+ * 很短的自定义 TTL 保留一半有效期作为余量；默认 7 天 TTL 保留 5 分钟余量。
  */
 export function getStyleGallerySignedImageRedirectCacheSeconds(ttlSeconds = getTtlSeconds()): number {
   if (ttlSeconds <= 2) return 0;
@@ -52,6 +52,13 @@ function client(timeoutMs?: number) {
 
 export function createStyleGallerySignedImageUrl(key: string, now = new Date()): string {
   return client().presign('GET', key, getTtlSeconds(), now);
+}
+
+/** Lightbox 批量签名复用一次配置解析和 S3 client，避免每张图重复构造 URL、编码器与签名上下文。 */
+export function createStyleGallerySignedImageUrls(keys: readonly string[], now = new Date()): Record<string, string> {
+  const signer = client();
+  const ttlSeconds = getTtlSeconds();
+  return Object.fromEntries(keys.map((key) => [key, signer.presign('GET', key, ttlSeconds, now)]));
 }
 
 export function createStyleGallerySignedUploadUrl(key: string, now = new Date()): string {

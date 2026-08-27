@@ -33,8 +33,10 @@ import {
   styleGalleryCatalogSchema,
   styleGalleryExampleIndexSchema,
   styleGalleryItemSchema,
+  styleGalleryPromptSearchIndexSchema,
   styleGalleryVisualFeatureSchema,
   toStyleGalleryCatalogItem,
+  toStyleGalleryPromptSearchEntry,
 } from './style-gallery-schema';
 
 const firstHash = 'a'.repeat(64);
@@ -85,24 +87,24 @@ describe('style gallery metadata', () => {
     );
   });
 
-  it('validates items and creates searchable catalog entries', () => {
+  it('validates items and creates lightweight catalog entries', () => {
     const item = styleGalleryItemSchema.parse(createItem());
     assertStyleGalleryItemConsistency(item);
     assert.deepEqual(getStyleGalleryItemAssetKeys(item), ['source/aaaaaaaaaaaa.jpg', 'thumb/aaaaaaaaaaaa.webp']);
 
     const catalogItem = toStyleGalleryCatalogItem(item, 3);
     const catalog = styleGalleryCatalogSchema.parse({
-      version: 4,
+      version: 5,
       updatedAt: '2026-07-13T00:01:00.000Z',
       tags: ['codex-session', 'style-prompt'],
       modelTargets: ['GPT-Image', 'Nano Banana', 'PixAI', 'Midjourney', 'NovelAI', 'Flux'],
       items: [catalogItem],
     });
-    assert.equal(catalog.items[0].prompt, item.prompts[0].prompt);
-    assert.deepEqual(catalog.items[0].additionalPrompts, []);
+    assert.equal(catalog.items[0].promptExcerpt, item.prompts[0].prompt);
+    assert.equal('prompt' in catalog.items[0], false);
     assert.equal(catalog.items[0].promptCount, 1);
     assert.equal(catalog.items[0].promptRevision, getStyleGalleryPromptRevision(item.prompts));
-    assert.equal(catalog.version, 4);
+    assert.equal(catalog.version, 5);
     assert.equal(catalog.items[0].exampleCount, 3);
     assert.equal('tags' in catalog.items[0], false);
     assert.deepEqual(catalog.modelTargets, ['GPT-Image', 'Nano Banana', 'PixAI', 'Midjourney', 'NovelAI', 'Flux']);
@@ -113,7 +115,7 @@ describe('style gallery metadata', () => {
     assert.equal('modelTargets' in card, false);
   });
 
-  it('keeps secondary prompt text in catalog search data without duplicating detail metadata', () => {
+  it('keeps complete prompt text only in the on-demand search index', () => {
     const item = createItem();
     const secondPrompt = 'Second prompt from the same model';
     item.prompts.push({
@@ -123,8 +125,8 @@ describe('style gallery metadata', () => {
       importedAt: '2026-07-14T00:00:00.000Z',
     });
     const catalogItem = toStyleGalleryCatalogItem(item);
-    assert.equal(catalogItem.prompt, item.prompts[0].prompt);
-    assert.deepEqual(catalogItem.additionalPrompts, [secondPrompt]);
+    assert.equal(catalogItem.promptExcerpt, item.prompts[0].prompt);
+    assert.deepEqual(toStyleGalleryPromptSearchEntry(item), [item.prompts[0].prompt, secondPrompt]);
     assert.equal(catalogItem.promptCount, 2);
     assert.equal(catalogItem.promptRevision, getStyleGalleryPromptRevision(item.prompts));
     assert.equal('model' in catalogItem, false);
@@ -138,27 +140,23 @@ describe('style gallery metadata', () => {
     assert.notEqual(toStyleGalleryCatalogItem(item).promptRevision, firstRevision);
   });
 
-  it('rejects inconsistent or duplicated catalog prompt metadata', () => {
+  it('rejects legacy catalog metadata and invalid prompt search entries', () => {
     const catalogItem = toStyleGalleryCatalogItem(createItem());
     const catalog = {
-      version: 4,
+      version: 5,
       updatedAt: '2026-07-13T00:01:00.000Z',
       tags: ['codex-session', 'style-prompt'],
       modelTargets: ['GPT-Image', 'Nano Banana', 'PixAI', 'Midjourney', 'NovelAI', 'Flux'],
       items: [catalogItem],
     };
 
-    assert.throws(
-      () => styleGalleryCatalogSchema.parse({ ...catalog, items: [{ ...catalogItem, promptCount: 2 }] }),
-      /Prompt count does not match/,
-    );
-    assert.throws(
-      () =>
-        styleGalleryCatalogSchema.parse({
-          ...catalog,
-          items: [{ ...catalogItem, promptCount: 2, additionalPrompts: [`  ${catalogItem.prompt}\r\n`] }],
-        }),
-      /Duplicate prompt text/,
+    assert.throws(() => styleGalleryCatalogSchema.parse({ ...catalog, version: 4 }), /Invalid literal value/);
+    assert.throws(() =>
+      styleGalleryPromptSearchIndexSchema.parse({
+        version: 1,
+        updatedAt: catalog.updatedAt,
+        entries: { [catalogItem.slug]: [] },
+      }),
     );
   });
 

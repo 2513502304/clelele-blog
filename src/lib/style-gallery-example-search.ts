@@ -6,13 +6,12 @@ export interface StyleGalleryExampleSearchTarget {
 
 export interface StyleGalleryExampleSearchSource {
   title: string;
-  prompt: string;
-  additionalPrompts: readonly string[];
+  prompts: readonly string[];
 }
 
-/** Catalog 已持有列表搜索所需的全部 prompt；这里只压平并规范化一次，不读取详情 item。 */
+/** 将按需读取的 prompt 索引与 Catalog 标题压平；普通列表 SSR 不会调用本函数。 */
 export function createStyleGalleryExampleSourceSearchText(source: StyleGalleryExampleSearchSource): string {
-  return [source.title, source.prompt, ...source.additionalPrompts].join('\n').toLowerCase();
+  return [source.title, ...source.prompts].join('\n').toLowerCase();
 }
 
 /**

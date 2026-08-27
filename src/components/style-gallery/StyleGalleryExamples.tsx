@@ -28,7 +28,7 @@ import {
   STYLE_GALLERY_MUTATION_BATCH_SIZE,
   STYLE_GALLERY_PREPARE_BATCH_SIZE,
 } from '@lib/style-gallery-request-batches';
-import { computeStyleGalleryVisualFeatureFromFile } from '@lib/style-gallery-visual-feature-browser';
+import type { StyleGalleryVisualFeature } from '@lib/style-gallery-visual-types';
 import { openModal } from '@store/modal';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { StyleGalleryExample, StyleGalleryExampleView } from '@/types/style-gallery';
@@ -65,6 +65,13 @@ interface PreparedUpload {
   example: StyleGalleryExample;
   duplicate: boolean;
   exists: boolean;
+}
+
+async function computeExampleVisualFeature(file: File, imageHash: string): Promise<StyleGalleryVisualFeature> {
+  // 与视觉筛选器共用同一浏览器懒加载边界。上传表单服务端渲染时绝不能把 ONNX 运行时带进 Function。
+  if (import.meta.env.SSR) throw new Error('Visual feature extraction is only available in the browser.');
+  const { computeStyleGalleryVisualFeatureFromFile } = await import('@lib/style-gallery-visual-feature-browser');
+  return computeStyleGalleryVisualFeatureFromFile(file, imageHash);
 }
 
 interface FileProgress {
@@ -595,7 +602,7 @@ export default function StyleGalleryExamples({
       let nextUploadIndex = 0;
       const uploadFailures: string[] = [];
       const examplesToCommit: StyleGalleryExample[] = [];
-      const visualRecordById = new Map<string, Awaited<ReturnType<typeof computeStyleGalleryVisualFeatureFromFile>>>();
+      const visualRecordById = new Map<string, StyleGalleryVisualFeature>();
       const featureFailureIndexes = new Set<number>();
       let committedCount = 0;
       let mergeDuplicateCount = 0;
@@ -606,7 +613,7 @@ export default function StyleGalleryExamples({
         const entry = selected[index];
         try {
           updateFileProgress(entry.id, { state: 'processing', loaded: entry.file.size });
-          visualRecordById.set(upload.example.id, await computeStyleGalleryVisualFeatureFromFile(entry.file, entry.imageHash));
+          visualRecordById.set(upload.example.id, await computeExampleVisualFeature(entry.file, entry.imageHash));
           // 特征计算不是网络上传进度；重置为 0，避免总进度先显示 100% 再在上传开始时倒退。
           updateFileProgress(entry.id, { state: 'ready', loaded: 0 });
         } catch (error) {
@@ -916,7 +923,7 @@ export default function StyleGalleryExamples({
                       key={example.src}
                       id={getStyleGalleryLightboxElementId('detail-example', example.id)}
                       tabIndex={-1}
-                      className="overflow-hidden rounded-lg border border-gray-100 bg-gray-50 dark:border-gray-800 dark:bg-gray-900"
+                      className="overflow-hidden rounded-lg border border-gray-100 bg-gray-50 [contain-intrinsic-size:auto_420px] [content-visibility:auto] dark:border-gray-800 dark:bg-gray-900"
                     >
                       <div className="relative">
                         <button

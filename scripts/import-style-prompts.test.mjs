@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { describe, it } from 'node:test';
-import { buildImportData, extractItems, parseArgs, uniqueImagesByHash } from './import-style-prompts.mjs';
+import {
+  buildImportData,
+  extractItems,
+  loadExistingItemsByHash,
+  parseArgs,
+  uniqueImagesByHash,
+} from './import-style-prompts.mjs';
 
 const PLACEHOLDER = '[在此处替换为您想要生成的主体内容]';
 
@@ -42,8 +48,8 @@ describe('style prompt import variants', () => {
       sourceImage: `/api/style-gallery/image/source/${imageHash.slice(0, 12)}.png`,
       thumbnailImage: `/api/style-gallery/image/thumb/${imageHash.slice(0, 12)}.webp`,
       sourceImageAlt: 'Existing reference image',
-      prompt: `${PLACEHOLDER}, first prompt`,
-      additionalPrompts: [`${PLACEHOLDER}, second prompt`],
+      promptExcerpt: `${PLACEHOLDER}, first prompt`,
+      prompts: [`${PLACEHOLDER}, first prompt`, `${PLACEHOLDER}, second prompt`],
       promptCount: 2,
       promptRevision: 'c'.repeat(64),
       imageHash,
@@ -68,7 +74,7 @@ describe('style prompt import variants', () => {
     assert.equal(prepared.items[0].prompts[0].model, 'gpt-5.6-terra');
 
     const duplicate = await buildImportData(
-      [{ ...extracted[0], prompt: existing.prompt }],
+      [{ ...extracted[0], prompt: existing.prompts[0] }],
       '/tmp/session.jsonl',
       new Map([[imageHash, existing]]),
       false,
@@ -78,7 +84,7 @@ describe('style prompt import variants', () => {
     assert.equal(duplicate.skippedDuplicates, 1);
 
     const duplicateAdditionalPrompt = await buildImportData(
-      [{ ...extracted[0], prompt: existing.additionalPrompts[0] }],
+      [{ ...extracted[0], prompt: existing.prompts[1] }],
       '/tmp/session.jsonl',
       new Map([[imageHash, existing]]),
       false,
@@ -86,6 +92,35 @@ describe('style prompt import variants', () => {
     );
     assert.equal(duplicateAdditionalPrompt.items.length, 0);
     assert.equal(duplicateAdditionalPrompt.skippedDuplicates, 1);
+  });
+
+  it('hydrates prompt arrays only for existing images referenced by the imported session', async () => {
+    const bytes = Buffer.from('existing image');
+    const imageHash = crypto.createHash('sha256').update(bytes).digest('hex');
+    const requests = [];
+    const catalogItems = [
+      { slug: 'existing-item', imageHash, promptRevision: 'revision-1' },
+      { slug: 'unrelated-item', imageHash: 'f'.repeat(64), promptRevision: 'revision-2' },
+    ];
+    const extracted = [
+      {
+        images: [`data:image/png;base64,${bytes.toString('base64')}`],
+        prompt: `${PLACEHOLDER}, second extraction`,
+      },
+    ];
+
+    const existingByHash = await loadExistingItemsByHash('https://example.test', catalogItems, extracted, async (url) => {
+      requests.push(url);
+      return { prompts: [{ prompt: `${PLACEHOLDER}, first extraction` }] };
+    });
+
+    assert.deepEqual(requests, ['https://example.test/api/style-gallery/prompts/existing-item?v=revision-1']);
+    assert.deepEqual(existingByHash.get(imageHash)?.prompts, [`${PLACEHOLDER}, first extraction`]);
+    assert.equal(existingByHash.has('f'.repeat(64)), false);
+
+    const prepared = await buildImportData(extracted, '/tmp/session.jsonl', existingByHash, false, null);
+    assert.equal(prepared.items.length, 1);
+    assert.equal(prepared.assets.size, 0);
   });
 
   it('groups ordered prompt variants for the same new image', async () => {

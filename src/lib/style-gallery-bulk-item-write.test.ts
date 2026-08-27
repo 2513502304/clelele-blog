@@ -84,17 +84,21 @@ describe('style gallery bulk item writes', () => {
     const previousFetch = globalThis.fetch;
     const objects = new Map<string, string>([
       [
-        'metadata/catalog.json',
+        'metadata/catalog-v5.json',
         JSON.stringify({
-          version: 4,
+          version: 5,
           updatedAt: '2026-08-03T00:00:00.000Z',
           tags: ['codex-session', 'style-prompt'],
           modelTargets: ['GPT-Image', 'Nano Banana', 'PixAI', 'Midjourney', 'NovelAI', 'Flux'],
           items: [],
         }),
       ],
+      ['metadata/prompt-search-index.json', JSON.stringify({ version: 1, updatedAt: '2026-08-03T00:00:00.000Z', entries: {} })],
     ]);
-    const objectVersions = new Map<string, number>([['metadata/catalog.json', 1]]);
+    const objectVersions = new Map<string, number>([
+      ['metadata/catalog-v5.json', 1],
+      ['metadata/prompt-search-index.json', 1],
+    ]);
     const concurrentExample: StyleGalleryExample = {
       id: 'concurrent-example',
       src: '/api/style-gallery/image/examples/images/concurrent-example.webp',
@@ -107,6 +111,7 @@ describe('style gallery bulk item writes', () => {
     let activeItemPuts = 0;
     let maxConcurrentItemPuts = 0;
     let catalogPutCount = 0;
+    let promptSearchIndexPutCount = 0;
     let exampleIndexPutCount = 0;
     process.env.STYLE_GALLERY_UPLOAD_TOKEN = token;
     process.env.HF_S3_ACCESS_KEY_ID = 'HFAKTEST';
@@ -151,7 +156,8 @@ describe('style gallery bulk item writes', () => {
         if (requestHeaders.has('if-match') && requestHeaders.get('if-match') !== currentEtag) {
           return new Response(null, { status: 412 });
         }
-        if (key === 'metadata/catalog.json') catalogPutCount += 1;
+        if (key === 'metadata/catalog-v5.json') catalogPutCount += 1;
+        if (key === 'metadata/prompt-search-index.json') promptSearchIndexPutCount += 1;
         if (key === 'examples/index-v2.json') exampleIndexPutCount += 1;
         objects.set(key, bodyText(init?.body));
         const version = (objectVersions.get(key) ?? 0) + 1;
@@ -178,8 +184,9 @@ describe('style gallery bulk item writes', () => {
       assert.equal(JSON.parse(responseBody).written, items.length);
       assert.ok(maxConcurrentItemPuts > 1);
       assert.equal(catalogPutCount, 1);
+      assert.equal(promptSearchIndexPutCount, 1);
       assert.equal(exampleIndexPutCount, 0);
-      assert.equal(JSON.parse(objects.get('metadata/catalog.json') ?? '{}').items.length, items.length);
+      assert.equal(JSON.parse(objects.get('metadata/catalog-v5.json') ?? '{}').items.length, items.length);
       const savedItems = [...objects.entries()]
         .filter(([key]) => key.startsWith('items/'))
         .map(([, value]) => JSON.parse(value) as StoredStyleGalleryItem);
@@ -227,6 +234,7 @@ describe('style gallery bulk item writes', () => {
       assert.equal(appendedItem.prompts[1].prompt, alternatePrompt);
       assert.ok(appendedItem.examples.some((example) => example.id === concurrentExample.id));
       assert.equal(catalogPutCount, 2);
+      assert.equal(promptSearchIndexPutCount, 2);
 
       const duplicateRequest = new Request('https://example.test/api/style-gallery/items', {
         method: 'POST',
@@ -244,6 +252,7 @@ describe('style gallery bulk item writes', () => {
       assert.equal(duplicateResult.addedPrompts, 0);
       assert.equal(duplicateResult.skippedDuplicates, 1);
       assert.equal(catalogPutCount, 2);
+      assert.equal(promptSearchIndexPutCount, 2);
     } finally {
       globalThis.fetch = previousFetch;
       for (const [name, value] of Object.entries({

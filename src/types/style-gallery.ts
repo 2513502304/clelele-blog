@@ -70,8 +70,8 @@ export interface StyleGalleryItem extends Omit<StoredStyleGalleryItem, 'examples
 }
 
 /**
- * `metadata/catalog.json` 中的列表页最小条目。
- * 默认 prompt 用于卡片渲染和直接复制；额外候选只保留搜索文本，模型与来源按需读取详情 item。
+ * `metadata/catalog-v5.json` 中的列表页最小条目。
+ * 卡片只保留默认 prompt 摘要；复制读取详情 item，全文搜索读取独立索引。
  */
 export interface StyleGalleryCatalogItem {
   slug: string;
@@ -80,9 +80,8 @@ export interface StyleGalleryCatalogItem {
   sourceImage: string;
   thumbnailImage?: string;
   sourceImageAlt?: string;
-  prompt: string;
-  /** 除默认 prompt 外的候选全文，仅供列表页本地搜索；来源、模型等详情仍按需读取 item。 */
-  additionalPrompts: string[];
+  /** 默认 prompt 的三行短摘要，仅用于卡片预览；复制和全文搜索都按需读取独立数据。 */
+  promptExcerpt: string;
   /** 详情 item 中可切换的 prompt 数量。 */
   promptCount: number;
   /** Prompt 文本及公开来源元数据的内容修订号，用于按需请求的缓存失效。 */
@@ -94,11 +93,22 @@ export interface StyleGalleryCatalogItem {
 
 /** Gallery 首页、图片矩阵和服务端检索共享的轻量索引。 */
 export interface StyleGalleryCatalog {
-  version: 4;
+  version: 5;
   updatedAt: string;
   tags: string[];
   modelTargets: StyleGalleryPlatformLabel[];
   items: StyleGalleryCatalogItem[];
+}
+
+/**
+ * HF `metadata/prompt-search-index.json` 中的全文索引。
+ *
+ * 每个 slug 只存 prompt 字符串数组，不复制模型、来源与图片元数据；普通浏览不会读取该对象。
+ */
+export interface StyleGalleryPromptSearchIndex {
+  version: 1;
+  updatedAt: string;
+  entries: Record<string, string[]>;
 }
 
 /** Sub-gallery 总览所需的最小示例字段，不包含 item 详情中的冗余字段。 */

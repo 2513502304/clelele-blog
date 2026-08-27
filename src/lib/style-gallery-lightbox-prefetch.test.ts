@@ -11,7 +11,7 @@ test('parses only canonical Style Gallery image API paths', () => {
     ),
     'examples/images/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef.webp',
   );
-  assert.equal(parseStyleGalleryImageApiPath('/api/style-gallery/image/metadata/catalog.json'), null);
+  assert.equal(parseStyleGalleryImageApiPath('/api/style-gallery/image/metadata/catalog-v5.json'), null);
   assert.equal(parseStyleGalleryImageApiPath('https://example.com/image.webp'), null);
   assert.equal(parseStyleGalleryImageApiPath('/api/style-gallery/image/source/../../secret.webp'), null);
   assert.equal(parseStyleGalleryImageApiPath('/api/style-gallery/image/source/%zz.jpg'), null);

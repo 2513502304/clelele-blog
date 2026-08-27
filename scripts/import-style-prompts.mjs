@@ -13,6 +13,7 @@ const REQUEST_TIMEOUT_MS = positiveInteger(process.env.STYLE_GALLERY_IMPORT_REQU
 const UPLOAD_TIMEOUT_MS = positiveInteger(process.env.STYLE_GALLERY_IMPORT_UPLOAD_TIMEOUT_MS, 300_000);
 const REQUEST_ATTEMPTS = positiveInteger(process.env.STYLE_GALLERY_IMPORT_ATTEMPTS, 3);
 const UPLOAD_CONCURRENCY = positiveInteger(process.env.STYLE_GALLERY_IMPORT_UPLOAD_CONCURRENCY, 5);
+const PROMPT_READ_CONCURRENCY = positiveInteger(process.env.STYLE_GALLERY_IMPORT_PROMPT_READ_CONCURRENCY, 5);
 // API 单批上限就是 100；默认填满可避免常见的 50-100 条 session 重复改写全量 catalog/视觉索引。
 const ITEM_BATCH_SIZE = Math.min(positiveInteger(process.env.STYLE_GALLERY_IMPORT_ITEM_BATCH_SIZE, 100), 100);
 const VISUAL_INFERENCE_BATCH_SIZE = Math.min(positiveInteger(process.env.STYLE_GALLERY_VISUAL_INFERENCE_BATCH_SIZE, 8), 16);
@@ -71,6 +72,13 @@ function sanitizeOriginalPrompt(prompt) {
 function itemHashFromImageHashes(imageHashes) {
   if (imageHashes.length === 1) return imageHashes[0];
   return crypto.createHash('sha256').update(imageHashes.join('\n')).digest('hex');
+}
+
+/** 只计算导入记录的 item 身份；无效 data URI 不参与既有 metadata 查询。 */
+function getExtractedItemHash(extracted) {
+  const parsedImages = extracted.images.map(parseDataUri);
+  if (parsedImages.some((image) => !image)) return null;
+  return itemHashFromImageHashes(parsedImages.map((image) => crypto.createHash('sha256').update(image.bytes).digest('hex')));
 }
 
 function normalizePrompt(prompt) {
@@ -162,7 +170,7 @@ async function buildImportData(extractedItems, sessionPath, existingByHash, meta
       continue;
     }
     const normalizedPrompt = normalizePrompt(extracted.prompt);
-    const existingPrompts = existing ? [existing.prompt, ...(existing.additionalPrompts ?? [])] : [];
+    const existingPrompts = existing?.prompts ?? [];
     if (existing && !metadataOnly && existingPrompts.some((prompt) => normalizePrompt(prompt) === normalizedPrompt)) {
       skippedDuplicates += 1;
       continue;
@@ -296,6 +304,47 @@ async function requestJson(url, options, timeoutMs = REQUEST_TIMEOUT_MS) {
   });
 }
 
+/** 使用固定 worker 数处理网络任务，避免大量既有图片同时请求 prompt item endpoint。 */
+async function mapConcurrent(items, concurrency, worker) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+      while (nextIndex < items.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        results[index] = await worker(items[index], index);
+      }
+    }),
+  );
+  return results;
+}
+
+/**
+ * Catalog 只保留默认 prompt 摘要，不能用于同图 prompt 去重。这里仅为本次 JSONL 命中的既有
+ * imageHash 并发读取 item 详情；纯新增导入不额外请求，少量重复图也不会下载全量搜索索引。
+ */
+async function loadExistingItemsByHash(apiBaseUrl, catalogItems, extractedItems, request = requestJson) {
+  const importedHashes = new Set(extractedItems.map(getExtractedItemHash).filter(Boolean));
+  const matchedItems = catalogItems.filter((item) => importedHashes.has(item.imageHash));
+  const hydratedItems = await mapConcurrent(matchedItems, PROMPT_READ_CONCURRENCY, async (item) => {
+    const version = item.promptRevision ? `?v=${encodeURIComponent(item.promptRevision)}` : '';
+    const response = await request(`${apiBaseUrl}/api/style-gallery/prompts/${encodeURIComponent(item.slug)}${version}`, {
+      headers: { accept: 'application/json' },
+    });
+    if (!Array.isArray(response.prompts)) {
+      throw new Error(`Prompt response for ${item.slug} did not contain a prompt array.`);
+    }
+    const prompts = response.prompts.map((choice) => choice?.prompt).filter((prompt) => typeof prompt === 'string');
+    if (!prompts.length) throw new Error(`Prompt response for ${item.slug} did not contain any usable prompts.`);
+    return {
+      ...item,
+      prompts,
+    };
+  });
+  return new Map(hydratedItems.map((item) => [item.imageHash, item]));
+}
+
 /** 上传一个 HF 签名 URL；每次重试都有独立 timeout，明确的非重试型 4xx 会立即失败。 */
 async function uploadObject(uploadUrl, asset) {
   let lastError;
@@ -396,7 +445,7 @@ async function main() {
   const records = await readRecords(absoluteSessionPath);
   const extractedItems = extractItems(records);
   const catalog = await requestJson(`${apiBaseUrl}/api/style-gallery/catalog`, { headers: { accept: 'application/json' } });
-  const existingByHash = new Map(catalog.items.map((item) => [item.imageHash, item]));
+  const existingByHash = await loadExistingItemsByHash(apiBaseUrl, catalog.items, extractedItems);
   const prepared = await buildImportData(extractedItems, absoluteSessionPath, existingByHash, metadataOnly, promptModel);
 
   console.log(`Found ${extractedItems.length} image/prompt items.`);
@@ -466,7 +515,7 @@ async function main() {
   }
 }
 
-export { buildImportData, extractItems, parseArgs, uniqueImagesByHash };
+export { buildImportData, extractItems, loadExistingItemsByHash, parseArgs, uniqueImagesByHash };
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((error) => {

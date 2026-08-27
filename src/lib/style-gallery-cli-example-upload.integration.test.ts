@@ -57,7 +57,7 @@ describe('style gallery example upload CLI integration', () => {
           return;
         }
         sendJson(response, {
-          version: 4,
+          version: 5,
           updatedAt: '2026-07-26T00:00:00.000Z',
           tags: ['style-prompt'],
           modelTargets: ['GPT-Image', 'Nano Banana', 'PixAI', 'Midjourney', 'NovelAI', 'Flux'],
@@ -67,8 +67,7 @@ describe('style gallery example upload CLI integration', () => {
               title: 'Style Prompt 2a256d37220e',
               date: '2026-07-26T00:00:00.000Z',
               sourceImage: '/api/style-gallery/image/source/2a256d37220e.jpg',
-              prompt: 'Reusable prompt',
-              additionalPrompts: [],
+              promptExcerpt: 'Reusable prompt',
               promptCount: 1,
               promptRevision: 'c'.repeat(64),
               imageHash: parentHash,

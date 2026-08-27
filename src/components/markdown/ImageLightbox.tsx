@@ -69,16 +69,19 @@ function LightboxImageStage({
   onSourceSettled,
 }: LightboxImageStageProps) {
   const { t } = useTranslation();
-  // 当前 Stage 生命周期内固定实际地址。批量签名或后台预加载完成会触发父级重渲染，但不能因此
-  // 把正在下载/解码的 canonical 图片中途换成签名 URL；导航到其他图片时 key 会自然重建 Stage。
-  const [sourceSrc] = useState(() => image.resolvedSrc ?? getReusableStyleGalleryImageUrl(image.src, false) ?? image.src);
+  // 批量签名完成不能把正在下载的 canonical 图片中途换址；只有当前签名 URL 明确失败时，才在同一
+  // Stage 内主动降级到 canonical 302 路径。导航到其他图片仍由 imageKey 重建完整加载生命周期。
+  const [sourceSrc, setSourceSrc] = useState(
+    () => image.resolvedSrc ?? getReusableStyleGalleryImageUrl(image.src, false) ?? image.src,
+  );
   const previewSrc = image.previewSrc !== sourceSrc ? image.previewSrc : undefined;
   const [sourceWasLoaded] = useState(() => isStyleGalleryImageUrlLoaded(sourceSrc));
-  // 新 DOM 节点必须完成自己的 decode 后才可见。全局 loaded 只证明 URL 已下载过，若提前显示新节点，
-  // 浏览器可能把逐行解码的中间帧暴露出来；精确 URL 复用会让热缓存中的 decode 通常立即完成。
-  const [sourceState, setSourceState] = useState<'loading' | 'loaded' | 'failed'>('loading');
+  // 页面卡片已经成功绘制过同一 URL 时，Lightbox 必须立即复用该事实，不能把后台重复 decode
+  // 误报成“正在加载高清原图”。新节点仍会在后台确认 decode；只有冷 URL 才展示 loading 状态。
+  const [sourceState, setSourceState] = useState<'loading' | 'loaded' | 'failed'>(sourceWasLoaded ? 'loaded' : 'loading');
   const [previewFailed, setPreviewFailed] = useState(false);
   const decodeStartedRef = useRef(false);
+  const settledRef = useRef(false);
   const mountedRef = useRef(true);
 
   useEffect(
@@ -87,6 +90,17 @@ function LightboxImageStage({
     },
     [],
   );
+
+  const settleSource = useCallback(() => {
+    if (settledRef.current) return;
+    settledRef.current = true;
+    onSourceSettled(imageKey);
+  }, [imageKey, onSourceSettled]);
+
+  useEffect(() => {
+    // 热 URL 无需等待新 DOM 节点重复 decode 才能启动相邻图片预取。
+    if (sourceWasLoaded) settleSource();
+  }, [settleSource, sourceWasLoaded]);
 
   const finishSourceLoad = useCallback(
     async (element: HTMLImageElement) => {
@@ -102,13 +116,13 @@ function LightboxImageStage({
       if (element.naturalWidth > 0) {
         markStyleGalleryImageUrlLoaded(sourceSrc, image.src);
         setSourceState('loaded');
-        onSourceSettled(imageKey);
+        settleSource();
       } else {
         setSourceState('failed');
-        onSourceSettled(imageKey);
+        settleSource();
       }
     },
-    [image.src, imageKey, onSourceSettled, sourceSrc],
+    [image.src, settleSource, sourceSrc],
   );
 
   const sourceRef = useCallback(
@@ -158,7 +172,8 @@ function LightboxImageStage({
         fetchPriority="high"
         decoding="async"
         className="col-start-1 row-start-1 max-h-[80vh] max-w-[90vw] rounded-lg object-contain shadow-2xl"
-        initial={{ opacity: 0 }}
+        // 同一 URL 已在卡片或预加载器中绘制过时，首帧直接可见；不要先提交 opacity: 0 再等 Motion 下一帧。
+        initial={sourceWasLoaded ? false : { opacity: 0 }}
         animate={{ opacity: sourceState === 'loaded' ? 1 : 0 }}
         // 热缓存命中后仍等待本节点确认可绘制，但不再人为增加 200ms 淡入延迟。
         transition={{ opacity: { duration: shouldReduceMotion || sourceWasLoaded ? 0 : 0.2 } }}
@@ -168,17 +183,21 @@ function LightboxImageStage({
             // 直连签名持续失败时本次 popup 不再重签；页面缓存的 canonical URL 失败则允许改走签名恢复。
             if (image.resolvedSrc !== image.src) {
               onResolvedSourceFailure(image.src);
+              decodeStartedRef.current = false;
+              settledRef.current = false;
+              setSourceState(isStyleGalleryImageUrlLoaded(image.src) ? 'loaded' : 'loading');
+              setSourceSrc(image.src);
             } else {
               // resolvedSrc 与 canonical 相同时不存在下一层回退，必须结束 loading，避免永久透明转圈。
               setSourceState('failed');
-              onSourceSettled(imageKey);
+              settleSource();
             }
             invalidateStyleGalleryImageUrl(image.src);
             clearImageLightboxResolvedSource(image.src, image.resolvedSrc);
             return;
           }
           setSourceState('failed');
-          onSourceSettled(imageKey);
+          settleSource();
         }}
         draggable={false}
       />

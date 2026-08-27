@@ -10,6 +10,7 @@ import {
   styleGalleryCatalogSchema,
   styleGalleryExampleIndexSchema,
   styleGalleryItemSchema,
+  styleGalleryPromptSearchIndexSchema,
   styleGalleryVisualIndexSchema,
 } from '@lib/style-gallery-schema';
 import {
@@ -18,9 +19,15 @@ import {
   STYLE_GALLERY_VISUAL_MODEL_ID,
   type StyleGalleryVisualIndex,
 } from '@lib/style-gallery-visual-types';
-import type { StoredStyleGalleryItem, StyleGalleryCatalog, StyleGalleryExampleIndex } from '@/types/style-gallery';
+import type {
+  StoredStyleGalleryItem,
+  StyleGalleryCatalog,
+  StyleGalleryExampleIndex,
+  StyleGalleryPromptSearchIndex,
+} from '@/types/style-gallery';
 
-export const STYLE_GALLERY_CATALOG_KEY = 'metadata/catalog.json';
+export const STYLE_GALLERY_CATALOG_KEY = 'metadata/catalog-v5.json';
+export const STYLE_GALLERY_PROMPT_SEARCH_INDEX_KEY = 'metadata/prompt-search-index.json';
 // v2 将点赞事实并入示例索引。使用版本化对象名可让旧生产部署在切换期间继续读取 v1，合并后只使用本对象。
 export const STYLE_GALLERY_EXAMPLE_INDEX_KEY = 'examples/index-v2.json';
 export const STYLE_GALLERY_ITEM_PREFIX = 'items';
@@ -29,6 +36,7 @@ export const STYLE_GALLERY_VISUAL_INDEX_KEY = 'metadata/visual-index-v1.json';
 const CACHE_TTL_MS = 30_000;
 const VISUAL_INDEX_TRANSFER_TIMEOUT_MS = 60_000;
 let catalogCache: { value: StyleGalleryCatalog; expiresAt: number } | null = null;
+let promptSearchIndexCache: { value: StyleGalleryPromptSearchIndex; etag: string | null; expiresAt: number } | null = null;
 let exampleIndexCache: { value: StyleGalleryExampleIndex; etag: string | null; expiresAt: number } | null = null;
 let exampleIndexWriteQueue: Promise<unknown> = Promise.resolve();
 let visualIndexCache: { value: StyleGalleryVisualIndex; etag: string | null; expiresAt: number } | null = null;
@@ -71,6 +79,43 @@ export async function getStyleGalleryCatalogSnapshot(): Promise<{ value: StyleGa
   if (!snapshot.etag) throw new Error('HF did not return an ETag for the style gallery catalog.');
   const value = styleGalleryCatalogSchema.parse(JSON.parse(snapshot.text));
   catalogCache = { value, expiresAt: Date.now() + CACHE_TTL_MS };
+  return { value, etag: snapshot.etag };
+}
+
+/**
+ * 全文 prompt 只在搜索或导入去重时读取。它与轻量 Catalog 分离，普通 SSR 不再下载和解析数 MB 文本。
+ */
+export async function getStyleGalleryPromptSearchIndex(
+  options: { fresh?: boolean } = {},
+): Promise<StyleGalleryPromptSearchIndex> {
+  const now = Date.now();
+  if (!options.fresh && promptSearchIndexCache && promptSearchIndexCache.expiresAt > now) {
+    return promptSearchIndexCache.value;
+  }
+  try {
+    const snapshot = await getStyleGalleryObjectTextSnapshot(STYLE_GALLERY_PROMPT_SEARCH_INDEX_KEY);
+    if (!snapshot.text) throw new Error('Style gallery prompt search index does not exist in HF storage.');
+    const value = styleGalleryPromptSearchIndexSchema.parse(JSON.parse(snapshot.text));
+    promptSearchIndexCache = { value, etag: snapshot.etag, expiresAt: now + CACHE_TTL_MS };
+    return value;
+  } catch (error) {
+    if (!options.fresh && promptSearchIndexCache) {
+      console.warn('[style-gallery] Serving a stale prompt search index after an HF storage read failed.', error);
+      return promptSearchIndexCache.value;
+    }
+    throw error;
+  }
+}
+
+export async function getStyleGalleryPromptSearchIndexSnapshot(): Promise<{
+  value: StyleGalleryPromptSearchIndex;
+  etag: string;
+}> {
+  const snapshot = await getStyleGalleryObjectTextSnapshot(STYLE_GALLERY_PROMPT_SEARCH_INDEX_KEY);
+  if (!snapshot.text) throw new Error('Style gallery prompt search index does not exist in HF storage.');
+  if (!snapshot.etag) throw new Error('HF did not return an ETag for the style gallery prompt search index.');
+  const value = styleGalleryPromptSearchIndexSchema.parse(JSON.parse(snapshot.text));
+  promptSearchIndexCache = { value, etag: snapshot.etag, expiresAt: Date.now() + CACHE_TTL_MS };
   return { value, etag: snapshot.etag };
 }
 
@@ -137,6 +182,16 @@ export async function putStyleGalleryCatalog(
   const value = styleGalleryCatalogSchema.parse(catalog);
   const etag = await putJson(STYLE_GALLERY_CATALOG_KEY, value, conditions);
   catalogCache = { value, expiresAt: Date.now() + CACHE_TTL_MS };
+  return etag;
+}
+
+export async function putStyleGalleryPromptSearchIndex(
+  index: StyleGalleryPromptSearchIndex,
+  conditions: StyleGalleryObjectWriteConditions = {},
+): Promise<string | null> {
+  const value = styleGalleryPromptSearchIndexSchema.parse(index);
+  const etag = await putJson(STYLE_GALLERY_PROMPT_SEARCH_INDEX_KEY, value, conditions);
+  promptSearchIndexCache = { value, etag, expiresAt: Date.now() + CACHE_TTL_MS };
   return etag;
 }
 
@@ -317,6 +372,7 @@ export function mutateStyleGalleryVisualIndex(
  */
 export function invalidateStyleGalleryStoreCache(): void {
   catalogCache = null;
+  promptSearchIndexCache = null;
   exampleIndexCache = null;
   itemCache.clear();
 }
