@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { StoredStyleGalleryItem, StyleGalleryCatalogItem } from '@/types/style-gallery';
+import type { StoredStyleGalleryItem, StyleGalleryCatalogItem, StyleGalleryPromptSearchIndex } from '@/types/style-gallery';
 import { STYLE_GALLERY_PLATFORMS, type StyleGalleryPlatformLabel } from './style-gallery-platforms';
 import {
   getPrimaryStyleGalleryPrompt,
@@ -100,39 +100,20 @@ export const styleGalleryItemSchema = z
     });
   });
 
-export const styleGalleryCatalogItemSchema = z
-  .object({
-    slug: z.string().regex(/^[a-z0-9-]+$/i),
-    title: z.string().min(1),
-    date: z.string().datetime({ offset: true }),
-    sourceImage: imagePathSchema,
-    thumbnailImage: imagePathSchema.optional(),
-    sourceImageAlt: z.string().min(1).optional(),
-    prompt: z.string().min(1),
-    additionalPrompts: z.array(z.string().trim().min(1)).default([]),
-    promptCount: z.number().int().positive().default(1),
-    promptRevision: promptRevisionSchema,
-    imageHash: imageHashSchema,
-    imageCount: z.number().int().positive(),
-    exampleCount: z.number().int().nonnegative(),
-  })
-  .superRefine((item, context) => {
-    const prompts = [item.prompt, ...item.additionalPrompts].map(normalizeStyleGalleryPrompt);
-    if (item.promptCount !== prompts.length) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Prompt count does not match catalog prompt entries.',
-        path: ['promptCount'],
-      });
-    }
-    if (new Set(prompts).size !== prompts.length) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Duplicate prompt text in style gallery catalog item.',
-        path: ['additionalPrompts'],
-      });
-    }
-  });
+export const styleGalleryCatalogItemSchema = z.object({
+  slug: z.string().regex(/^[a-z0-9-]+$/i),
+  title: z.string().min(1),
+  date: z.string().datetime({ offset: true }),
+  sourceImage: imagePathSchema,
+  thumbnailImage: imagePathSchema.optional(),
+  sourceImageAlt: z.string().min(1).optional(),
+  promptExcerpt: z.string().trim().min(1).max(181),
+  promptCount: z.number().int().positive().default(1),
+  promptRevision: promptRevisionSchema,
+  imageHash: imageHashSchema,
+  imageCount: z.number().int().positive(),
+  exampleCount: z.number().int().nonnegative(),
+});
 
 const styleGalleryCatalogFields = {
   updatedAt: z.string().datetime({ offset: true }),
@@ -141,8 +122,14 @@ const styleGalleryCatalogFields = {
   items: z.array(styleGalleryCatalogItemSchema),
 };
 
-/** HF 已一次性迁移到 v4；旧版本必须明确失败，避免读写路径重新分叉并掩盖残留数据。 */
-export const styleGalleryCatalogSchema = z.object({ version: z.literal(4), ...styleGalleryCatalogFields });
+/** HF 已一次性迁移到 v5；旧版本必须明确失败，避免读写路径重新分叉并掩盖残留数据。 */
+export const styleGalleryCatalogSchema = z.object({ version: z.literal(5), ...styleGalleryCatalogFields });
+
+export const styleGalleryPromptSearchIndexSchema = z.object({
+  version: z.literal(1),
+  updatedAt: z.string().datetime({ offset: true }),
+  entries: z.record(z.string().regex(/^[a-z0-9-]+$/i), z.array(z.string().trim().min(1)).min(1)),
+});
 
 export const styleGalleryExampleIndexSchema = z.object({
   version: z.literal(2),
@@ -250,12 +237,34 @@ export function toStyleGalleryCatalogItem(
     sourceImage: item.sourceImage,
     thumbnailImage: item.thumbnailImage,
     sourceImageAlt: item.sourceImageAlt,
-    prompt: primaryPrompt.prompt,
-    additionalPrompts: item.prompts.slice(1).map((variant) => variant.prompt),
+    promptExcerpt: createStyleGalleryPromptExcerpt(primaryPrompt.prompt),
     promptCount: item.prompts.length,
     promptRevision: getStyleGalleryPromptRevision(item.prompts),
     imageHash: item.imageHash,
     imageCount: item.images.length,
     exampleCount,
+  };
+}
+
+const STYLE_GALLERY_PROMPT_EXCERPT_LENGTH = 180;
+
+/** 卡片只显示三行；180 字覆盖常见三列宽度，并避免不可见文本继续放大每次 SSR 的 JSON 成本。 */
+export function createStyleGalleryPromptExcerpt(prompt: string): string {
+  const normalized = normalizeStyleGalleryPrompt(prompt);
+  if (normalized.length <= STYLE_GALLERY_PROMPT_EXCERPT_LENGTH) return normalized;
+  return `${normalized.slice(0, STYLE_GALLERY_PROMPT_EXCERPT_LENGTH).trimEnd()}…`;
+}
+
+export function toStyleGalleryPromptSearchEntry(item: StoredStyleGalleryItem): string[] {
+  return item.prompts.map((variant) => normalizeStyleGalleryPrompt(variant.prompt));
+}
+
+export function createStyleGalleryPromptSearchIndex(items: readonly StoredStyleGalleryItem[]): StyleGalleryPromptSearchIndex {
+  return {
+    version: 1,
+    updatedAt: new Date().toISOString(),
+    entries: Object.fromEntries(
+      items.filter((item) => !item.draft).map((item) => [item.slug, toStyleGalleryPromptSearchEntry(item)]),
+    ),
   };
 }

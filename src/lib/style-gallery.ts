@@ -1,7 +1,12 @@
 import { createStyleGalleryExampleSourceSearchText } from '@lib/style-gallery-example-search';
 import { getStyleGalleryParentLikeCounts } from '@lib/style-gallery-likes';
 import { getPrimaryStyleGalleryPrompt, getStyleGalleryPromptRevision } from '@lib/style-gallery-prompts';
-import { getStoredStyleGalleryItem, getStyleGalleryCatalog, getStyleGalleryExampleIndex } from '@lib/style-gallery-store';
+import {
+  getStoredStyleGalleryItem,
+  getStyleGalleryCatalog,
+  getStyleGalleryExampleIndex,
+  getStyleGalleryPromptSearchIndex,
+} from '@lib/style-gallery-store';
 import type {
   StyleGalleryCardData,
   StyleGalleryCatalog,
@@ -13,7 +18,7 @@ const overviewCache = new WeakMap<
   StyleGalleryCatalog,
   WeakMap<Awaited<ReturnType<typeof getStyleGalleryExampleIndex>>, StyleGalleryExampleOverviewItem[]>
 >();
-const exampleSearchIndexCache = new WeakMap<StyleGalleryCatalog, Record<string, string>>();
+const promptSearchTextIndexCache = new WeakMap<StyleGalleryCatalog, Record<string, string>>();
 
 export interface StyleGalleryData extends StyleGalleryCatalog {
   /** 仅在服务端读取时派生，不属于持久化 catalog schema。 */
@@ -92,18 +97,19 @@ export async function getStyleGalleryExampleOverview(): Promise<StyleGalleryExam
 }
 
 /**
- * 仅为确实存在生成示例的 parent 构建全文搜索索引。
- * 该索引由独立 CDN 接口按需加载，避免给所有 Sub-gallery 访客增加 SSR 响应体积。
+ * 为三个列表入口构建共享全文搜索文本。
+ * 该索引由独立 CDN 接口按需加载，普通浏览和滚动不会下载数 MB prompt。
  */
-export async function getStyleGalleryExampleSearchIndex(): Promise<Record<string, string>> {
-  const catalog = await getStyleGalleryCatalog();
-  const cached = exampleSearchIndexCache.get(catalog);
+export async function getStyleGalleryPromptSearchTextIndex(): Promise<Record<string, string>> {
+  const [catalog, promptIndex] = await Promise.all([getStyleGalleryCatalog(), getStyleGalleryPromptSearchIndex()]);
+  const cached = promptSearchTextIndexCache.get(catalog);
   if (cached) return cached;
   const searchIndex = Object.fromEntries(
-    catalog.items
-      .filter((item) => item.exampleCount > 0)
-      .map((item) => [item.slug, createStyleGalleryExampleSourceSearchText(item)]),
+    catalog.items.map((item) => [
+      item.slug,
+      createStyleGalleryExampleSourceSearchText({ title: item.title, prompts: promptIndex.entries[item.slug] ?? [] }),
+    ]),
   );
-  exampleSearchIndexCache.set(catalog, searchIndex);
+  promptSearchTextIndexCache.set(catalog, searchIndex);
   return searchIndex;
 }

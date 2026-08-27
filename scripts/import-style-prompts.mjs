@@ -162,7 +162,7 @@ async function buildImportData(extractedItems, sessionPath, existingByHash, meta
       continue;
     }
     const normalizedPrompt = normalizePrompt(extracted.prompt);
-    const existingPrompts = existing ? [existing.prompt, ...(existing.additionalPrompts ?? [])] : [];
+    const existingPrompts = existing?.prompts ?? [];
     if (existing && !metadataOnly && existingPrompts.some((prompt) => normalizePrompt(prompt) === normalizedPrompt)) {
       skippedDuplicates += 1;
       continue;
@@ -396,7 +396,20 @@ async function main() {
   const records = await readRecords(absoluteSessionPath);
   const extractedItems = extractItems(records);
   const catalog = await requestJson(`${apiBaseUrl}/api/style-gallery/catalog`, { headers: { accept: 'application/json' } });
-  const existingByHash = new Map(catalog.items.map((item) => [item.imageHash, item]));
+  const existingHashes = new Set(catalog.items.map((item) => item.imageHash));
+  const hasExistingImage = extractedItems.some((item) => {
+    const hashes = item.images
+      .map(parseDataUri)
+      .map((image) => (image ? crypto.createHash('sha256').update(image.bytes).digest('hex') : ''));
+    return hashes.every(Boolean) && existingHashes.has(itemHashFromImageHashes(hashes));
+  });
+  // 只有 SHA-256 已命中既有图片时才下载全文索引；纯新增导入始终只读取轻量 Catalog。
+  const promptSearchIndex = hasExistingImage
+    ? await requestJson(`${apiBaseUrl}/api/style-gallery/prompt-search-index`, { headers: { accept: 'application/json' } })
+    : {};
+  const existingByHash = new Map(
+    catalog.items.map((item) => [item.imageHash, { ...item, prompts: promptSearchIndex[item.slug] ?? [] }]),
+  );
   const prepared = await buildImportData(extractedItems, absoluteSessionPath, existingByHash, metadataOnly, promptModel);
 
   console.log(`Found ${extractedItems.length} image/prompt items.`);

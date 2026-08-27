@@ -1,4 +1,4 @@
-import { createStyleGallerySignedImageUrl, getStyleGallerySignedImageRedirectCacheSeconds } from '@lib/hf-s3-presign';
+import { createStyleGallerySignedImageUrls, getStyleGallerySignedImageRedirectCacheSeconds } from '@lib/hf-s3-presign';
 import {
   createStyleGalleryImageApiPath,
   isAllowedStyleGalleryImageKey,
@@ -35,11 +35,12 @@ export const POST: APIRoute = async ({ request }) => {
   try {
     const cacheSeconds = getStyleGallerySignedImageRedirectCacheSeconds();
     const expiresAt = import.meta.env.DEV ? null : cacheSeconds > 0 ? Date.now() + cacheSeconds * 1000 : undefined;
+    const signedByKey = import.meta.env.DEV ? {} : createStyleGallerySignedImageUrls(uniqueKeys);
     return Response.json({
       images: Object.fromEntries(
         uniqueKeys.map((key) => [
           createStyleGalleryImageApiPath(key),
-          import.meta.env.DEV ? createStyleGalleryImageApiPath(key) : createStyleGallerySignedImageUrl(key),
+          import.meta.env.DEV ? createStyleGalleryImageApiPath(key) : signedByKey[key],
         ]),
       ),
       // 0 表示不声明服务端缓存窗口；省略字段后客户端使用短期兼容窗口，避免每次导航重复签名。

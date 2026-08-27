@@ -12,12 +12,13 @@ import {
   locateStyleGalleryElement,
   type StyleGalleryLightboxCopyLabels,
 } from '@lib/style-gallery-lightbox-actions';
-import { loadStyleGalleryPromptChoices } from '@lib/style-gallery-prompt-client';
+import { loadStyleGalleryDefaultPrompt, loadStyleGalleryPromptChoices } from '@lib/style-gallery-prompt-client';
+import { loadStyleGalleryPromptSearchIndex } from '@lib/style-gallery-prompt-search-client';
 import { getSelectedStyleGalleryPrompt } from '@lib/style-gallery-prompt-selection';
 import { openModal } from '@store/modal';
 import { parseAsString, parseAsStringLiteral, useQueryState, useQueryStates } from 'nuqs';
 import { NuqsAdapter } from 'nuqs/adapters/react';
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useProgressiveList } from '@/hooks/useProgressiveList';
 import type { StyleGalleryCardData } from '@/types/style-gallery';
 
@@ -87,6 +88,8 @@ function StyleGalleryImageIndexContent({
   });
   const [visualMatches, setVisualMatches] = useState<Set<string> | null>(null);
   const [visualRevision, setVisualRevision] = useState(0);
+  const [promptSearchIndex, setPromptSearchIndex] = useState<Record<string, string> | null>(null);
+  const [promptSearchStatus, setPromptSearchStatus] = useState<'idle' | 'loading' | 'ready' | 'failed'>('idle');
   const sortLabels: Record<SortKey, string> = {
     default: labels.sortDefault,
     date: labels.sortImportedAt,
@@ -103,11 +106,29 @@ function StyleGalleryImageIndexContent({
     [dateFrom, dateTo],
   );
 
+  const ensurePromptSearchIndex = useCallback(async () => {
+    if (promptSearchIndex || promptSearchStatus === 'loading') return;
+    setPromptSearchStatus('loading');
+    try {
+      setPromptSearchIndex(await loadStyleGalleryPromptSearchIndex());
+      setPromptSearchStatus('ready');
+    } catch (error) {
+      console.error('[style-gallery-index] Failed to load the prompt search index.', error);
+      setPromptSearchStatus('failed');
+    }
+  }, [promptSearchIndex, promptSearchStatus]);
+
+  useEffect(() => {
+    if (query.trim() && promptSearchStatus === 'idle') void ensurePromptSearchIndex();
+  }, [ensurePromptSearchIndex, promptSearchStatus, query]);
+
   const visibleItems = useMemo(() => {
     const normalizedQuery = normalize(query);
     const filtered = items.filter((item) => {
       const matchesQuery =
-        !normalizedQuery || normalize(`${item.title} ${item.prompt} ${item.imageHash} ${item.slug}`).includes(normalizedQuery);
+        !normalizedQuery ||
+        normalize(`${item.title} ${item.imageHash} ${item.slug}`).includes(normalizedQuery) ||
+        (promptSearchIndex ? promptSearchIndex[item.slug]?.includes(normalizedQuery) : promptSearchStatus !== 'failed');
       return matchesQuery && matchesDateRange(item.date) && (visualMatches === null || visualMatches.has(item.slug));
     });
     const sorted = [...filtered];
@@ -122,7 +143,7 @@ function StyleGalleryImageIndexContent({
     }
 
     return sortDirection === 'desc' ? sorted.reverse() : sorted;
-  }, [items, matchesDateRange, query, sortDirection, sortKey, visualMatches]);
+  }, [items, matchesDateRange, promptSearchIndex, promptSearchStatus, query, sortDirection, sortKey, visualMatches]);
   const {
     hasMore,
     loadMore,
@@ -144,7 +165,9 @@ function StyleGalleryImageIndexContent({
         src: candidate.sourceImage,
         previewSrc: candidate.thumbnailImage ?? candidate.sourceImage,
         alt: candidate.sourceImageAlt ?? candidate.title,
-        getPrompt: () => getSelectedStyleGalleryPrompt(candidate.slug) ?? candidate.prompt,
+        getPrompt: () =>
+          getSelectedStyleGalleryPrompt(candidate.slug) ??
+          loadStyleGalleryDefaultPrompt(candidate.slug, candidate.promptRevision),
         promptOptions:
           candidate.promptCount > 1
             ? {
@@ -172,6 +195,7 @@ function StyleGalleryImageIndexContent({
           <input
             value={query}
             onChange={(event) => setQuery(event.currentTarget.value).catch(reportUrlStateError)}
+            onFocus={() => void ensurePromptSearchIndex()}
             placeholder={labels.searchPlaceholder}
             className="h-10 w-full rounded-md border border-border bg-background pr-3 pl-9 text-sm outline-none transition-colors focus:border-primary"
           />

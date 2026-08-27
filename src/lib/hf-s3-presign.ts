@@ -54,6 +54,13 @@ export function createStyleGallerySignedImageUrl(key: string, now = new Date()):
   return client().presign('GET', key, getTtlSeconds(), now);
 }
 
+/** Lightbox 批量签名复用一次配置解析和 S3 client，避免每张图重复构造 URL、编码器与签名上下文。 */
+export function createStyleGallerySignedImageUrls(keys: readonly string[], now = new Date()): Record<string, string> {
+  const signer = client();
+  const ttlSeconds = getTtlSeconds();
+  return Object.fromEntries(keys.map((key) => [key, signer.presign('GET', key, ttlSeconds, now)]));
+}
+
 export function createStyleGallerySignedUploadUrl(key: string, now = new Date()): string {
   return client().presign('PUT', key, DEFAULT_UPLOAD_TTL_SECONDS, now);
 }

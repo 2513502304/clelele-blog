@@ -16,8 +16,7 @@ describe('sub-gallery example text search', () => {
     const sourceSearchIndex = {
       [example.sourceSlug]: createStyleGalleryExampleSourceSearchText({
         title: example.sourceTitle,
-        prompt: '默认风格提示词',
-        additionalPrompts: ['创作一幅横向约 7:5 的可爱冒险游戏同人风插画'],
+        prompts: ['默认风格提示词', '创作一幅横向约 7:5 的可爱冒险游戏同人风插画'],
       }),
     };
 

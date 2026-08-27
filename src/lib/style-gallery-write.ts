@@ -12,18 +12,22 @@ import { StyleGalleryClientError } from '@lib/style-gallery-errors';
 import { toStyleGalleryExampleIndexGroup } from '@lib/style-gallery-examples';
 import { mergeStyleGalleryPromptVariants } from '@lib/style-gallery-prompts';
 import { invalidateStyleGalleryPublicCache } from '@lib/style-gallery-public-cache';
-import { styleGalleryItemSchema, toStyleGalleryCatalogItem } from '@lib/style-gallery-schema';
+import { styleGalleryItemSchema, toStyleGalleryCatalogItem, toStyleGalleryPromptSearchEntry } from '@lib/style-gallery-schema';
 import {
   getStoredStyleGalleryItem,
   getStyleGalleryCatalog,
   getStyleGalleryCatalogSnapshot,
   getStyleGalleryExampleIndex,
   getStyleGalleryItemKey,
+  getStyleGalleryPromptSearchIndex,
+  getStyleGalleryPromptSearchIndexSnapshot,
   invalidateStyleGalleryStoreCache,
   mutateStyleGalleryExampleIndex,
   putStoredStyleGalleryItem,
   putStyleGalleryCatalog,
+  putStyleGalleryPromptSearchIndex,
   STYLE_GALLERY_CATALOG_KEY,
+  STYLE_GALLERY_PROMPT_SEARCH_INDEX_KEY,
 } from '@lib/style-gallery-store';
 import type {
   StoredStyleGalleryItem,
@@ -31,6 +35,7 @@ import type {
   StyleGalleryExample,
   StyleGalleryExampleIndex,
   StyleGalleryExampleIndexGroup,
+  StyleGalleryPromptSearchIndex,
 } from '@/types/style-gallery';
 
 const ASSET_VALIDATION_CONCURRENCY = 16;
@@ -118,9 +123,14 @@ export async function writeStyleGalleryItems(
       byHash.set(item.imageHash, { ...pending, prompts: merged.prompts });
     }
     const items = [...byHash.values()];
-    const catalogSnapshot = await getStyleGalleryCatalogSnapshot();
+    const [catalogSnapshot, promptSearchSnapshot] = await Promise.all([
+      getStyleGalleryCatalogSnapshot(),
+      getStyleGalleryPromptSearchIndexSnapshot(),
+    ]);
     const previousCatalog = catalogSnapshot.value;
+    const previousPromptSearchIndex = promptSearchSnapshot.value;
     const nextBySlug = new Map(previousCatalog.items.map((item) => [item.slug, item]));
+    const nextPromptsBySlug = new Map(Object.entries(previousPromptSearchIndex.entries));
     const slugByHash = new Map(previousCatalog.items.map((item) => [item.imageHash, item.slug]));
     // `create` 下的既有图片只追加 prompt，不重新 HEAD 已经由 item 引用的图片对象。
     await validateItemAssets(mode === 'upsert' ? items : items.filter((item) => !slugByHash.has(item.imageHash)));
@@ -132,6 +142,7 @@ export async function writeStyleGalleryItems(
     let updated = 0;
     let addedPrompts = 0;
     let writtenCatalogEtag: string | null = null;
+    let writtenPromptSearchIndexEtag: string | null = null;
 
     try {
       const reservedSlugHashes = new Map(previousCatalog.items.map((item) => [item.slug, item.imageHash]));
@@ -167,25 +178,36 @@ export async function writeStyleGalleryItems(
 
         if (item.draft) {
           nextBySlug.delete(item.slug);
+          nextPromptsBySlug.delete(item.slug);
         } else {
           nextBySlug.set(item.slug, toStyleGalleryCatalogItem(item));
+          nextPromptsBySlug.set(item.slug, toStyleGalleryPromptSearchEntry(item));
           slugByHash.set(item.imageHash, item.slug);
         }
       }
 
       if (writtenItems.length) {
         const nextCatalog: StyleGalleryCatalog = {
-          version: 4,
+          version: 5,
           updatedAt: new Date().toISOString(),
           tags: previousCatalog.tags,
           modelTargets: previousCatalog.modelTargets,
           items: [...nextBySlug.values()].sort((a, b) => b.date.localeCompare(a.date)),
+        };
+        const nextPromptSearchIndex: StyleGalleryPromptSearchIndex = {
+          version: 1,
+          updatedAt: nextCatalog.updatedAt,
+          entries: Object.fromEntries(nextPromptsBySlug),
         };
         const activeSlugs = new Set(nextCatalog.items.map((item) => item.slug));
         for (const item of writtenItems) {
           if (!activeSlugs.has(item.slug)) attemptedIndexGroups.set(item.slug, null);
         }
         if (attemptedIndexGroups.size) previousIndex = await getStyleGalleryExampleIndex({ fresh: true });
+        writtenPromptSearchIndexEtag = await requireWrittenObjectEtag(
+          STYLE_GALLERY_PROMPT_SEARCH_INDEX_KEY,
+          await putStyleGalleryPromptSearchIndex(nextPromptSearchIndex, { ifMatch: promptSearchSnapshot.etag }),
+        );
         writtenCatalogEtag = await requireWrittenObjectEtag(
           STYLE_GALLERY_CATALOG_KEY,
           await putStyleGalleryCatalog(nextCatalog, { ifMatch: catalogSnapshot.etag }),
@@ -199,8 +221,13 @@ export async function writeStyleGalleryItems(
         }
         invalidateStyleGalleryStoreCache();
         const savedCatalog = await getStyleGalleryCatalog({ fresh: true });
+        const savedPromptSearchIndex = await getStyleGalleryPromptSearchIndex({ fresh: true });
         assertCatalogContains(
           savedCatalog,
+          writtenItems.filter((item) => !item.draft),
+        );
+        assertPromptSearchIndexContains(
+          savedPromptSearchIndex,
           writtenItems.filter((item) => !item.draft),
         );
         await invalidateStyleGalleryPublicCache(writtenItems.map((item) => item.slug));
@@ -218,6 +245,8 @@ export async function writeStyleGalleryItems(
       const rollbackErrors = await rollbackMetadata(
         previousCatalog,
         writtenCatalogEtag,
+        previousPromptSearchIndex,
+        writtenPromptSearchIndexEtag,
         previousIndex,
         previousItemBodies,
         attemptedIndexGroups,
@@ -495,9 +524,19 @@ function assertCatalogContains(catalog: StyleGalleryCatalog, items: StoredStyleG
   if (missing.length) throw new Error(`Catalog verification failed for ${missing.length} style gallery item(s).`);
 }
 
+function assertPromptSearchIndexContains(index: StyleGalleryPromptSearchIndex, items: StoredStyleGalleryItem[]): void {
+  const missing = items.filter((item) => {
+    const saved = index.entries[item.slug];
+    return !saved || JSON.stringify(saved) !== JSON.stringify(toStyleGalleryPromptSearchEntry(item));
+  });
+  if (missing.length) throw new Error(`Prompt search index verification failed for ${missing.length} style gallery item(s).`);
+}
+
 async function rollbackMetadata(
   previousCatalog: StyleGalleryCatalog,
   writtenCatalogEtag: string | null,
+  previousPromptSearchIndex: StyleGalleryPromptSearchIndex,
+  writtenPromptSearchIndexEtag: string | null,
   previousIndex: StyleGalleryExampleIndex | null,
   previousItemBodies: Map<string, { body: string | null; writtenEtag: string }>,
   attemptedIndexGroups: ReadonlyMap<string, StyleGalleryExampleIndexGroup | null>,
@@ -523,6 +562,16 @@ async function rollbackMetadata(
       const body = new TextEncoder().encode(`${JSON.stringify(previousCatalog, null, 2)}\n`);
       await putStyleGalleryObject(STYLE_GALLERY_CATALOG_KEY, body, 'application/json; charset=utf-8', {
         ifMatch: writtenCatalogEtag,
+      });
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (writtenPromptSearchIndexEtag) {
+    try {
+      const body = new TextEncoder().encode(`${JSON.stringify(previousPromptSearchIndex, null, 2)}\n`);
+      await putStyleGalleryObject(STYLE_GALLERY_PROMPT_SEARCH_INDEX_KEY, body, 'application/json; charset=utf-8', {
+        ifMatch: writtenPromptSearchIndexEtag,
       });
     } catch (error) {
       errors.push(error);

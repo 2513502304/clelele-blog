@@ -14,7 +14,7 @@ function sha256(bytes: Uint8Array): string {
 
 function createCatalog(): string {
   return JSON.stringify({
-    version: 4,
+    version: 5,
     updatedAt: '2026-07-19T00:00:00.000Z',
     tags: ['style-prompt'],
     modelTargets: ['GPT-Image', 'Nano Banana', 'PixAI', 'Midjourney', 'NovelAI', 'Flux'],
@@ -24,8 +24,7 @@ function createCatalog(): string {
         title: 'Style Prompt test',
         date: '2026-07-19T00:00:00.000Z',
         sourceImage: '/api/style-gallery/image/source/aaaaaaaaaaaa.jpg',
-        prompt: 'Reusable style prompt',
-        additionalPrompts: [],
+        promptExcerpt: 'Reusable style prompt',
         promptCount: 1,
         promptRevision: 'c'.repeat(64),
         imageHash: 'a'.repeat(64),
@@ -74,7 +73,7 @@ describe('style gallery upload route', () => {
       const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url);
       const key = decodeURIComponent(url.pathname.slice(objectPrefix.length));
       const method = init?.method ?? 'GET';
-      if (method === 'GET' && key === 'metadata/catalog.json') return new Response(createCatalog());
+      if (method === 'GET' && key === 'metadata/catalog-v5.json') return new Response(createCatalog());
       if (method === 'PUT') {
         objects.set(key, toBytes(init?.body).slice());
         return new Response(null, { status: 200 });

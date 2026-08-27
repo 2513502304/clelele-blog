@@ -42,8 +42,8 @@ describe('style prompt import variants', () => {
       sourceImage: `/api/style-gallery/image/source/${imageHash.slice(0, 12)}.png`,
       thumbnailImage: `/api/style-gallery/image/thumb/${imageHash.slice(0, 12)}.webp`,
       sourceImageAlt: 'Existing reference image',
-      prompt: `${PLACEHOLDER}, first prompt`,
-      additionalPrompts: [`${PLACEHOLDER}, second prompt`],
+      promptExcerpt: `${PLACEHOLDER}, first prompt`,
+      prompts: [`${PLACEHOLDER}, first prompt`, `${PLACEHOLDER}, second prompt`],
       promptCount: 2,
       promptRevision: 'c'.repeat(64),
       imageHash,
@@ -68,7 +68,7 @@ describe('style prompt import variants', () => {
     assert.equal(prepared.items[0].prompts[0].model, 'gpt-5.6-terra');
 
     const duplicate = await buildImportData(
-      [{ ...extracted[0], prompt: existing.prompt }],
+      [{ ...extracted[0], prompt: existing.prompts[0] }],
       '/tmp/session.jsonl',
       new Map([[imageHash, existing]]),
       false,
@@ -78,7 +78,7 @@ describe('style prompt import variants', () => {
     assert.equal(duplicate.skippedDuplicates, 1);
 
     const duplicateAdditionalPrompt = await buildImportData(
-      [{ ...extracted[0], prompt: existing.additionalPrompts[0] }],
+      [{ ...extracted[0], prompt: existing.prompts[1] }],
       '/tmp/session.jsonl',
       new Map([[imageHash, existing]]),
       false,

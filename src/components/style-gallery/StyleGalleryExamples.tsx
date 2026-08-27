@@ -923,7 +923,7 @@ export default function StyleGalleryExamples({
                       key={example.src}
                       id={getStyleGalleryLightboxElementId('detail-example', example.id)}
                       tabIndex={-1}
-                      className="overflow-hidden rounded-lg border border-gray-100 bg-gray-50 dark:border-gray-800 dark:bg-gray-900"
+                      className="overflow-hidden rounded-lg border border-gray-100 bg-gray-50 [contain-intrinsic-size:auto_420px] [content-visibility:auto] dark:border-gray-800 dark:bg-gray-900"
                     >
                       <div className="relative">
                         <button
