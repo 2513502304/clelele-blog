@@ -69,9 +69,11 @@ function LightboxImageStage({
   onSourceSettled,
 }: LightboxImageStageProps) {
   const { t } = useTranslation();
-  // 当前 Stage 生命周期内固定实际地址。批量签名或后台预加载完成会触发父级重渲染，但不能因此
-  // 把正在下载/解码的 canonical 图片中途换成签名 URL；导航到其他图片时 key 会自然重建 Stage。
-  const [sourceSrc] = useState(() => image.resolvedSrc ?? getReusableStyleGalleryImageUrl(image.src, false) ?? image.src);
+  // 批量签名完成不能把正在下载的 canonical 图片中途换址；只有当前签名 URL 明确失败时，才在同一
+  // Stage 内主动降级到 canonical 302 路径。导航到其他图片仍由 imageKey 重建完整加载生命周期。
+  const [sourceSrc, setSourceSrc] = useState(
+    () => image.resolvedSrc ?? getReusableStyleGalleryImageUrl(image.src, false) ?? image.src,
+  );
   const previewSrc = image.previewSrc !== sourceSrc ? image.previewSrc : undefined;
   const [sourceWasLoaded] = useState(() => isStyleGalleryImageUrlLoaded(sourceSrc));
   // 页面卡片已经成功绘制过同一 URL 时，Lightbox 必须立即复用该事实，不能把后台重复 decode
@@ -181,6 +183,10 @@ function LightboxImageStage({
             // 直连签名持续失败时本次 popup 不再重签；页面缓存的 canonical URL 失败则允许改走签名恢复。
             if (image.resolvedSrc !== image.src) {
               onResolvedSourceFailure(image.src);
+              decodeStartedRef.current = false;
+              settledRef.current = false;
+              setSourceState(isStyleGalleryImageUrlLoaded(image.src) ? 'loaded' : 'loading');
+              setSourceSrc(image.src);
             } else {
               // resolvedSrc 与 canonical 相同时不存在下一层回退，必须结束 loading，避免永久透明转圈。
               setSourceState('failed');
