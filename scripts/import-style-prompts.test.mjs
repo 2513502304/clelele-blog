@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { describe, it } from 'node:test';
+import { assertStyleGalleryItemConsistency } from '../src/lib/style-gallery-assets.ts';
 import {
   buildImportData,
   extractItems,
@@ -55,6 +56,14 @@ describe('style prompt import variants', () => {
       imageHash,
       imageCount: 1,
       exampleCount: 0,
+      images: [
+        {
+          sourceImage: `/api/style-gallery/image/source/${imageHash.slice(0, 12)}.png`,
+          thumbnailImage: `/api/style-gallery/image/thumb/${imageHash.slice(0, 12)}.webp`,
+          sourceImageAlt: 'Existing reference image',
+          imageHash,
+        },
+      ],
     };
     const extracted = [
       {
@@ -72,6 +81,8 @@ describe('style prompt import variants', () => {
     assert.equal(prepared.items.length, 1);
     assert.equal(prepared.items[0].slug, existing.slug);
     assert.equal(prepared.items[0].prompts[0].model, 'gpt-5.6-terra');
+    assert.deepEqual(prepared.items[0].images, existing.images);
+    assert.doesNotThrow(() => assertStyleGalleryItemConsistency(prepared.items[0]));
 
     const duplicate = await buildImportData(
       [{ ...extracted[0], prompt: existing.prompts[0] }],
@@ -111,7 +122,26 @@ describe('style prompt import variants', () => {
 
     const existingByHash = await loadExistingItemsByHash('https://example.test', catalogItems, extracted, async (url) => {
       requests.push(url);
-      return { prompts: [{ prompt: `${PLACEHOLDER}, first extraction` }] };
+      return {
+        prompts: [{ prompt: `${PLACEHOLDER}, first extraction` }],
+        item: {
+          slug: 'existing-item',
+          title: 'Existing item',
+          date: '2026-08-10T00:00:00.000Z',
+          sourceImage: `/api/style-gallery/image/source/${imageHash.slice(0, 12)}.png`,
+          thumbnailImage: `/api/style-gallery/image/thumb/${imageHash.slice(0, 12)}.webp`,
+          sourceImageAlt: 'Existing reference image',
+          imageHash,
+          images: [
+            {
+              sourceImage: `/api/style-gallery/image/source/${imageHash.slice(0, 12)}.png`,
+              thumbnailImage: `/api/style-gallery/image/thumb/${imageHash.slice(0, 12)}.webp`,
+              sourceImageAlt: 'Existing reference image',
+              imageHash,
+            },
+          ],
+        },
+      };
     });
 
     assert.deepEqual(requests, ['https://example.test/api/style-gallery/prompts/existing-item?v=revision-1']);
@@ -121,6 +151,8 @@ describe('style prompt import variants', () => {
     const prepared = await buildImportData(extracted, '/tmp/session.jsonl', existingByHash, false, null);
     assert.equal(prepared.items.length, 1);
     assert.equal(prepared.assets.size, 0);
+    assert.equal(prepared.items[0].sourceImageAlt, 'Existing reference image');
+    assert.doesNotThrow(() => assertStyleGalleryItemConsistency(prepared.items[0]));
   });
 
   it('groups ordered prompt variants for the same new image', async () => {

@@ -186,12 +186,13 @@ async function buildImportData(extractedItems, sessionPath, existingByHash, meta
       const image = parsedImages[index];
       const imageHash = imageHashes[index];
       imageBytesByHash.set(imageHash, image.bytes);
+      if (existing) continue;
       const imageName = `${imageHash.slice(0, 12)}.${image.extension}`;
       const thumbnailName = `${imageHash.slice(0, 12)}.webp`;
       const sourceKey = `source/${imageName}`;
       const thumbnailKey = `thumb/${thumbnailName}`;
-      if (!existing) assets.set(sourceKey, { body: image.bytes, contentType: image.mime });
-      if (!existing && !assets.has(thumbnailKey)) {
+      assets.set(sourceKey, { body: image.bytes, contentType: image.mime });
+      if (!assets.has(thumbnailKey)) {
         const thumbnail = await sharp(image.bytes)
           .resize({ width: 720, withoutEnlargement: true })
           .webp({ quality: 82 })
@@ -204,6 +205,15 @@ async function buildImportData(extractedItems, sessionPath, existingByHash, meta
         sourceImageAlt: `${title} reference image ${index + 1}`,
         imageHash,
       });
+    }
+    // 同一图片可能曾以不同 MIME/扩展名导入，alt 文案也可能沿用早期格式。命中既有 item 后必须复用
+    // HF 详情中的完整引用；仅凭本轮 data URI 重建会让顶层字段与 images[0] 分叉并破坏持久化不变量。
+    const storedImageRefs = existing?.images ?? imageRefs;
+    if (
+      storedImageRefs.length !== imageHashes.length ||
+      storedImageRefs.some((image, index) => image.imageHash !== imageHashes[index])
+    ) {
+      throw new Error(`Stored image metadata does not match imported image group for ${slug}.`);
     }
 
     const variant = {
@@ -229,12 +239,12 @@ async function buildImportData(extractedItems, sessionPath, existingByHash, meta
       slug,
       title,
       date: existing?.date ?? date.toISOString(),
-      sourceImage: existing?.sourceImage ?? imageRefs[0].sourceImage,
-      thumbnailImage: existing?.thumbnailImage ?? imageRefs[0].thumbnailImage,
-      sourceImageAlt: existing?.sourceImageAlt ?? imageRefs[0].sourceImageAlt,
+      sourceImage: storedImageRefs[0].sourceImage,
+      thumbnailImage: storedImageRefs[0].thumbnailImage,
+      sourceImageAlt: storedImageRefs[0].sourceImageAlt,
       prompts: [variant],
       imageHash: itemHash,
-      images: imageRefs,
+      images: storedImageRefs,
       examples: [],
     });
   }
@@ -321,8 +331,8 @@ async function mapConcurrent(items, concurrency, worker) {
 }
 
 /**
- * Catalog 只保留默认 prompt 摘要，不能用于同图 prompt 去重。这里仅为本次 JSONL 命中的既有
- * imageHash 并发读取 item 详情；纯新增导入不额外请求，少量重复图也不会下载全量搜索索引。
+ * Catalog 只保留列表字段，不能用于同图 prompt 去重，也不能重建多图引用。这里仅为本次 JSONL
+ * 命中的既有 imageHash 并发读取详情；纯新增导入不额外请求，少量重复图也不会下载全量索引。
  */
 async function loadExistingItemsByHash(apiBaseUrl, catalogItems, extractedItems, request = requestJson) {
   const importedHashes = new Set(extractedItems.map(getExtractedItemHash).filter(Boolean));
@@ -335,10 +345,20 @@ async function loadExistingItemsByHash(apiBaseUrl, catalogItems, extractedItems,
     if (!Array.isArray(response.prompts)) {
       throw new Error(`Prompt response for ${item.slug} did not contain a prompt array.`);
     }
+    if (
+      !response.item ||
+      response.item.slug !== item.slug ||
+      response.item.imageHash !== item.imageHash ||
+      !Array.isArray(response.item.images) ||
+      !response.item.images.length
+    ) {
+      throw new Error(`Prompt response for ${item.slug} did not contain matching image metadata.`);
+    }
     const prompts = response.prompts.map((choice) => choice?.prompt).filter((prompt) => typeof prompt === 'string');
     if (!prompts.length) throw new Error(`Prompt response for ${item.slug} did not contain any usable prompts.`);
     return {
       ...item,
+      ...response.item,
       prompts,
     };
   });
@@ -520,7 +540,8 @@ export { buildImportData, extractItems, loadExistingItemsByHash, parseArgs, uniq
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((error) => {
     console.error(error);
-    process.exit(1);
+    // 让 ONNX/Sharp 等原生 worker 自然清理；强制 process.exit() 可能在异常路径触发 mutex teardown 崩溃。
+    process.exitCode = 1;
   });
 }
 
