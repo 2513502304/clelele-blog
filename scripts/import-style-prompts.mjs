@@ -107,6 +107,14 @@ async function readRecords(sessionPath) {
     });
 }
 
+/**
+ * 读取新版 `response_item` 中面向模型的用户输入投影。
+ *
+ * 同一内容还会出现在 `event_msg.item_completed` 的 UI 投影中；导入器只读取这里，避免把一轮图片重复配对。
+ *
+ * @param {Record<string, unknown>} payload
+ * @returns {{ images: string[], originalPrompt: string } | null}
+ */
 function responseItemInput(payload) {
   if (payload.type !== 'message' || payload.role !== 'user' || !Array.isArray(payload.content)) return null;
   const images = payload.content
@@ -121,6 +129,15 @@ function responseItemInput(payload) {
   return { images, originalPrompt };
 }
 
+/**
+ * 读取新版 `response_item` 中最终可见的助手回复。
+ *
+ * 部分版本会把 commentary 与 final answer 都写成 assistant message；存在 `phase` 时必须只接受
+ * `final_answer`，否则中间说明中偶然出现 prompt 占位符会提前结束当前 task 的配对。
+ *
+ * @param {Record<string, unknown>} payload
+ * @returns {string | null}
+ */
 function responseItemOutput(payload) {
   if (payload.type !== 'message' || payload.role !== 'assistant' || !Array.isArray(payload.content)) return null;
   // 新版记录会把中间 commentary 也写成 assistant message；有 phase 时只接受最终可见回复。
