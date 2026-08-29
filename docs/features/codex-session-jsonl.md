@@ -4,6 +4,11 @@ Codex 的 `rollout-*.jsonl` 不是一份简单聊天记录。它更像事件账�
 
 这份文档用通用结构解释 Codex session JSONL，再用“上传图片 + 调用 image style prompt skill + 输出绘图 prompt”这个场景说明为什么文件会膨胀。这里的例子都是脱敏示意，不包含真实图片、不包含本机路径。
 
+Codex JSONL 不是稳定的公开数据协议，字段会随客户端版本演进。仓库目前实测到两种消息表示：旧版或混合版会写
+`event_msg.user_message` / `agent_message`；较新的版本可能完全省略这两类事件，只写结构化
+`response_item.message`，再用 `event_msg.item_completed` 记录 UI 完成事件。解析器必须按 task group 兼容两种格式，
+不能用某一个 session 的字段集合推断所有历史文件。
+
 ## 一句话模型
 
 可以把一个 session 分成四层：
@@ -111,20 +116,24 @@ Codex 的 `rollout-*.jsonl` 不是一份简单聊天记录。它更像事件账�
 
 ### `event_msg`
 
-`event_msg` 更接近 Codex UI 的事件流。用户看见的用户消息、assistant 消息、任务开始结束、token 统计、压缩事件，通常都在这里。
+`event_msg` 更接近 Codex UI 的事件流。任务边界、item 完成、token 统计和压缩事件通常都在这里；用户与
+assistant 的完整消息是否也直接写在这里取决于 Codex 版本。
 
 常见 `payload.type`：
 
 - `task_started`
 - `user_message`
 - `agent_message`
+- `item_completed`
 - `agent_reasoning`
 - `token_count`
 - `context_compacted`
 - `task_complete`
 - `turn_aborted`
 
-`event_msg` 的优点是人类可见内容比较直接。比如 `payload.type = "user_message"` 里通常有原始用户输入，图片也会放在 `payload.images`。
+旧版或混合版中，`payload.type = "user_message"` 通常直接包含原始输入和 `payload.images`。新版可能没有
+`user_message` / `agent_message`，而是在 `item_completed.payload.item` 中留下 `UserMessage` / `AgentMessage`
+副本；这些副本适合还原 UI 事件，不应和对应的 `response_item` 同时导入。
 
 ### `response_item`
 
@@ -162,7 +171,9 @@ Codex 的 `rollout-*.jsonl` 不是一份简单聊天记录。它更像事件账�
 }
 ```
 
-`response_item` 的好处是结构更接近模型上下文；坏处是它会和 `event_msg` 重复。做 UI 展示时不能两份都渲染，否则同一条用户消息会出现两次。
+`response_item` 的好处是结构更接近模型上下文。旧版或混合版中它可能与 `event_msg.user_message` /
+`agent_message` 重复；新版中它也可能是完整文本和图片的唯一 canonical 来源。做 UI 或 importer 时应先按
+`task_started` / `task_complete` 分组，再在组内规范化和去重，不能假设它永远只是副本。
 
 ### `compacted`
 
@@ -190,7 +201,7 @@ Codex 的 `rollout-*.jsonl` 不是一份简单聊天记录。它更像事件账�
 
 ## 一个 task group 长什么样
 
-一个普通任务大致是这样：
+旧版或混合版的一个普通任务大致是这样：
 
 ```json
 [
@@ -339,6 +350,63 @@ Codex 的 `rollout-*.jsonl` 不是一份简单聊天记录。它更像事件账�
 - assistant 输出：`event_msg.agent_message`、`response_item.message role=assistant`、`task_complete.last_agent_message` 可能保存同一段文本。
 - skill 内容：显式调用 skill 时，skill 正文可能先作为 `response_item.message role=user` 注入一次，又通过 `function_call_output` 记录一次 shell 读取结果。
 
+较新的 session 可能不再写 `event_msg.user_message` / `agent_message`，而采用下面的结构：
+
+```json
+[
+  {
+    "timestamp": "2026-01-01T10:00:01.000Z",
+    "type": "event_msg",
+    "payload": { "type": "task_started", "turn_id": "turn-002" }
+  },
+  {
+    "timestamp": "2026-01-01T10:00:02.000Z",
+    "type": "turn_context",
+    "payload": { "turn_id": "turn-002", "model": "gpt-example" }
+  },
+  {
+    "timestamp": "2026-01-01T10:00:03.000Z",
+    "type": "response_item",
+    "payload": {
+      "type": "message",
+      "role": "user",
+      "content": [
+        { "type": "input_text", "text": "用户输入的原始 prompt 在这里..." },
+        { "type": "input_image", "image_url": "data:image/png;base64,[base64 image omitted]" }
+      ]
+    }
+  },
+  {
+    "timestamp": "2026-01-01T10:00:03.100Z",
+    "type": "event_msg",
+    "payload": {
+      "type": "item_completed",
+      "turn_id": "turn-002",
+      "item": { "type": "UserMessage", "content": [{ "type": "image", "image_url": "[same image omitted]" }] }
+    }
+  },
+  {
+    "timestamp": "2026-01-01T10:00:12.000Z",
+    "type": "response_item",
+    "payload": {
+      "type": "message",
+      "role": "assistant",
+      "phase": "final_answer",
+      "content": [{ "type": "output_text", "text": "[在此处替换为您想要生成的主体内容]，最终 prompt..." }]
+    }
+  },
+  {
+    "timestamp": "2026-01-01T10:00:13.000Z",
+    "type": "event_msg",
+    "payload": { "type": "task_complete", "turn_id": "turn-002", "last_agent_message": "[same output omitted]" }
+  }
+]
+```
+
+这里的 `item_completed` 和 `task_complete.last_agent_message` 仍是重复表示。gallery importer 应读取
+`response_item` 的 `input_image` 与 `final_answer`，忽略两个事件副本；若历史 task 使用旧格式，则改读
+`event_msg.user_message` / `agent_message`。两条路径不能对同一 task 重复产出 item。
+
 ## 字段含义速查
 
 ### `payload.type = "task_started"`
@@ -357,6 +425,15 @@ Codex 的 `rollout-*.jsonl` 不是一份简单聊天记录。它更像事件账�
 
 `images` 是图片数组。每一项通常是 `data:image/<format>;base64,...`。这是做图片 gallery 最容易读取的一份，但也是最容易撑大 JSONL 的字段。
 
+该 payload type 不是所有版本都会写入。缺失时应读取同一 task 内的 `response_item.message role=user`，不能据此
+判断该轮没有用户图片。
+
+### `payload.type = "item_completed"`
+
+`item` 表示一个 UI item 已完成，常见 `item.type` 包括 `UserMessage`、`AgentMessage` 和 `Reasoning`。新版 session
+中它可能复制对应 `response_item` 的文本或图片。它适合事件时间线和进度展示，但 gallery importer 不应把它
+作为第二份内容来源，否则同一张 base64 图片和同一段 prompt 会被重复处理。
+
 ### `payload.type = "message"` in `response_item`
 
 `role` 可能是 `developer`、`user`、`assistant`、`tool` 等。
@@ -368,6 +445,9 @@ Codex 的 `rollout-*.jsonl` 不是一份简单聊天记录。它更像事件账�
 - `output_text`：assistant 输出文本。
 
 同一个 `response_item.message` 可能不是用户可见消息。比如 `role = "developer"` 可能是开发者指令，`role = "user"` 也可能是系统把 skill 内容作为用户侧上下文注入。
+
+assistant message 还可能带 `phase`。`phase = "commentary"` 是中间进度，`phase = "final_answer"` 才是最终可见
+回复。提取最终 prompt 时应优先接受 `final_answer`；不能因为中间消息偶然包含模板占位符就提前完成配对。
 
 ### `payload.type = "reasoning"`
 
@@ -423,10 +503,11 @@ Codex 的 `rollout-*.jsonl` 不是一份简单聊天记录。它更像事件账�
 
 ## 图片和 compact 为什么特别重
 
-图片进入 Codex session 后，至少可能出现两次：
+图片进入 Codex session 后，可能出现多份表示：
 
 - `response_item.message.content[].input_image`
 - `event_msg.user_message.images[]`
+- `event_msg.item_completed.item.content[]`
 
 如果发生上下文压缩，旧图片还可能再次进入 `compacted.payload`。base64 本质上是长文本，压缩摘要很难把它变短。结果是，文本聊天能被压缩，图片基本只是被搬运。
 
@@ -439,10 +520,11 @@ Codex 的 `rollout-*.jsonl` 不是一份简单聊天记录。它更像事件账�
 显式调用 `/image-style-prompt-extractor` 时，第一轮任务通常会出现这些内容：
 
 - 用户消息：`response_item.message role=user` 保存文本和图片。
-- UI 消息：`event_msg.user_message` 再保存一份文本和图片。
+- UI 消息：旧版可能通过 `event_msg.user_message` 再保存一份；新版可能改为 `item_completed.UserMessage`。
 - skill 注入：如果用户显式写了 skill，Codex 可能把 skill 正文作为一条 `response_item.message role=user` 注入。
 - skill 文件读取：Codex 还可能调用 shell 读取 `SKILL.md`，读取结果进入 `function_call_output.output`。
-- 最终 prompt：`event_msg.agent_message` 有一份，`response_item.message role=assistant` 有一份，`task_complete.last_agent_message` 还有一份。
+- 最终 prompt：根据版本，可能由 `event_msg.agent_message` 或 `response_item.message role=assistant` 保存，
+  `item_completed.AgentMessage` 与 `task_complete.last_agent_message` 还可能保留副本。
 
 如果用户没有输入任何文字，只发送图片，`user_message.message` 可能只是换行，但图片仍然会进入 `images` 和 `input_image`。这种情况下，gallery importer 不能因为 `message` 为空就跳过整组；它应该看图片是否存在，再找同一 task group 内后续的 prompt 输出。
 
@@ -455,9 +537,9 @@ Codex 的 `rollout-*.jsonl` 不是一份简单聊天记录。它更像事件账�
 | 目标 | 优先来源 | 兜底来源 | 原因 |
 | --- | --- | --- | --- |
 | task group 边界 | `event_msg.payload.type = "task_started"` / `"task_complete"` | 文件开头到结尾 | 这是用户一轮任务的自然边界 |
-| 用户原始输入 | `event_msg.user_message.message` | `response_item.message role=user` 的 `input_text` | `event_msg` 更贴近用户实际输入 |
-| 用户上传图片 | `event_msg.user_message.images[]` | `response_item.message.content[].input_image` | `images[]` 更好提取，后者适合作兼容 |
-| assistant 最终 prompt | `event_msg.agent_message.message` | `response_item.message role=assistant` 或 `task_complete.last_agent_message` | `agent_message` 是用户实际看到的消息 |
+| 用户原始输入 | 同一 task 中带图片的 `event_msg.user_message.message` 或 `response_item.message role=user` 的 `input_text` | 无图片的 user message 不作为原始请求 | 两种来源随 Codex 版本变化；skill 注入也可能伪装成 user role |
+| 用户上传图片 | `event_msg.user_message.images[]` 或 `response_item.message.content[].input_image` | 不读取 `item_completed` / `compacted` 副本 | 组内只消费一份 canonical 图片数组 |
+| assistant 最终 prompt | `event_msg.agent_message.message` 或 `response_item.message role=assistant, phase=final_answer` | `task_complete.last_agent_message` 仅用于缺损记录诊断 | 两种 canonical 来源随版本变化；不能重复产出 |
 | 工具调用 | `response_item.function_call` | 无 | 工具调用只在 response item 中结构化保存 |
 | 工具输出 | `response_item.function_call_output` | 无 | 可用于审计，不适合默认展示 |
 | token 成本 | `event_msg.token_count.info` | 无 | 用它做成本和速度分析 |
@@ -500,12 +582,15 @@ Codex 的 `rollout-*.jsonl` 不是一份简单聊天记录。它更像事件账�
 
 1. 流式读取 JSONL，不要为了预览把整份文件和所有 base64 都塞进浏览器。
 2. 只从 task group 的原始用户输入里取图片，跳过 `compacted`。
-3. 用图片 bytes 的 SHA-256 做去重。多图 item 用多个图片 hash 拼成 group hash。
-4. 允许一个 item 持有多张参考图。
-5. 保存 `originalPrompt`，但把指向本地 `SKILL.md` 的绝对路径脱敏成 `/skill-name`。
-6. 预览页只加载缩略图和最终 prompt；详情页再显示原始输入和多图说明。
-7. 更新 metadata 时不要重新上传图片。
-8. 日志要区分“跳过重复图片”和“已匹配已有 item 并更新 metadata”。
+3. 同时兼容旧 `event_msg` 和新 `response_item` 消息格式；忽略 `item_completed`、`task_complete` 中的重复内容，
+   并在 task 边界清空未完成配对，禁止跨轮关联。
+4. 用图片 bytes 的 SHA-256 做去重。多图 item 用多个图片 hash 拼成 group hash。
+5. 允许一个 item 持有多张参考图。
+6. 保存 `originalPrompt`，但把指向本地 `SKILL.md` 的绝对路径脱敏成 `/skill-name`。
+7. 预览页只加载缩略图和最终 prompt；详情页再显示原始输入和多图说明。
+8. 更新 metadata 时不要重新上传图片。
+9. 日志要区分“跳过重复图片”和“已匹配已有 item 并更新 metadata”。
+10. 命令行写入前绕过面向访客的 Catalog CDN 缓存；否则紧接着重跑时可能把刚写入的 item 误报为新增。
 
 常用命令：
 
