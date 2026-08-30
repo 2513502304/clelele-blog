@@ -39,6 +39,113 @@ describe('style prompt import variants', () => {
     assert.equal(items[0].model, 'gpt-5.6-sol');
   });
 
+  it('extracts structured response_item messages without reading their event duplicates', () => {
+    const items = extractItems([
+      {
+        index: 1,
+        record: { type: 'event_msg', timestamp: '2026-08-29T00:00:00.000Z', payload: { type: 'task_started' } },
+      },
+      { index: 2, record: { type: 'turn_context', payload: { model: 'gpt-5.6-sol' } } },
+      {
+        index: 3,
+        record: {
+          type: 'response_item',
+          timestamp: '2026-08-29T00:00:01.000Z',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [
+              { type: 'input_text', text: 'Extract this style.' },
+              { type: 'input_image', image_url: 'data:image/png;base64,YQ==' },
+              { type: 'input_image', image_url: 'data:image/jpeg;base64,Yg==' },
+            ],
+          },
+        },
+      },
+      {
+        index: 4,
+        record: {
+          type: 'event_msg',
+          payload: {
+            type: 'item_completed',
+            item: { type: 'UserMessage', content: [{ type: 'image', image_url: 'data:image/png;base64,YQ==' }] },
+          },
+        },
+      },
+      {
+        index: 5,
+        record: {
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'assistant',
+            phase: 'commentary',
+            content: [{ type: 'output_text', text: `${PLACEHOLDER}, intermediate commentary` }],
+          },
+        },
+      },
+      {
+        index: 6,
+        record: {
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'assistant',
+            phase: 'final_answer',
+            content: [{ type: 'output_text', text: `${PLACEHOLDER}, structured prompt body` }],
+          },
+        },
+      },
+      {
+        index: 7,
+        record: {
+          type: 'event_msg',
+          payload: { type: 'task_complete', last_agent_message: `${PLACEHOLDER}, structured prompt body` },
+        },
+      },
+    ]);
+
+    assert.equal(items.length, 1);
+    assert.equal(items[0].images.length, 2);
+    assert.equal(items[0].originalPrompt, 'Extract this style.');
+    assert.equal(items[0].prompt, `${PLACEHOLDER}, structured prompt body`);
+    assert.equal(items[0].model, 'gpt-5.6-sol');
+    assert.equal(items[0].sourceLine, 3);
+    assert.equal(items[0].promptLine, 6);
+  });
+
+  it('does not associate an interrupted task image with the next task response', () => {
+    const items = extractItems([
+      { index: 1, record: { type: 'event_msg', payload: { type: 'task_started' } } },
+      {
+        index: 2,
+        record: {
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [{ type: 'input_image', image_url: 'data:image/png;base64,YQ==' }],
+          },
+        },
+      },
+      { index: 3, record: { type: 'event_msg', payload: { type: 'task_complete', last_agent_message: '' } } },
+      { index: 4, record: { type: 'event_msg', payload: { type: 'task_started' } } },
+      {
+        index: 5,
+        record: {
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'output_text', text: `${PLACEHOLDER}, unrelated prompt` }],
+          },
+        },
+      },
+    ]);
+
+    assert.deepEqual(items, []);
+  });
+
   it('adds a different prompt to an existing image without rebuilding image assets', async () => {
     const bytes = Buffer.from('a');
     const imageHash = crypto.createHash('sha256').update(bytes).digest('hex');

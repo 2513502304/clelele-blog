@@ -108,10 +108,55 @@ async function readRecords(sessionPath) {
 }
 
 /**
- * 从 Codex JSONL 的 canonical `event_msg` 中提取图片与最终 prompt 配对。
+ * 读取新版 `response_item` 中面向模型的用户输入投影。
  *
- * 同一内容还可能出现在 `response_item`、`task_complete` 或压缩记录中；这里不读取这些副本，避免重复导入
- * base64 图片。最近一条带图 user_message 会与随后第一条包含占位符的 agent_message 配对，成功后立即清空。
+ * 同一内容还会出现在 `event_msg.item_completed` 的 UI 投影中；导入器只读取这里，避免把一轮图片重复配对。
+ *
+ * @param {Record<string, unknown>} payload
+ * @returns {{ images: string[], originalPrompt: string } | null}
+ */
+function responseItemInput(payload) {
+  if (payload.type !== 'message' || payload.role !== 'user' || !Array.isArray(payload.content)) return null;
+  const images = payload.content
+    .filter((part) => part?.type === 'input_image')
+    .map((part) => part.image_url)
+    .filter((value) => typeof value === 'string' && value.startsWith('data:image/'));
+  if (!images.length) return null;
+  const originalPrompt = payload.content
+    .filter((part) => part?.type === 'input_text' && typeof part.text === 'string')
+    .map((part) => part.text)
+    .join('\n');
+  return { images, originalPrompt };
+}
+
+/**
+ * 读取新版 `response_item` 中最终可见的助手回复。
+ *
+ * 部分版本会把 commentary 与 final answer 都写成 assistant message；存在 `phase` 时必须只接受
+ * `final_answer`，否则中间说明中偶然出现 prompt 占位符会提前结束当前 task 的配对。
+ *
+ * @param {Record<string, unknown>} payload
+ * @returns {string | null}
+ */
+function responseItemOutput(payload) {
+  if (payload.type !== 'message' || payload.role !== 'assistant' || !Array.isArray(payload.content)) return null;
+  // 新版记录会把中间 commentary 也写成 assistant message；有 phase 时只接受最终可见回复。
+  if (typeof payload.phase === 'string' && payload.phase !== 'final_answer') return null;
+  const message = payload.content
+    .filter((part) => part?.type === 'output_text' && typeof part.text === 'string')
+    .map((part) => part.text)
+    .join('\n')
+    .trim();
+  return message || null;
+}
+
+/**
+ * 从 Codex JSONL 中提取每个 task 的图片与最终 prompt 配对。
+ *
+ * Codex 目前存在两种会话格式：旧格式把用户图片和最终回复写入 `event_msg`；新格式只在
+ * `response_item:message` 中保存 `input_image` / `output_text`。`item_completed`、`task_complete` 和压缩记录
+ * 仍可能复制相同内容，因此这里刻意不读取这些副本。task 边界会清空未完成配对，避免异常或中断的上一轮
+ * 图片被错误关联到下一轮回复。
  */
 function extractItems(records) {
   const items = [];
@@ -120,6 +165,15 @@ function extractItems(records) {
   for (const { index, record } of records) {
     const payload = record?.payload;
     if (!payload || typeof payload !== 'object') continue;
+    if (record.type === 'event_msg' && payload.type === 'task_started') {
+      pendingInput = null;
+      currentModel = null;
+      continue;
+    }
+    if (record.type === 'event_msg' && payload.type === 'task_complete') {
+      pendingInput = null;
+      continue;
+    }
     if (record.type === 'turn_context' && typeof payload.model === 'string' && payload.model.trim()) {
       currentModel = payload.model.trim();
       continue;
@@ -137,12 +191,30 @@ function extractItems(records) {
       }
       continue;
     }
-    if (record.type === 'event_msg' && payload.type === 'agent_message') {
-      const message = typeof payload.message === 'string' ? payload.message : payload.message?.content;
-      if (pendingInput && typeof message === 'string' && message.includes(PLACEHOLDER)) {
-        items.push({ ...pendingInput, prompt: normalizePrompt(message), promptLine: index });
-        pendingInput = null;
+    if (record.type === 'response_item') {
+      const input = responseItemInput(payload);
+      if (input) {
+        pendingInput = {
+          images: input.images,
+          originalPrompt: sanitizeOriginalPrompt(input.originalPrompt),
+          sourceLine: index,
+          timestamp: record.timestamp,
+          model: currentModel,
+        };
+        continue;
       }
+    }
+    const message =
+      record.type === 'event_msg' && payload.type === 'agent_message'
+        ? typeof payload.message === 'string'
+          ? payload.message
+          : payload.message?.content
+        : record.type === 'response_item'
+          ? responseItemOutput(payload)
+          : null;
+    if (pendingInput && typeof message === 'string' && message.includes(PLACEHOLDER)) {
+      items.push({ ...pendingInput, prompt: normalizePrompt(message), promptLine: index });
+      pendingInput = null;
     }
   }
   return items;
@@ -464,7 +536,13 @@ async function main() {
   const absoluteSessionPath = path.resolve(sessionPath);
   const records = await readRecords(absoluteSessionPath);
   const extractedItems = extractItems(records);
-  const catalog = await requestJson(`${apiBaseUrl}/api/style-gallery/catalog`, { headers: { accept: 'application/json' } });
+  const catalogUrl = new URL('/api/style-gallery/catalog', apiBaseUrl);
+  // 公网页面依赖长 CDN 缓存降低 Fluid CPU；命令行写入必须绕过旧列表，否则刚导入的 item 会被误判为新增。
+  catalogUrl.searchParams.set('_', Date.now().toString());
+  const catalog = await requestJson(catalogUrl.toString(), {
+    cache: 'no-store',
+    headers: { accept: 'application/json', 'cache-control': 'no-cache' },
+  });
   const existingByHash = await loadExistingItemsByHash(apiBaseUrl, catalog.items, extractedItems);
   const prepared = await buildImportData(extractedItems, absoluteSessionPath, existingByHash, metadataOnly, promptModel);
 
