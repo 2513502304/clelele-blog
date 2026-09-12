@@ -21,6 +21,12 @@ import { STYLE_GALLERY_EXAMPLE_LIGHTBOX_PREFETCH } from '@lib/style-gallery-ligh
 import { STYLE_GALLERY_PLATFORMS } from '@lib/style-gallery-platforms';
 import { loadStyleGalleryDefaultPrompt, loadStyleGalleryPromptChoices } from '@lib/style-gallery-prompt-client';
 import { loadStyleGalleryPromptSearchIndex } from '@lib/style-gallery-prompt-search-client';
+import {
+  getStyleGalleryDefaultSortDirection,
+  STYLE_GALLERY_SORT_DIRECTIONS,
+  STYLE_GALLERY_SORT_KEYS,
+  type StyleGallerySortKey,
+} from '@lib/style-gallery-sort';
 import { openModal } from '@store/modal';
 import { parseAsString, parseAsStringLiteral, useQueryState, useQueryStates } from 'nuqs';
 import { NuqsAdapter } from 'nuqs/adapters/react';
@@ -70,9 +76,6 @@ const EXAMPLE_BATCH_SIZE = 24;
 // 与 Gallery 主预览保持一致：桌面端前两行主动加载，只有首行使用高网络优先级。
 const EAGER_EXAMPLE_COUNT = 6;
 const HIGH_PRIORITY_EXAMPLE_COUNT = 3;
-const sortKeys = ['default', 'date', 'id', 'examples', 'likes'] as const;
-const sortDirections = ['asc', 'desc'] as const;
-type SortKey = (typeof sortKeys)[number];
 const EMPTY_SOURCE_SEARCH_INDEX: Readonly<Record<string, string>> = Object.freeze({});
 
 function reportUrlStateError(error: unknown) {
@@ -97,8 +100,10 @@ function StyleGalleryExamplesOverviewContent({
   const [uploadToken, setUploadToken] = useState('');
   const [platform, setPlatform] = useQueryState('platform', parseAsString.withDefault('all'));
   const [query, setQuery] = useQueryState('q', parseAsString.withDefault(''));
-  const [sortKey, setSortKey] = useQueryState('sort', parseAsStringLiteral(sortKeys).withDefault('default'));
-  const [sortDirection, setSortDirection] = useQueryState('dir', parseAsStringLiteral(sortDirections).withDefault('asc'));
+  const [{ sort: sortKey, dir: sortDirection }, setSortState] = useQueryStates({
+    sort: parseAsStringLiteral(STYLE_GALLERY_SORT_KEYS).withDefault('default'),
+    dir: parseAsStringLiteral(STYLE_GALLERY_SORT_DIRECTIONS).withDefault('asc'),
+  });
   const [{ from: dateFrom, to: dateTo }, setDateRange] = useQueryStates({
     from: parseAsString.withDefault(''),
     to: parseAsString.withDefault(''),
@@ -115,7 +120,7 @@ function StyleGalleryExamplesOverviewContent({
   const [likeSortCounts, setLikeSortCounts] = useState<Record<string, number>>(() =>
     Object.fromEntries(examples.map((example) => [example.id, example.likeCount])),
   );
-  const sortLabels: Record<SortKey, string> = {
+  const sortLabels: Record<StyleGallerySortKey, string> = {
     default: labels.sortDefault,
     date: labels.sortImportedAt,
     id: labels.sortImageId,
@@ -248,14 +253,14 @@ function StyleGalleryExamplesOverviewContent({
     setLikeSortCounts(Object.fromEntries(examples.map((example) => [example.id, likes.getCount(example.id)])));
   }
 
-  function changeSortKey(nextSortKey: SortKey) {
+  function changeSortKey(nextSortKey: StyleGallerySortKey) {
     if (nextSortKey === 'likes') refreshLikeSortCounts();
-    setSortKey(nextSortKey).catch(reportUrlStateError);
+    void setSortState({ sort: nextSortKey, dir: getStyleGalleryDefaultSortDirection(nextSortKey) }).catch(reportUrlStateError);
   }
 
   function toggleSortDirection() {
     if (sortKey === 'likes') refreshLikeSortCounts();
-    setSortDirection((direction) => (direction === 'asc' ? 'desc' : 'asc')).catch(reportUrlStateError);
+    setSortState({ dir: sortDirection === 'asc' ? 'desc' : 'asc' }).catch(reportUrlStateError);
   }
 
   return (
@@ -327,10 +332,10 @@ function StyleGalleryExamplesOverviewContent({
               <select
                 id="example-sort"
                 value={sortKey}
-                onChange={(event) => changeSortKey(event.currentTarget.value as SortKey)}
+                onChange={(event) => changeSortKey(event.currentTarget.value as StyleGallerySortKey)}
                 className="h-10 w-full appearance-none rounded-md border border-border bg-background pr-8 pl-3 text-sm outline-none focus:border-primary"
               >
-                {sortKeys.map((key) => (
+                {STYLE_GALLERY_SORT_KEYS.map((key) => (
                   <option key={key} value={key}>
                     {sortLabels[key]}
                   </option>

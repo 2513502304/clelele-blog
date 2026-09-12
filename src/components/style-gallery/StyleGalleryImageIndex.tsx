@@ -15,6 +15,12 @@ import {
 import { loadStyleGalleryDefaultPrompt, loadStyleGalleryPromptChoices } from '@lib/style-gallery-prompt-client';
 import { loadStyleGalleryPromptSearchIndex } from '@lib/style-gallery-prompt-search-client';
 import { getSelectedStyleGalleryPrompt } from '@lib/style-gallery-prompt-selection';
+import {
+  getStyleGalleryDefaultSortDirection,
+  STYLE_GALLERY_SORT_DIRECTIONS,
+  STYLE_GALLERY_SORT_KEYS,
+  type StyleGallerySortKey,
+} from '@lib/style-gallery-sort';
 import { openModal } from '@store/modal';
 import { parseAsString, parseAsStringLiteral, useQueryState, useQueryStates } from 'nuqs';
 import { NuqsAdapter } from 'nuqs/adapters/react';
@@ -51,9 +57,6 @@ export interface StyleGalleryImageIndexLabels {
   visualFilter: StyleGalleryVisualFilterLabels;
 }
 
-const sortKeys = ['default', 'date', 'id', 'examples', 'likes'] as const;
-const sortDirections = ['asc', 'desc'] as const;
-type SortKey = (typeof sortKeys)[number];
 const INITIAL_INDEX_ITEM_COUNT = 72;
 const INDEX_ITEM_BATCH_SIZE = 72;
 // 矩阵首批仍覆盖多个视口；仅首行 eager，避免几十个签名重定向同时争抢连接。
@@ -80,8 +83,10 @@ function StyleGalleryImageIndexContent({
   lightboxCopyLabels,
 }: StyleGalleryImageIndexProps) {
   const [query, setQuery] = useQueryState('q', parseAsString.withDefault(''));
-  const [sortKey, setSortKey] = useQueryState('sort', parseAsStringLiteral(sortKeys).withDefault('default'));
-  const [sortDirection, setSortDirection] = useQueryState('dir', parseAsStringLiteral(sortDirections).withDefault('asc'));
+  const [{ sort: sortKey, dir: sortDirection }, setSortState] = useQueryStates({
+    sort: parseAsStringLiteral(STYLE_GALLERY_SORT_KEYS).withDefault('default'),
+    dir: parseAsStringLiteral(STYLE_GALLERY_SORT_DIRECTIONS).withDefault('asc'),
+  });
   const [{ from: dateFrom, to: dateTo }, setDateRange] = useQueryStates({
     from: parseAsString.withDefault(''),
     to: parseAsString.withDefault(''),
@@ -90,7 +95,7 @@ function StyleGalleryImageIndexContent({
   const [visualRevision, setVisualRevision] = useState(0);
   const [promptSearchIndex, setPromptSearchIndex] = useState<Record<string, string> | null>(null);
   const [promptSearchStatus, setPromptSearchStatus] = useState<'idle' | 'loading' | 'ready' | 'failed'>('idle');
-  const sortLabels: Record<SortKey, string> = {
+  const sortLabels: Record<StyleGallerySortKey, string> = {
     default: labels.sortDefault,
     date: labels.sortImportedAt,
     id: labels.sortImageId,
@@ -187,6 +192,10 @@ function StyleGalleryImageIndexContent({
     openModal('imageLightbox', data);
   }
 
+  function changeSortKey(nextSortKey: StyleGallerySortKey) {
+    void setSortState({ sort: nextSortKey, dir: getStyleGalleryDefaultSortDirection(nextSortKey) }).catch(reportUrlStateError);
+  }
+
   return (
     <section className="space-y-4" aria-label="Image style prompt gallery index">
       <div className="flex items-center gap-3 rounded-lg border border-border bg-background/85 p-3 shadow-sm md:flex-col md:items-stretch">
@@ -229,10 +238,10 @@ function StyleGalleryImageIndexContent({
             <select
               id="style-gallery-index-sort"
               value={sortKey}
-              onChange={(event) => setSortKey(event.currentTarget.value as SortKey).catch(reportUrlStateError)}
+              onChange={(event) => changeSortKey(event.currentTarget.value as StyleGallerySortKey)}
               className="h-10 w-full appearance-none rounded-md border border-border bg-background pr-8 pl-3 text-sm outline-none transition-colors hover:border-primary/40 focus:border-primary"
             >
-              {(Object.keys(sortLabels) as SortKey[]).map((key) => (
+              {STYLE_GALLERY_SORT_KEYS.map((key) => (
                 <option key={key} value={key}>
                   {sortLabels[key]}
                 </option>
@@ -247,7 +256,7 @@ function StyleGalleryImageIndexContent({
             type="button"
             title={sortDirection === 'asc' ? labels.sortAscending : labels.sortDescending}
             aria-label={sortDirection === 'asc' ? labels.sortAscending : labels.sortDescending}
-            onClick={() => setSortDirection((direction) => (direction === 'asc' ? 'desc' : 'asc')).catch(reportUrlStateError)}
+            onClick={() => setSortState({ dir: sortDirection === 'asc' ? 'desc' : 'asc' }).catch(reportUrlStateError)}
             className="flex size-10 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
           >
             <Icon icon={sortDirection === 'asc' ? 'ri:sort-asc' : 'ri:sort-desc'} className="size-4" />

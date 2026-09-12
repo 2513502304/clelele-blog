@@ -139,7 +139,6 @@ export const uiStrings = {
   'gallery.importedAt': 'Imported',
   'gallery.searchPlaceholder': '搜索提示词、标签或生成平台...',
   'gallery.indexSearchPlaceholder': '搜索图片 ID、标题或完整 prompt...',
-  'gallery.allTags': '全部',
   'gallery.sortItems': '风格提示词排序',
   'gallery.sortDefault': '按默认顺序排序',
   'gallery.sortImportedAt': '按导入时间排序',

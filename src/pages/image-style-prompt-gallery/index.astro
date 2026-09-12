@@ -19,7 +19,6 @@ export const prerender = false;
 const locale = getLocaleFromUrl(Astro.url.pathname);
 const gallery = await getStyleGalleryData();
 const cardItems = toStyleGalleryCardDataList(gallery);
-const tags = gallery.tags;
 const title = `${t(locale, 'gallery.title')} | ${siteConfig.title}`;
 const description = t(locale, 'gallery.description');
 const galleryBasePath = localizedPath('/image-style-prompt-gallery', locale);
@@ -27,7 +26,6 @@ const exampleOverviewPath = localizedPath('/image-style-prompt-gallery/examples'
 const imageIndexPath = localizedPath('/image-style-prompt-gallery/index', locale);
 const browserLabels = {
   searchPlaceholder: t(locale, 'gallery.searchPlaceholder'),
-  allTags: t(locale, 'gallery.allTags'),
   sortItems: t(locale, 'gallery.sortItems'),
   sortDefault: t(locale, 'gallery.sortDefault'),
   sortImportedAt: t(locale, 'gallery.sortImportedAt'),
@@ -49,6 +47,7 @@ const browserLabels = {
   promptLoading: t(locale, 'gallery.promptLoading'),
   promptLoadFailed: t(locale, 'gallery.promptLoadFailed'),
   view: t(locale, 'gallery.view'),
+  loadMore: t(locale, 'search.loadMore'),
   noMatches: t(locale, 'gallery.noMatches'),
   openImage: t(locale, 'image.openLightbox'),
   dateRange: createStyleGalleryDateRangeLabels(locale),
@@ -103,8 +102,6 @@ setStyleGalleryPublicCacheHeaders(Astro.response.headers, [STYLE_GALLERY_LIST_CA
       <StyleGalleryBrowser
         client:idle
         items={cardItems}
-        tags={tags}
-        modelTargets={gallery.modelTargets}
         galleryBasePath={galleryBasePath}
         locale={locale}
         labels={browserLabels}
