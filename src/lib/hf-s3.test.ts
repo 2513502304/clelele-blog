@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createHfS3Client, createHfS3PresignedUrl, createHfS3SignedHeaders, type HfS3Config, HfS3RequestError } from './hf-s3';
+import {
+  createHfS3Client,
+  createHfS3PresignedUrl,
+  createHfS3SignedHeaders,
+  fetchHfS3Read,
+  type HfS3Config,
+  HfS3RequestError,
+} from './hf-s3';
 
 const config: HfS3Config = {
   accessKeyId: 'HFAKTEST',
@@ -37,6 +44,32 @@ test('conditional writes include the condition in the signed header set', () => 
   assert.match(signed.headers.authorization, /SignedHeaders=content-type;host;if-none-match;x-amz-content-sha256;x-amz-date/);
 });
 
+test('signing rejects cleartext endpoints before producing credentials', () => {
+  const insecure = { ...config, endpoint: new URL('http://s3.hf.co/clelele0722') };
+  assert.throws(() => createHfS3PresignedUrl(insecure, 'GET', 'source/image.png', 60), /must use HTTPS/);
+  assert.throws(() => createHfS3SignedHeaders(insecure, 'PUT', 'source/image.png', new Uint8Array()), /must use HTTPS/);
+});
+
+test('object requests never follow unchecked redirects', async () => {
+  const originalFetch = globalThis.fetch;
+  const methods: string[] = [];
+  globalThis.fetch = async (_url, init) => {
+    assert.equal(init?.redirect, ['PUT', 'DELETE'].includes(init?.method ?? 'GET') ? 'error' : 'manual');
+    methods.push(init?.method ?? 'GET');
+    return new Response(null, { status: 200 });
+  };
+  try {
+    const client = createHfS3Client(config, { attempts: 1 });
+    await client.head('source/image.png');
+    await client.get('source/image.png');
+    await client.put('source/image.png', new Uint8Array(), 'image/png');
+    await client.delete('source/image.png');
+    assert.deepEqual(methods, ['HEAD', 'GET', 'PUT', 'DELETE']);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('exhausted retries preserve the typed HF S3 request error', async () => {
   const originalFetch = globalThis.fetch;
   let attempts = 0;
@@ -56,5 +89,39 @@ test('exhausted retries preserve the typed HF S3 request error', async () => {
     assert.equal(attempts, 2);
   } finally {
     globalThis.fetch = originalFetch;
+  }
+});
+
+test('read redirects allow HTTPS CDN delivery but block downgrade and credential forwarding', async () => {
+  const previousFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async (_url, init) => {
+    calls++;
+    if (calls === 1) return new Response(null, { status: 302, headers: { location: 'https://cdn.example.test/image' } });
+    assert.equal(new Headers(init?.headers).has('authorization'), false);
+    assert.equal(new Headers(init?.headers).get('range'), 'bytes=0-99');
+    return new Response('pixels');
+  };
+  try {
+    const response = await fetchHfS3Read('https://s3.example.test/image', {
+      headers: { authorization: 'test', range: 'bytes=0-99' },
+    });
+    assert.equal(await response.text(), 'pixels');
+    calls = 0;
+    globalThis.fetch = async () => {
+      calls++;
+      return new Response(null, { status: 302, headers: { location: 'http://cdn.example.test/image' } });
+    };
+    await assert.rejects(fetchHfS3Read('https://s3.example.test/image'), /must use HTTPS/);
+    assert.equal(calls, 1);
+    calls = 0;
+    globalThis.fetch = async () => {
+      calls++;
+      return new Response(null, { status: 302, headers: { location: '/loop' } });
+    };
+    await assert.rejects(fetchHfS3Read('https://s3.example.test/image'), /excessive/);
+    assert.equal(calls, 6);
+  } finally {
+    globalThis.fetch = previousFetch;
   }
 });

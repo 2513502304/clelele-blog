@@ -168,13 +168,23 @@ describe('style gallery example upload CLI integration', () => {
       'NO_PROXY',
     ] as const;
     const previousEnv = Object.fromEntries(envNames.map((name) => [name, process.env[name]]));
+    const previousFetch = globalThis.fetch;
+    // Keep production HTTPS signing validation while routing test-only storage traffic
+    // to the local byte server; no public endpoint or real credentials are involved.
+    globalThis.fetch = (input, init) => {
+      const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url);
+      return previousFetch(
+        url.origin === 'https://storage.example.test' ? `${baseUrl}${url.pathname}${url.search}` : input,
+        init,
+      );
+    };
 
     try {
       Object.assign(process.env, {
         STYLE_GALLERY_UPLOAD_TOKEN: 'test-upload-token',
         HF_S3_ACCESS_KEY_ID: 'HFAKTEST',
         HF_S3_SECRET_ACCESS_KEY: 'test-secret',
-        HF_S3_ENDPOINT: baseUrl,
+        HF_S3_ENDPOINT: 'https://storage.example.test',
         HF_S3_BUCKET: 'raw-datasets',
         STYLE_GALLERY_BUCKET_PREFIX: 'image-style-prompt-gallery',
         HF_S3_REGION: 'us-east-1',
@@ -193,6 +203,7 @@ describe('style gallery example upload CLI integration', () => {
       assert.deepEqual(mergedHashes, [goodHash]);
       assert.deepEqual(cleanedHashes, [failedHash]);
     } finally {
+      globalThis.fetch = previousFetch;
       for (const name of envNames) {
         const previous = previousEnv[name];
         if (previous === undefined) delete process.env[name];

@@ -28,7 +28,7 @@ Generated images use a content-addressed path independent of their platform. Pla
 
 Reference-image records, catalog cards, generated examples, and example-index entries carry optional `dimensions: { width, height }`, measured after EXIF orientation. The source catalog uses the first reference image's dimensions. Existing record versions and URLs remain compatible; dimensions are optional only during migration and for older API clients.
 
-The session importer reads image headers with Sharp. The example-upload CLI reads file headers, and the browser records display dimensions before upload. The common example merge endpoint fills missing dimensions for older clients; direct and chunked byte uploads share this same metadata path. Index reconciliation preserves dimensions and likes.
+The session importer reads image headers with Sharp. The example-upload CLI reads file headers, and the browser records display dimensions before upload. The common example merge endpoint measures the stored object and overwrites advisory client dimensions; direct and chunked byte uploads share this same metadata path. Index reconciliation preserves dimensions and likes.
 
 Preview and Sub-gallery overview offer `?layout=masonry`. Cards have equal widths and reserve their original aspect ratios before image requests. Shortest-column packing keeps existing positions when more cards are appended. The image index intentionally retains its dense square matrix. Missing legacy dimensions use a stable 4:5 container with `contain`, until backfilled, rather than changing height after loading.
 
@@ -39,7 +39,7 @@ node --use-env-proxy --env-file-if-exists=.env.local --import tsx scripts/backfi
 node --use-env-proxy --env-file-if-exists=.env.local --import tsx scripts/backfill-style-gallery-dimensions.ts --apply --remove-tags
 ```
 
-The script caches dimensions under `/tmp/style-gallery-dimensions`, backs up each overwritten metadata revision, and uses ETag conditions to preserve concurrent changes. It changes neither image bytes nor prompt text, dates, IDs, platform labels, or votes. Re-running is safe. `--remove-tags` deletes the obsolete shared catalog tags as part of the same rollout; the updated catalog schema no longer requires that field.
+The script creates a unique private temporary directory (printed in its result) for cached dimensions and backups of each overwritten metadata revision, and uses ETag conditions to preserve concurrent changes. It changes neither image bytes nor prompt text, dates, IDs, platform labels, or votes. Re-running is safe. To reuse a cache, pass `--work-dir` pointing to a directory owned by the current user with mode `0700`; symlinked directories and files are rejected. `--remove-tags` deletes the obsolete shared catalog tags as part of the same rollout; the updated catalog schema no longer requires that field.
 
 ## Writes and consistency
 

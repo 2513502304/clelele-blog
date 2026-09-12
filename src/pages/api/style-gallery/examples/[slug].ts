@@ -92,13 +92,11 @@ async function validateExampleObjectsExist(examples: StyleGalleryExample[]): Pro
     if (!(await headStyleGalleryObject(key))) {
       throw new StyleGalleryClientError(`Example image object is missing: ${example.src}`, 409);
     }
-    // Older upload clients do not send dimensions. Fill them at this shared commit boundary
-    // so neither direct nor chunked uploads can introduce new unstable masonry placeholders.
-    if (!example.dimensions) {
-      const bytes = await getStyleGalleryObjectBytes(key);
-      if (!bytes) throw new StyleGalleryClientError('Uploaded image is missing.', 409);
-      example.dimensions = await readStyleGalleryImageDimensions(bytes);
-    }
+    // Client geometry is advisory. Measure the stored object before publishing it so a
+    // stale or forged upload payload cannot reserve an incorrect masonry placeholder.
+    const bytes = await getStyleGalleryObjectBytes(key);
+    if (!bytes) throw new StyleGalleryClientError('Uploaded image is missing.', 409);
+    example.dimensions = await readStyleGalleryImageDimensions(bytes);
   });
 }
 

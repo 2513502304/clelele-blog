@@ -31,7 +31,7 @@ import {
 import type { StyleGalleryVisualFeature } from '@lib/style-gallery-visual-types';
 import { openModal } from '@store/modal';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { StyleGalleryExample, StyleGalleryExampleView } from '@/types/style-gallery';
+import type { StyleGalleryExample, StyleGalleryExampleView, StyleGalleryImageDimensions } from '@/types/style-gallery';
 import {
   createStyleGalleryLightboxLikeAction,
   StyleGalleryLikeButton,
@@ -92,7 +92,7 @@ interface SelectedUpload {
   id: string;
   file: File;
   imageHash: string;
-  dimensions?: { width: number; height: number };
+  dimensions?: StyleGalleryImageDimensions;
 }
 
 const UPLOAD_CONCURRENCY = 5;

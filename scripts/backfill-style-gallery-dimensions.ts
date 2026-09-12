@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
+import { fetchHfS3Read } from '../src/lib/hf-s3';
 import {
   createStyleGallerySignedImageUrl,
   getStyleGalleryObjectBytes,
@@ -18,15 +20,38 @@ const { values } = parseArgs({
   options: {
     apply: { type: 'boolean', default: false },
     'remove-tags': { type: 'boolean', default: false },
-    'work-dir': { type: 'string', default: '/tmp/style-gallery-dimensions' },
+    'work-dir': { type: 'string' },
     concurrency: { type: 'string', default: '12' },
   },
 });
-const workDir = path.resolve(values['work-dir']);
+const workDir = values['work-dir']
+  ? path.resolve(values['work-dir'])
+  : await mkdtemp(path.join(tmpdir(), 'style-gallery-dimensions-'));
 const concurrency = Number(values.concurrency);
 if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 24) throw new Error('Concurrency must be 1–24.');
-await mkdir(path.join(workDir, 'dimensions'), { recursive: true });
-await mkdir(path.join(workDir, 'backups'), { recursive: true });
+/** Private directories prevent other local users from replacing cached geometry or backups. */
+async function ensurePrivateDirectory(directory: string) {
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  const stat = await lstat(directory);
+  if (!stat.isDirectory() || stat.isSymbolicLink() || stat.uid !== process.getuid?.() || (stat.mode & 0o077) !== 0) {
+    throw new Error(`Work directory must be owned by the current user, mode 0700, and not a symlink: ${directory}`);
+  }
+}
+
+/** Existing files must be regular files inside the already validated private directory. */
+async function rejectUnsafeFile(file: string) {
+  const stat = await lstat(file).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT') return undefined;
+    throw error;
+  });
+  if (stat && (!stat.isFile() || stat.isSymbolicLink() || stat.uid !== process.getuid?.() || stat.nlink !== 1)) {
+    throw new Error(`Unsafe cache or backup file: ${file}`);
+  }
+}
+
+await ensurePrivateDirectory(workDir);
+await ensurePrivateDirectory(path.join(workDir, 'dimensions'));
+await ensurePrivateDirectory(path.join(workDir, 'backups'));
 const dimensions = new Map<string, Promise<StyleGalleryImageDimensions>>();
 let inspected = 0;
 let changed = 0;
@@ -36,6 +61,7 @@ async function inspectImage(source: string): Promise<StyleGalleryImageDimensions
   const key = source.replace(/^\/api\/style-gallery\/image\//, '');
   if (!/^(source|examples\/images)\/[a-zA-Z0-9._-]+$/.test(key)) throw new Error('Invalid image object key.');
   const cachePath = path.join(workDir, 'dimensions', `${createHash('sha256').update(key).digest('hex')}.json`);
+  await rejectUnsafeFile(cachePath);
   try {
     return styleGalleryImageDimensionsSchema.parse(JSON.parse(await readFile(cachePath, 'utf8')));
   } catch {
@@ -45,7 +71,7 @@ async function inspectImage(source: string): Promise<StyleGalleryImageDimensions
   for (let attempt = 0; attempt < 3 && !result; attempt++) {
     try {
       for (const size of [65_536, 262_144, 1_048_576]) {
-        const response = await fetch(createStyleGallerySignedImageUrl(key), {
+        const response = await fetchHfS3Read(createStyleGallerySignedImageUrl(key), {
           headers: { Range: `bytes=0-${size - 1}` },
           signal: AbortSignal.timeout(30_000),
         });
@@ -72,7 +98,7 @@ async function inspectImage(source: string): Promise<StyleGalleryImageDimensions
     }
   }
   const valid = styleGalleryImageDimensionsSchema.parse(result);
-  await writeFile(cachePath, JSON.stringify(valid));
+  await writeFile(cachePath, JSON.stringify(valid), { mode: 0o600 });
   inspected++;
   if (inspected % 200 === 0) console.log(`Read dimensions: ${inspected}`);
   return valid;
@@ -134,7 +160,9 @@ async function updateObject(key: string) {
     }
     // Each overwritten revision has its own backup, including conflict retries.
     const revision = createHash('sha256').update(snapshot.text).digest('hex').slice(0, 16);
-    await writeFile(path.join(workDir, 'backups', `${key.replaceAll('/', '_')}.${revision}.json`), snapshot.text);
+    const backupPath = path.join(workDir, 'backups', `${key.replaceAll('/', '_')}.${revision}.json`);
+    await rejectUnsafeFile(backupPath);
+    await writeFile(backupPath, snapshot.text, { mode: 0o600 });
     try {
       await putStyleGalleryObject(key, new TextEncoder().encode(JSON.stringify(metadata)), 'application/json', {
         ifMatch: snapshot.etag,
