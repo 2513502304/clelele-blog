@@ -328,7 +328,7 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
 
   return (
     <section className="space-y-6" aria-label="Image style prompt gallery browser">
-      <div className="rounded-lg border border-rose-100 bg-white/75 p-4 shadow-sm dark:border-rose-950/60 dark:bg-gray-950/60">
+      <div className="glass-surface glass-toolbar p-4">
         <div>
           <label className="relative block">
             <Icon icon="ri:search-line" className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-rose-400" />
@@ -451,7 +451,7 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
               <button
                 type="button"
                 onClick={() => openSourceLightbox(item)}
-                className="absolute top-2 left-2 z-10 flex size-9 cursor-zoom-in items-center justify-center rounded-md border border-white/20 bg-black/50 text-white shadow-sm backdrop-blur-sm transition hover:scale-105 hover:bg-black/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                className="glass-image-action absolute top-2 left-2 z-10 flex size-9 cursor-zoom-in items-center justify-center rounded-lg text-white transition hover:bg-black/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
                 aria-label={`${labels.openImage}: ${item.title}`}
                 title={labels.openImage}
               >
@@ -461,7 +461,7 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
                 type="button"
                 onClick={() => copyPrompt(item)}
                 onPointerDown={() => prefetchPromptChoices(item)}
-                className="absolute top-2 right-2 z-10 flex size-9 items-center justify-center rounded-md border border-white/20 bg-black/50 text-white shadow-sm backdrop-blur-sm transition hover:scale-105 hover:bg-black/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                className="glass-image-action absolute top-2 right-2 z-10 flex size-9 items-center justify-center rounded-lg text-white transition hover:bg-black/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
                 aria-label={`${copyErrorSlug === item.slug ? labels.copyRetry : copiedSlug === item.slug ? labels.copied : labels.copy}: ${item.title}`}
                 title={copyErrorSlug === item.slug ? labels.copyRetry : copiedSlug === item.slug ? labels.copied : labels.copy}
               >
@@ -486,7 +486,7 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
                   aria-label={item.title}
                   title={item.title}
                 >
-                  <h2 className="line-clamp-1 font-semibold text-base text-gray-900 leading-6 transition group-hover:text-rose-600 dark:text-white">
+                  <h2 className="line-clamp-1 font-semibold text-gray-900 text-sm leading-5 transition group-hover:text-rose-600 dark:text-white">
                     {item.imageHash.slice(0, 12)}
                   </h2>
                 </a>
@@ -501,7 +501,7 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
                   )}
                 </div>
               </div>
-              <p className="line-clamp-3 text-pretty text-gray-600 text-sm leading-5 dark:text-gray-300">
+              <p className="line-clamp-3 text-pretty text-[13px] text-gray-600 leading-5 dark:text-gray-300">
                 {item.promptExcerpt}
               </p>
             </div>

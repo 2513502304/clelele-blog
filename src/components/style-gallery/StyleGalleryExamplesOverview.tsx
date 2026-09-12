@@ -268,7 +268,7 @@ function StyleGalleryExamplesOverviewContent({
 
   return (
     <section className="space-y-5" aria-label="Generated example overview">
-      <div className="rounded-lg border border-border bg-background/80 p-4 shadow-sm">
+      <div className="glass-surface glass-toolbar p-4">
         <label className="relative block w-full">
           <Icon icon="ri:search-line" className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
           <input

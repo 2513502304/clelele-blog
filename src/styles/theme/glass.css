@@ -1,0 +1,121 @@
+/* Glass belongs to navigation and controls; reading surfaces and gallery images stay solid. */
+:root {
+  --glass-tint: 255 255 255;
+  --glass-edge: rgb(255 255 255 / 80%);
+  --glass-glint: rgb(255 255 255 / 55%);
+  --glass-shadow: rgb(49 32 47 / 7%);
+}
+
+.dark {
+  --glass-tint: 31 35 43;
+  --glass-edge: rgb(255 255 255 / 14%);
+  --glass-glint: rgb(255 255 255 / 7%);
+  --glass-shadow: rgb(0 0 0 / 22%);
+}
+
+.glass-surface,
+.live2d-controls {
+  border: 1px solid var(--glass-edge);
+  background: rgb(var(--glass-tint) / 96%);
+  box-shadow:
+    inset 0 1px 0 var(--glass-glint),
+    inset 0 -1px 0 rgb(var(--glass-tint) / 25%),
+    0 8px 28px var(--glass-shadow);
+}
+
+.glass-toolbar {
+  border-radius: 1rem;
+}
+
+.glass-float {
+  transition:
+    background-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.glass-float:hover {
+  background-color: rgb(var(--glass-tint) / 90%);
+  box-shadow:
+    inset 0 1px 0 var(--glass-glint),
+    0 5px 18px var(--glass-shadow);
+}
+
+.glass-image-action {
+  border: 1px solid rgb(255 255 255 / 28%);
+  background: linear-gradient(145deg, rgb(255 255 255 / 13%), transparent 65%), rgb(22 25 33 / 58%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 20%),
+    0 2px 8px rgb(0 0 0 / 12%);
+}
+
+.glass-float:focus-visible,
+.glass-image-action:focus-visible {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 3px;
+}
+
+/* Touch controls retain an accessible target without enlarging desktop chrome. */
+@media (pointer: coarse) {
+  .glass-float,
+  .glass-image-action {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* Keep the existing transparent hero/header behavior; glass appears with its navigation background. */
+#site-header.with-background {
+  border-bottom-color: var(--glass-edge);
+  box-shadow: 0 4px 24px var(--glass-shadow);
+}
+
+#site-header.with-background::before {
+  background: rgb(var(--glass-tint) / 96%);
+  box-shadow: inset 0 -1px 0 var(--glass-glint);
+}
+
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass-surface,
+  .live2d-controls,
+  #site-header.with-background::before {
+    background:
+      linear-gradient(125deg, var(--glass-glint), transparent 42%),
+      linear-gradient(120deg, hsl(var(--primary) / 4%), transparent 65%), rgb(var(--glass-tint) / 76%);
+  }
+
+  .glass-surface,
+  .live2d-controls,
+  #site-header.with-background {
+    -webkit-backdrop-filter: blur(20px) saturate(145%);
+    backdrop-filter: blur(20px) saturate(145%);
+  }
+
+  .glass-image-action {
+    -webkit-backdrop-filter: blur(8px) saturate(140%);
+    backdrop-filter: blur(8px) saturate(140%);
+  }
+}
+
+/* Preserve contrast when the user requests less transparency or higher contrast. */
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active) {
+  .glass-surface,
+  .live2d-controls,
+  #site-header.with-background,
+  #site-header.with-background::before {
+    background: rgb(var(--glass-tint));
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .glass-image-action {
+    background: #20232b;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glass-float {
+    transition: none;
+  }
+}

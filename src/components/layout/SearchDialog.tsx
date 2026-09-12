@@ -107,7 +107,7 @@ export default function SearchDialog() {
                 transition={{ duration: 0.2 }}
               >
                 <motion.div
-                  className="w-full max-w-3xl overflow-auto rounded-xl bg-gradient-start text-foreground shadow-box"
+                  className="glass-surface w-full max-w-3xl overflow-auto rounded-2xl text-foreground"
                   initial={{ opacity: 0, scale: 0.95, y: -10 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.95, y: -10 }}
