@@ -141,7 +141,6 @@ export const uiStrings: UIStrings = {
   'gallery.importedAt': 'Imported',
   'gallery.searchPlaceholder': 'プロンプト、タグ、生成プラットフォームを検索...',
   'gallery.indexSearchPlaceholder': '画像 ID、タイトル、または全文 prompt を検索...',
-  'gallery.allTags': 'すべて',
   'gallery.sortItems': 'スタイルプロンプトを並べ替え',
   'gallery.sortDefault': 'デフォルト順',
   'gallery.sortImportedAt': 'インポート日時順',

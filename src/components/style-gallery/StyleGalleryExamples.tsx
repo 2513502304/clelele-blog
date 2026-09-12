@@ -923,22 +923,25 @@ export default function StyleGalleryExamples({
                       key={example.src}
                       id={getStyleGalleryLightboxElementId('detail-example', example.id)}
                       tabIndex={-1}
-                      className="overflow-hidden rounded-lg border border-gray-100 bg-gray-50 [contain-intrinsic-size:auto_420px] [content-visibility:auto] dark:border-gray-800 dark:bg-gray-900"
+                      className="w-full min-w-0 overflow-hidden rounded-lg border border-gray-100 bg-gray-50 [contain-intrinsic-size:auto_420px] [content-visibility:auto] dark:border-gray-800 dark:bg-gray-900"
                     >
-                      <div className="relative">
+                      {/* 全局 reset 让 figure 使用 fit-content，因此 figure 与内层都必须显式占满 grid track；否则未加载的 1x1 img 会让整张卡片收缩。 */}
+                      <div className="relative aspect-square w-full overflow-hidden bg-gray-100 dark:bg-gray-900">
                         <button
                           type="button"
                           onClick={() => openExampleLightbox(example, platformExamples)}
-                          className="group block w-full cursor-zoom-in overflow-hidden text-left"
+                          className="group absolute inset-0 block h-full w-full cursor-zoom-in overflow-hidden text-left"
                           aria-label={`Open ${example.alt ?? example.model ?? 'generated example'} preview`}
                         >
                           <StyleGallerySharedImage
                             source={example.src}
                             loadedSources={loadedExampleSources.current}
                             alt={example.alt ?? example.model ?? 'Generated example'}
+                            width={1}
+                            height={1}
                             loading="lazy"
                             decoding="async"
-                            className="aspect-square w-full object-cover transition duration-200 group-hover:scale-105"
+                            className="h-full w-full object-cover transition duration-200 group-hover:scale-105"
                           />
                         </button>
                         <label className="absolute top-2 left-2 flex size-8 cursor-pointer items-center justify-center rounded-md bg-white/90 shadow dark:bg-gray-950/90">

@@ -141,7 +141,6 @@ export const uiStrings: UIStrings = {
   'gallery.importedAt': 'Imported',
   'gallery.searchPlaceholder': 'Search prompts, tags, or generation platforms...',
   'gallery.indexSearchPlaceholder': 'Search image IDs, titles, or full prompts...',
-  'gallery.allTags': 'All',
   'gallery.sortItems': 'Sort style prompts',
   'gallery.sortDefault': 'Default order',
   'gallery.sortImportedAt': 'Imported date',

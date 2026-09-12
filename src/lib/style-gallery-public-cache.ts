@@ -11,6 +11,8 @@ export function getStyleGalleryItemCacheTag(slug: string): string {
 /**
  * 浏览器每次仍向站点确认新鲜度，Vercel 边缘节点则复用 SSR 结果 24 小时；写操作通过 tag 精准失效。
  * 这样不会依赖进程内缓存，也不会引入额外存储费用，冷节点或爬虫首次访问后均可直接命中 CDN。
+ * 该边界已将生产 Fluid Active CPU 从异常阶段约 20 min/day 降至约 6 min/day；列表读取不得绕过它
+ * 逐请求扫描 HF 详情对象。图片字节继续由浏览器通过预签名 URL 直读 HF，以控制 Fast Data/Origin Transfer。
  */
 export function setStyleGalleryPublicCacheHeaders(headers: Headers, tags: readonly string[]): void {
   headers.set('Cache-Control', STYLE_GALLERY_PUBLIC_CACHE_CONTROL);

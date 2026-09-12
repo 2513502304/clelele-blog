@@ -117,6 +117,7 @@ export const styleGalleryCatalogItemSchema = z.object({
 
 const styleGalleryCatalogFields = {
   updatedAt: z.string().datetime({ offset: true }),
+  // 两者是整站共享的来源/平台词表，不是逐 item 分类字段；列表不能据此渲染会让所有项目同时命中的筛选器。
   tags: z.array(z.string()),
   modelTargets: styleGalleryModelTargetsSchema,
   items: z.array(styleGalleryCatalogItemSchema),

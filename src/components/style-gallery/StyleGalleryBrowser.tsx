@@ -3,7 +3,6 @@ import StyleGalleryDateRangeFilter from '@components/style-gallery/StyleGalleryD
 import StyleGalleryVisualFilter, {
   type StyleGalleryVisualFilterLabels,
 } from '@components/style-gallery/StyleGalleryVisualFilter';
-import { useCollectionPagination } from '@hooks/useCollectionPagination';
 import { Icon } from '@iconify/react';
 import { createStyleGalleryDateRangeMatcher, getStyleGalleryDateKey } from '@lib/style-gallery-date-range';
 import type { StyleGalleryDateRangeLabels } from '@lib/style-gallery-date-range-labels';
@@ -22,12 +21,18 @@ import {
 import { getStyleGalleryPromptCacheKey, getStyleGalleryPromptChooserKey } from '@lib/style-gallery-prompt-groups';
 import { loadStyleGalleryPromptSearchIndex } from '@lib/style-gallery-prompt-search-client';
 import { getSelectedStyleGalleryPrompt } from '@lib/style-gallery-prompt-selection';
+import {
+  getStyleGalleryDefaultSortDirection,
+  STYLE_GALLERY_SORT_DIRECTIONS,
+  STYLE_GALLERY_SORT_KEYS,
+  type StyleGallerySortKey,
+} from '@lib/style-gallery-sort';
 import { openModal } from '@store/modal';
 import { useReducedMotion } from 'motion/react';
-import { parseAsString, useQueryStates } from 'nuqs';
+import { parseAsString, parseAsStringLiteral, useQueryStates } from 'nuqs';
 import { NuqsAdapter } from 'nuqs/adapters/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CollectionPaginationSettings, CollectionPaginator } from '../collection/CollectionPagination';
+import { useProgressiveList } from '@/hooks/useProgressiveList';
 import { Dialog, DialogContent } from '../ui/dialog';
 import { StyleGalleryPromptChooser } from './StyleGalleryPromptChooser';
 import StyleGallerySharedImage from './StyleGallerySharedImage';
@@ -50,8 +55,6 @@ export interface StyleGalleryBrowserItem {
 
 interface StyleGalleryBrowserProps {
   items: StyleGalleryBrowserItem[];
-  tags: string[];
-  modelTargets: string[];
   galleryBasePath: string;
   locale: string;
   labels: StyleGalleryBrowserLabels;
@@ -60,7 +63,6 @@ interface StyleGalleryBrowserProps {
 
 export interface StyleGalleryBrowserLabels {
   searchPlaceholder: string;
-  allTags: string;
   sortItems: string;
   sortDefault: string;
   sortImportedAt: string;
@@ -82,14 +84,13 @@ export interface StyleGalleryBrowserLabels {
   promptLoading: string;
   promptLoadFailed: string;
   view: string;
+  loadMore: string;
   noMatches: string;
   openImage: string;
   dateRange: StyleGalleryDateRangeLabels;
   visualFilter: StyleGalleryVisualFilterLabels;
 }
 
-type SortKey = 'default' | 'date' | 'id' | 'examples' | 'likes';
-type SortDirection = 'asc' | 'desc';
 interface PromptPickerState {
   item: StyleGalleryBrowserItem;
   prompts: StyleGalleryPromptChoice[] | null;
@@ -98,6 +99,8 @@ interface PromptPickerState {
 // 桌面端固定三列：前两行主动加载，但只让首行占用高网络优先级。
 const EAGER_CARD_COUNT = 6;
 const HIGH_PRIORITY_CARD_COUNT = 3;
+const INITIAL_CARD_COUNT = 24;
+const CARD_BATCH_SIZE = 24;
 
 function normalize(value: string) {
   return value.toLowerCase().trim();
@@ -119,20 +122,13 @@ function createPromptPickerState(
  * Gallery 主预览页：普通浏览只接收轻量 Catalog，用户开始搜索后再加载完整 prompt 索引。
  * 复制从详情接口读取完整文本；只有多 prompt 候选值得在 hover/focus 时提前请求并缓存。
  */
-function StyleGalleryBrowserContent({
-  items,
-  tags,
-  modelTargets,
-  galleryBasePath,
-  locale,
-  labels,
-  lightboxCopyLabels,
-}: StyleGalleryBrowserProps) {
+function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, lightboxCopyLabels }: StyleGalleryBrowserProps) {
   const shouldReduceMotion = useReducedMotion();
   const [query, setQuery] = useState('');
-  const [activeTag, setActiveTag] = useState<string>('all');
-  const [sortKey, setSortKey] = useState<SortKey>('default');
-  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+  const [{ sort: sortKey, dir: sortDirection }, setSortState] = useQueryStates({
+    sort: parseAsStringLiteral(STYLE_GALLERY_SORT_KEYS).withDefault('default'),
+    dir: parseAsStringLiteral(STYLE_GALLERY_SORT_DIRECTIONS).withDefault('asc'),
+  });
   const [{ from: dateFrom, to: dateTo }, setDateRange] = useQueryStates({
     from: parseAsString.withDefault(''),
     to: parseAsString.withDefault(''),
@@ -141,11 +137,12 @@ function StyleGalleryBrowserContent({
   const [copyErrorSlug, setCopyErrorSlug] = useState<string | null>(null);
   const [promptPicker, setPromptPicker] = useState<PromptPickerState | null>(null);
   const [visualMatches, setVisualMatches] = useState<Set<string> | null>(null);
+  const [visualRevision, setVisualRevision] = useState(0);
   const [promptSearchIndex, setPromptSearchIndex] = useState<Record<string, string> | null>(null);
   const [promptSearchStatus, setPromptSearchStatus] = useState<'idle' | 'loading' | 'ready' | 'failed'>('idle');
   const loadedSourceImages = useRef(new Set<string>()).current;
   const dateFormatter = useMemo(() => new Intl.DateTimeFormat(locale, { timeZone: 'Asia/Shanghai' }), [locale]);
-  const sortLabels: Record<SortKey, string> = {
+  const sortLabels: Record<StyleGallerySortKey, string> = {
     default: labels.sortDefault,
     date: labels.sortImportedAt,
     id: labels.sortImageId,
@@ -180,15 +177,14 @@ function StyleGalleryBrowserContent({
   const filteredItems = useMemo(() => {
     const q = normalize(query);
     const filtered = items.filter((item) => {
-      const matchesTag = activeTag === 'all' || tags.includes(activeTag);
-      const localSearchable = [item.title, item.imageHash, item.slug, ...tags, ...modelTargets].filter(Boolean).join(' ');
+      const localSearchable = [item.title, item.imageHash, item.slug].filter(Boolean).join(' ');
       const matchesQuery =
         !q ||
         normalize(localSearchable).includes(q) ||
         (promptSearchIndex ? promptSearchIndex[item.slug]?.includes(q) : promptSearchStatus !== 'failed');
       const matchesDate = matchesDateRange(item.date);
       const matchesVisual = visualMatches === null || visualMatches.has(item.slug);
-      return matchesTag && matchesQuery && matchesDate && matchesVisual;
+      return matchesQuery && matchesDate && matchesVisual;
     });
 
     const sorted = [...filtered];
@@ -201,21 +197,13 @@ function StyleGalleryBrowserContent({
       });
     }
     return sortDirection === 'desc' ? sorted.reverse() : sorted;
-  }, [
-    activeTag,
-    items,
-    matchesDateRange,
-    modelTargets,
-    promptSearchIndex,
-    promptSearchStatus,
-    query,
-    sortDirection,
-    sortKey,
-    tags,
-    visualMatches,
-  ]);
-  const { currentPage, isPaginated, pageSize, setCurrentPage, setIsPaginated, setPageSize, totalPages, visibleItems } =
-    useCollectionPagination(filteredItems, 'style-gallery-pagination-settings');
+  }, [items, matchesDateRange, promptSearchIndex, promptSearchStatus, query, sortDirection, sortKey, visualMatches]);
+  const { hasMore, loadMore, loadMoreRef, revealThrough, visibleItems } = useProgressiveList(filteredItems, {
+    initialCount: INITIAL_CARD_COUNT,
+    batchSize: CARD_BATCH_SIZE,
+    // “全部显示”仍必须按滚动渐进挂载；全量 Catalog 在客户端不等于一次创建全部图片节点。
+    resetKey: `${query.trim().toLowerCase()}\u0000${dateFrom}\u0000${dateTo}\u0000${sortKey}\u0000${sortDirection}\u0000${visualRevision}`,
+  });
 
   /** 复用 hover 预取与点击请求，避免同一 item 在请求尚未完成时重复访问 Vercel/HF。 */
   const loadPromptChoices = useCallback(
@@ -243,22 +231,14 @@ function StyleGalleryBrowserContent({
 
   function handleQueryChange(value: string) {
     setQuery(value);
-    setCurrentPage(1);
   }
 
-  function handleTagChange(tag: string) {
-    setActiveTag(tag);
-    setCurrentPage(1);
-  }
-
-  function handleSortChange(key: SortKey) {
-    setSortKey(key);
-    setCurrentPage(1);
+  function handleSortChange(key: StyleGallerySortKey) {
+    void setSortState({ sort: key, dir: getStyleGalleryDefaultSortDirection(key) }).catch(reportUrlStateError);
   }
 
   function toggleSortDirection() {
-    setSortDirection((direction) => (direction === 'asc' ? 'desc' : 'asc'));
-    setCurrentPage(1);
+    void setSortState({ dir: sortDirection === 'asc' ? 'desc' : 'asc' }).catch(reportUrlStateError);
   }
 
   function openSourceLightbox(item: StyleGalleryBrowserItem) {
@@ -281,7 +261,7 @@ function StyleGalleryBrowserContent({
             : undefined,
         locate: () => {
           const targetIndex = filteredItems.findIndex((entry) => entry.slug === candidate.slug);
-          if (isPaginated) setCurrentPage(Math.floor(targetIndex / pageSize) + 1);
+          revealThrough(targetIndex);
           locateStyleGalleryElement(getStyleGalleryLightboxElementId('preview-source', candidate.slug));
         },
       })),
@@ -357,51 +337,31 @@ function StyleGalleryBrowserContent({
           </label>
         </div>
 
-        <div className="mt-4 flex flex-wrap gap-2">
-          {['all', ...tags].map((tag) => (
-            <button
-              key={tag}
-              type="button"
-              onClick={() => handleTagChange(tag)}
-              className={`rounded-full border px-3 py-1.5 font-bold text-xs transition ${
-                activeTag === tag
-                  ? 'border-rose-300 bg-rose-500 text-white shadow-sm'
-                  : 'border-rose-100 bg-white text-gray-500 hover:border-rose-200 hover:text-rose-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300'
-              }`}
-            >
-              {tag === 'all' ? labels.allTags : tag}
-            </button>
-          ))}
-        </div>
-
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-rose-100 border-t pt-4 dark:border-gray-800">
-          <CollectionPaginationSettings
-            isPaginated={isPaginated}
-            pageSize={pageSize}
-            onModeChange={setIsPaginated}
-            onPageSizeChange={setPageSize}
+        {/* 三个 Gallery 工具栏保持同一信息顺序：筛选与实时结果数在左，排序在右；不能因删减控件把整组筛选推到右侧。 */}
+        <div className="mt-4 flex flex-wrap items-center gap-2 border-rose-100 border-t pt-4 dark:border-gray-800">
+          <StyleGalleryVisualFilter
+            scope="source"
+            labels={labels.visualFilter}
+            triggerClassName="h-10"
+            onResults={(matches) => {
+              setVisualMatches(matches);
+              setVisualRevision((revision) => revision + 1);
+            }}
           />
-          <div className="flex flex-wrap justify-end gap-2">
-            <StyleGalleryVisualFilter
-              scope="source"
-              labels={labels.visualFilter}
-              triggerClassName="h-9"
-              onResults={(matches) => {
-                setVisualMatches(matches);
-                setCurrentPage(1);
-              }}
-            />
-            <StyleGalleryDateRangeFilter
-              value={{ from: dateFrom, to: dateTo }}
-              locale={locale}
-              labels={labels.dateRange}
-              availableDateKeys={availableDateKeys}
-              triggerClassName="h-9"
-              onApply={(range) => {
-                setCurrentPage(1);
-                void setDateRange(range).catch(reportUrlStateError);
-              }}
-            />
+          <StyleGalleryDateRangeFilter
+            value={{ from: dateFrom, to: dateTo }}
+            locale={locale}
+            labels={labels.dateRange}
+            availableDateKeys={availableDateKeys}
+            triggerClassName="h-10"
+            onApply={(range) => {
+              void setDateRange(range).catch(reportUrlStateError);
+            }}
+          />
+          <span className="shrink-0 text-muted-foreground text-sm tabular-nums">
+            {filteredItems.length} / {items.length}
+          </span>
+          <div className="ml-auto flex items-center gap-2 md:ml-0">
             <label htmlFor="style-gallery-sort" className="sr-only">
               {labels.sortItems}
             </label>
@@ -413,10 +373,10 @@ function StyleGalleryBrowserContent({
               <select
                 id="style-gallery-sort"
                 value={sortKey}
-                onChange={(event) => handleSortChange(event.currentTarget.value as SortKey)}
-                className="h-9 appearance-none rounded-md border border-border bg-background pr-8 pl-8 text-sm outline-none transition-colors hover:border-primary/40 focus:border-primary"
+                onChange={(event) => handleSortChange(event.currentTarget.value as StyleGallerySortKey)}
+                className="h-10 appearance-none rounded-md border border-border bg-background pr-8 pl-8 text-sm outline-none transition-colors hover:border-primary/40 focus:border-primary"
               >
-                {(Object.keys(sortLabels) as SortKey[]).map((key) => (
+                {STYLE_GALLERY_SORT_KEYS.map((key) => (
                   <option key={key} value={key}>
                     {sortLabels[key]}
                   </option>
@@ -432,7 +392,7 @@ function StyleGalleryBrowserContent({
               title={sortDirection === 'asc' ? labels.sortAscending : labels.sortDescending}
               aria-label={sortDirection === 'asc' ? labels.sortAscending : labels.sortDescending}
               onClick={toggleSortDirection}
-              className="flex size-9 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+              className="flex size-10 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
             >
               <Icon icon={sortDirection === 'asc' ? 'ri:sort-asc' : 'ri:sort-desc'} className="size-4" />
             </button>
@@ -559,7 +519,17 @@ function StyleGalleryBrowserContent({
         </div>
       )}
 
-      {isPaginated && <CollectionPaginator currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />}
+      {hasMore && (
+        <div ref={loadMoreRef} className="flex justify-center pt-2">
+          <button
+            type="button"
+            onClick={loadMore}
+            className="rounded-md border border-border bg-background px-4 py-2 font-medium text-muted-foreground text-sm transition hover:border-primary/40 hover:text-foreground"
+          >
+            {labels.loadMore}
+          </button>
+        </div>
+      )}
 
       <Dialog open={Boolean(promptPicker)} onOpenChange={(open) => !open && setPromptPicker(null)}>
         <DialogContent
@@ -605,7 +575,7 @@ function StyleGalleryBrowserContent({
   );
 }
 
-/** 将列表、分页和 prompt 选择器的渲染异常限制在 Gallery 主交互区。 */
+/** 将渐进列表和 prompt 选择器的渲染异常限制在 Gallery 主交互区。 */
 export default function StyleGalleryBrowser(props: StyleGalleryBrowserProps) {
   return (
     <ErrorBoundary FallbackComponent={InlineErrorFallback}>
