@@ -5,7 +5,8 @@ The gallery stores runtime data in the Hugging Face bucket configured by `STYLE_
 ## Current layout
 
 ```text
-metadata/catalog.json
+metadata/catalog-v5.json
+metadata/prompt-search-index.json
 items/<slug>.json
 source/<hash-prefix>.<ext>
 thumb/<hash-prefix>.webp
@@ -13,7 +14,7 @@ examples/index-v2.json
 examples/images/<sha256>.<ext>
 ```
 
-`metadata/catalog.json` contains shared tags/model targets and only the card, search, sorting, pagination, and prompt-copy fields required by the preview UI. It contains `exampleCount`, but no generated-example records.
+`metadata/catalog-v5.json` contains shared model targets and the lightweight card/sorting fields required by the preview UI. It contains `exampleCount` and a prompt excerpt; full prompts are fetched on demand. The obsolete shared `codex-session` / `style-prompt` tags are ignored by readers and omitted by new writers.
 
 `items/<slug>.json` is the source of truth for one detail page. It contains the complete prompt record, all reference images, import provenance, and that item's generated examples. A detail request therefore reads one item document instead of joining separate item and example manifests.
 
@@ -22,6 +23,23 @@ examples/images/<sha256>.<ext>
 Like counts are not copied into the catalog or item documents. A missing user ID array is therefore never interpreted by runtime v2 code, and every visible count is derived from the one canonical index.
 
 Generated images use a content-addressed path independent of their platform. Platform changes update metadata only; they never copy or rename image objects. Physical deletion happens only after no entry in the global example index references the image URL.
+
+## Image dimensions and masonry
+
+Reference-image records, catalog cards, generated examples, and example-index entries carry optional `dimensions: { width, height }`, measured after EXIF orientation. The source catalog uses the first reference image's dimensions. Existing record versions and URLs remain compatible; dimensions are optional only during migration and for older API clients.
+
+The session importer reads image headers with Sharp. The example-upload CLI reads file headers, and the browser records display dimensions before upload. The common example merge endpoint fills missing dimensions for older clients; direct and chunked byte uploads share this same metadata path. Index reconciliation preserves dimensions and likes.
+
+Preview and Sub-gallery overview offer `?layout=masonry`. Cards have equal widths and reserve their original aspect ratios before image requests. Shortest-column packing keeps existing positions when more cards are appended. The image index intentionally retains its dense square matrix. Missing legacy dimensions use a stable 4:5 container with `contain`, until backfilled, rather than changing height after loading.
+
+Backfill existing public items and both indexes (read-only by default):
+
+```sh
+node --use-env-proxy --env-file-if-exists=.env.local --import tsx scripts/backfill-style-gallery-dimensions.ts
+node --use-env-proxy --env-file-if-exists=.env.local --import tsx scripts/backfill-style-gallery-dimensions.ts --apply --remove-tags
+```
+
+The script caches dimensions under `/tmp/style-gallery-dimensions`, backs up each overwritten metadata revision, and uses ETag conditions to preserve concurrent changes. It changes neither image bytes nor prompt text, dates, IDs, platform labels, or votes. Re-running is safe. `--remove-tags` deletes the obsolete shared catalog tags as part of the same rollout; the updated catalog schema no longer requires that field.
 
 ## Writes and consistency
 

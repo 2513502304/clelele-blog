@@ -32,6 +32,7 @@ import {
 import {
   styleGalleryCatalogSchema,
   styleGalleryExampleIndexSchema,
+  styleGalleryImageDimensionsSchema,
   styleGalleryItemSchema,
   styleGalleryPromptSearchIndexSchema,
   styleGalleryVisualFeatureSchema,
@@ -74,6 +75,17 @@ function createItem(): StoredStyleGalleryItem {
 }
 
 describe('style gallery metadata', () => {
+  it('rejects unusable image dimensions at upload and metadata boundaries', () => {
+    for (const dimensions of [
+      { width: 0, height: 900 },
+      { width: 1600, height: -1 },
+      { width: 1.5, height: 900 },
+      { width: 100_001, height: 900 },
+    ]) {
+      assert.equal(styleGalleryImageDimensionsSchema.safeParse(dimensions).success, false);
+    }
+  });
+
   it('rejects a fixed-width but directionless zero visual embedding', () => {
     assert.equal(
       styleGalleryVisualFeatureSchema.safeParse({
@@ -88,7 +100,9 @@ describe('style gallery metadata', () => {
   });
 
   it('validates items and creates lightweight catalog entries', () => {
-    const item = styleGalleryItemSchema.parse(createItem());
+    const input = createItem();
+    input.images[0].dimensions = { width: 1600, height: 900 };
+    const item = styleGalleryItemSchema.parse(input);
     assertStyleGalleryItemConsistency(item);
     assert.deepEqual(getStyleGalleryItemAssetKeys(item), ['source/aaaaaaaaaaaa.jpg', 'thumb/aaaaaaaaaaaa.webp']);
 
@@ -105,6 +119,9 @@ describe('style gallery metadata', () => {
     assert.equal(catalog.items[0].promptCount, 1);
     assert.equal(catalog.items[0].promptRevision, getStyleGalleryPromptRevision(item.prompts));
     assert.equal(catalog.version, 5);
+    assert.equal('tags' in catalog, false);
+    assert.deepEqual(catalog.items[0].dimensions, { width: 1600, height: 900 });
+    assert.equal(styleGalleryCatalogSchema.safeParse({ ...catalog, tags: undefined }).success, true);
     assert.equal(catalog.items[0].exampleCount, 3);
     assert.equal('tags' in catalog.items[0], false);
     assert.deepEqual(catalog.modelTargets, ['GPT-Image', 'Nano Banana', 'PixAI', 'Midjourney', 'NovelAI', 'Flux']);
@@ -222,6 +239,7 @@ describe('style gallery metadata', () => {
       model: 'GPT-Image',
       uploadedAt: '2026-07-13T00:02:00.000Z',
       imageHash: firstHash,
+      dimensions: { width: 1600, height: 900 },
     };
     const pixaiImage: StyleGalleryExample = {
       ...gptImage,
@@ -247,10 +265,9 @@ describe('style gallery metadata', () => {
       group.examples.map((example) => example.likedBy),
       [[7], []],
     );
-    assert.equal(
-      styleGalleryExampleIndexSchema.parse({ version: 2, updatedAt: gptImage.uploadedAt, groups: [group] }).version,
-      2,
-    );
+    const index = styleGalleryExampleIndexSchema.parse({ version: 2, updatedAt: gptImage.uploadedAt, groups: [group] });
+    assert.equal(index.version, 2);
+    assert.deepEqual(index.groups[0].examples[0].dimensions, gptImage.dimensions);
 
     assert.deepEqual(appendUniqueStyleGalleryExamples([gptImage], [{ ...gptImage, id: 'replacement' }]), [gptImage]);
   });

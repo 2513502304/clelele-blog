@@ -5,6 +5,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, it } from 'node:test';
+import sharp from 'sharp';
 import { runStyleGalleryExampleUpload } from '../../scripts/upload-style-examples';
 import type { StyleGalleryVisualFeature } from './style-gallery-visual-types';
 
@@ -35,8 +36,12 @@ function createVisualFeature(imageHash: string): StyleGalleryVisualFeature {
 describe('style gallery example upload CLI integration', () => {
   it('uploads image bytes directly to HF and commits successful files when a sibling fails', async () => {
     const directory = await mkdtemp(path.join(tmpdir(), 'style-gallery-cli-'));
-    const goodBytes = Buffer.from('valid generated image');
-    const failedBytes = Buffer.from('rejected generated image');
+    const goodBytes = await sharp({ create: { width: 120, height: 80, channels: 3, background: 'red' } })
+      .webp()
+      .toBuffer();
+    const failedBytes = await sharp({ create: { width: 80, height: 120, channels: 3, background: 'blue' } })
+      .webp()
+      .toBuffer();
     const goodHash = createHash('sha256').update(goodBytes).digest('hex');
     const failedHash = createHash('sha256').update(failedBytes).digest('hex');
     const goodPath = path.join(directory, 'good.webp');
@@ -83,24 +88,29 @@ describe('style gallery example upload CLI integration', () => {
         assert.equal(request.headers.authorization, 'Bearer test-upload-token');
         const body = JSON.parse((await readBody(request)).toString('utf8'));
         if (body.action === 'prepare') {
+          assert.deepEqual(body.files[0].dimensions, { width: 120, height: 80 });
           sendJson(response, {
-            uploads: body.files.map((file: { imageHash: string }, index: number) => ({
-              imageHash: file.imageHash,
-              duplicate: false,
-              exists: false,
-              example: {
-                id: `example-${index}`,
-                src: `/api/style-gallery/image/examples/images/${file.imageHash}.webp`,
-                alt: 'PixAI example',
-                model: 'PixAI',
-                uploadedAt: '2026-07-26T00:01:00.000Z',
+            uploads: body.files.map(
+              (file: { imageHash: string; dimensions: { width: number; height: number } }, index: number) => ({
                 imageHash: file.imageHash,
-              },
-            })),
+                duplicate: false,
+                exists: false,
+                example: {
+                  id: `example-${index}`,
+                  src: `/api/style-gallery/image/examples/images/${file.imageHash}.webp`,
+                  alt: 'PixAI example',
+                  model: 'PixAI',
+                  uploadedAt: '2026-07-26T00:01:00.000Z',
+                  imageHash: file.imageHash,
+                  dimensions: file.dimensions,
+                },
+              }),
+            ),
           });
           return;
         }
         if (body.action === 'merge') {
+          assert.deepEqual(body.examples[0].dimensions, { width: 120, height: 80 });
           assert.deepEqual(
             body.visualRecords.map((record: { feature: { imageHash: string }; imageId: string }) => ({
               imageHash: record.feature.imageHash,

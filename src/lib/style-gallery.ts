@@ -51,12 +51,11 @@ export async function getStyleGalleryItemBySlug(slug: string): Promise<StyleGall
       ...example,
       likeCount: indexedById.get(example.id)?.likedBy.length ?? 0,
     })),
-    tags: catalog.tags,
     modelTargets: catalog.modelTargets,
   };
 }
 
-/** 合并列表排序需要的点赞总数；公共标签和目标平台继续只保留在 catalog 顶层。 */
+/** 合并列表排序需要的点赞总数；目标平台继续只保留在 catalog 顶层。 */
 export function toStyleGalleryCardDataList(catalog: StyleGalleryData): StyleGalleryCardData[] {
   return catalog.items.map((item) => ({
     ...item,
