@@ -21,8 +21,8 @@ export const CONTENT_PADDING = {
  * Max width constraints
  */
 export const MAX_WIDTH = {
-  // Main content container (1400px)
-  content: 'max-w-7xl',
+  // Keep a small desktop gutter while allowing galleries and the shared sidebar to use wider screens.
+  content: 'max-w-[min(1800px,calc(100%-4rem))] tablet:max-w-full',
 } as const;
 
 /**

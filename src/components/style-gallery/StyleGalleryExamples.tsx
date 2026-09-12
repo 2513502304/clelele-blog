@@ -92,6 +92,7 @@ interface SelectedUpload {
   id: string;
   file: File;
   imageHash: string;
+  dimensions?: { width: number; height: number };
 }
 
 const UPLOAD_CONCURRENCY = 5;
@@ -561,6 +562,7 @@ export default function StyleGalleryExamples({
               type: entry.file.type,
               size: entry.file.size,
               imageHash: entry.imageHash,
+              dimensions: entry.dimensions,
             })),
           }),
         });
@@ -580,7 +582,7 @@ export default function StyleGalleryExamples({
     setUploading(true);
     setStatus('Hashing selected images');
     const form = event.currentTarget;
-    const selected = files.map((file, index) => ({ id: `${index}-${file.name}`, file, imageHash: '' }));
+    const selected: SelectedUpload[] = files.map((file, index) => ({ id: `${index}-${file.name}`, file, imageHash: '' }));
     setFileProgress(selected.map(({ id, file }) => ({ id, name: file.name, loaded: 0, total: file.size, state: 'hashing' })));
 
     const uploadedExamples: StyleGalleryExample[] = [];
@@ -591,6 +593,13 @@ export default function StyleGalleryExamples({
           const entry = selected[nextHashIndex];
           nextHashIndex += 1;
           entry.imageHash = await sha256(entry.file);
+          // Capture display orientation once while preparing the upload, never during gallery rendering.
+          const bitmap = await createImageBitmap(entry.file);
+          try {
+            entry.dimensions = { width: bitmap.width, height: bitmap.height };
+          } finally {
+            bitmap.close();
+          }
           updateFileProgress(entry.id, { state: 'ready' });
         }
       }
@@ -916,7 +925,7 @@ export default function StyleGalleryExamples({
                   </span>
                 </div>
               </div>
-              <div className="grid grid-cols-3 gap-3 md:grid-cols-2">
+              <div className="grid grid-cols-4 gap-3 md:grid-cols-2 [@media(min-width:769px)_and_(max-width:1279px)]:grid-cols-3">
                 {platformExamples.map((example) => {
                   return (
                     <figure
@@ -958,12 +967,12 @@ export default function StyleGalleryExamples({
                           exampleId={example.id}
                           controller={likes}
                           labels={likeLabels}
-                          className="absolute right-2 bottom-2 z-10"
+                          className="absolute right-2 bottom-1.5 z-10"
                         />
                       </div>
-                      <figcaption className="space-y-2 p-3 text-gray-500 text-xs dark:text-gray-300">
-                        {example.note && <p>{example.note}</p>}
-                      </figcaption>
+                      {example.note && (
+                        <figcaption className="p-3 text-gray-500 text-xs dark:text-gray-300">{example.note}</figcaption>
+                      )}
                     </figure>
                   );
                 })}

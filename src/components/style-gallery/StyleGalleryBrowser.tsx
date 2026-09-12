@@ -33,11 +33,14 @@ import { parseAsString, parseAsStringLiteral, useQueryStates } from 'nuqs';
 import { NuqsAdapter } from 'nuqs/adapters/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useProgressiveList } from '@/hooks/useProgressiveList';
+import type { StyleGalleryImageDimensions } from '@/types/style-gallery';
 import { Dialog, DialogContent } from '../ui/dialog';
+import StyleGalleryGrid, { StyleGalleryLayoutToggle, useStyleGalleryLayout } from './StyleGalleryGrid';
 import { StyleGalleryPromptChooser } from './StyleGalleryPromptChooser';
 import StyleGallerySharedImage from './StyleGallerySharedImage';
 
 export interface StyleGalleryBrowserItem {
+  dimensions?: StyleGalleryImageDimensions;
   slug: string;
   title: string;
   promptExcerpt: string;
@@ -96,9 +99,9 @@ interface PromptPickerState {
   prompts: StyleGalleryPromptChoice[] | null;
   failed: boolean;
 }
-// 桌面端固定三列：前两行主动加载，但只让首行占用高网络优先级。
-const EAGER_CARD_COUNT = 6;
-const HIGH_PRIORITY_CARD_COUNT = 3;
+// 桌面端四列：前两行主动加载，但只让首行占用高网络优先级。
+const EAGER_CARD_COUNT = 8;
+const HIGH_PRIORITY_CARD_COUNT = 4;
 const INITIAL_CARD_COUNT = 24;
 const CARD_BATCH_SIZE = 24;
 
@@ -140,6 +143,8 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
   const [visualRevision, setVisualRevision] = useState(0);
   const [promptSearchIndex, setPromptSearchIndex] = useState<Record<string, string> | null>(null);
   const [promptSearchStatus, setPromptSearchStatus] = useState<'idle' | 'loading' | 'ready' | 'failed'>('idle');
+  const [layout, setLayout] = useStyleGalleryLayout();
+  const masonry = layout === 'masonry';
   const loadedSourceImages = useRef(new Set<string>()).current;
   const dateFormatter = useMemo(() => new Intl.DateTimeFormat(locale, { timeZone: 'Asia/Shanghai' }), [locale]);
   const sortLabels: Record<StyleGallerySortKey, string> = {
@@ -358,6 +363,11 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
               void setDateRange(range).catch(reportUrlStateError);
             }}
           />
+          <StyleGalleryLayoutToggle
+            masonry={masonry}
+            locale={locale}
+            onChange={() => void setLayout(masonry ? 'grid' : 'masonry').catch(reportUrlStateError)}
+          />
           <span className="shrink-0 text-muted-foreground text-sm tabular-nums">
             {filteredItems.length} / {items.length}
           </span>
@@ -400,7 +410,7 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 [@media(min-width:769px)]:grid-cols-2 [@media(min-width:993px)]:grid-cols-3">
+      <StyleGalleryGrid masonry={masonry}>
         {visibleItems.map((item, index) => (
           <article
             key={item.slug}
@@ -408,12 +418,14 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
             tabIndex={-1}
             onPointerEnter={() => prefetchPromptChoices(item)}
             onFocusCapture={() => prefetchPromptChoices(item)}
-            className="group overflow-hidden rounded-lg border border-rose-100 bg-white shadow-sm transition [contain-intrinsic-size:auto_720px] [content-visibility:auto] hover:-translate-y-1 hover:border-rose-200 hover:shadow-lg dark:border-gray-800 dark:bg-gray-950"
+            className="group overflow-hidden rounded-lg border border-rose-100 bg-white shadow-sm transition hover:-translate-y-1 hover:border-rose-200 hover:shadow-lg dark:border-gray-800 dark:bg-gray-950"
           >
-            <div className="relative aspect-[4/5] overflow-hidden bg-rose-50 dark:bg-gray-900">
+            <div className={`relative overflow-hidden bg-rose-50 dark:bg-gray-900 ${masonry ? '' : 'aspect-[4/5]'}`}>
               <a href={`${galleryBasePath}/${item.slug}`} data-astro-prefetch="false" className="block h-full w-full">
                 <StyleGallerySharedImage
                   source={item.sourceImage}
+                  dimensions={item.dimensions}
+                  naturalAspect={masonry}
                   loadedSources={loadedSourceImages}
                   alt={item.sourceImageAlt ?? item.title}
                   width={4}
@@ -445,9 +457,28 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
               >
                 <Icon icon="ri:zoom-in-line" className="size-4" />
               </button>
+              <button
+                type="button"
+                onClick={() => copyPrompt(item)}
+                onPointerDown={() => prefetchPromptChoices(item)}
+                className="absolute top-2 right-2 z-10 flex size-9 items-center justify-center rounded-md border border-white/20 bg-black/50 text-white shadow-sm backdrop-blur-sm transition hover:scale-105 hover:bg-black/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                aria-label={`${copyErrorSlug === item.slug ? labels.copyRetry : copiedSlug === item.slug ? labels.copied : labels.copy}: ${item.title}`}
+                title={copyErrorSlug === item.slug ? labels.copyRetry : copiedSlug === item.slug ? labels.copied : labels.copy}
+              >
+                <Icon
+                  icon={
+                    copyErrorSlug === item.slug
+                      ? 'ri:error-warning-line'
+                      : copiedSlug === item.slug
+                        ? 'ri:check-line'
+                        : 'ri:file-copy-line'
+                  }
+                  className="size-4"
+                />
+              </button>
             </div>
-            <div className="space-y-3 p-4">
-              <div className="flex items-start justify-between gap-3">
+            <div className="space-y-2 p-3">
+              <div className="flex items-start justify-between gap-2">
                 <a
                   href={`${galleryBasePath}/${item.slug}`}
                   data-astro-prefetch="false"
@@ -455,63 +486,28 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
                   aria-label={item.title}
                   title={item.title}
                 >
-                  <h2 className="line-clamp-1 font-bold text-gray-900 text-lg transition group-hover:text-rose-600 dark:text-white">
+                  <h2 className="line-clamp-1 font-semibold text-base text-gray-900 leading-6 transition group-hover:text-rose-600 dark:text-white">
                     {item.imageHash.slice(0, 12)}
                   </h2>
                 </a>
                 <div className="flex shrink-0 flex-col items-end gap-1">
-                  <span className="rounded-full bg-rose-50 px-2 py-1 font-bold text-[11px] text-rose-500 dark:bg-rose-950/50 dark:text-rose-200">
+                  <span className="rounded-full bg-rose-50 px-2 py-0.5 font-medium text-[11px] text-rose-500 tabular-nums dark:bg-rose-950/50 dark:text-rose-200">
                     {dateFormatter.format(new Date(item.date))}
                   </span>
                   {item.imageCount > 1 && (
-                    <span className="rounded-full bg-sky-50 px-2 py-1 font-bold text-[11px] text-sky-600 dark:bg-sky-950/50 dark:text-sky-200">
+                    <span className="rounded-full bg-sky-50 px-2 py-0.5 font-medium text-[11px] text-sky-600 dark:bg-sky-950/50 dark:text-sky-200">
                       {labels.imageCount.replace('{count}', String(item.imageCount))}
                     </span>
                   )}
                 </div>
               </div>
-              <p className="line-clamp-3 min-h-18 text-pretty text-gray-600 text-sm leading-6 dark:text-gray-300">
+              <p className="line-clamp-3 text-pretty text-gray-600 text-sm leading-5 dark:text-gray-300">
                 {item.promptExcerpt}
               </p>
-              <div className="grid grid-cols-2 gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={() => copyPrompt(item)}
-                  onPointerDown={() => prefetchPromptChoices(item)}
-                  className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-rose-100 bg-white px-3 font-bold text-gray-700 text-sm transition hover:border-rose-200 hover:text-rose-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-rose-800 dark:hover:text-rose-200"
-                  aria-label={`Copy prompt for ${item.title}`}
-                  title="Copy prompt"
-                >
-                  <Icon
-                    icon={
-                      copyErrorSlug === item.slug
-                        ? 'ri:error-warning-line'
-                        : copiedSlug === item.slug
-                          ? 'ri:check-line'
-                          : 'ri:file-copy-line'
-                    }
-                    className="size-4"
-                  />
-                  {copyErrorSlug === item.slug ? labels.copyRetry : copiedSlug === item.slug ? labels.copied : labels.copy}
-                  {item.promptCount > 1 && copyErrorSlug !== item.slug && copiedSlug !== item.slug && (
-                    <span className="rounded bg-rose-50 px-1.5 py-0.5 text-[10px] text-rose-500 dark:bg-rose-950/50 dark:text-rose-200">
-                      ×{item.promptCount}
-                    </span>
-                  )}
-                </button>
-                <a
-                  href={`${galleryBasePath}/${item.slug}`}
-                  data-astro-prefetch="false"
-                  className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-gray-950 px-3 font-bold text-sm text-white transition hover:bg-rose-600 dark:bg-white dark:text-gray-950 dark:hover:bg-rose-200"
-                >
-                  <Icon icon="ri:gallery-view-2" className="size-4" />
-                  {labels.view}
-                </a>
-              </div>
             </div>
           </article>
         ))}
-      </div>
+      </StyleGalleryGrid>
 
       {visibleItems.length === 0 && (
         <div className="rounded-lg border border-rose-200 border-dashed bg-white/70 p-10 text-center text-gray-500 dark:border-gray-800 dark:bg-gray-950/50">

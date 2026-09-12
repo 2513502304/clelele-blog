@@ -139,7 +139,7 @@ export const uiStrings: UIStrings = {
     'Browse every reference image in a dense thumbnail matrix and quickly locate its style prompt item.',
   'gallery.noExamples': 'Generated examples created from this prompt will appear here after they are added manually.',
   'gallery.importedAt': 'Imported',
-  'gallery.searchPlaceholder': 'Search prompts, tags, or generation platforms...',
+  'gallery.searchPlaceholder': 'Search prompts, titles, or image IDs...',
   'gallery.indexSearchPlaceholder': 'Search image IDs, titles, or full prompts...',
   'gallery.sortItems': 'Sort style prompts',
   'gallery.sortDefault': 'Default order',

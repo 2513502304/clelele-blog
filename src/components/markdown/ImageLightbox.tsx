@@ -156,7 +156,7 @@ function LightboxImageStage({
           aria-hidden="true"
           loading="eager"
           decoding="async"
-          className="col-start-1 row-start-1 max-h-[80vh] max-w-[90vw] rounded-lg object-contain shadow-2xl"
+          className="col-start-1 row-start-1 max-h-[92dvh] max-w-[96vw] rounded-lg object-contain shadow-2xl"
           initial={{ opacity: 1 }}
           animate={{ opacity: sourceState === 'loaded' ? 0 : 1 }}
           transition={{ opacity: { duration: shouldReduceMotion ? 0 : 0.18 } }}
@@ -171,7 +171,7 @@ function LightboxImageStage({
         loading="eager"
         fetchPriority="high"
         decoding="async"
-        className="col-start-1 row-start-1 max-h-[80vh] max-w-[90vw] rounded-lg object-contain shadow-2xl"
+        className="col-start-1 row-start-1 max-h-[92dvh] max-w-[96vw] rounded-lg object-contain shadow-2xl"
         // 同一 URL 已在卡片或预加载器中绘制过时，首帧直接可见；不要先提交 opacity: 0 再等 Motion 下一帧。
         initial={sourceWasLoaded ? false : { opacity: 0 }}
         animate={{ opacity: sourceState === 'loaded' ? 1 : 0 }}
