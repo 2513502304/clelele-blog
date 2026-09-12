@@ -71,7 +71,7 @@ function StyleGalleryReferenceImagesContent({
             key={`${image.imageHash}:${index}`}
             id={getStyleGalleryLightboxElementId('detail-source', `${itemSlug}-${index}`)}
             tabIndex={-1}
-            className="overflow-hidden rounded-md bg-rose-50 dark:bg-gray-900"
+            className="w-full min-w-0 overflow-hidden rounded-md bg-rose-50 dark:bg-gray-900"
           >
             <button
               type="button"
