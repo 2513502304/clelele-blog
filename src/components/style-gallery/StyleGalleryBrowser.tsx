@@ -337,27 +337,31 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
           </label>
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-rose-100 border-t pt-4 dark:border-gray-800">
-          <div className="flex flex-wrap justify-end gap-2">
-            <StyleGalleryVisualFilter
-              scope="source"
-              labels={labels.visualFilter}
-              triggerClassName="h-9"
-              onResults={(matches) => {
-                setVisualMatches(matches);
-                setVisualRevision((revision) => revision + 1);
-              }}
-            />
-            <StyleGalleryDateRangeFilter
-              value={{ from: dateFrom, to: dateTo }}
-              locale={locale}
-              labels={labels.dateRange}
-              availableDateKeys={availableDateKeys}
-              triggerClassName="h-9"
-              onApply={(range) => {
-                void setDateRange(range).catch(reportUrlStateError);
-              }}
-            />
+        {/* 三个 Gallery 工具栏保持同一信息顺序：筛选与实时结果数在左，排序在右；不能因删减控件把整组筛选推到右侧。 */}
+        <div className="mt-4 flex flex-wrap items-center gap-2 border-rose-100 border-t pt-4 dark:border-gray-800">
+          <StyleGalleryVisualFilter
+            scope="source"
+            labels={labels.visualFilter}
+            triggerClassName="h-10"
+            onResults={(matches) => {
+              setVisualMatches(matches);
+              setVisualRevision((revision) => revision + 1);
+            }}
+          />
+          <StyleGalleryDateRangeFilter
+            value={{ from: dateFrom, to: dateTo }}
+            locale={locale}
+            labels={labels.dateRange}
+            availableDateKeys={availableDateKeys}
+            triggerClassName="h-10"
+            onApply={(range) => {
+              void setDateRange(range).catch(reportUrlStateError);
+            }}
+          />
+          <span className="shrink-0 text-muted-foreground text-sm tabular-nums">
+            {filteredItems.length} / {items.length}
+          </span>
+          <div className="ml-auto flex items-center gap-2 md:ml-0">
             <label htmlFor="style-gallery-sort" className="sr-only">
               {labels.sortItems}
             </label>
@@ -370,7 +374,7 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
                 id="style-gallery-sort"
                 value={sortKey}
                 onChange={(event) => handleSortChange(event.currentTarget.value as StyleGallerySortKey)}
-                className="h-9 appearance-none rounded-md border border-border bg-background pr-8 pl-8 text-sm outline-none transition-colors hover:border-primary/40 focus:border-primary"
+                className="h-10 appearance-none rounded-md border border-border bg-background pr-8 pl-8 text-sm outline-none transition-colors hover:border-primary/40 focus:border-primary"
               >
                 {STYLE_GALLERY_SORT_KEYS.map((key) => (
                   <option key={key} value={key}>
@@ -388,7 +392,7 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
               title={sortDirection === 'asc' ? labels.sortAscending : labels.sortDescending}
               aria-label={sortDirection === 'asc' ? labels.sortAscending : labels.sortDescending}
               onClick={toggleSortDirection}
-              className="flex size-9 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+              className="flex size-10 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
             >
               <Icon icon={sortDirection === 'asc' ? 'ri:sort-asc' : 'ri:sort-desc'} className="size-4" />
             </button>
