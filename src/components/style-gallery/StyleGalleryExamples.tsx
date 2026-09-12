@@ -923,7 +923,7 @@ export default function StyleGalleryExamples({
                       key={example.src}
                       id={getStyleGalleryLightboxElementId('detail-example', example.id)}
                       tabIndex={-1}
-                      className="h-full w-full min-w-0 overflow-hidden rounded-lg border border-gray-100 bg-gray-50 [contain-intrinsic-size:auto_420px] [content-visibility:auto] dark:border-gray-800 dark:bg-gray-900"
+                      className="w-full min-w-0 overflow-hidden rounded-lg border border-gray-100 bg-gray-50 [contain-intrinsic-size:auto_420px] [content-visibility:auto] dark:border-gray-800 dark:bg-gray-900"
                     >
                       {/* 全局 reset 让 figure 使用 fit-content，因此 figure 与内层都必须显式占满 grid track；否则未加载的 1x1 img 会让整张卡片收缩。 */}
                       <div className="relative aspect-square w-full overflow-hidden bg-gray-100 dark:bg-gray-900">
