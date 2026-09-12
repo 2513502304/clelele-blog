@@ -23,13 +23,13 @@ import { loadStyleGalleryPromptSearchIndex } from '@lib/style-gallery-prompt-sea
 import { getSelectedStyleGalleryPrompt } from '@lib/style-gallery-prompt-selection';
 import {
   getStyleGalleryDefaultSortDirection,
+  STYLE_GALLERY_SORT_DIRECTIONS,
   STYLE_GALLERY_SORT_KEYS,
-  type StyleGallerySortDirection,
   type StyleGallerySortKey,
 } from '@lib/style-gallery-sort';
 import { openModal } from '@store/modal';
 import { useReducedMotion } from 'motion/react';
-import { parseAsString, useQueryStates } from 'nuqs';
+import { parseAsString, parseAsStringLiteral, useQueryStates } from 'nuqs';
 import { NuqsAdapter } from 'nuqs/adapters/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useProgressiveList } from '@/hooks/useProgressiveList';
@@ -125,8 +125,10 @@ function createPromptPickerState(
 function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, lightboxCopyLabels }: StyleGalleryBrowserProps) {
   const shouldReduceMotion = useReducedMotion();
   const [query, setQuery] = useState('');
-  const [sortKey, setSortKey] = useState<StyleGallerySortKey>('default');
-  const [sortDirection, setSortDirection] = useState<StyleGallerySortDirection>('asc');
+  const [{ sort: sortKey, dir: sortDirection }, setSortState] = useQueryStates({
+    sort: parseAsStringLiteral(STYLE_GALLERY_SORT_KEYS).withDefault('default'),
+    dir: parseAsStringLiteral(STYLE_GALLERY_SORT_DIRECTIONS).withDefault('asc'),
+  });
   const [{ from: dateFrom, to: dateTo }, setDateRange] = useQueryStates({
     from: parseAsString.withDefault(''),
     to: parseAsString.withDefault(''),
@@ -232,12 +234,11 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
   }
 
   function handleSortChange(key: StyleGallerySortKey) {
-    setSortKey(key);
-    setSortDirection(getStyleGalleryDefaultSortDirection(key));
+    void setSortState({ sort: key, dir: getStyleGalleryDefaultSortDirection(key) }).catch(reportUrlStateError);
   }
 
   function toggleSortDirection() {
-    setSortDirection((direction) => (direction === 'asc' ? 'desc' : 'asc'));
+    void setSortState({ dir: sortDirection === 'asc' ? 'desc' : 'asc' }).catch(reportUrlStateError);
   }
 
   function openSourceLightbox(item: StyleGalleryBrowserItem) {
