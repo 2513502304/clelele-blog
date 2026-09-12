@@ -11,6 +11,7 @@ import {
   type StyleGalleryExampleUploadCliOptions,
 } from '@lib/style-gallery-cli-example-upload';
 import { getStyleGalleryExampleObjectKey, MAX_STYLE_GALLERY_EXAMPLE_FILE_SIZE } from '@lib/style-gallery-example-upload';
+import { readStyleGalleryImageDimensions } from '@lib/style-gallery-image-dimensions';
 import { getStyleGalleryExampleContentType, getStyleGalleryExampleExtension } from '@lib/style-gallery-image-type';
 import {
   chunkStyleGalleryRequestItems,
@@ -21,10 +22,11 @@ import { styleGalleryCatalogSchema, styleGalleryExampleSchema } from '@lib/style
 import { computeStyleGalleryVisualFeatureFromBytes } from '@lib/style-gallery-visual-feature-node';
 import { z } from 'zod';
 import type { StyleGalleryVisualFeature } from '@/lib/style-gallery-visual-types';
-import type { StyleGalleryExample } from '@/types/style-gallery';
+import type { StyleGalleryExample, StyleGalleryImageDimensions } from '@/types/style-gallery';
 import { configureEnvironmentProxy } from './lib/environment-proxy.mjs';
 
 interface LocalImage {
+  dimensions: StyleGalleryImageDimensions;
   contentType: string;
   extension: string;
   imageHash: string;
@@ -157,6 +159,7 @@ async function inspectLocalImage(filePath: string): Promise<LocalImage> {
   const extension = getStyleGalleryExampleExtension('', filePath);
   return {
     contentType: getStyleGalleryExampleContentType(extension),
+    dimensions: await readStyleGalleryImageDimensions(filePath),
     extension,
     imageHash: await hashFile(filePath),
     name: path.basename(filePath),
@@ -227,6 +230,7 @@ async function prepareImages(
             type: image.contentType,
             size: image.size,
             imageHash: image.imageHash,
+            dimensions: image.dimensions,
           })),
         }),
       },

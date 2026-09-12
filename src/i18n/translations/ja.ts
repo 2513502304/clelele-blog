@@ -139,7 +139,7 @@ export const uiStrings: UIStrings = {
     'すべての参考画像を高密度のサムネイル一覧で表示し、対応する style prompt item をすばやく探せます。',
   'gallery.noExamples': 'この prompt で生成したサンプル画像は、手動で追加したあとここに表示されます。',
   'gallery.importedAt': 'Imported',
-  'gallery.searchPlaceholder': 'プロンプト、タグ、生成プラットフォームを検索...',
+  'gallery.searchPlaceholder': 'プロンプト、タイトル、画像 ID を検索...',
   'gallery.indexSearchPlaceholder': '画像 ID、タイトル、または全文 prompt を検索...',
   'gallery.sortItems': 'スタイルプロンプトを並べ替え',
   'gallery.sortDefault': 'デフォルト順',

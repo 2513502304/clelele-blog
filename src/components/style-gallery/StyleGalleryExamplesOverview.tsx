@@ -33,6 +33,7 @@ import { NuqsAdapter } from 'nuqs/adapters/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useProgressiveList } from '@/hooks/useProgressiveList';
 import type { StyleGalleryExampleOverviewItem } from '@/types/style-gallery';
+import StyleGalleryGrid, { StyleGalleryLayoutToggle, useStyleGalleryLayout } from './StyleGalleryGrid';
 import {
   createStyleGalleryLightboxLikeAction,
   StyleGalleryLikeButton,
@@ -74,8 +75,8 @@ export interface StyleGalleryExamplesOverviewLabels {
 const INITIAL_EXAMPLE_COUNT = 24;
 const EXAMPLE_BATCH_SIZE = 24;
 // 与 Gallery 主预览保持一致：桌面端前两行主动加载，只有首行使用高网络优先级。
-const EAGER_EXAMPLE_COUNT = 6;
-const HIGH_PRIORITY_EXAMPLE_COUNT = 3;
+const EAGER_EXAMPLE_COUNT = 8;
+const HIGH_PRIORITY_EXAMPLE_COUNT = 4;
 const EMPTY_SOURCE_SEARCH_INDEX: Readonly<Record<string, string>> = Object.freeze({});
 
 function reportUrlStateError(error: unknown) {
@@ -83,7 +84,7 @@ function reportUrlStateError(error: unknown) {
 }
 
 /**
- * 跨 item 的 Sub-gallery 总览。数据来自轻量示例索引，并采用固定比例卡片与渐进挂载，
+ * 跨 item 的 Sub-gallery 总览。数据来自轻量示例索引，并采用预留图片比例的卡片与渐进挂载，
  * 因此慢图片只会在预留区域内补齐，不会把已经显示的卡片重新排位。
  */
 function StyleGalleryExamplesOverviewContent({
@@ -94,6 +95,8 @@ function StyleGalleryExamplesOverviewContent({
   uploadsEnabled,
   lightboxActionLabels,
 }: Props) {
+  const [layout, setLayout] = useStyleGalleryLayout();
+  const masonry = layout === 'masonry';
   const [examples, setExamples] = useState(initialExamples);
   // 不放进 state：加载完成只影响下一次打开 Lightbox，不应让数千张卡片重新渲染。
   const loadedExampleSources = useRef(new Set<string>());
@@ -265,7 +268,7 @@ function StyleGalleryExamplesOverviewContent({
 
   return (
     <section className="space-y-5" aria-label="Generated example overview">
-      <div className="rounded-lg border border-border bg-background/80 p-4 shadow-sm">
+      <div className="glass-surface glass-toolbar p-4">
         <label className="relative block w-full">
           <Icon icon="ri:search-line" className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
           <input
@@ -324,6 +327,11 @@ function StyleGalleryExamplesOverviewContent({
           <span className="shrink-0 text-muted-foreground text-sm tabular-nums">
             {filtered.length} / {examples.length}
           </span>
+          <StyleGalleryLayoutToggle
+            masonry={masonry}
+            locale={locale}
+            onChange={() => void setLayout(masonry ? 'grid' : 'masonry').catch(reportUrlStateError)}
+          />
           <div className="ml-auto flex items-center gap-3 md:ml-0 md:flex-wrap">
             <label className="sr-only" htmlFor="example-sort">
               {labels.sortItems}
@@ -371,13 +379,13 @@ function StyleGalleryExamplesOverviewContent({
 
       {filtered.length ? (
         <>
-          <div className="grid grid-cols-4 items-stretch gap-4 md:grid-cols-1 lg:grid-cols-2 xl:grid-cols-3">
+          <StyleGalleryGrid masonry={masonry}>
             {visibleItems.map((example, index) => (
               <figure
                 key={example.id}
                 id={getStyleGalleryLightboxElementId('overview-example', example.id)}
                 tabIndex={-1}
-                className="flex h-full w-full min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-background shadow-sm [contain-intrinsic-size:auto_560px] [content-visibility:auto]"
+                className="flex w-full min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-background shadow-sm"
               >
                 <div className="relative">
                   <button
@@ -387,6 +395,8 @@ function StyleGalleryExamplesOverviewContent({
                   >
                     <StyleGallerySharedImage
                       source={example.src}
+                      dimensions={example.dimensions}
+                      naturalAspect={masonry}
                       loadedSources={loadedExampleSources.current}
                       alt={`${example.sourceTitle} ${example.model}`}
                       width={4}
@@ -436,7 +446,7 @@ function StyleGalleryExamplesOverviewContent({
                 </figcaption>
               </figure>
             ))}
-          </div>
+          </StyleGalleryGrid>
           {hasMore && (
             <div ref={loadMoreRef} className="flex justify-center pt-2">
               <button

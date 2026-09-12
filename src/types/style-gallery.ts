@@ -1,7 +1,14 @@
 import type { StyleGalleryPlatformLabel } from '@/lib/style-gallery-platforms';
 
+/** Display dimensions after EXIF orientation; absent only on records awaiting backfill. */
+export interface StyleGalleryImageDimensions {
+  width: number;
+  height: number;
+}
+
 /** 一个 prompt item 所引用的原图；多图会按用户单次输入顺序排列。 */
 export interface StyleGalleryImageRef {
+  dimensions?: StyleGalleryImageDimensions;
   sourceImage: string;
   thumbnailImage?: string;
   sourceImageAlt?: string;
@@ -10,6 +17,7 @@ export interface StyleGalleryImageRef {
 
 /** Sub-gallery 中一张生成示例的持久化元数据；图片字节单独存放在 HF。 */
 export interface StyleGalleryExample {
+  dimensions?: StyleGalleryImageDimensions;
   id: string;
   src: string;
   alt: string;
@@ -64,7 +72,6 @@ export interface StyleGalleryItem extends Omit<StoredStyleGalleryItem, 'examples
   prompt: string;
   promptRevision: string;
   originalPrompt?: string;
-  tags: string[];
   modelTargets: StyleGalleryPlatformLabel[];
   examples: StyleGalleryExampleView[];
 }
@@ -74,6 +81,7 @@ export interface StyleGalleryItem extends Omit<StoredStyleGalleryItem, 'examples
  * 卡片只保留默认 prompt 摘要；复制读取详情 item，全文搜索读取独立索引。
  */
 export interface StyleGalleryCatalogItem {
+  dimensions?: StyleGalleryImageDimensions;
   slug: string;
   title: string;
   date: string;
@@ -95,7 +103,6 @@ export interface StyleGalleryCatalogItem {
 export interface StyleGalleryCatalog {
   version: 5;
   updatedAt: string;
-  tags: string[];
   modelTargets: StyleGalleryPlatformLabel[];
   items: StyleGalleryCatalogItem[];
 }
@@ -113,6 +120,7 @@ export interface StyleGalleryPromptSearchIndex {
 
 /** Sub-gallery 总览所需的最小示例字段，不包含 item 详情中的冗余字段。 */
 export interface StyleGalleryExampleIndexEntry {
+  dimensions?: StyleGalleryImageDimensions;
   id: string;
   src: string;
   model: StyleGalleryPlatformLabel;

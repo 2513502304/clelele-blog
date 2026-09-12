@@ -198,7 +198,7 @@ function StyleGalleryImageIndexContent({
 
   return (
     <section className="space-y-4" aria-label="Image style prompt gallery index">
-      <div className="flex items-center gap-3 rounded-lg border border-border bg-background/85 p-3 shadow-sm md:flex-col md:items-stretch">
+      <div className="glass-surface glass-toolbar flex items-center gap-3 p-3 md:flex-col md:items-stretch">
         <label className="relative min-w-52 flex-1 md:min-w-0">
           <Icon icon="ri:search-line" className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
           <input

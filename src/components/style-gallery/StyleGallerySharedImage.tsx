@@ -6,11 +6,14 @@ import {
   subscribeStyleGalleryImageSource,
 } from '@lib/style-gallery-image-client';
 import { type ImgHTMLAttributes, useCallback, useEffect, useState } from 'react';
+import type { StyleGalleryImageDimensions } from '@/types/style-gallery';
 
 interface StyleGallerySharedImageProps extends Omit<ImgHTMLAttributes<HTMLImageElement>, 'src' | 'onLoad' | 'onError'> {
   source: string;
   loadedSources: Set<string>;
   alt: string;
+  dimensions?: StyleGalleryImageDimensions;
+  naturalAspect?: boolean;
 }
 
 /**
@@ -19,9 +22,16 @@ interface StyleGallerySharedImageProps extends Omit<ImgHTMLAttributes<HTMLImageE
  * 后台预加载签名 URL 时，仅尚未完成加载的卡片切换地址；已经显示的卡片保持原 URL，避免重复加载。
  *
  * Gallery 预览页与 Sub-gallery 都直接显示高清原图，因此共享这条契约；只有密集图片矩阵有意先展示
- * thumb，再在 Lightbox 中渐进加载高清 source。不要把矩阵策略反向扩散到三列卡片页面。
+ * thumb，再在 Lightbox 中渐进加载高清 source。不要把矩阵策略反向扩散到四列卡片页面。
  */
-export default function StyleGallerySharedImage({ source, loadedSources, alt, ...imageProps }: StyleGallerySharedImageProps) {
+export default function StyleGallerySharedImage({
+  source,
+  loadedSources,
+  alt,
+  dimensions,
+  naturalAspect,
+  ...imageProps
+}: StyleGallerySharedImageProps) {
   const [subscribedUrl, setSubscribedUrl] = useState<{ source: string; url: string } | null>(null);
   const [fallbackSource, setFallbackSource] = useState<string | null>(null);
   const reusableUrl = getReusableStyleGalleryImageUrl(source, loadedSources.has(source));
@@ -47,6 +57,21 @@ export default function StyleGallerySharedImage({ source, loadedSources, alt, ..
   return (
     <img
       {...imageProps}
+      style={
+        naturalAspect
+          ? {
+              ...imageProps.style,
+              display: 'block',
+              width: '100%',
+              height: 'auto',
+              aspectRatio: dimensions ? `${dimensions.width} / ${dimensions.height}` : '4 / 5',
+              objectFit: 'contain',
+              transform: 'none',
+            }
+          : imageProps.style
+      }
+      width={naturalAspect ? (dimensions?.width ?? 4) : imageProps.width}
+      height={naturalAspect ? (dimensions?.height ?? 5) : imageProps.height}
       ref={remember}
       src={renderedUrl}
       alt={alt}

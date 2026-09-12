@@ -137,7 +137,7 @@ export const uiStrings = {
   'gallery.imageIndexDescription': '以高密度缩略图矩阵集中浏览全部参考图，便于快速定位对应的 style prompt item。',
   'gallery.noExamples': '这里会展示用该 prompt 生成的示例图；目前还没有手工添加示例。',
   'gallery.importedAt': 'Imported',
-  'gallery.searchPlaceholder': '搜索提示词、标签或生成平台...',
+  'gallery.searchPlaceholder': '搜索提示词、标题或图片 ID...',
   'gallery.indexSearchPlaceholder': '搜索图片 ID、标题或完整 prompt...',
   'gallery.sortItems': '风格提示词排序',
   'gallery.sortDefault': '按默认顺序排序',

@@ -1,4 +1,4 @@
-import { deleteStyleGalleryObject, headStyleGalleryObject } from '@lib/hf-s3-presign';
+import { deleteStyleGalleryObject, getStyleGalleryObjectBytes, headStyleGalleryObject } from '@lib/hf-s3-presign';
 import { mapWithConcurrency } from '@lib/map-with-concurrency';
 import { isAuthorizedStyleGalleryRequest } from '@lib/style-gallery-auth';
 import { getStyleGalleryClientErrorResponse, StyleGalleryClientError } from '@lib/style-gallery-errors';
@@ -15,9 +15,14 @@ import {
   getStyleGalleryExampleIdentity,
   removeStyleGalleryExamples,
 } from '@lib/style-gallery-examples';
+import { readStyleGalleryImageDimensions } from '@lib/style-gallery-image-dimensions';
 import { getStyleGalleryPlatform } from '@lib/style-gallery-platforms';
 import { STYLE_GALLERY_MUTATION_BATCH_SIZE } from '@lib/style-gallery-request-batches';
-import { styleGalleryExampleSchema, styleGalleryVisualRecordInputSchema } from '@lib/style-gallery-schema';
+import {
+  styleGalleryExampleSchema,
+  styleGalleryImageDimensionsSchema,
+  styleGalleryVisualRecordInputSchema,
+} from '@lib/style-gallery-schema';
 import {
   getStoredStyleGalleryItem,
   getStyleGalleryExampleIndex,
@@ -44,6 +49,7 @@ const prepareSchema = z.object({
         type: z.string().min(1),
         size: z.number().int().positive().max(MAX_STYLE_GALLERY_EXAMPLE_FILE_SIZE),
         imageHash: imageHashSchema,
+        dimensions: styleGalleryImageDimensionsSchema.optional(),
       }),
     )
     .min(1)
@@ -86,6 +92,11 @@ async function validateExampleObjectsExist(examples: StyleGalleryExample[]): Pro
     if (!(await headStyleGalleryObject(key))) {
       throw new StyleGalleryClientError(`Example image object is missing: ${example.src}`, 409);
     }
+    // Client geometry is advisory. Measure the stored object before publishing it so a
+    // stale or forged upload payload cannot reserve an incorrect masonry placeholder.
+    const bytes = await getStyleGalleryObjectBytes(key);
+    if (!bytes) throw new StyleGalleryClientError('Uploaded image is missing.', 409);
+    example.dimensions = await readStyleGalleryImageDimensions(bytes);
   });
 }
 
@@ -124,6 +135,7 @@ export const POST: APIRoute = async ({ params, request }) => {
       const prepared = body.files.map((file) => {
         const extension = getStyleGalleryExampleExtension(file.type, file.name);
         const example = createStyleGalleryExample(item.title, platform, file.imageHash, extension, body.note);
+        if (file.dimensions) example.dimensions = file.dimensions;
         const identity = getStyleGalleryExampleIdentity(example);
         const duplicate = known.has(identity);
         known.add(identity);

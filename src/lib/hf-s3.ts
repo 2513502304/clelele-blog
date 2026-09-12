@@ -3,6 +3,30 @@ import { createHash, createHmac } from 'node:crypto';
 const DEFAULT_REQUEST_ATTEMPTS = 3;
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 
+/** HF redirects reads to its CDN. Follow HTTPS only, never forwarding origin credentials. */
+export async function fetchHfS3Read(url: string, init: RequestInit = {}): Promise<Response> {
+  let target = new URL(url);
+  const headers = new Headers(init.headers);
+  for (let hop = 0; hop <= 5; hop++) {
+    if (target.protocol !== 'https:') throw new Error('HF S3 reads must use HTTPS.');
+    const response = await fetch(target, { ...init, headers, redirect: 'manual' });
+    if (![301, 302, 303, 307, 308].includes(response.status)) return response;
+    const location = response.headers.get('location');
+    await response.body?.cancel();
+    if (!location || hop === 5) throw new Error('Invalid or excessive HF S3 redirects.');
+    const next = new URL(location, target);
+    if (next.origin !== target.origin) {
+      headers.delete('authorization');
+      headers.delete('cookie');
+      headers.delete('host');
+      headers.delete('x-amz-date');
+      headers.delete('x-amz-content-sha256');
+    }
+    target = next;
+  }
+  throw new Error('Excessive HF S3 redirects.');
+}
+
 export interface HfS3Config {
   accessKeyId: string;
   secretAccessKey: string;
@@ -90,6 +114,7 @@ export function createHfS3PresignedUrl(
   expires: number,
   now = new Date(),
 ): string {
+  if (config.endpoint.protocol !== 'https:') throw new Error('HF S3 endpoint must use HTTPS.');
   const { amzDate, dateStamp } = formatDate(now);
   const scope = `${dateStamp}/${config.region}/s3/aws4_request`;
   const canonicalUri = encodePath(`/${getHfS3ObjectPath(config, key)}`);
@@ -134,6 +159,7 @@ export function createHfS3SignedHeaders(
   now = new Date(),
 ): { url: string; headers: Record<string, string> } {
   const payloadHash = createHash('sha256').update(body).digest('hex');
+  if (config.endpoint.protocol !== 'https:') throw new Error('HF S3 endpoint must use HTTPS.');
   const { amzDate, dateStamp } = formatDate(now);
   const scope = `${dateStamp}/${config.region}/s3/aws4_request`;
   const canonicalUri = encodePath(`/${getHfS3ObjectPath(config, key)}`);
@@ -211,6 +237,7 @@ export function createHfS3Client(
       async () => {
         const signed = createHfS3SignedHeaders(config, 'PUT', key, body, contentType, conditions);
         const response = await fetch(signed.url, {
+          redirect: 'error',
           method: 'PUT',
           headers: signed.headers,
           body: requestBody,
@@ -249,7 +276,7 @@ export function createHfS3Client(
         `check HF S3 object "${key}"`,
         async () => {
           const signed = createHfS3SignedHeaders(config, 'HEAD', key, new Uint8Array());
-          const response = await fetch(signed.url, {
+          const response = await fetchHfS3Read(signed.url, {
             method: 'HEAD',
             headers: signed.headers,
             cache: 'no-store',
@@ -271,7 +298,7 @@ export function createHfS3Client(
       return retry(
         `read HF S3 object "${key}"`,
         async () => {
-          const response = await fetch(createHfS3PresignedUrl(config, 'GET', key, 60 * 60, new Date()), {
+          const response = await fetchHfS3Read(createHfS3PresignedUrl(config, 'GET', key, 60 * 60, new Date()), {
             cache: 'no-store',
             signal: AbortSignal.timeout(transferTimeoutMs),
           });
@@ -295,6 +322,7 @@ export function createHfS3Client(
         async () => {
           const signed = createHfS3SignedHeaders(config, 'DELETE', key, new Uint8Array());
           const response = await fetch(signed.url, {
+            redirect: 'error',
             method: 'DELETE',
             headers: signed.headers,
             signal: AbortSignal.timeout(requestTimeoutMs),

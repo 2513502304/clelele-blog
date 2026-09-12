@@ -190,7 +190,6 @@ export async function writeStyleGalleryItems(
         const nextCatalog: StyleGalleryCatalog = {
           version: 5,
           updatedAt: new Date().toISOString(),
-          tags: previousCatalog.tags,
           modelTargets: previousCatalog.modelTargets,
           items: [...nextBySlug.values()].sort((a, b) => b.date.localeCompare(a.date)),
         };

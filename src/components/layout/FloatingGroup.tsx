@@ -36,10 +36,7 @@ function FloatingButton({ onClick, ariaLabel, title, children, className, dataBg
     <button
       type="button"
       onClick={onClick}
-      className={cn(
-        'rounded-full bg-background/80 p-2 opacity-80 shadow-lg backdrop-blur-sm transition-all duration-200 hover:bg-background hover:opacity-100',
-        className,
-      )}
+      className={cn('glass-surface glass-float rounded-full p-2', className)}
       aria-label={ariaLabel}
       title={isMounted ? title : undefined}
       data-bgm-toggle={dataBgmToggle || undefined}

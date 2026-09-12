@@ -16,6 +16,10 @@ import {
 const imagePathSchema = z.string().regex(/^\/api\/style-gallery\/image\/(source|thumb)\/[a-zA-Z0-9._-]+$/);
 const imageHashSchema = z.string().regex(/^[a-f0-9]{64}$/i);
 const promptRevisionSchema = z.string().regex(/^[a-f0-9]{64}$/i);
+export const styleGalleryImageDimensionsSchema = z.object({
+  width: z.number().int().positive().max(100_000),
+  height: z.number().int().positive().max(100_000),
+});
 const platformLabels = STYLE_GALLERY_PLATFORMS.map((platform) => platform.label) as [
   StyleGalleryPlatformLabel,
   ...StyleGalleryPlatformLabel[],
@@ -32,6 +36,7 @@ const styleGalleryModelTargetsSchema = z.array(styleGalleryPlatformLabelSchema).
 });
 
 export const styleGalleryImageSchema = z.object({
+  dimensions: styleGalleryImageDimensionsSchema.optional(),
   sourceImage: imagePathSchema,
   thumbnailImage: imagePathSchema.optional(),
   sourceImageAlt: z.string().min(1).optional(),
@@ -39,6 +44,7 @@ export const styleGalleryImageSchema = z.object({
 });
 
 export const styleGalleryExampleSchema = z.object({
+  dimensions: styleGalleryImageDimensionsSchema.optional(),
   id: z.string().regex(/^[a-z0-9-]+$/i),
   src: z.string().min(1),
   alt: z.string().min(1),
@@ -101,6 +107,7 @@ export const styleGalleryItemSchema = z
   });
 
 export const styleGalleryCatalogItemSchema = z.object({
+  dimensions: styleGalleryImageDimensionsSchema.optional(),
   slug: z.string().regex(/^[a-z0-9-]+$/i),
   title: z.string().min(1),
   date: z.string().datetime({ offset: true }),
@@ -117,8 +124,7 @@ export const styleGalleryCatalogItemSchema = z.object({
 
 const styleGalleryCatalogFields = {
   updatedAt: z.string().datetime({ offset: true }),
-  // 两者是整站共享的来源/平台词表，不是逐 item 分类字段；列表不能据此渲染会让所有项目同时命中的筛选器。
-  tags: z.array(z.string()),
+  // 平台词表是共享配置；旧 catalog 的无效全局 tags 在解析时自动丢弃。
   modelTargets: styleGalleryModelTargetsSchema,
   items: z.array(styleGalleryCatalogItemSchema),
 };
@@ -140,7 +146,7 @@ export const styleGalleryExampleIndexSchema = z.object({
       sourceSlug: z.string().regex(/^[a-z0-9-]+$/i),
       examples: z.array(
         styleGalleryExampleSchema
-          .pick({ id: true, src: true, model: true, note: true, uploadedAt: true })
+          .pick({ id: true, src: true, model: true, note: true, uploadedAt: true, dimensions: true })
           .extend({ likedBy: z.array(z.number().int().positive()).max(100_000) }),
       ),
     }),
@@ -233,6 +239,7 @@ export function toStyleGalleryCatalogItem(
   const primaryPrompt = getPrimaryStyleGalleryPrompt(item.prompts);
   return {
     slug: item.slug,
+    ...(item.images[0].dimensions ? { dimensions: item.images[0].dimensions } : {}),
     title: item.title,
     date: item.date,
     sourceImage: item.sourceImage,

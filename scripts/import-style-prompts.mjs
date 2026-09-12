@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import sharp from 'sharp';
+import { readStyleGalleryImageDimensions } from '../src/lib/style-gallery-image-dimensions.ts';
 import { computeStyleGalleryVisualFeaturesFromBytes } from '../src/lib/style-gallery-visual-feature-node.ts';
 import { configureEnvironmentProxy } from './lib/environment-proxy.mjs';
 
@@ -272,6 +273,7 @@ async function buildImportData(extractedItems, sessionPath, existingByHash, meta
         assets.set(thumbnailKey, { body: thumbnail, contentType: 'image/webp' });
       }
       imageRefs.push({
+        dimensions: await readStyleGalleryImageDimensions(image.bytes),
         sourceImage: apiImagePath('source', imageName),
         thumbnailImage: apiImagePath('thumb', thumbnailName),
         sourceImageAlt: `${title} reference image ${index + 1}`,
