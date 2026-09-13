@@ -69,7 +69,8 @@ export function parseHpoiDetailScore(html: string): string | null {
         if (product?.['@type'] !== 'Product') continue;
         const rating = product.aggregateRating;
         if (rating?.bestRating && Number(rating.bestRating) !== 5) continue;
-        if (rating?.ratingCount !== undefined && Number(rating.ratingCount) <= 0) continue;
+        const ratingCount = Number(rating?.ratingCount);
+        if (!Number.isFinite(ratingCount) || ratingCount <= 0) continue;
         const score = validScore(rating?.ratingValue);
         if (score) return score;
       }

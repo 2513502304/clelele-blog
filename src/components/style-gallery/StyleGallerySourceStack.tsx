@@ -1,4 +1,5 @@
 import { Icon } from '@iconify/react';
+import { useReducedMotion } from 'motion/react';
 import type { StyleGalleryExampleOverviewItem } from '@/types/style-gallery';
 import StyleGallerySharedImage from './StyleGallerySharedImage';
 
@@ -16,11 +17,13 @@ export default function StyleGallerySourceStack({
   label: string;
   eager: boolean;
 }) {
+  const shouldReduceMotion = useReducedMotion();
   return (
     <button
       type="button"
       onClick={onOpen}
       aria-label={label}
+      data-reduced-motion={shouldReduceMotion ? 'true' : undefined}
       className="gallery-source-stack relative block aspect-[4/5] w-full overflow-hidden bg-muted/40 focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-[-2px]"
     >
       {examples

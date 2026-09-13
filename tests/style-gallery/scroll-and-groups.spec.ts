@@ -69,3 +69,17 @@ test('folding groups deduplicates sources and fans only decorative layers on hov
   await cards.first().getByRole('button', { name: '折叠同源图片' }).click();
   await expect(cards.first()).toHaveAttribute('data-source-stack', 'true');
 });
+
+test('source stacks disable animated transitions for reduced motion', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/image-style-prompt-gallery/examples?grouped=true');
+  const stack = page.locator('.gallery-source-stack').first();
+  await expect(stack).toHaveAttribute('data-reduced-motion', 'true');
+  await stack.hover();
+  expect(
+    await stack
+      .locator('.gallery-stack-layer')
+      .first()
+      .evaluate((element) => getComputedStyle(element).transitionDuration),
+  ).toBe('0s');
+});

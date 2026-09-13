@@ -22,6 +22,10 @@
 .gallery-source-stack:is(:hover, :focus-visible) .gallery-stack-layer[data-layer="2"] {
   transform: translateX(3%) translateY(-1%) rotate(7deg);
 }
+.gallery-source-stack[data-reduced-motion="true"] .gallery-stack-layer {
+  transition: none;
+}
+/* The media query also covers SSR before the Motion preference has hydrated. */
 @media (prefers-reduced-motion: reduce) {
   .gallery-stack-layer {
     transition: none;

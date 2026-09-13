@@ -12,6 +12,13 @@ import {
 } from './parser';
 
 describe('Hpoi detail ratings', () => {
+  it('rejects scores with missing, nonnumeric or nonpositive rating counts', () => {
+    for (const ratingCount of [undefined, 'unknown', 0, -1, 'Infinity']) {
+      const product = { '@type': 'Product', aggregateRating: { ratingValue: '4.77', ratingCount } };
+      assert.equal(parseHpoiDetailScore(`<script type="application/ld+json">${JSON.stringify(product)}</script>`), null);
+    }
+  });
+
   it('accepts graph, array and visible ratings while rejecting empty vote counts', () => {
     const product = { '@type': 'Product', aggregateRating: { ratingValue: 4.5, ratingCount: 2 } };
     for (const data of [[product], { '@graph': [product] }]) {
