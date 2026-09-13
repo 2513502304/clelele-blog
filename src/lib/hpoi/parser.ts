@@ -53,6 +53,34 @@ function parseReleaseDate(value: string | null): string | null {
   return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
 }
 
+/** Collection pages now omit ratings; the public detail page retains its Product aggregate rating. */
+export function parseHpoiDetailScore(html: string): string | null {
+  const $ = load(html);
+  const validScore = (value: unknown): string | null => {
+    const score = typeof value === 'number' || typeof value === 'string' ? String(value).trim() : '';
+    return /^\d(?:\.\d+)?$/.test(score) && Number(score) <= 5 ? score : null;
+  };
+  for (const script of $('script[type="application/ld+json"]').toArray()) {
+    try {
+      const root = JSON.parse($(script).text());
+      const nodes = Array.isArray(root) ? root : [root, ...(root['@graph'] ?? [])];
+      for (const node of nodes) {
+        const product = node?.mainEntity ?? node;
+        if (product?.['@type'] !== 'Product') continue;
+        const rating = product.aggregateRating;
+        if (rating?.bestRating && Number(rating.bestRating) !== 5) continue;
+        const ratingCount = Number(rating?.ratingCount);
+        if (!Number.isFinite(ratingCount) || ratingCount <= 0) continue;
+        const score = validScore(rating?.ratingValue);
+        if (score) return score;
+      }
+    } catch {
+      // Unrelated or malformed structured data must not hide a valid visible rating.
+    }
+  }
+  return validScore($('.hpoi-entry-score-num-box > div > div > span').first().text());
+}
+
 /** 解析 Hpoi 公开个人页中的基础资料和“我的收藏/我的预定”汇总统计。 */
 export function parseHpoiProfile(html: string, userId: string): HpoiProfile {
   const $ = load(html);

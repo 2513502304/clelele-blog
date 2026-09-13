@@ -5,7 +5,7 @@ import { getMasonryPositions } from '@/lib/style-gallery-layout';
 
 /** URL state makes the display choice shareable and restores it on back navigation. */
 export function useStyleGalleryLayout() {
-  return useQueryState('layout', parseAsStringLiteral(['grid', 'masonry'] as const).withDefault('grid'));
+  return useQueryState('layout', parseAsStringLiteral(['grid', 'masonry'] as const).withDefault('masonry'));
 }
 
 export function StyleGalleryLayoutToggle({
@@ -32,7 +32,7 @@ export function StyleGalleryLayoutToggle({
 }
 
 /**
- * Keep DOM/filter/lightbox order intact and pack cards into the shortest column.
+ * Keep DOM/filter/lightbox order and row-major column assignment intact.
  * Image aspect ratios reserve their height before requests start. Only container/text
  * sizes are measured; image load events never control layout. Appending cards leaves
  * existing positions intact. Without JS this remains an ordinary readable grid.
@@ -42,8 +42,18 @@ export default function StyleGalleryGrid({ children, masonry = false }: { childr
   // biome-ignore lint/correctness/useExhaustiveDependencies: A new child list must rebind observers after filtering or appending.
   useLayoutEffect(() => {
     const grid = gridRef.current;
-    if (!grid || !masonry) return;
+    if (!grid) return;
     const cards = Array.from(grid.children) as HTMLElement[];
+    if (!masonry) {
+      grid.style.removeProperty('height');
+      for (const card of cards) {
+        for (const property of ['position', 'width', 'left', 'top']) card.style.removeProperty(property);
+      }
+      return;
+    }
+    // Never let the container collapse between appends: reading absolute card geometry
+    // flushes layout, and a transient zero height clamps the document's scroll position.
+    if (!grid.style.height) grid.style.height = `${grid.offsetHeight}px`;
     let previousWidth = -1;
     const arrange = () => {
       const style = getComputedStyle(grid);
@@ -77,10 +87,6 @@ export default function StyleGalleryGrid({ children, masonry = false }: { childr
     for (const card of cards) observer.observe(card);
     return () => {
       observer.disconnect();
-      grid.style.removeProperty('height');
-      for (const card of cards) {
-        for (const property of ['position', 'width', 'left', 'top']) card.style.removeProperty(property);
-      }
     };
   }, [children, masonry]);
 

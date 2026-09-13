@@ -28,6 +28,7 @@ import {
   STYLE_GALLERY_MUTATION_BATCH_SIZE,
   STYLE_GALLERY_PREPARE_BATCH_SIZE,
 } from '@lib/style-gallery-request-batches';
+import { getStyleGallerySourceHash } from '@lib/style-gallery-source-groups';
 import type { StyleGalleryVisualFeature } from '@lib/style-gallery-visual-types';
 import { openModal } from '@store/modal';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -364,11 +365,20 @@ export default function StyleGalleryExamples({
 
   function openExampleLightbox(example: StyleGalleryExample, platformExamples: StyleGalleryExample[]) {
     // 导航数组只包含当前视觉分组；平台内部仍保持上传顺序。
+    const sourceThumbnail = [...document.querySelectorAll<HTMLImageElement>('main img')].find(
+      (image) => image.complete && image.naturalWidth > 0 && /\/(source|thumb)\//.test(image.currentSrc || image.src),
+    );
+    const source = {
+      hash: getStyleGallerySourceHash({ sourceSlug: slug, sourceTitle: title }),
+      href: window.location.pathname,
+      thumbnail: sourceThumbnail?.currentSrc || sourceThumbnail?.src,
+    };
     const lightboxImages = platformExamples.map((candidate) => ({
       id: candidate.id,
       src: candidate.src,
       resolvedSrc: getReusableStyleGalleryImageUrl(candidate.src, loadedExampleSources.current.has(candidate.src)),
       alt: candidate.alt ?? candidate.model ?? 'Generated example',
+      source,
       like: createStyleGalleryLightboxLikeAction(candidate.id, likes, likeLabels),
       copy: createStyleGalleryCopyAction(
         () => activePrompt.current,

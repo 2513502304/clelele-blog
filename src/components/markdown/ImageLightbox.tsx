@@ -853,6 +853,26 @@ export default function ImageLightbox() {
                   </motion.div>
                 </div>
 
+                {currentImage.source && (
+                  <a
+                    href={currentImage.source.href}
+                    data-astro-prefetch="false"
+                    data-lightbox-source
+                    className="absolute top-4 left-4 flex max-w-[calc(100%-6rem)] items-center gap-2 rounded-xl border border-white/20 bg-black/60 p-2 pr-3 text-white shadow-lg backdrop-blur-md"
+                  >
+                    {currentImage.source.thumbnail && (
+                      <img
+                        src={currentImage.source.thumbnail}
+                        alt=""
+                        width={36}
+                        height={36}
+                        className="size-9 rounded-md object-cover"
+                      />
+                    )}
+                    <span className="font-mono text-sm">{currentImage.source.hash}</span>
+                    <Icon icon="ri:arrow-right-up-line" className="size-4" />
+                  </a>
+                )}
                 {/* Navigation bar */}
                 {data.images.length > 1 && (
                   <div className="absolute bottom-12 left-1/2 flex -translate-x-1/2 items-center gap-0.5 rounded-full bg-black/50 p-1 backdrop-blur-sm">

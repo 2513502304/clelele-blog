@@ -7,6 +7,7 @@ import {
   isHpoiProfilePage,
   parseHpoiCollection,
   parseHpoiCollectionPageCount,
+  parseHpoiDetailScore,
   parseHpoiProfile,
 } from './parser';
 
@@ -14,6 +15,7 @@ const REQUEST_TIMEOUT_MS = 10_000;
 const MAX_REQUEST_ATTEMPTS = 3;
 const RETRY_BASE_DELAY_MS = 250;
 const MAX_COLLECTION_PAGES = 100;
+const RATING_BUDGET_MS = 20_000;
 const HPOI_REQUEST_HEADERS = {
   accept: 'text/html,application/xhtml+xml',
   'accept-language': 'zh-CN,zh;q=0.9,en;q=0.7',
@@ -26,22 +28,31 @@ function sleep(ms: number): Promise<void> {
 }
 
 /** 每个 Hpoi 页面独立超时并重试，避免一次上游抖动污染整段 CDN 缓存周期。 */
-async function fetchHtml(url: string, body?: URLSearchParams, validate?: (html: string) => boolean): Promise<string> {
+async function fetchHtml(
+  url: string,
+  body?: URLSearchParams,
+  validate?: (html: string) => boolean,
+  signal?: AbortSignal,
+): Promise<string> {
   let lastError: unknown;
   for (let attempt = 1; attempt <= MAX_REQUEST_ATTEMPTS; attempt += 1) {
     try {
+      signal?.throwIfAborted();
       const response = await fetch(url, {
         method: body ? 'POST' : 'GET',
         headers: HPOI_REQUEST_HEADERS,
         body: body ? new URLSearchParams(body) : undefined,
         redirect: 'follow',
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        signal: signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)])
+          : AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
       if (!response.ok) throw new Error(`Hpoi returned HTTP ${response.status}.`);
       const html = await response.text();
       if (validate && !validate(html)) throw new Error('Hpoi returned an unexpected page instead of the requested data.');
       return html;
     } catch (error) {
+      if (signal?.aborted) throw error;
       lastError = error;
       if (attempt === MAX_REQUEST_ATTEMPTS) break;
       await sleep(RETRY_BASE_DELAY_MS * 2 ** (attempt - 1) + Math.floor(Math.random() * 100));
@@ -189,6 +200,34 @@ export async function fetchHpoiCollection(userId: string): Promise<HpoiCollectio
   });
 
   if (successfulCollections === 0) throw new Error('All Hpoi collection requests failed.');
+
+  // A figure appears in several states. Enrich each missing ID once, with a small
+  // pool independent of pagination concurrency; CDN caches the resulting snapshot.
+  const missing = [
+    ...new Map(
+      Object.values(collections)
+        .flat()
+        .filter((item) => !item.score)
+        .map((item) => [item.id, item]),
+    ).values(),
+  ];
+  const scores = new Map<string, string>();
+  // Rating enrichment is optional: a slow upstream must not hold every collection
+  // card behind hundreds of retries. The shared deadline also cancels in-flight reads.
+  const ratingSignal = AbortSignal.timeout(RATING_BUDGET_MS);
+  await mapWithConcurrency(missing, Math.min(4, getHpoiConcurrency(missing.length)), async (item) => {
+    if (ratingSignal.aborted) return;
+    try {
+      const score = parseHpoiDetailScore(await fetchHtml(item.detailUrl, undefined, undefined, ratingSignal));
+      if (score) scores.set(item.id, score);
+    } catch {
+      // A missing/unavailable rating must not discard otherwise valid collection cards.
+      console.warn(`[hpoi] Rating unavailable for ${item.id}.`);
+    }
+  });
+  for (const items of Object.values(collections)) {
+    for (const item of items) item.score ??= scores.get(item.id) ?? null;
+  }
 
   return {
     profile,

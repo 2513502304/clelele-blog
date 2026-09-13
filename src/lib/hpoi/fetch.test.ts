@@ -145,3 +145,46 @@ describe('fetchHpoiCollectionState', () => {
     assert.equal(data.collections.care.length, 1);
   });
 });
+
+describe('detail rating enrichment', () => {
+  it('cancels slow rating reads at the shared deadline without losing collection cards', async (t) => {
+    const timeout = AbortSignal.timeout;
+    t.mock.method(AbortSignal, 'timeout', (ms: number) => {
+      if (ms !== 20_000) return timeout(ms);
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(), 30);
+      return controller.signal;
+    });
+    let detailReads = 0;
+    globalThis.fetch = async (input, init) => {
+      if (/\/hobby\/\d+$/.test(String(input))) {
+        detailReads++;
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true });
+        });
+      }
+      return new Response(String(input).includes('/hobby') ? collectionPage(['1', '2', '3', '4', '5', '6']) : profilePage());
+    };
+    const data = await fetchHpoiCollection('783694');
+    assert.equal(detailReads, 3);
+    assert.equal(data.collections.all.length, 6);
+    assert.ok(data.collections.all.every((item) => item.score === null));
+  });
+
+  it('fetches each missing figure rating once across all collection states', async () => {
+    let detailReads = 0;
+    globalThis.fetch = async (input) => {
+      const url = String(input);
+      if (url.endsWith('/hobby/82123')) {
+        detailReads++;
+        return new Response(
+          '<script type="application/ld+json">{"mainEntity":{"@type":"Product","aggregateRating":{"ratingValue":"4.77","bestRating":"5","ratingCount":"2310"}}}</script>',
+        );
+      }
+      return new Response(url.includes('/hobby') ? collectionPage(['82123']) : profilePage());
+    };
+    const data = await fetchHpoiCollection('783694');
+    assert.equal(detailReads, 1);
+    for (const items of Object.values(data.collections)) assert.equal(items[0].score, '4.77');
+  });
+});
