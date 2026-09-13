@@ -10,6 +10,7 @@ import {
   resolveStyleGalleryUploadTarget,
   type StyleGalleryExampleUploadCliOptions,
 } from '@lib/style-gallery-cli-example-upload';
+import { ensureStyleGalleryExampleThumbnail } from '@lib/style-gallery-example-thumbnail';
 import { getStyleGalleryExampleObjectKey, MAX_STYLE_GALLERY_EXAMPLE_FILE_SIZE } from '@lib/style-gallery-example-upload';
 import { readStyleGalleryImageDimensions } from '@lib/style-gallery-image-dimensions';
 import { getStyleGalleryExampleContentType, getStyleGalleryExampleExtension } from '@lib/style-gallery-image-type';
@@ -437,6 +438,12 @@ export async function runStyleGalleryExampleUpload(
   let completed = 0;
   const outcomes = await mapWithConcurrency(featureReady, options.concurrency, async (entry): Promise<UploadOutcome> => {
     try {
+      // Encode and upload previews locally; the merge API checks their existence before publication.
+      const bytes = await readFile(entry.file.path);
+      if (createHash('sha256').update(bytes).digest('hex') !== entry.file.imageHash) {
+        throw new Error('Local file changed before thumbnail upload. Run the command again.');
+      }
+      await ensureStyleGalleryExampleThumbnail(entry.example.src, bytes);
       if (!entry.exists) await uploadImageToHf(entry.file, entry.key, options);
       completed += 1;
       console.log(

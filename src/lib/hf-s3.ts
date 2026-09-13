@@ -231,7 +231,9 @@ export function createHfS3Client(
     contentType: string,
     conditions: { ifMatch?: string; ifNoneMatch?: '*' } = {},
   ): Promise<string | null> {
-    const requestBody = body.slice().buffer;
+    // Buffer.slice() retains its pooled backing store. Copy exactly the signed
+    // bytes so small thumbnails/JSON never upload unrelated bytes from that pool.
+    const requestBody = new Uint8Array(body).buffer;
     return retry(
       `upload HF S3 object "${key}"`,
       async () => {

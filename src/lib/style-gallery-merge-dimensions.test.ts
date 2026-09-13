@@ -61,6 +61,8 @@ test('example merge replaces forged client geometry with stored image dimensions
   const previousFetch = globalThis.fetch;
   Object.assign(process.env, env);
   let imageReads = 0;
+  let thumbnail: Uint8Array | undefined;
+  let rejectThumbnail = true;
   globalThis.fetch = async (input, init) => {
     const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url);
     const key = decodeURIComponent(url.pathname.replace('/test/test/gallery/', ''));
@@ -70,6 +72,9 @@ test('example merge replaces forged client geometry with stored image dimensions
       return new Response(new Uint8Array(imageBytes));
     }
     if (init?.method === 'PUT') {
+      if (key.startsWith('examples/thumbs/') && rejectThumbnail) return new Response(null, { status: 400 });
+      if (key.startsWith('examples/thumbs/')) thumbnail = new Uint8Array(init.body as ArrayBuffer);
+      if (key.startsWith('items/')) assert.ok(thumbnail, 'derivative must exist before metadata publication');
       objects.set(key, new TextDecoder().decode(init.body as ArrayBuffer));
       return new Response(null, { headers: { etag: '"2"' } });
     }
@@ -109,9 +114,16 @@ test('example merge replaces forged client geometry with stored image dimensions
         ],
       }),
     });
+    const rejected = await POST({ params: { slug }, request: request.clone() } as never);
+    assert.equal(rejected.status, 500);
+    assert.equal(JSON.parse(objects.get(`items/${slug}.json`) ?? '{}').examples.length, 0);
+    rejectThumbnail = false;
     const response = await POST({ params: { slug }, request } as never);
     assert.equal(response.status, 200, await response.clone().text());
-    assert.equal(imageReads, 1);
+    assert.equal(imageReads, 2);
+    const preview = await sharp(thumbnail).metadata();
+    assert.equal(preview.format, 'webp');
+    assert.equal(preview.width, 120);
     assert.deepEqual(JSON.parse(objects.get(`items/${slug}.json`) ?? '').examples[0].dimensions, { width: 120, height: 80 });
     assert.deepEqual(JSON.parse(objects.get('examples/index-v2.json') ?? '').groups[0].examples[0].dimensions, {
       width: 120,

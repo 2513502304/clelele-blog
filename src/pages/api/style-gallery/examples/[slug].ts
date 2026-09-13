@@ -2,11 +2,13 @@ import { deleteStyleGalleryObject, getStyleGalleryObjectBytes, headStyleGalleryO
 import { mapWithConcurrency } from '@lib/map-with-concurrency';
 import { isAuthorizedStyleGalleryRequest } from '@lib/style-gallery-auth';
 import { getStyleGalleryClientErrorResponse, StyleGalleryClientError } from '@lib/style-gallery-errors';
+import { ensureStyleGalleryExampleThumbnail } from '@lib/style-gallery-example-thumbnail';
 import {
   createStyleGalleryExample,
   getStyleGalleryExampleExtension,
   getStyleGalleryExampleKey,
   getStyleGalleryExampleObjectKey,
+  getUnreferencedStyleGalleryExampleAssetKeys,
   MAX_STYLE_GALLERY_EXAMPLE_FILE_SIZE,
   MAX_STYLE_GALLERY_EXAMPLE_FILES,
 } from '@lib/style-gallery-example-upload';
@@ -97,6 +99,8 @@ async function validateExampleObjectsExist(examples: StyleGalleryExample[]): Pro
     const bytes = await getStyleGalleryObjectBytes(key);
     if (!bytes) throw new StyleGalleryClientError('Uploaded image is missing.', 409);
     example.dimensions = await readStyleGalleryImageDimensions(bytes);
+    // Both browser and CLI uploads pass here. Never publish a card before its derivative exists.
+    await ensureStyleGalleryExampleThumbnail(example.src, bytes);
   });
 }
 
@@ -158,7 +162,7 @@ export const POST: APIRoute = async ({ params, request }) => {
       const index = await getStyleGalleryExampleIndex({ fresh: true });
       const referenced = new Set(index.groups.flatMap((group) => group.examples.map((example) => example.src)));
       const removable = body.examples.filter((example) => !referenced.has(example.src));
-      await mapWithConcurrency(removable, 8, (example) => deleteStyleGalleryObject(getStyleGalleryExampleObjectKey(example)));
+      await mapWithConcurrency(getUnreferencedStyleGalleryExampleAssetKeys(removable, referenced), 8, deleteStyleGalleryObject);
       return Response.json({ deleted: removable.length, retained: body.examples.length - removable.length });
     }
 
@@ -267,8 +271,8 @@ export const DELETE: APIRoute = async ({ params, request }) => {
       visualIndexUpdated = false;
       console.error('[style-gallery] Examples were deleted but visual index cleanup failed.', error);
     }
-    await mapWithConcurrency(orphaned, 8, (example) =>
-      deleteStyleGalleryObject(getStyleGalleryExampleObjectKey(example)).catch((error) => {
+    await mapWithConcurrency(getUnreferencedStyleGalleryExampleAssetKeys(orphaned, referenced), 8, (key) =>
+      deleteStyleGalleryObject(key).catch((error) => {
         console.error('[style-gallery] Failed to remove an unreferenced example object:', error);
       }),
     );

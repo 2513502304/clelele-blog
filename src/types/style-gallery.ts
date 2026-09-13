@@ -10,7 +10,6 @@ export interface StyleGalleryImageDimensions {
 export interface StyleGalleryImageRef {
   dimensions?: StyleGalleryImageDimensions;
   sourceImage: string;
-  thumbnailImage?: string;
   sourceImageAlt?: string;
   imageHash: string;
 }
@@ -56,7 +55,6 @@ export interface StoredStyleGalleryItem {
   date: string;
   updated?: string;
   sourceImage: string;
-  thumbnailImage?: string;
   sourceImageAlt?: string;
   /** 首项是默认 prompt；后续导入只追加不同文本，不改变既有默认值。 */
   prompts: StyleGalleryPromptVariant[];
@@ -86,7 +84,6 @@ export interface StyleGalleryCatalogItem {
   title: string;
   date: string;
   sourceImage: string;
-  thumbnailImage?: string;
   sourceImageAlt?: string;
   /** 默认 prompt 的三行短摘要，仅用于卡片预览；复制和全文搜索都按需读取独立数据。 */
   promptExcerpt: string;

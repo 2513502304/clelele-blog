@@ -104,6 +104,8 @@ export interface StyleGallerySourceLightboxItem {
   id: string;
   src: string;
   previewSrc?: string;
+  /** Original display geometry keeps a small preview and its decoded original in the same bounds. */
+  dimensions?: { width: number; height: number };
   /** 触发 Lightbox 前，该高清 src 已在页面中完成加载，可直接复用浏览器图片缓存。 */
   sourceLoaded?: boolean;
   alt: string;
@@ -161,6 +163,7 @@ export function createStyleGallerySourceLightboxData(
     // 已签名缓存优先；每张确认加载完成的高清图都可复用 canonical URL，未加载项继续批量签名。
     resolvedSrc: getReusableStyleGalleryImageUrl(item.src, Boolean(item.sourceLoaded)),
     previewSrc: item.previewSrc,
+    dimensions: item.dimensions,
     alt: item.alt,
     copy: createStyleGalleryCopyAction(item.getPrompt, labels, item.promptOptions),
     locate: item.locate ? { run: item.locate } : undefined,

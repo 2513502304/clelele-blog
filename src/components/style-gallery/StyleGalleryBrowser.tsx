@@ -48,7 +48,6 @@ export interface StyleGalleryBrowserItem {
   promptRevision: string;
   date: string;
   sourceImage: string;
-  thumbnailImage?: string;
   sourceImageAlt?: string;
   imageHash: string;
   imageCount: number;

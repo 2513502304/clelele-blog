@@ -139,6 +139,17 @@ function LightboxImageStage({
     [finishSourceLoad],
   );
 
+  // The preview can be smaller than the viewport (especially landscape images).
+  // Reserve the original's fitted bounds so replacing it never changes image size.
+  const dimensions = image.dimensions;
+  const stageSize =
+    dimensions && dimensions.width > 0 && dimensions.height > 0
+      ? {
+          width: `min(${dimensions.width}px, 96vw, ${(92 * dimensions.width) / dimensions.height}dvh)`,
+          height: `min(${dimensions.height}px, ${(96 * dimensions.height) / dimensions.width}vw, 92dvh)`,
+        }
+      : undefined;
+  const imageSize = stageSize ? { width: '100%', height: '100%', minWidth: 0, minHeight: 0 } : undefined;
   const isLoading = sourceState === 'loading' || sourceState === 'decoding';
   const hasPreview = Boolean(previewSrc) && !previewFailed;
   const hasVisibleImage = hasPreview || sourceState === 'loaded';
@@ -147,10 +158,11 @@ function LightboxImageStage({
     : undefined;
 
   return (
-    <div className="relative grid place-items-center" aria-busy={isLoading}>
+    <div className="relative grid place-items-center" style={stageSize} aria-busy={isLoading}>
       {hasPreview && (
         <motion.img
           src={previewSrc}
+          style={imageSize}
           alt=""
           aria-hidden="true"
           loading="eager"
@@ -166,6 +178,7 @@ function LightboxImageStage({
       <motion.img
         ref={sourceRef}
         src={download.src}
+        style={imageSize}
         alt={image.alt}
         loading="eager"
         fetchPriority="high"

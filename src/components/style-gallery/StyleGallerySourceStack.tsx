@@ -1,5 +1,6 @@
 import { useIsMounted } from '@hooks/useIsMounted';
 import { Icon } from '@iconify/react';
+import { getStyleGalleryExampleThumbnailSource } from '@lib/style-gallery-image-key';
 import { useReducedMotion } from 'motion/react';
 import type { StyleGalleryExampleOverviewItem } from '@/types/style-gallery';
 import StyleGallerySharedImage from './StyleGallerySharedImage';
@@ -42,7 +43,7 @@ export default function StyleGallerySourceStack({
             data-layer={layers.length - index - 1}
           >
             <StyleGallerySharedImage
-              source={example.src}
+              source={getStyleGalleryExampleThumbnailSource(example.src)}
               loadedSources={loadedSources}
               alt=""
               aria-hidden="true"

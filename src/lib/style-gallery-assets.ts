@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { StoredStyleGalleryItem } from '@/types/style-gallery';
+import { getStyleGallerySourceThumbnail } from './style-gallery-image-key';
 
 const IMAGE_API_PREFIX = '/api/style-gallery/image/';
 const ASSET_KEY_PATTERN = /^(source|thumb)\/[a-zA-Z0-9._-]+$/;
@@ -14,7 +15,7 @@ export function getStyleGalleryAssetKey(path: string): string {
 /** 收集 item 中去重后的原图与缩略图对象键，用于写入前 HEAD 校验和失败清理。 */
 export function getStyleGalleryItemAssetKeys(item: StoredStyleGalleryItem): string[] {
   const paths = item.images
-    .flatMap((image) => [image.sourceImage, image.thumbnailImage])
+    .flatMap((image) => [image.sourceImage, getStyleGallerySourceThumbnail(image.sourceImage)])
     .filter((path): path is string => Boolean(path));
   return [...new Set(paths.map(getStyleGalleryAssetKey))];
 }
@@ -31,11 +32,7 @@ export function isStyleGalleryAssetKey(key: string): boolean {
  */
 export function assertStyleGalleryItemConsistency(item: StoredStyleGalleryItem): void {
   const firstImage = item.images[0];
-  if (
-    item.sourceImage !== firstImage.sourceImage ||
-    item.thumbnailImage !== firstImage.thumbnailImage ||
-    item.sourceImageAlt !== firstImage.sourceImageAlt
-  ) {
+  if (item.sourceImage !== firstImage.sourceImage || item.sourceImageAlt !== firstImage.sourceImageAlt) {
     throw new Error(`Top-level image fields do not match the first image for ${item.slug}.`);
   }
 
@@ -43,9 +40,6 @@ export function assertStyleGalleryItemConsistency(item: StoredStyleGalleryItem):
     const shortHash = image.imageHash.slice(0, 12);
     if (!getStyleGalleryAssetKey(image.sourceImage).split('/').at(-1)?.startsWith(`${shortHash}.`)) {
       throw new Error(`Source image filename does not match its hash for ${item.slug}.`);
-    }
-    if (image.thumbnailImage && !getStyleGalleryAssetKey(image.thumbnailImage).split('/').at(-1)?.startsWith(`${shortHash}.`)) {
-      throw new Error(`Thumbnail filename does not match its hash for ${item.slug}.`);
     }
   }
 

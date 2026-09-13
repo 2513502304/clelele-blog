@@ -100,6 +100,8 @@ export interface ImageLightboxImage {
   resolvedSrc?: string;
   /** 已在触发页面显示过的低成本预览图；高清原图加载完成前用于避免空白等待。 */
   previewSrc?: string;
+  /** Original display geometry keeps a small preview and its decoded original in the same bounds. */
+  dimensions?: { width: number; height: number };
   alt: string;
   /** Parent identity with the exact thumbnail URL already displayed by the invoking card. */
   source?: { hash: string; href: string; thumbnail?: string };

@@ -6,6 +6,7 @@ import StyleGalleryVisualFilter, {
 import { Icon } from '@iconify/react';
 import { createStyleGalleryDateRangeMatcher, getStyleGalleryDateKey } from '@lib/style-gallery-date-range';
 import type { StyleGalleryDateRangeLabels } from '@lib/style-gallery-date-range-labels';
+import { getStyleGallerySourceThumbnail } from '@lib/style-gallery-image-key';
 import {
   createStyleGallerySourceLightboxData,
   getStyleGalleryLightboxElementId,
@@ -168,7 +169,8 @@ function StyleGalleryImageIndexContent({
       visibleItems.map((candidate) => ({
         id: candidate.slug,
         src: candidate.sourceImage,
-        previewSrc: candidate.thumbnailImage ?? candidate.sourceImage,
+        dimensions: candidate.dimensions,
+        previewSrc: getStyleGallerySourceThumbnail(candidate.sourceImage),
         alt: candidate.sourceImageAlt ?? candidate.title,
         getPrompt: () =>
           getSelectedStyleGalleryPrompt(candidate.slug) ??
@@ -282,7 +284,7 @@ function StyleGalleryImageIndexContent({
                   title={item.title}
                 >
                   <img
-                    src={item.thumbnailImage ?? item.sourceImage}
+                    src={getStyleGallerySourceThumbnail(item.sourceImage)}
                     alt={item.sourceImageAlt ?? item.title}
                     width={1}
                     height={1}

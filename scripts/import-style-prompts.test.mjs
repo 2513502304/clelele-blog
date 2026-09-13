@@ -154,7 +154,6 @@ describe('style prompt import variants', () => {
       title: `Style Prompt ${imageHash.slice(0, 12)}`,
       date: '2026-08-10T00:00:00.000Z',
       sourceImage: `/api/style-gallery/image/source/${imageHash.slice(0, 12)}.png`,
-      thumbnailImage: `/api/style-gallery/image/thumb/${imageHash.slice(0, 12)}.webp`,
       sourceImageAlt: 'Existing reference image',
       promptExcerpt: `${PLACEHOLDER}, first prompt`,
       prompts: [`${PLACEHOLDER}, first prompt`, `${PLACEHOLDER}, second prompt`],
@@ -166,7 +165,6 @@ describe('style prompt import variants', () => {
       images: [
         {
           sourceImage: `/api/style-gallery/image/source/${imageHash.slice(0, 12)}.png`,
-          thumbnailImage: `/api/style-gallery/image/thumb/${imageHash.slice(0, 12)}.webp`,
           sourceImageAlt: 'Existing reference image',
           imageHash,
         },
@@ -236,13 +234,11 @@ describe('style prompt import variants', () => {
           title: 'Existing item',
           date: '2026-08-10T00:00:00.000Z',
           sourceImage: `/api/style-gallery/image/source/${imageHash.slice(0, 12)}.png`,
-          thumbnailImage: `/api/style-gallery/image/thumb/${imageHash.slice(0, 12)}.webp`,
           sourceImageAlt: 'Existing reference image',
           imageHash,
           images: [
             {
               sourceImage: `/api/style-gallery/image/source/${imageHash.slice(0, 12)}.png`,
-              thumbnailImage: `/api/style-gallery/image/thumb/${imageHash.slice(0, 12)}.webp`,
               sourceImageAlt: 'Existing reference image',
               imageHash,
             },

@@ -6,7 +6,27 @@ export const STYLE_GALLERY_IMAGE_SIGN_BATCH_SIZE = 48;
 export function isAllowedStyleGalleryImageKey(key: string): boolean {
   if (key.includes('..') || key.includes('\\')) return false;
   if (/^\/?(source|thumb)\/[a-f0-9]{12}\.(jpg|jpeg|png|webp)$/i.test(key)) return true;
+  if (/^\/?examples\/thumbs\/[a-f0-9]{64}\.webp$/i.test(key)) return true;
   return /^\/?examples\/images\/[a-f0-9]{64}\.(jpg|jpeg|png|webp)$/i.test(key);
+}
+
+/** Content-addressed derivative: no repeated thumbnail URL or dimensions in list metadata. */
+export function getStyleGalleryExampleThumbnailKey(source: string): string {
+  const key = parseStyleGalleryImageApiPath(source);
+  const match = key?.match(/^examples\/images\/([a-f0-9]{64})\.(jpg|jpeg|png|webp)$/i);
+  if (!match) throw new Error('Invalid example source for thumbnail.');
+  return `examples/thumbs/${match[1]}.webp`;
+}
+
+export function getStyleGalleryExampleThumbnailSource(source: string): string {
+  return createStyleGalleryImageApiPath(getStyleGalleryExampleThumbnailKey(source));
+}
+
+/** Derive from the first source's filename, not the combined hash of a multi-image item. */
+export function getStyleGallerySourceThumbnail(source: string): string {
+  const match = source.match(/^\/api\/style-gallery\/image\/source\/([a-f0-9]{12})\.(jpg|jpeg|png|webp)$/i);
+  if (!match) throw new Error('Invalid reference source for thumbnail.');
+  return `/api/style-gallery/image/thumb/${match[1]}.webp`;
 }
 
 /** 从站内图片 API 地址恢复 HF object key；外部 URL 与非 Gallery 路径不会进入签名队列。 */

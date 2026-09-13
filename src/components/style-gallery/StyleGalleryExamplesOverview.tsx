@@ -8,6 +8,7 @@ import { createStyleGalleryDateRangeMatcher, getStyleGalleryDateKey } from '@lib
 import type { StyleGalleryDateRangeLabels } from '@lib/style-gallery-date-range-labels';
 import { createStyleGalleryExampleQueryMatcher } from '@lib/style-gallery-example-search';
 import { getReusableStyleGalleryImageUrl } from '@lib/style-gallery-image-client';
+import { getStyleGalleryExampleThumbnailSource } from '@lib/style-gallery-image-key';
 import {
   createStyleGalleryCopyAction,
   createStyleGalleryDeleteAction,
@@ -109,6 +110,7 @@ function StyleGalleryExamplesOverviewContent({
   const [examples, setExamples] = useState(initialExamples);
   // 不放进 state：加载完成只影响下一次打开 Lightbox，不应让数千张卡片重新渲染。
   const loadedExampleSources = useRef(new Set<string>());
+  const loadedExampleThumbnails = useRef(new Set<string>());
   const [uploadToken, setUploadToken] = useState('');
   const [platform, setPlatform] = useQueryState('platform', parseAsString.withDefault('all'));
   const [query, setQuery] = useQueryState('q', parseAsString.withDefault(''));
@@ -219,7 +221,13 @@ function StyleGalleryExamplesOverviewContent({
     const lightboxImages = navigation.map((candidate) => ({
       id: candidate.id,
       src: candidate.src,
+      dimensions: candidate.dimensions,
       resolvedSrc: getReusableStyleGalleryImageUrl(candidate.src, loadedExampleSources.current.has(candidate.src)),
+      previewSrc:
+        getReusableStyleGalleryImageUrl(
+          getStyleGalleryExampleThumbnailSource(candidate.src),
+          loadedExampleThumbnails.current.has(getStyleGalleryExampleThumbnailSource(candidate.src)),
+        ) ?? (grouped ? getStyleGalleryExampleThumbnailSource(candidate.src) : undefined),
       alt: `${candidate.sourceTitle} ${candidate.model}`,
       source: {
         hash: getStyleGallerySourceHash(candidate),
@@ -434,7 +442,7 @@ function StyleGalleryExamplesOverviewContent({
                             ? 'グループのいいね合計'
                             : 'Total group likes'
                       }
-                      loadedSources={loadedExampleSources.current}
+                      loadedSources={loadedExampleThumbnails.current}
                       onOpen={() => openLightbox(example, stack)}
                       label={`${getStyleGallerySourceHash(example)} · ${stack.length}`}
                       eager={index < EAGER_EXAMPLE_COUNT}

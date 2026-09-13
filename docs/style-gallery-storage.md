@@ -12,6 +12,7 @@ source/<hash-prefix>.<ext>
 thumb/<hash-prefix>.webp
 examples/index-v2.json
 examples/images/<sha256>.<ext>
+examples/thumbs/<sha256>.webp
 ```
 
 `metadata/catalog-v5.json` contains shared model targets and the lightweight card/sorting fields required by the preview UI. It contains `exampleCount` and a prompt excerpt; full prompts are fetched on demand. The obsolete shared `codex-session` / `style-prompt` tags are ignored by readers and omitted by new writers.
@@ -22,7 +23,7 @@ examples/images/<sha256>.<ext>
 
 Like counts are not copied into the catalog or item documents. A missing user ID array is therefore never interpreted by runtime v2 code, and every visible count is derived from the one canonical index.
 
-Generated images use a content-addressed path independent of their platform. Platform changes update metadata only; they never copy or rename image objects. Physical deletion happens only after no entry in the global example index references the image URL.
+Generated images use a content-addressed path independent of their platform. Platform changes update metadata only; they never copy or rename image objects. Physical deletion of both the original and its thumbnail happens only after no entry in the global example index references the image URL.
 
 ## Image dimensions and masonry
 
@@ -32,7 +33,7 @@ The session importer reads image headers with Sharp. The example-upload CLI read
 
 Preview and Sub-gallery overview default to masonry; `?layout=grid` selects fixed-height cards. Cards have equal widths and reserve their original aspect ratios before image requests. Fixed row-major column assignment preserves the same left-to-right order in both layouts, while each masonry column stacks independently. Appending cards retains the container height throughout measurement so browser scroll clamping cannot send the reader back to the beginning. The image index intentionally retains its dense square matrix. Missing legacy dimensions use a stable 4:5 container with `contain`, until backfilled, rather than changing height after loading.
 
-Sub-gallery overview supports `?grouped=true` and individual source collapse controls. Collapsed groups contain only the current filtered results, retain first-occurrence sort order, and open a lightbox containing that group's images. A maximum of three decorative image layers fan out on hover or keyboard focus without changing card geometry; reduced-motion settings disable the transition. Source labels show the short hash without the redundant title prefix. Lightboxes reuse already loaded source thumbnail URLs and display the source hash and detail link without requesting source metadata again.
+Sub-gallery overview defaults to grouping; `?grouped=false` disables it globally. Collapsed groups contain only the current filtered results, retain first-occurrence sort order, and open a lightbox containing that group's images. A maximum of three decorative image layers fan out on hover or keyboard focus without changing card geometry; reduced-motion settings disable the transition. Source labels show the short hash without the redundant title prefix. Lightboxes reuse already loaded source thumbnail URLs and display the source hash and detail link without requesting source metadata again.
 
 Backfill existing public items and both indexes (read-only by default):
 
@@ -43,6 +44,29 @@ node --use-env-proxy --env-file-if-exists=.env.local --import tsx scripts/backfi
 
 The script creates a unique private temporary directory (printed in its result) for cached dimensions and backups of each overwritten metadata revision, and uses ETag conditions to preserve concurrent changes. It changes neither image bytes nor prompt text, dates, IDs, platform labels, or votes. Re-running is safe. To reuse a cache, pass `--work-dir` pointing to a directory owned by the current user with mode `0700`; symlinked directories and files are rejected. `--remove-tags` deletes the obsolete shared catalog tags as part of the same rollout; the updated catalog schema no longer requires that field.
 
+## Generated-example thumbnails
+
+Folded source cards load at most three pre-generated WebP thumbnails, 640 pixels wide at quality 76, without enlargement or cropping. EXIF orientation is normalized. This covers four-column cards on high-density screens; full detail remains available in Lightbox. Unfolded cards continue using originals.
+
+Thumbnail paths are derived from the existing original SHA-256 path. No thumbnail URL, dimensions, availability flags, extra manifests, or duplicate metadata fields are added. List SSR still reads the same lightweight indexes; image signing accepts the narrowly scoped `examples/thumbs/<sha256>.webp` keys. There is no runtime image resizing on a gallery read.
+
+The card's exact loaded thumbnail URL is passed to Lightbox, with a separate cache identity from the original. Lightbox displays that preview while downloading and decoding the full image, then fades in the original in place. The source-reference badge uses its existing independent thumbnail cache.
+
+The CLI creates and uploads the thumbnail locally before uploading the original, avoiding resizing CPU on Vercel. The common merge endpoint covers browser direct/chunked uploads and any API clients: it reuses the original bytes already read for dimension verification and generates a missing thumbnail before committing metadata. A failed derivative prevents publication; cleanup removes both unreferenced assets. Reconciliation derives thumbnail paths automatically from preserved original URLs and does not rewrite assets.
+
+Audit/backfill all unique indexed images (read-only by default). For a large historical collection, the optional s5cmd transport lists existing derivatives once and downloads/encodes/uploads batches, using the same Sharp encoder:
+
+```sh
+node --use-env-proxy --env-file-if-exists=.env.local --import tsx scripts/backfill-style-gallery-example-thumbnails.ts
+node --use-env-proxy --env-file-if-exists=.env.local --import tsx scripts/backfill-style-gallery-example-thumbnails.ts --apply --concurrency 8
+node --use-env-proxy --env-file-if-exists=.env.local --import tsx scripts/backfill-style-gallery-example-thumbnails.ts --apply --s5cmd --concurrency 32
+node --use-env-proxy --env-file-if-exists=.env.local --import tsx scripts/backfill-style-gallery-example-thumbnails.ts --apply --s5cmd --hf-upload --concurrency 32
+```
+
+For HF buckets, add `--hf-upload` to keep s5cmd downloads while publishing each thumbnail batch through the native `hf buckets sync` API. This requires the installed `hf` CLI and its existing authenticated login. Sync explicitly uses `--no-delete`, so thumbnails from earlier batches remain intact. Native batch publication can be substantially faster than individual S3 PUTs; compare a small sample on the current connection. Standard AWS fallback credentials retain their session token.
+
+The backfill skips existing thumbnails, retries transient failures, and exits nonzero for missing/failed derivatives. The s5cmd mode requires the existing `s5cmd` binary, passes credentials through the child process environment, and uses a private scratch directory. Each batch is hash-verified, encoded, uploaded, and then removed from local scratch storage; a failed batch is retained for inspection. Re-run without `--apply` to audit coverage. It holds at most the configured number of source images in memory and writes no original or metadata objects. Run it before rollout and audit again after deployment to catch concurrent uploads from the previous deployment. `--limit N` supports a small initial sample. Asset creation is resumable without retaining private metadata snapshots.
+
 ## Writes and consistency
 
 The browser upload flow has five phases:
@@ -50,7 +74,7 @@ The browser upload flow has five phases:
 1. Hash selected files concurrently.
 2. Prepare metadata in bounded request batches and check content-addressed image objects concurrently.
 3. Upload missing files through independent same-origin requests with bounded concurrency and retries.
-4. Verify each referenced image object exists.
+4. Verify each referenced image object, measure its dimensions, and ensure its thumbnail exists before publishing metadata.
 5. Commit the item document, catalog count, and example index together. Example-index mutations use ETag conditional writes and replay after a concurrent update, so uploads, deletions, and likes cannot silently overwrite one another across Vercel instances. If another metadata write fails, the rollback preserves likes added concurrently.
 
 The browser distinguishes transferring bytes, waiting for the server to finish the HF upload, and saving metadata. A file can therefore show `processing` after its browser upload reaches 100%; this means the server is still waiting for HF storage, not that the progress bar lost the final bytes.
@@ -71,3 +95,14 @@ browser.
 The one-time v2 migration combined `metadata/items/<slug>.json` and `examples/<slug>.json`, moved generated images from platform-specific folders to `examples/images/`, verified all counts and object references, and then removed the old metadata, image folders, snapshots, and migration code. Runtime code has no v2 fallback.
 
 The like-index migration copied all 196 groups and 2219 examples from `examples/index.json` into `examples/index-v2.json`, initialized `likedBy` arrays, and verified the uploaded snapshot byte-for-byte. The versioned key keeps the old deployment operational during rollout; after the v2 code is deployed, `examples/index.json` is an unused migration artifact and can be deleted.
+
+## Removing redundant reference-thumbnail fields
+
+Reference previews retain their existing `thumb/<hash-prefix>.webp` objects. The index and source badges derive this path from the original source filename; a multi-image item's combined hash must not be used. `thumbnailImage` is no longer stored in catalog entries, item top-level fields, or reference-image records. Import, validation, asset cleanup, and reconciliation use the same derived contract. No additional HF reads or image processing are needed for derivation.
+
+```sh
+node --use-env-proxy --env-file-if-exists=.env.local --import tsx scripts/migrate-style-gallery-thumbnail-metadata.ts
+node --use-env-proxy --env-file-if-exists=.env.local --import tsx scripts/migrate-style-gallery-thumbnail-metadata.ts --apply
+```
+
+Audit refuses any custom thumbnail path that cannot be derived. Apply removes only redundant fields, saves each overwritten revision in a private temporary directory, and uses ETag conditional writes with conflict retries. IDs, prompts, dimensions, timestamps, examples, and likes remain intact. Re-run the audit after migration; it should report zero changed documents. The example index has no reference-thumbnail fields and is not rewritten.
