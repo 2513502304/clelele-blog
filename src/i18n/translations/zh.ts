@@ -308,6 +308,8 @@ export const uiStrings = {
   'image.close': '关闭',
   'image.prev': '上一张',
   'image.next': '下一张',
+  'image.downloading': '正在下载原图',
+  'image.decoding': '下载完成，正在解码',
   'image.loadingOriginal': '正在加载高清原图',
   'image.loadFailed': '高清原图加载失败',
   'image.counter': '{current} / {total}',

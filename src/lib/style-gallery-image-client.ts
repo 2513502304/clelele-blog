@@ -70,6 +70,11 @@ export function isStyleGalleryImageUrlLoaded(source: string): boolean {
   return loadedImageUrls.has(source);
 }
 
+/** Native preloads cannot expose byte progress; lightboxes must reuse them instead of starting a fetch. */
+export function isStyleGalleryImagePreloading(source: string): boolean {
+  return activePreloads.has(source);
+}
+
 /** 记录 Lightbox 自己加载完成的签名地址，保证键盘返回或关闭后重开时不再显示虚假的 loading。 */
 export function markStyleGalleryImageUrlLoaded(url: string, source = url): void {
   loadedImageUrls.add(url);
