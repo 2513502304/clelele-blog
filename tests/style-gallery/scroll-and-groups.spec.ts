@@ -8,7 +8,7 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-for (const path of ['/image-style-prompt-gallery', '/image-style-prompt-gallery/examples']) {
+for (const path of ['/image-style-prompt-gallery', '/image-style-prompt-gallery/examples?grouped=false']) {
   test(`${path}: defaults to masonry and preserves scrolling and order through twelve appended batches`, async ({ page }) => {
     await page.goto(path);
     const grid = page.locator('[data-gallery-layout]');
@@ -25,7 +25,7 @@ for (const path of ['/image-style-prompt-gallery', '/image-style-prompt-gallery/
     const before = await grid.evaluate((e) =>
       [...e.children].slice(0, 12).map((c) => ({ id: c.id, column: (c as HTMLElement).offsetLeft })),
     );
-    await page.getByRole('button', { name: '瀑布流显示', exact: true }).click();
+    await page.getByRole('button', { name: '瀑布流', exact: true }).click();
     await expect(grid).toHaveAttribute('data-gallery-layout', 'grid');
     const after = await grid.evaluate((e) =>
       [...e.children].slice(0, 12).map((c) => ({ id: c.id, column: (c as HTMLElement).offsetLeft })),
@@ -36,7 +36,7 @@ for (const path of ['/image-style-prompt-gallery', '/image-style-prompt-gallery/
 
 test('folding groups deduplicates sources and fans only decorative layers on hover', async ({ page }) => {
   await page.goto('/image-style-prompt-gallery/examples');
-  await page.getByRole('button', { name: '同源折叠', exact: true }).click();
+  await expect(page.getByRole('button', { name: '同源折叠', exact: true })).toHaveAttribute('aria-pressed', 'true');
   const cards = page.locator('[data-gallery-layout] > figure');
   await expect(cards.first()).toHaveAttribute('data-source-stack', 'true');
   const slugs = await cards.evaluateAll((es) => es.map((e) => e.getAttribute('data-source-slug')));
@@ -61,12 +61,11 @@ test('folding groups deduplicates sources and fans only decorative layers on hov
       });
     }),
   ).toBe(true);
-  await cards
-    .first()
-    .getByRole('button', { name: /展开图片/ })
-    .click();
+  await expect(cards.getByRole('button', { name: /展开图片|折叠同源图片/ })).toHaveCount(0);
+  await expect(cards.first().locator('[data-group-likes]')).toBeVisible();
+  await page.getByRole('button', { name: '同源折叠', exact: true }).click();
   await expect(cards.first()).not.toHaveAttribute('data-source-stack');
-  await cards.first().getByRole('button', { name: '折叠同源图片' }).click();
+  await page.getByRole('button', { name: '同源折叠', exact: true }).click();
   await expect(cards.first()).toHaveAttribute('data-source-stack', 'true');
 });
 
@@ -82,4 +81,27 @@ test('source stacks disable animated transitions for reduced motion', async ({ p
       .first()
       .evaluate((element) => getComputedStyle(element).transitionDuration),
   ).toBe('0s');
+});
+
+test('group totals reflect a member like in the lightbox without writing to the real account', async ({ page }) => {
+  let updatedCount = 0;
+  await page.route('**/api/style-gallery/likes', (route) =>
+    route.fulfill({
+      json:
+        route.request().method() === 'PUT'
+          ? { liked: true, likeCount: updatedCount }
+          : { authEnabled: true, viewer: { id: 'test-viewer' }, likedExampleIds: [] },
+    }),
+  );
+  await page.goto('/image-style-prompt-gallery/examples');
+  const first = page.locator('[data-gallery-layout] > figure').first();
+  await expect.poll(() => page.locator('[data-gallery-layout]').evaluate((e) => e.style.height)).not.toBe('');
+  const initial = Number(await first.locator('[data-group-likes]').getAttribute('data-group-likes'));
+  await first.locator('.gallery-source-stack').click();
+  const like = page.getByRole('dialog').getByRole('button', { name: /^点赞:/ });
+  await expect(like).toBeEnabled();
+  updatedCount = Number((await like.getAttribute('aria-label'))?.split(':').at(-1)) + 1;
+  await like.click();
+  await expect(first.locator('[data-group-likes]')).toHaveAttribute('data-group-likes', String(initial + 1));
+  await page.keyboard.press('Escape');
 });

@@ -17,7 +17,7 @@ export function StyleGalleryLayoutToggle({
   onChange: () => void;
   locale: string;
 }) {
-  const label = locale.startsWith('zh') ? '瀑布流显示' : locale.startsWith('ja') ? 'ウォーターフォール表示' : 'Masonry view';
+  const label = locale.startsWith('zh') ? '瀑布流' : locale.startsWith('ja') ? 'ウォーターフォール表示' : 'Masonry view';
   return (
     <button
       type="button"

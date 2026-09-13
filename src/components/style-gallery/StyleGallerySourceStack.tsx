@@ -1,3 +1,4 @@
+import { useIsMounted } from '@hooks/useIsMounted';
 import { Icon } from '@iconify/react';
 import { useReducedMotion } from 'motion/react';
 import type { StyleGalleryExampleOverviewItem } from '@/types/style-gallery';
@@ -6,24 +7,29 @@ import StyleGallerySharedImage from './StyleGallerySharedImage';
 /** Three decorative layers represent any group size; hover changes transforms, never masonry geometry. */
 export default function StyleGallerySourceStack({
   examples,
+  likeCount,
+  likesLabel,
   loadedSources,
   onOpen,
   label,
   eager,
 }: {
   examples: StyleGalleryExampleOverviewItem[];
+  likeCount: number;
+  likesLabel: string;
   loadedSources: Set<string>;
   onOpen: () => void;
   label: string;
   eager: boolean;
 }) {
   const shouldReduceMotion = useReducedMotion();
+  const isMounted = useIsMounted();
   return (
     <button
       type="button"
       onClick={onOpen}
-      aria-label={label}
-      data-reduced-motion={shouldReduceMotion ? 'true' : undefined}
+      aria-label={`${label} · ${likesLabel}: ${likeCount}`}
+      data-reduced-motion={isMounted && shouldReduceMotion ? 'true' : undefined}
       className="gallery-source-stack relative block aspect-[4/5] w-full overflow-hidden bg-muted/40 focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-[-2px]"
     >
       {examples
@@ -47,9 +53,20 @@ export default function StyleGallerySourceStack({
             />
           </div>
         ))}
-      <span className="absolute right-3 bottom-3 flex items-center gap-1.5 rounded-full bg-black/65 px-2.5 py-1 text-white text-xs backdrop-blur-sm">
-        <Icon icon="ri:stack-line" />
-        {examples.length}
+      <span className="absolute right-3 bottom-3 flex items-center gap-2 text-xs tabular-nums">
+        <span className="flex items-center gap-1.5 rounded-full bg-black/65 px-2.5 py-1 text-white backdrop-blur-sm">
+          <Icon icon="ri:stack-line" />
+          {examples.length}
+        </span>
+        <span
+          data-group-likes={likeCount}
+          title={likesLabel}
+          className="flex items-center gap-1.5 rounded-full bg-black/65 px-2.5 py-1 text-white backdrop-blur-sm"
+        >
+          <Icon icon="ri:heart-fill" className="text-rose-400" />
+          <span className="sr-only">{likesLabel}: </span>
+          {likeCount}
+        </span>
       </span>
     </button>
   );
