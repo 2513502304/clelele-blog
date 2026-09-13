@@ -103,7 +103,7 @@ test('a landscape thumbnail reserves the original lightbox size before the full 
     const preview =
       'data:image/svg+xml,' +
       encodeURIComponent(
-        '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="pink"/></svg>',
+        '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="960"><rect width="640" height="960" fill="pink"/></svg>',
       );
     const originalFetch = window.fetch;
     window.fetch = async (input, init) => {
@@ -145,6 +145,7 @@ test('a landscape thumbnail reserves the original lightbox size before the full 
   const preview = dialog.locator('img[src^="data:"]');
   const bounds = await preview.evaluate((element) => ({ width: element.clientWidth, height: element.clientHeight }));
   expect(bounds.width).toBeGreaterThan(640);
+  expect(bounds.width / bounds.height).toBeCloseTo(1600 / 900, 2);
   await page.evaluate(() => (window as unknown as { finishLandscape: () => void }).finishLandscape());
   await expect(dialog.getByRole('progressbar')).toHaveCount(0);
   const fullBounds = await dialog

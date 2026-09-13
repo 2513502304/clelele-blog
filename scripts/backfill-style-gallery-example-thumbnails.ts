@@ -21,11 +21,13 @@ const { values } = parseArgs({
   options: {
     apply: { type: 'boolean', default: false },
     s5cmd: { type: 'boolean', default: false },
+    'hf-upload': { type: 'boolean', default: false },
     concurrency: { type: 'string', default: '8' },
     limit: { type: 'string' },
   },
 });
 const concurrency = Number(values.concurrency);
+if (values['hf-upload'] && !values.s5cmd) throw new Error('--hf-upload requires --s5cmd.');
 const limit = values.limit === undefined ? undefined : Number(values.limit);
 if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 32) throw new Error('Concurrency must be 1–32.');
 if (limit !== undefined && (!Number.isInteger(limit) || limit < 1)) throw new Error('Limit must be a positive integer.');
@@ -40,7 +42,7 @@ const sources = [
   ).values(),
 ].slice(0, limit);
 if (values.s5cmd) {
-  await backfillThumbnailsWithS5cmd(sources, values.apply, concurrency);
+  await backfillThumbnailsWithS5cmd(sources, values.apply, concurrency, values['hf-upload']);
 } else {
   let checked = 0,
     existing = 0,

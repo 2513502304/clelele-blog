@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -11,32 +11,34 @@ import { getStyleGalleryExampleThumbnailKey, parseStyleGalleryImageApiPath } fro
 const execute = promisify(execFile);
 
 /** Bulk S3 transfers bypass per-image Node request overhead; use the same encoder as normal uploads. */
-export async function backfillThumbnailsWithS5cmd(sources: string[], apply: boolean, concurrency: number): Promise<void> {
+export async function backfillThumbnailsWithS5cmd(
+  sources: string[],
+  apply: boolean,
+  concurrency: number,
+  hfUpload = false,
+): Promise<void> {
   const bucket = process.env.HF_S3_BUCKET ?? 'raw-datasets';
   const prefix = process.env.STYLE_GALLERY_BUCKET_PREFIX ?? 'image-style-prompt-gallery';
   const root = `s3://${bucket}/${prefix}/`;
+  const endpoint = process.env.HF_S3_ENDPOINT ?? 'https://s3.hf.co/clelele0722';
+  const endpointUrl = new URL(endpoint);
+  if (hfUpload && (endpointUrl.origin !== 'https://s3.hf.co' || !/^\/[\w-]+\/?$/.test(endpointUrl.pathname)))
+    throw new Error('--hf-upload requires a Hugging Face S3 endpoint with its namespace.');
+  const namespace = endpointUrl.pathname.replace(/^\/|\/$/g, '');
+  const useHfCredentials = Boolean(process.env.HF_S3_ACCESS_KEY_ID && process.env.HF_S3_SECRET_ACCESS_KEY);
   const env = {
     ...process.env,
-    AWS_ACCESS_KEY_ID: process.env.HF_S3_ACCESS_KEY_ID ?? process.env.AWS_ACCESS_KEY_ID,
-    AWS_SECRET_ACCESS_KEY: process.env.HF_S3_SECRET_ACCESS_KEY ?? process.env.AWS_SECRET_ACCESS_KEY,
+    AWS_ACCESS_KEY_ID: useHfCredentials ? process.env.HF_S3_ACCESS_KEY_ID : process.env.AWS_ACCESS_KEY_ID,
+    AWS_SECRET_ACCESS_KEY: useHfCredentials ? process.env.HF_S3_SECRET_ACCESS_KEY : process.env.AWS_SECRET_ACCESS_KEY,
     AWS_REGION: process.env.HF_S3_REGION ?? 'us-east-1',
     AWS_EC2_METADATA_DISABLED: 'true',
-    AWS_SESSION_TOKEN: '',
+    AWS_SESSION_TOKEN: useHfCredentials ? '' : process.env.AWS_SESSION_TOKEN,
   };
   async function run(args: string[]): Promise<string> {
     try {
       const result = await execute(
         's5cmd',
-        [
-          '--endpoint-url',
-          process.env.HF_S3_ENDPOINT ?? 'https://s3.hf.co/clelele0722',
-          '--numworkers',
-          String(concurrency),
-          '--retry-count',
-          '3',
-          '--json',
-          ...args,
-        ],
+        ['--endpoint-url', endpoint, '--numworkers', String(concurrency), '--retry-count', '3', '--json', ...args],
         { env, maxBuffer: 16 * 1024 * 1024 },
       );
       return result.stdout;
@@ -58,7 +60,7 @@ export async function backfillThumbnailsWithS5cmd(sources: string[], apply: bool
   const missing = sources.filter((source) => !existing.has(root + getStyleGalleryExampleThumbnailKey(source)));
   console.log(
     JSON.stringify({
-      transport: 's5cmd',
+      transport: hfUpload ? 's5cmd-download/hf-upload' : 's5cmd',
       images: sources.length,
       existing: sources.length - missing.length,
       missing: missing.length,
@@ -71,6 +73,8 @@ export async function backfillThumbnailsWithS5cmd(sources: string[], apply: bool
   }
   if (!missing.length) return;
   const directory = await mkdtemp(path.join(tmpdir(), 'gallery-s5cmd-thumbnails-'));
+  const previewsDirectory = path.join(directory, 'thumbs');
+  await mkdir(previewsDirectory, { mode: 0o700 });
   let created = 0,
     originalBytes = 0,
     thumbnailBytes = 0;
@@ -84,7 +88,7 @@ export async function backfillThumbnailsWithS5cmd(sources: string[], apply: bool
         key,
         thumbnailKey,
         local: path.join(directory, path.basename(key)),
-        preview: path.join(directory, `thumb-${path.basename(thumbnailKey)}`),
+        preview: path.join(previewsDirectory, path.basename(thumbnailKey)),
       };
     });
     const commands = path.join(directory, 'commands.txt');
@@ -108,17 +112,40 @@ export async function backfillThumbnailsWithS5cmd(sources: string[], apply: bool
       originalBytes += bytes.length;
       thumbnailBytes += thumbnail.length;
     });
-    await writeFile(
-      commands,
-      batch
-        .map(
-          (entry) =>
-            `cp --destination-region ${JSON.stringify(env.AWS_REGION)} --content-type image/webp ${JSON.stringify(entry.preview)} ${JSON.stringify(root + entry.thumbnailKey)}`,
-        )
-        .join('\n'),
-      { mode: 0o600 },
-    );
-    await run(['run', commands]);
+    if (hfUpload) {
+      try {
+        // Native HF sync batches publication; never delete thumbnails from earlier batches.
+        // Authentication uses the existing hf login, independently of S3 credentials.
+        await execute(
+          'hf',
+          [
+            'buckets',
+            'sync',
+            previewsDirectory,
+            `hf://buckets/${namespace}/${bucket}/${prefix}/examples/thumbs`,
+            '--no-delete',
+          ],
+          {
+            env: { ...process.env, HF_HUB_DISABLE_PROGRESS_BARS: '1', HF_XET_HIGH_PERFORMANCE: '1' },
+            maxBuffer: 16 * 1024 * 1024,
+          },
+        );
+      } catch {
+        throw new Error('HF batch upload failed. Check hf authentication and re-run to resume.');
+      }
+    } else {
+      await writeFile(
+        commands,
+        batch
+          .map(
+            (entry) =>
+              `cp --destination-region ${JSON.stringify(env.AWS_REGION)} --content-type image/webp ${JSON.stringify(entry.preview)} ${JSON.stringify(root + entry.thumbnailKey)}`,
+          )
+          .join('\n'),
+        { mode: 0o600 },
+      );
+      await run(['run', commands]);
+    }
     created += batch.length;
     console.log(JSON.stringify({ created, remaining: missing.length - created, originalBytes, thumbnailBytes }));
     // Delete only this batch's own scratch files after all uploads have succeeded.

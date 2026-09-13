@@ -60,7 +60,10 @@ Audit/backfill all unique indexed images (read-only by default). For a large his
 node --use-env-proxy --env-file-if-exists=.env.local --import tsx scripts/backfill-style-gallery-example-thumbnails.ts
 node --use-env-proxy --env-file-if-exists=.env.local --import tsx scripts/backfill-style-gallery-example-thumbnails.ts --apply --concurrency 8
 node --use-env-proxy --env-file-if-exists=.env.local --import tsx scripts/backfill-style-gallery-example-thumbnails.ts --apply --s5cmd --concurrency 32
+node --use-env-proxy --env-file-if-exists=.env.local --import tsx scripts/backfill-style-gallery-example-thumbnails.ts --apply --s5cmd --hf-upload --concurrency 32
 ```
+
+For HF buckets, add `--hf-upload` to keep s5cmd downloads while publishing each thumbnail batch through the native `hf buckets sync` API. This requires the installed `hf` CLI and its existing authenticated login. Sync explicitly uses `--no-delete`, so thumbnails from earlier batches remain intact. Native batch publication can be substantially faster than individual S3 PUTs; compare a small sample on the current connection. Standard AWS fallback credentials retain their session token.
 
 The backfill skips existing thumbnails, retries transient failures, and exits nonzero for missing/failed derivatives. The s5cmd mode requires the existing `s5cmd` binary, passes credentials through the child process environment, and uses a private scratch directory. Each batch is hash-verified, encoded, uploaded, and then removed from local scratch storage; a failed batch is retained for inspection. Re-run without `--apply` to audit coverage. It holds at most the configured number of source images in memory and writes no original or metadata objects. Run it before rollout and audit again after deployment to catch concurrent uploads from the previous deployment. `--limit N` supports a small initial sample. Asset creation is resumable without retaining private metadata snapshots.
 
