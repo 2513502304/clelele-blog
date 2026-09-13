@@ -28,10 +28,11 @@ import {
   type StyleGallerySortKey,
 } from '@lib/style-gallery-sort';
 import { openModal } from '@store/modal';
-import { parseAsString, parseAsStringLiteral, useQueryState, useQueryStates } from 'nuqs';
+import { parseAsBoolean, parseAsString, parseAsStringLiteral, useQueryState, useQueryStates } from 'nuqs';
 import { NuqsAdapter } from 'nuqs/adapters/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useProgressiveList } from '@/hooks/useProgressiveList';
+import { getStyleGallerySourceCards, getStyleGallerySourceHash } from '@/lib/style-gallery-source-groups';
 import type { StyleGalleryExampleOverviewItem } from '@/types/style-gallery';
 import StyleGalleryGrid, { StyleGalleryLayoutToggle, useStyleGalleryLayout } from './StyleGalleryGrid';
 import {
@@ -41,6 +42,7 @@ import {
   useStyleGalleryLikes,
 } from './StyleGalleryLikeButton';
 import StyleGallerySharedImage from './StyleGallerySharedImage';
+import StyleGallerySourceStack from './StyleGallerySourceStack';
 
 interface Props {
   examples: StyleGalleryExampleOverviewItem[];
@@ -97,6 +99,20 @@ function StyleGalleryExamplesOverviewContent({
 }: Props) {
   const [layout, setLayout] = useStyleGalleryLayout();
   const masonry = layout === 'masonry';
+  const [grouped, setGrouped] = useQueryState('grouped', parseAsBoolean.withDefault(false));
+  const [groupOverrides, setGroupOverrides] = useState<Record<string, boolean>>({});
+  const sourceThumbnails = useRef(new Map<string, string>());
+  const groupLabel = locale.startsWith('zh')
+    ? '同源折叠'
+    : locale.startsWith('ja')
+      ? '同じ元画像をまとめる'
+      : 'Group by source';
+  const expandLabel = locale.startsWith('zh') ? '展开图片' : locale.startsWith('ja') ? '画像を展開' : 'Expand images';
+  const collapseLabel = locale.startsWith('zh')
+    ? '折叠同源图片'
+    : locale.startsWith('ja')
+      ? '同じ元画像を折りたたむ'
+      : 'Collapse source images';
   const [examples, setExamples] = useState(initialExamples);
   // 不放进 state：加载完成只影响下一次打开 Lightbox，不应让数千张卡片重新渲染。
   const loadedExampleSources = useRef(new Set<string>());
@@ -201,13 +217,25 @@ function StyleGalleryExamplesOverviewContent({
     },
     [uploadToken, uploadsEnabled],
   );
-  function openLightbox(example: StyleGalleryExampleOverviewItem) {
+  const sourceCards = useMemo(
+    () => getStyleGallerySourceCards(filtered, (slug) => groupOverrides[slug] ?? grouped),
+    [filtered, groupOverrides, grouped],
+  );
+  function rememberSourceThumbnail(slug: string, image: HTMLImageElement | null) {
+    if (image?.complete && image.naturalWidth > 0) sourceThumbnails.current.set(slug, image.currentSrc || image.src);
+  }
+  function openLightbox(example: StyleGalleryExampleOverviewItem, navigation = filtered) {
     // 仅在用户打开 popup 时构造导航动作；点赞状态更新不再重复映射数千个未打开的示例。
-    const lightboxImages = filtered.map((candidate) => ({
+    const lightboxImages = navigation.map((candidate) => ({
       id: candidate.id,
       src: candidate.src,
       resolvedSrc: getReusableStyleGalleryImageUrl(candidate.src, loadedExampleSources.current.has(candidate.src)),
       alt: `${candidate.sourceTitle} ${candidate.model}`,
+      source: {
+        hash: getStyleGallerySourceHash(candidate),
+        href: `${galleryBasePath}/${candidate.sourceSlug}`,
+        thumbnail: sourceThumbnails.current.get(candidate.sourceSlug),
+      },
       like: createStyleGalleryLightboxLikeAction(candidate.id, likes, labels.likes),
       copy: createStyleGalleryCopyAction(
         () => loadStyleGalleryDefaultPrompt(candidate.sourceSlug, candidate.sourcePromptRevision),
@@ -228,15 +256,19 @@ function StyleGalleryExamplesOverviewContent({
       ),
       locate: {
         run: () => {
-          const targetIndex = filtered.findIndex((item) => item.id === candidate.id);
+          const targetIndex = sourceCards.findIndex(
+            (card) => card.example.id === candidate.id || card.stack?.some((item) => item.id === candidate.id),
+          );
           revealThrough(targetIndex);
-          locateStyleGalleryElement(getStyleGalleryLightboxElementId('overview-example', candidate.id));
+          locateStyleGalleryElement(
+            getStyleGalleryLightboxElementId('overview-example', sourceCards[targetIndex]?.example.id ?? candidate.id),
+          );
         },
       },
     }));
     const currentIndex = Math.max(
       0,
-      filtered.findIndex((candidate) => candidate.id === example.id),
+      navigation.findIndex((candidate) => candidate.id === example.id),
     );
     openModal('imageLightbox', {
       src: example.src,
@@ -246,7 +278,7 @@ function StyleGalleryExamplesOverviewContent({
       prefetch: STYLE_GALLERY_EXAMPLE_LIGHTBOX_PREFETCH,
     });
   }
-  const { hasMore, loadMore, loadMoreRef, revealThrough, visibleItems } = useProgressiveList(filtered, {
+  const { hasMore, loadMore, loadMoreRef, revealThrough, visibleItems } = useProgressiveList(sourceCards, {
     initialCount: INITIAL_EXAMPLE_COUNT,
     batchSize: EXAMPLE_BATCH_SIZE,
     resetKey: `${platform}\u0000${query.trim().toLowerCase()}\u0000${dateFrom}\u0000${dateTo}\u0000${sortKey}\u0000${sortDirection}\u0000${visualRevision}`,
@@ -332,6 +364,18 @@ function StyleGalleryExamplesOverviewContent({
             locale={locale}
             onChange={() => void setLayout(masonry ? 'grid' : 'masonry').catch(reportUrlStateError)}
           />
+          <button
+            type="button"
+            aria-pressed={grouped}
+            onClick={() => {
+              setGroupOverrides({});
+              void setGrouped(!grouped).catch(reportUrlStateError);
+            }}
+            className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm transition hover:border-primary/40 aria-pressed:border-primary aria-pressed:text-primary"
+          >
+            <Icon icon="ri:stack-line" className="size-4" />
+            {groupLabel}
+          </button>
           <div className="ml-auto flex items-center gap-3 md:ml-0 md:flex-wrap">
             <label className="sr-only" htmlFor="example-sort">
               {labels.sortItems}
@@ -380,39 +424,53 @@ function StyleGalleryExamplesOverviewContent({
       {filtered.length ? (
         <>
           <StyleGalleryGrid masonry={masonry}>
-            {visibleItems.map((example, index) => (
+            {visibleItems.map(({ example, stack }, index) => (
               <figure
                 key={example.id}
                 id={getStyleGalleryLightboxElementId('overview-example', example.id)}
+                data-source-slug={example.sourceSlug}
+                data-source-stack={stack ? 'true' : undefined}
                 tabIndex={-1}
                 className="flex w-full min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-background shadow-sm"
               >
                 <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => openLightbox(example)}
-                    className="group block w-full cursor-zoom-in overflow-hidden bg-muted text-left"
-                  >
-                    <StyleGallerySharedImage
-                      source={example.src}
-                      dimensions={example.dimensions}
-                      naturalAspect={masonry}
+                  {stack ? (
+                    <StyleGallerySourceStack
+                      examples={stack}
                       loadedSources={loadedExampleSources.current}
-                      alt={`${example.sourceTitle} ${example.model}`}
-                      width={4}
-                      height={5}
-                      loading={index < EAGER_EXAMPLE_COUNT ? 'eager' : 'lazy'}
-                      fetchPriority={index < HIGH_PRIORITY_EXAMPLE_COUNT ? 'high' : 'auto'}
-                      decoding="async"
-                      className="aspect-[4/5] w-full object-cover transition duration-200 group-hover:scale-[1.02]"
+                      onOpen={() => openLightbox(example, stack)}
+                      label={`${getStyleGallerySourceHash(example)} · ${stack.length}`}
+                      eager={index < EAGER_EXAMPLE_COUNT}
                     />
-                  </button>
-                  <StyleGalleryLikeButton
-                    exampleId={example.id}
-                    controller={likes}
-                    labels={labels.likes}
-                    className="absolute right-2 bottom-2 z-10"
-                  />
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => openLightbox(example)}
+                        className="group block w-full cursor-zoom-in overflow-hidden bg-muted text-left"
+                      >
+                        <StyleGallerySharedImage
+                          source={example.src}
+                          dimensions={example.dimensions}
+                          naturalAspect={masonry}
+                          loadedSources={loadedExampleSources.current}
+                          alt={`${example.sourceTitle} ${example.model}`}
+                          width={4}
+                          height={5}
+                          loading={index < EAGER_EXAMPLE_COUNT ? 'eager' : 'lazy'}
+                          fetchPriority={index < HIGH_PRIORITY_EXAMPLE_COUNT ? 'high' : 'auto'}
+                          decoding="async"
+                          className="aspect-[4/5] w-full object-cover transition duration-200 group-hover:scale-[1.02]"
+                        />
+                      </button>
+                      <StyleGalleryLikeButton
+                        exampleId={example.id}
+                        controller={likes}
+                        labels={labels.likes}
+                        className="absolute right-2 bottom-2 z-10"
+                      />
+                    </>
+                  )}
                 </div>
                 <figcaption className="flex flex-1 flex-col gap-3 p-3">
                   <div className="flex items-center justify-between gap-2">
@@ -433,6 +491,8 @@ function StyleGalleryExamplesOverviewContent({
                   >
                     <img
                       src={example.sourceImage}
+                      ref={(image) => rememberSourceThumbnail(example.sourceSlug, image)}
+                      onLoad={(event) => rememberSourceThumbnail(example.sourceSlug, event.currentTarget)}
                       alt={example.sourceImageAlt ?? example.sourceTitle}
                       width={36}
                       height={36}
@@ -440,9 +500,18 @@ function StyleGalleryExamplesOverviewContent({
                       decoding="async"
                       className="size-9 shrink-0 rounded-md object-cover"
                     />
-                    <span className="min-w-0 flex-1 truncate font-medium">{example.sourceTitle}</span>
+                    <span className="min-w-0 flex-1 font-medium tabular-nums">{getStyleGallerySourceHash(example)}</span>
                     <Icon icon="ri:arrow-right-s-line" className="size-4 shrink-0" />
                   </a>
+                  <button
+                    type="button"
+                    aria-expanded={!stack}
+                    onClick={() => setGroupOverrides((current) => ({ ...current, [example.sourceSlug]: !stack }))}
+                    className="flex items-center justify-center gap-1.5 rounded-md border border-border px-2 py-1.5 text-muted-foreground text-xs transition hover:border-primary/40 hover:text-primary"
+                  >
+                    <Icon icon={stack ? 'ri:expand-diagonal-line' : 'ri:stack-line'} className="size-3.5" />
+                    {stack ? `${expandLabel} · ${stack.length}` : collapseLabel}
+                  </button>
                 </figcaption>
               </figure>
             ))}
