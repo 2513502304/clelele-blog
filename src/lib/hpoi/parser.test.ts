@@ -7,8 +7,41 @@ import {
   isHpoiProfilePage,
   parseHpoiCollection,
   parseHpoiCollectionPageCount,
+  parseHpoiDetailScore,
   parseHpoiProfile,
 } from './parser';
+
+describe('Hpoi detail ratings', () => {
+  it('accepts graph, array and visible ratings while rejecting empty vote counts', () => {
+    const product = { '@type': 'Product', aggregateRating: { ratingValue: 4.5, ratingCount: 2 } };
+    for (const data of [[product], { '@graph': [product] }]) {
+      assert.equal(parseHpoiDetailScore(`<script type="application/ld+json">${JSON.stringify(data)}</script>`), '4.5');
+    }
+    product.aggregateRating.ratingCount = 0;
+    assert.equal(parseHpoiDetailScore(`<script type="application/ld+json">${JSON.stringify(product)}</script>`), null);
+    assert.equal(
+      parseHpoiDetailScore('<div class="hpoi-entry-score-num-box"><div><div><span>4.77</span></div></div></div>'),
+      '4.77',
+    );
+  });
+
+  it('reads the public Product rating when collection cards omit scores', () => {
+    assert.equal(
+      parseHpoiDetailScore(
+        '<script type="application/ld+json">{"mainEntity":{"@type":"Product","aggregateRating":{"ratingValue":"4.77","bestRating":"5","ratingCount":"2310"}}}</script>',
+      ),
+      '4.77',
+    );
+    assert.equal(
+      parseHpoiDetailScore(
+        '<script type="application/ld+json">{"@type":"Product","aggregateRating":{"ratingValue":9}}</script>',
+      ),
+      null,
+    );
+    assert.equal(parseHpoiDetailScore('<script type="application/ld+json">invalid</script>'), null);
+    assert.equal(parseHpoiDetailScore('<html>No rating yet</html>'), null);
+  });
+});
 
 describe('parseHpoiProfile', () => {
   it('reads identity and public collection statistics', () => {
