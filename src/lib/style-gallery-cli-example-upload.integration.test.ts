@@ -49,6 +49,7 @@ describe('style gallery example upload CLI integration', () => {
     await Promise.all([writeFile(goodPath, goodBytes), writeFile(failedPath, failedBytes)]);
 
     const uploaded = new Map<string, Buffer>();
+    const thumbnails = new Map<string, Buffer>();
     const mergedHashes: string[] = [];
     const cleanedHashes: string[] = [];
     let catalogRequests = 0;
@@ -121,6 +122,7 @@ describe('style gallery example upload CLI integration', () => {
               imageId: example.id,
             })),
           );
+          assert.ok(thumbnails.has(`${goodHash}.webp`), 'thumbnail must exist before metadata merge');
           mergedHashes.push(...body.examples.map((example: { imageHash: string }) => example.imageHash));
           sendJson(response, { uploaded: body.examples.length, skippedDuplicates: 0, visualIndexUpdated: true });
           return;
@@ -133,6 +135,13 @@ describe('style gallery example upload CLI integration', () => {
         }
       }
 
+      const thumbPrefix = '/raw-datasets/image-style-prompt-gallery/examples/thumbs/';
+      if (request.method === 'PUT' && requestUrl.pathname.startsWith(thumbPrefix)) {
+        thumbnails.set(requestUrl.pathname.slice(thumbPrefix.length), await readBody(request));
+        response.writeHead(200);
+        response.end();
+        return;
+      }
       const objectPrefix = '/raw-datasets/image-style-prompt-gallery/examples/images/';
       if (request.method === 'PUT' && requestUrl.pathname.startsWith(objectPrefix)) {
         const key = requestUrl.pathname.slice(objectPrefix.length);
@@ -199,6 +208,7 @@ describe('style gallery example upload CLI integration', () => {
 
       assert.equal(code, 1);
       assert.deepEqual(uploaded.get(`${goodHash}.webp`), goodBytes);
+      assert.equal((await sharp(thumbnails.get(`${goodHash}.webp`)).metadata()).format, 'webp');
       assert.equal(catalogRequests, 2);
       assert.deepEqual(mergedHashes, [goodHash]);
       assert.deepEqual(cleanedHashes, [failedHash]);
