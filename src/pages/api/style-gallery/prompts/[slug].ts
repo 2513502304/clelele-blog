@@ -29,7 +29,6 @@ export const GET: APIRoute = async ({ params }) => {
         title: item.title,
         date: item.date,
         sourceImage: item.sourceImage,
-        thumbnailImage: item.thumbnailImage,
         sourceImageAlt: item.sourceImageAlt,
         imageHash: item.imageHash,
         images: item.images,

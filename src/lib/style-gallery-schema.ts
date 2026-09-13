@@ -38,7 +38,6 @@ const styleGalleryModelTargetsSchema = z.array(styleGalleryPlatformLabelSchema).
 export const styleGalleryImageSchema = z.object({
   dimensions: styleGalleryImageDimensionsSchema.optional(),
   sourceImage: imagePathSchema,
-  thumbnailImage: imagePathSchema.optional(),
   sourceImageAlt: z.string().min(1).optional(),
   imageHash: imageHashSchema,
 });
@@ -70,7 +69,6 @@ const styleGalleryItemFields = {
   date: z.string().datetime({ offset: true }),
   updated: z.string().datetime({ offset: true }).optional(),
   sourceImage: imagePathSchema,
-  thumbnailImage: imagePathSchema.optional(),
   sourceImageAlt: z.string().min(1).optional(),
   imageHash: imageHashSchema,
   images: z.array(styleGalleryImageSchema).min(1),
@@ -112,7 +110,6 @@ export const styleGalleryCatalogItemSchema = z.object({
   title: z.string().min(1),
   date: z.string().datetime({ offset: true }),
   sourceImage: imagePathSchema,
-  thumbnailImage: imagePathSchema.optional(),
   sourceImageAlt: z.string().min(1).optional(),
   promptExcerpt: z.string().trim().min(1).max(181),
   promptCount: z.number().int().positive().default(1),
@@ -243,7 +240,6 @@ export function toStyleGalleryCatalogItem(
     title: item.title,
     date: item.date,
     sourceImage: item.sourceImage,
-    thumbnailImage: item.thumbnailImage,
     sourceImageAlt: item.sourceImageAlt,
     promptExcerpt: createStyleGalleryPromptExcerpt(primaryPrompt.prompt),
     promptCount: item.prompts.length,

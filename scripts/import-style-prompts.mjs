@@ -275,7 +275,6 @@ async function buildImportData(extractedItems, sessionPath, existingByHash, meta
       imageRefs.push({
         dimensions: await readStyleGalleryImageDimensions(image.bytes),
         sourceImage: apiImagePath('source', imageName),
-        thumbnailImage: apiImagePath('thumb', thumbnailName),
         sourceImageAlt: `${title} reference image ${index + 1}`,
         imageHash,
       });
@@ -314,7 +313,6 @@ async function buildImportData(extractedItems, sessionPath, existingByHash, meta
       title,
       date: existing?.date ?? date.toISOString(),
       sourceImage: storedImageRefs[0].sourceImage,
-      thumbnailImage: storedImageRefs[0].thumbnailImage,
       sourceImageAlt: storedImageRefs[0].sourceImageAlt,
       prompts: [variant],
       imageHash: itemHash,

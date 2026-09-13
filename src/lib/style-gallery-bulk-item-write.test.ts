@@ -19,7 +19,6 @@ function createItem(index: number): StoredStyleGalleryItem {
     title: `Style Prompt ${shortHash}`,
     date: '2026-08-03T00:00:00.000Z',
     sourceImage: `/api/style-gallery/image/source/${shortHash}.jpg`,
-    thumbnailImage: `/api/style-gallery/image/thumb/${shortHash}.webp`,
     sourceImageAlt: `Reference ${index}`,
     prompts: [
       {
@@ -35,7 +34,6 @@ function createItem(index: number): StoredStyleGalleryItem {
     images: [
       {
         sourceImage: `/api/style-gallery/image/source/${shortHash}.jpg`,
-        thumbnailImage: `/api/style-gallery/image/thumb/${shortHash}.webp`,
         sourceImageAlt: `Reference ${index}`,
         imageHash,
       },

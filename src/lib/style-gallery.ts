@@ -13,6 +13,7 @@ import type {
   StyleGalleryExampleOverviewItem,
   StyleGalleryItem,
 } from '@/types/style-gallery';
+import { getStyleGallerySourceThumbnail } from './style-gallery-image-key';
 
 const overviewCache = new WeakMap<
   StyleGalleryCatalog,
@@ -77,7 +78,7 @@ export async function getStyleGalleryExampleOverview(): Promise<StyleGalleryExam
         ...example,
         sourceSlug: group.sourceSlug,
         sourceTitle: source.title,
-        sourceImage: source.thumbnailImage ?? source.sourceImage,
+        sourceImage: getStyleGallerySourceThumbnail(source.sourceImage),
         sourceImageAlt: source.sourceImageAlt,
         sourceExampleCount: source.exampleCount,
         sourcePromptCount: source.promptCount,

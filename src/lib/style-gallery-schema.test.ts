@@ -51,7 +51,6 @@ function createItem(): StoredStyleGalleryItem {
     title: 'Style Prompt aaaaaaaaaaaa',
     date: '2026-07-13T00:00:00.000Z',
     sourceImage: '/api/style-gallery/image/source/aaaaaaaaaaaa.jpg',
-    thumbnailImage: '/api/style-gallery/image/thumb/aaaaaaaaaaaa.webp',
     sourceImageAlt: 'Reference image 1',
     prompts: [
       {
@@ -65,7 +64,6 @@ function createItem(): StoredStyleGalleryItem {
     images: [
       {
         sourceImage: '/api/style-gallery/image/source/aaaaaaaaaaaa.jpg',
-        thumbnailImage: '/api/style-gallery/image/thumb/aaaaaaaaaaaa.webp',
         sourceImageAlt: 'Reference image 1',
         imageHash: firstHash,
       },
@@ -213,7 +211,6 @@ describe('style gallery metadata', () => {
     const item = createItem();
     item.images.push({
       sourceImage: '/api/style-gallery/image/source/bbbbbbbbbbbb.png',
-      thumbnailImage: '/api/style-gallery/image/thumb/bbbbbbbbbbbb.webp',
       sourceImageAlt: 'Reference image 2',
       imageHash: secondHash,
     });
