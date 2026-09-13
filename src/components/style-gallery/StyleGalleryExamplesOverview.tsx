@@ -356,9 +356,6 @@ function StyleGalleryExamplesOverviewContent({
             availableDateKeys={availableDateKeys}
             onApply={(range) => void setDateRange(range).catch(reportUrlStateError)}
           />
-          <span className="shrink-0 text-muted-foreground text-sm tabular-nums">
-            {filtered.length} / {examples.length}
-          </span>
           <StyleGalleryLayoutToggle
             masonry={masonry}
             locale={locale}
@@ -376,6 +373,9 @@ function StyleGalleryExamplesOverviewContent({
             <Icon icon="ri:stack-line" className="size-4" />
             {groupLabel}
           </button>
+          <span className="shrink-0 text-muted-foreground text-sm tabular-nums">
+            {filtered.length} / {examples.length}
+          </span>
           <div className="ml-auto flex items-center gap-3 md:ml-0 md:flex-wrap">
             <label className="sr-only" htmlFor="example-sort">
               {labels.sortItems}
