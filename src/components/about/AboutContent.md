@@ -80,10 +80,14 @@
 - Bilibili: [新东方在逃烹饪厨师](https://space.bilibili.com/86137069)
 - YouTube: [@clelele](https://www.youtube.com/@clelele)
 - X: [@ChijiangZhai](https://x.com/ChijiangZhai)
-- Email: [chijiangzhai@gmail.com](mailto:chijiangzhai@gmail.com)
 - 抖音：68994519
 - Location: Moon
 - Organization: 中国地质大学（武汉）
+- PixAI: [@clelele](https://pixai.art/zh/@clelele/artworks)
+- Pixiv: [clelele](https://www.pixiv.net/users/124093062)
+- LinkedIn: [Chijiang Zhai](https://www.linkedin.com/in/chijiangzhai/)
+- Email: [chijiangzhai@gmail.com](mailto:chijiangzhai@gmail.com)
+- RSS: [订阅博客](/rss.xml)
 
 ### 这个博客
 

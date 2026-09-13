@@ -177,6 +177,18 @@ social:
     url: https://x.com/ChijiangZhai
     icon: ri:twitter-fill
     color: '#4b9ae4'
+  pixai:
+    url: https://pixai.art/zh/@clelele/artworks
+    icon: ri:sparkling-fill
+    color: '#7656ed'
+  pixiv:
+    url: https://www.pixiv.net/users/124093062
+    icon: ri:brush-fill
+    color: '#0096fa'
+  linkedin:
+    url: https://www.linkedin.com/in/chijiangzhai/
+    icon: ri:linkedin-box-fill
+    color: '#0a66c2'
   email:
     url: mailto:chijiangzhai@gmail.com
     icon: ri:mail-line
