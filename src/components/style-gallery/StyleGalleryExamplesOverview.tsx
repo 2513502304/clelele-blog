@@ -99,20 +99,13 @@ function StyleGalleryExamplesOverviewContent({
 }: Props) {
   const [layout, setLayout] = useStyleGalleryLayout();
   const masonry = layout === 'masonry';
-  const [grouped, setGrouped] = useQueryState('grouped', parseAsBoolean.withDefault(false));
-  const [groupOverrides, setGroupOverrides] = useState<Record<string, boolean>>({});
+  const [grouped, setGrouped] = useQueryState('grouped', parseAsBoolean.withDefault(true));
   const sourceThumbnails = useRef(new Map<string, string>());
   const groupLabel = locale.startsWith('zh')
     ? '同源折叠'
     : locale.startsWith('ja')
       ? '同じ元画像をまとめる'
       : 'Group by source';
-  const expandLabel = locale.startsWith('zh') ? '展开图片' : locale.startsWith('ja') ? '画像を展開' : 'Expand images';
-  const collapseLabel = locale.startsWith('zh')
-    ? '折叠同源图片'
-    : locale.startsWith('ja')
-      ? '同じ元画像を折りたたむ'
-      : 'Collapse source images';
   const [examples, setExamples] = useState(initialExamples);
   // 不放进 state：加载完成只影响下一次打开 Lightbox，不应让数千张卡片重新渲染。
   const loadedExampleSources = useRef(new Set<string>());
@@ -217,10 +210,7 @@ function StyleGalleryExamplesOverviewContent({
     },
     [uploadToken, uploadsEnabled],
   );
-  const sourceCards = useMemo(
-    () => getStyleGallerySourceCards(filtered, (slug) => groupOverrides[slug] ?? grouped),
-    [filtered, groupOverrides, grouped],
-  );
+  const sourceCards = useMemo(() => getStyleGallerySourceCards(filtered, grouped), [filtered, grouped]);
   function rememberSourceThumbnail(slug: string, image: HTMLImageElement | null) {
     if (image?.complete && image.naturalWidth > 0) sourceThumbnails.current.set(slug, image.currentSrc || image.src);
   }
@@ -365,7 +355,6 @@ function StyleGalleryExamplesOverviewContent({
             type="button"
             aria-pressed={grouped}
             onClick={() => {
-              setGroupOverrides({});
               void setGrouped(!grouped).catch(reportUrlStateError);
             }}
             className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm transition hover:border-primary/40 aria-pressed:border-primary aria-pressed:text-primary"
@@ -437,6 +426,14 @@ function StyleGalleryExamplesOverviewContent({
                   {stack ? (
                     <StyleGallerySourceStack
                       examples={stack}
+                      likeCount={stack.reduce((total, member) => total + likes.getCount(member.id), 0)}
+                      likesLabel={
+                        locale.startsWith('zh')
+                          ? '组内点赞总数'
+                          : locale.startsWith('ja')
+                            ? 'グループのいいね合計'
+                            : 'Total group likes'
+                      }
                       loadedSources={loadedExampleSources.current}
                       onOpen={() => openLightbox(example, stack)}
                       label={`${getStyleGallerySourceHash(example)} · ${stack.length}`}
@@ -503,15 +500,6 @@ function StyleGalleryExamplesOverviewContent({
                     <span className="min-w-0 flex-1 font-medium tabular-nums">{getStyleGallerySourceHash(example)}</span>
                     <Icon icon="ri:arrow-right-s-line" className="size-4 shrink-0" />
                   </a>
-                  <button
-                    type="button"
-                    aria-expanded={!stack}
-                    onClick={() => setGroupOverrides((current) => ({ ...current, [example.sourceSlug]: !stack }))}
-                    className="flex items-center justify-center gap-1.5 rounded-md border border-border px-2 py-1.5 text-muted-foreground text-xs transition hover:border-primary/40 hover:text-primary"
-                  >
-                    <Icon icon={stack ? 'ri:expand-diagonal-line' : 'ri:stack-line'} className="size-3.5" />
-                    {stack ? `${expandLabel} · ${stack.length}` : collapseLabel}
-                  </button>
                 </figcaption>
               </figure>
             ))}

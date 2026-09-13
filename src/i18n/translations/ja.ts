@@ -310,6 +310,8 @@ export const uiStrings: UIStrings = {
   'image.close': '閉じる',
   'image.prev': '前へ',
   'image.next': '次へ',
+  'image.downloading': '元画像をダウンロード中',
+  'image.decoding': 'ダウンロード完了、デコード中',
   'image.loadingOriginal': '高解像度画像を読み込み中',
   'image.loadFailed': '高解像度画像を読み込めませんでした',
   'image.counter': '{current} / {total}',

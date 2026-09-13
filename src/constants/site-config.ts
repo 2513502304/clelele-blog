@@ -179,6 +179,9 @@ type SocialConfig = {
   skype?: SocialPlatform;
   douban?: SocialPlatform;
   bilibili?: SocialPlatform;
+  pixai?: SocialPlatform;
+  pixiv?: SocialPlatform;
+  linkedin?: SocialPlatform;
   rss?: SocialPlatform;
 };
 
@@ -202,7 +205,9 @@ export const siteConfig: SiteConfig = {
   enableSlugTransliteration: yamlConfig.site.enableSlugTransliteration,
 };
 
-export const socialConfig: SocialConfig = yamlConfig.social ?? {};
+// Keep the two universal contact methods last, even when platforms are added later in YAML.
+const { email, rss, ...platforms } = yamlConfig.social ?? {};
+export const socialConfig: SocialConfig = { ...platforms, ...(email ? { email } : {}), ...(rss ? { rss } : {}) };
 
 // ICP filing config — normalize string shorthand to { text } object
 export const icpConfig: { text: string; link?: string } | undefined = (() => {

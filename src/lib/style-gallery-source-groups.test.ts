@@ -7,7 +7,7 @@ const examples = ['a', 'b', 'a', 'c', 'b'].map(
   (sourceSlug, index) => ({ id: String(index), sourceSlug }) as StyleGalleryExampleOverviewItem,
 );
 test('source folding emits one card per source without changing member or first-occurrence order', () => {
-  const cards = getStyleGallerySourceCards(examples, () => true);
+  const cards = getStyleGallerySourceCards(examples, true);
   assert.deepEqual(
     cards.map((card) => card.example.id),
     ['0', '1', '3'],
@@ -21,15 +21,11 @@ test('source folding emits one card per source without changing member or first-
     ['1', '4'],
   );
   assert.deepEqual(
-    getStyleGallerySourceCards(examples, (slug) => slug === 'a').map((card) => card.example.id),
-    ['0', '1', '3', '4'],
-  );
-  assert.deepEqual(
-    getStyleGallerySourceCards(examples.slice(2), () => true)[0].stack?.map((example) => example.id),
+    getStyleGallerySourceCards(examples.slice(2), true)[0].stack?.map((example) => example.id),
     ['2'],
   );
   assert.deepEqual(
-    getStyleGallerySourceCards(examples, () => false).map((card) => card.example.id),
+    getStyleGallerySourceCards(examples, false).map((card) => card.example.id),
     examples.map((example) => example.id),
   );
 });

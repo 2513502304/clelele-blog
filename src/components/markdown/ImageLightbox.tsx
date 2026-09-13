@@ -9,6 +9,7 @@
 import { FloatingFocusManager, FloatingPortal, useDismiss, useFloating, useInteractions, useRole } from '@floating-ui/react';
 import { useBackdropClickDismiss } from '@hooks/useBackdropClickDismiss';
 import { useKeyboardShortcut } from '@hooks/useKeyboardShortcut';
+import { useLightboxImageDownload } from '@hooks/useLightboxImageDownload';
 import { useTranslation } from '@hooks/useTranslation';
 import { useZoomPan } from '@hooks/useZoomPan';
 import { Icon } from '@iconify/react';
@@ -78,7 +79,10 @@ function LightboxImageStage({
   const [sourceWasLoaded] = useState(() => isStyleGalleryImageUrlLoaded(sourceSrc));
   // 页面卡片已经成功绘制过同一 URL 时，Lightbox 必须立即复用该事实，不能把后台重复 decode
   // 误报成“正在加载高清原图”。新节点仍会在后台确认 decode；只有冷 URL 才展示 loading 状态。
-  const [sourceState, setSourceState] = useState<'loading' | 'loaded' | 'failed'>(sourceWasLoaded ? 'loaded' : 'loading');
+  const [sourceState, setSourceState] = useState<'loading' | 'decoding' | 'loaded' | 'failed'>(
+    sourceWasLoaded ? 'loaded' : 'loading',
+  );
+  const download = useLightboxImageDownload(sourceSrc);
   const [previewFailed, setPreviewFailed] = useState(false);
   const decodeStartedRef = useRef(false);
   const settledRef = useRef(false);
@@ -107,6 +111,7 @@ function LightboxImageStage({
       // 热缓存命中时 callback ref 与 load 事件可能在同一轮都触发，只允许一个 decode 任务。
       if (decodeStartedRef.current) return;
       decodeStartedRef.current = true;
+      if (!sourceWasLoaded) setSourceState('decoding');
       try {
         await element.decode();
       } catch {
@@ -122,7 +127,7 @@ function LightboxImageStage({
         settleSource();
       }
     },
-    [image.src, settleSource, sourceSrc],
+    [image.src, settleSource, sourceSrc, sourceWasLoaded],
   );
 
   const sourceRef = useCallback(
@@ -134,21 +139,15 @@ function LightboxImageStage({
     [finishSourceLoad],
   );
 
-  const isLoading = sourceState === 'loading';
+  const isLoading = sourceState === 'loading' || sourceState === 'decoding';
   const hasPreview = Boolean(previewSrc) && !previewFailed;
   const hasVisibleImage = hasPreview || sourceState === 'loaded';
+  const downloadPercent = download.progress?.total
+    ? Math.min(100, Math.floor((download.progress.received / download.progress.total) * 100))
+    : undefined;
 
   return (
     <div className="relative grid place-items-center" aria-busy={isLoading}>
-      {!hasVisibleImage && isLoading && (
-        <output
-          className="col-start-1 row-start-1 flex size-44 flex-col items-center justify-center gap-3 rounded-lg bg-black/30 text-white/70 backdrop-blur-sm"
-          aria-live="polite"
-        >
-          <Icon icon="ri:loader-4-line" className={shouldReduceMotion ? 'size-6' : 'size-6 animate-spin'} />
-          <span className="text-xs">{t('common.loading')}</span>
-        </output>
-      )}
       {hasPreview && (
         <motion.img
           src={previewSrc}
@@ -166,7 +165,7 @@ function LightboxImageStage({
       )}
       <motion.img
         ref={sourceRef}
-        src={sourceSrc}
+        src={download.src}
         alt={image.alt}
         loading="eager"
         fetchPriority="high"
@@ -201,14 +200,44 @@ function LightboxImageStage({
         }}
         draggable={false}
       />
-      {isLoading && hasPreview && (
-        <output
-          className="pointer-events-none absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full bg-black/60 px-3 py-1.5 text-white/80 text-xs backdrop-blur-sm"
-          aria-live="polite"
+      {isLoading && (
+        <div
+          className={`pointer-events-none z-10 w-72 max-w-[70vw] rounded-xl border border-white/10 bg-zinc-900/80 p-4 text-white shadow-xl backdrop-blur-xl ${
+            hasVisibleImage ? 'absolute bottom-3 left-1/2 -translate-x-1/2' : 'col-start-1 row-start-1'
+          }`}
         >
-          <Icon icon="ri:loader-4-line" className={shouldReduceMotion ? 'size-3.5' : 'size-3.5 animate-spin'} />
-          <span>{t('image.loadingOriginal')}</span>
-        </output>
+          <div className="flex items-center justify-between gap-3 text-xs">
+            <output>{t('image.loadingOriginal')}</output>
+            {downloadPercent !== undefined && <span className="tabular-nums">{downloadPercent}%</span>}
+          </div>
+          <p className="mt-1.5 text-[11px] text-white/60 tabular-nums">
+            {sourceState === 'decoding' || download.src?.startsWith('blob:')
+              ? t('image.decoding')
+              : download.progress
+                ? `${(download.progress.received / 1_000_000).toFixed(1)} MB${download.progress.total ? ` / ${(download.progress.total / 1_000_000).toFixed(1)} MB` : ''}`
+                : t('image.downloading')}
+          </p>
+          <div
+            role="progressbar"
+            aria-label={t('image.loadingOriginal')}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={downloadPercent}
+            className="mt-3 h-1 overflow-hidden rounded-full bg-white/15"
+          >
+            <motion.div
+              className="h-full rounded-full bg-rose-400"
+              style={{ width: downloadPercent !== undefined ? `${downloadPercent}%` : '30%' }}
+              initial={false}
+              animate={{ x: downloadPercent !== undefined || shouldReduceMotion ? 0 : ['-100%', '335%'] }}
+              transition={{
+                duration: 1.4,
+                repeat: downloadPercent !== undefined || shouldReduceMotion ? 0 : Infinity,
+                ease: 'easeInOut',
+              }}
+            />
+          </div>
+        </div>
       )}
       {sourceState === 'failed' && (
         <div

@@ -310,6 +310,8 @@ export const uiStrings: UIStrings = {
   'image.close': 'Close',
   'image.prev': 'Previous',
   'image.next': 'Next',
+  'image.downloading': 'Downloading original image',
+  'image.decoding': 'Download complete, decoding',
   'image.loadingOriginal': 'Loading full resolution',
   'image.loadFailed': 'Full-resolution image failed to load',
   'image.counter': '{current} / {total}',

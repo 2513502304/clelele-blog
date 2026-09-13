@@ -14,12 +14,12 @@ export interface StyleGallerySourceCard {
 /** Collapse only the filtered results, retaining the first occurrence and each group's internal sort order. */
 export function getStyleGallerySourceCards(
   examples: StyleGalleryExampleOverviewItem[],
-  isCollapsed: (slug: string) => boolean,
+  grouped: boolean,
 ): StyleGallerySourceCard[] {
   const groups = new Map<string, StyleGallerySourceCard>();
   const cards: StyleGallerySourceCard[] = [];
   for (const example of examples) {
-    if (!isCollapsed(example.sourceSlug)) {
+    if (!grouped) {
       cards.push({ example });
       continue;
     }
