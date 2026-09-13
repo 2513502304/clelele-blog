@@ -29,7 +29,7 @@ export default function StyleGallerySourceStack({
         .map((example, index, layers) => (
           <div
             key={example.id}
-            className="gallery-stack-layer absolute inset-x-[10%] top-[8%] h-[82%] overflow-hidden rounded-xl border-4 border-background bg-background shadow-md"
+            className="gallery-stack-layer absolute inset-x-[14%] top-[10%] h-[78%] overflow-hidden rounded-xl border-4 border-background bg-background shadow-md"
             data-layer={layers.length - index - 1}
           >
             <StyleGallerySharedImage

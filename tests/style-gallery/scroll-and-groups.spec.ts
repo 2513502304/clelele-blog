@@ -48,7 +48,19 @@ test('folding groups deduplicates sources and fans only decorative layers on hov
   const transform = await layer.evaluate((e) => getComputedStyle(e).transform);
   await stack.hover();
   await expect.poll(() => layer.evaluate((e) => getComputedStyle(e).transform)).not.toBe(transform);
+  await stack.evaluate((element) =>
+    Promise.all(element.getAnimations({ subtree: true }).map((animation) => animation.finished)),
+  );
   expect(await stack.boundingBox()).toEqual(before);
+  expect(
+    await stack.evaluate((element) => {
+      const bounds = element.getBoundingClientRect();
+      return [...element.querySelectorAll('.gallery-stack-layer')].every((layer) => {
+        const card = layer.getBoundingClientRect();
+        return card.left >= bounds.left && card.right <= bounds.right && card.top >= bounds.top && card.bottom <= bounds.bottom;
+      });
+    }),
+  ).toBe(true);
   await cards
     .first()
     .getByRole('button', { name: /展开图片/ })

@@ -14,13 +14,13 @@
   transform: translateX(7%) rotate(4deg);
 }
 .gallery-source-stack:is(:hover, :focus-visible) .gallery-stack-layer[data-layer="0"] {
-  transform: translateX(-8%) translateY(-1%) rotate(-9deg);
+  transform: translateX(-3%) translateY(-1%) rotate(-7deg);
 }
 .gallery-source-stack:is(:hover, :focus-visible) .gallery-stack-layer[data-layer="1"] {
   transform: translateY(-3%) rotate(0deg);
 }
 .gallery-source-stack:is(:hover, :focus-visible) .gallery-stack-layer[data-layer="2"] {
-  transform: translateX(8%) translateY(-1%) rotate(10deg);
+  transform: translateX(3%) translateY(-1%) rotate(7deg);
 }
 @media (prefers-reduced-motion: reduce) {
   .gallery-stack-layer {
