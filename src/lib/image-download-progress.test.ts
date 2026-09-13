@@ -49,3 +49,27 @@ test('aborted and oversized streams are cancelled instead of retained as blobs',
   );
   assert.equal(cancelled, true);
 });
+
+test('aborting a stalled independent stream cancels its pending read', { timeout: 1000 }, async () => {
+  let started: () => void = () => undefined;
+  const reading = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  let cancelled = false;
+  const response = new Response(
+    new ReadableStream({
+      pull() {
+        started();
+      },
+      cancel() {
+        cancelled = true;
+      },
+    }),
+  );
+  const controller = new AbortController();
+  const download = readImageDownload(response, controller.signal, () => undefined);
+  await reading;
+  controller.abort();
+  await assert.rejects(download, { name: 'AbortError' });
+  assert.equal(cancelled, true);
+});

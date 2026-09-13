@@ -17,6 +17,18 @@ test('cold downloads show byte progress, cached images skip loading, and failed 
     const originalFetch = window.fetch;
     window.fetch = async (input, init) => {
       const url = String(input);
+      if (url.includes('/budget-fallback.svg')) {
+        return new Response(
+          new ReadableStream({
+            cancel() {
+              document.documentElement.dataset.budgetCancelled = 'true';
+            },
+          }),
+          {
+            headers: { 'content-type': 'image/svg+xml', 'content-length': String(65 * 1024 * 1024) },
+          },
+        );
+      }
       if (!url.includes('/progress-test.svg')) return originalFetch(input, init);
       init?.signal?.addEventListener('abort', () => {
         document.documentElement.dataset.progressAborted = 'true';
@@ -76,6 +88,12 @@ test('cold downloads show byte progress, cached images skip loading, and failed 
   await page.keyboard.press('Escape');
   await expect(page.locator('html')).toHaveAttribute('data-progress-aborted', 'true');
   await open('/native-fallback.svg');
+  await expect(progress).toHaveCount(0);
+  await expect(page.getByRole('dialog').getByAltText('Progress test')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.route('**/budget-fallback.svg', (route) => route.fulfill({ contentType: 'image/svg+xml', body: svg }));
+  await open('/budget-fallback.svg');
+  await expect(page.locator('html')).toHaveAttribute('data-budget-cancelled', 'true');
   await expect(progress).toHaveCount(0);
   await expect(page.getByRole('dialog').getByAltText('Progress test')).toBeVisible();
 });

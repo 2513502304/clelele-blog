@@ -179,6 +179,9 @@ type SocialConfig = {
   skype?: SocialPlatform;
   douban?: SocialPlatform;
   bilibili?: SocialPlatform;
+  pixai?: SocialPlatform;
+  pixiv?: SocialPlatform;
+  linkedin?: SocialPlatform;
   rss?: SocialPlatform;
 };
 

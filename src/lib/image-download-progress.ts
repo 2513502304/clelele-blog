@@ -25,6 +25,11 @@ export async function readImageDownload(
     throw new Error('Image exceeds tracked download budget');
   }
   const reader = response.body.getReader();
+  // Also settle independent/custom streams whose producer is not wired to the fetch signal.
+  const cancelReader = () => {
+    void reader.cancel(signal.reason).catch(() => undefined);
+  };
+  signal.addEventListener('abort', cancelReader, { once: true });
   const chunks: Uint8Array<ArrayBuffer>[] = [];
   let received = 0;
   let lastUpdate = 0;
@@ -51,6 +56,7 @@ export async function readImageDownload(
     await reader.cancel().catch(() => undefined);
     throw error;
   } finally {
+    signal.removeEventListener('abort', cancelReader);
     reader.releaseLock();
   }
 }
