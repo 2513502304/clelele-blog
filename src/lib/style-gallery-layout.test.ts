@@ -25,10 +25,10 @@ describe('gallery masonry geometry', () => {
       { column: 1, top: 0 },
       { column: 2, top: 0 },
       { column: 3, top: 0 },
+      { column: 0, top: 416 },
       { column: 1, top: 216 },
-      { column: 2, top: 316 },
     ]);
-    assert.equal(first.height, 500);
+    assert.equal(first.height, 666);
     assert.deepEqual(getMasonryPositions([...heights, 700, 90], 4, 16).positions.slice(0, heights.length), first.positions);
     assert.deepEqual(getMasonryPositions([], 4, 16), { positions: [], height: 0 });
     assert.deepEqual(getMasonryPositions([100, 50], 1, 16).positions, [
