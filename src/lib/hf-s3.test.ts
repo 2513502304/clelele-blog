@@ -125,3 +125,19 @@ test('read redirects allow HTTPS CDN delivery but block downgrade and credential
     globalThis.fetch = previousFetch;
   }
 });
+
+test('uploads only the signed bytes of a Buffer view, never its backing pool', async () => {
+  const previousFetch = globalThis.fetch;
+  const backing = Buffer.alloc(1024, 99);
+  const body = backing.subarray(17, 21);
+  body.set([1, 2, 3, 4]);
+  globalThis.fetch = async (_url, init) => {
+    assert.deepEqual(new Uint8Array(init?.body as ArrayBuffer), new Uint8Array([1, 2, 3, 4]));
+    return new Response(null);
+  };
+  try {
+    await createHfS3Client(config, { attempts: 1 }).put('thumb/example.webp', body, 'image/webp');
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
