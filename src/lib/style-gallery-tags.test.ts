@@ -6,7 +6,20 @@ import { setStyleGallerySession } from './style-gallery-github-auth';
 import { STYLE_GALLERY_PLATFORMS } from './style-gallery-platforms';
 import { invalidateStyleGalleryStoreCache } from './style-gallery-store';
 import { GalleryTagWriteError, galleryTagMutationSchema, getGalleryTagIndex, setGalleryTags } from './style-gallery-tag-store';
-import { getGalleryTagVocabulary, normalizeGalleryTag } from './style-gallery-tags';
+import { galleryTagMatches, getGalleryTagVocabulary, normalizeGalleryTag } from './style-gallery-tags';
+
+it('matches every exact hashtag across whitespace and reserves #null for untagged sources', () => {
+  assert.equal(galleryTagMatches(['溶图', '现实'], '  #溶图 \t\n　#现实  '), true);
+  assert.equal(galleryTagMatches(['溶图'], '#溶图 #现实'), false);
+  assert.equal(galleryTagMatches(['现实插画'], '#现实'), false);
+  assert.equal(galleryTagMatches(['oil painting', '现实'], '#Oil  Painting #现实'), true);
+  assert.equal(galleryTagMatches([], '#null'), true);
+  assert.equal(galleryTagMatches(['插画'], '#null'), false);
+  assert.equal(galleryTagMatches([], '#null #插画'), false);
+  assert.equal(galleryTagMatches([], '#null #null'), true);
+  assert.equal(galleryTagMatches([], '#'), false);
+  assert.equal(galleryTagMatches(['插画'], '#插画 #'), false);
+});
 
 const originalFetch = globalThis.fetch;
 const envKeys = [
@@ -207,4 +220,12 @@ describe('shared gallery categories', () => {
       (e: unknown) => e instanceof GalleryTagWriteError && e.status === 400,
     );
   });
+});
+
+it('rejects normalized null categories in single and bulk mutation schemas', () => {
+  for (const tag of ['null', '#NULL', ' ＃ＮＵＬＬ ']) {
+    assert.equal(galleryTagMutationSchema.safeParse({ slug: 'source-one', tags: [tag], previousTags: [] }).success, false);
+    assert.equal(galleryTagMutationSchema.safeParse({ slugs: ['source-one'], tags: [tag] }).success, false);
+  }
+  assert.equal(galleryTagMutationSchema.safeParse({ slug: 'source-one', tags: [], previousTags: [] }).success, true);
 });

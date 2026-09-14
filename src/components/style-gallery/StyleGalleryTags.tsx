@@ -2,7 +2,7 @@ import { Icon } from '@iconify/react';
 import { getStyleGalleryManagementToken, rememberStyleGalleryManagementToken } from '@lib/style-gallery-management-token';
 import {
   getGalleryTagVocabulary,
-  MAX_GALLERY_TAG_LENGTH,
+  isValidGalleryTag,
   MAX_GALLERY_TAGS_PER_ITEM,
   normalizeGalleryTag,
 } from '@lib/style-gallery-tags';
@@ -30,7 +30,7 @@ function labels(locale: string) {
         retry: '重试',
         remove: '移除',
         create: '创建',
-        limit: '每张图最多 12 个标签，每个标签最多 24 字',
+        limit: '每张图最多 12 个标签，每个标签最多 24 字；null 为保留词',
         saved: '标签已保存',
         conflict: '标签已被其他会话修改，请关闭后重新打开编辑器。',
         more: '查看全部标签',
@@ -54,7 +54,7 @@ function labels(locale: string) {
           retry: '再試行',
           remove: '削除',
           create: '作成',
-          limit: '最大12タグ、各24文字',
+          limit: '最大12タグ、各24文字。null は予約語です',
           saved: '保存しました',
           conflict: '他のセッションで変更されました。編集画面を開き直してください。',
           more: 'すべてのタグ',
@@ -78,7 +78,7 @@ function labels(locale: string) {
           retry: 'Retry',
           remove: 'Remove',
           create: 'Create',
-          limit: 'Up to 12 tags, 24 characters each',
+          limit: 'Up to 12 tags, 24 characters each; null is reserved',
           saved: 'Tags saved',
           conflict: 'Tags changed in another session. Close and reopen the editor.',
           more: 'View all tags',
@@ -326,11 +326,7 @@ export function GalleryTagEditor({ locale = 'zh' }: { locale?: string }) {
     if (target && status === 'ready') document.getElementById(`${listId}-${selected}`)?.scrollIntoView({ block: 'nearest' });
   }, [selected, listId, target, status]);
   function add(tag: string) {
-    if (
-      tags.length >= MAX_GALLERY_TAGS_PER_ITEM ||
-      Array.from(tag).length > MAX_GALLERY_TAG_LENGTH ||
-      /[\p{Cc}\p{Cf}<>#]/u.test(tag)
-    ) {
+    if (tags.length >= MAX_GALLERY_TAGS_PER_ITEM || !isValidGalleryTag(tag)) {
       setMessage(text.limit);
       return;
     }
@@ -347,7 +343,7 @@ export function GalleryTagEditor({ locale = 'zh' }: { locale?: string }) {
     if (
       (bulk && draft.length === 0) ||
       draft.length > MAX_GALLERY_TAGS_PER_ITEM ||
-      draft.some((tag) => Array.from(tag).length > MAX_GALLERY_TAG_LENGTH || /[\p{Cc}\p{Cf}<>#]/u.test(tag))
+      draft.some((tag) => !isValidGalleryTag(tag))
     ) {
       setMessage(text.limit);
       return;

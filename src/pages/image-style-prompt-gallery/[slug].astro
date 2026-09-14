@@ -55,7 +55,7 @@ setStyleGalleryPublicCacheHeaders(Astro.response.headers, [getStyleGalleryItemCa
       </nav>
 
       <article class="grid grid-cols-2 items-start gap-6 lg:grid-cols-1" data-pagefind-body>
-        <aside class="min-w-0 self-start space-y-4">
+        <aside data-gallery-detail-sticky class="sticky min-w-0 self-start space-y-4 lg:static" style="top: min(1.5rem, calc(100dvh - var(--gallery-detail-height, 0px) - 1.5rem))">
           <header class="space-y-3 px-1">
             <h1 class="whitespace-nowrap font-black text-2xl text-gray-950 lg:whitespace-normal dark:text-white">{data.title}</h1>
             <div class="flex flex-nowrap gap-1.5 lg:flex-wrap">
@@ -138,3 +138,21 @@ setStyleGalleryPublicCacheHeaders(Astro.response.headers, [getStyleGalleryItemCa
     </div>
   </TwoColumnLayout>
 </Layout>
+
+<script>
+  let observer: ResizeObserver | undefined;
+  function followDetailColumn() {
+    observer?.disconnect();
+    const column = document.querySelector<HTMLElement>('[data-gallery-detail-sticky]');
+    if (!column) return;
+    // Tall reference columns scroll until their bottom fits the viewport, then follow the prompt.
+    // ResizeObserver also covers hydrated tags, prompt variants and reference image changes.
+    const measure = () => column.style.setProperty('--gallery-detail-height', `${column.getBoundingClientRect().height}px`);
+    measure();
+    observer = new ResizeObserver(measure);
+    observer.observe(column);
+  }
+  followDetailColumn();
+  document.addEventListener('astro:page-load', followDetailColumn);
+  document.addEventListener('astro:before-swap', () => observer?.disconnect());
+</script>

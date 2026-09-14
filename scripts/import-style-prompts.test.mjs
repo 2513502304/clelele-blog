@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import { describe, it } from 'node:test';
 import { assertStyleGalleryItemConsistency } from '../src/lib/style-gallery-assets.ts';
 import {
+  addImportedTags,
   buildImportData,
   extractItems,
   loadExistingItemsByHash,
@@ -198,6 +199,7 @@ describe('style prompt import variants', () => {
     );
     assert.equal(duplicate.items.length, 0);
     assert.equal(duplicate.skippedDuplicates, 1);
+    assert.deepEqual(duplicate.sourceSlugs, [existing.slug]);
 
     const duplicateAdditionalPrompt = await buildImportData(
       [{ ...extracted[0], prompt: existing.prompts[1] }],
@@ -296,5 +298,61 @@ describe('style prompt import variants', () => {
     const duplicate = { imageHash: first.imageHash, sourceImage: 'duplicate' };
     const second = { imageHash: 'b'.repeat(64), sourceImage: 'second' };
     assert.deepEqual(uniqueImagesByHash([first, duplicate, second]), [first, second]);
+  });
+});
+
+describe('import category flags', () => {
+  it('normalizes repeated optional labels and validates them before uploading', () => {
+    assert.deepEqual(parseArgs(['session.jsonl']).tags, []);
+    assert.deepEqual(parseArgs(['session.jsonl', '--tag', '＃溶图', '--tag=现实', '--tag', '溶图']).tags, ['溶图', '现实']);
+    for (const args of [
+      ['--tag'],
+      ['--tag', '--dry-run'],
+      ['--tag='],
+      ['--tag=<x>'],
+      ['--tag=#null'],
+      [`--tag=${'长'.repeat(25)}`],
+    ]) {
+      assert.throws(() => parseArgs(['session.jsonl', ...args]), /tag/);
+    }
+    assert.throws(() => parseArgs(['session.jsonl', ...Array.from({ length: 13 }, (_, i) => `--tag=tag${i}`)]), /At most 12/);
+  });
+
+  it('does not write without tags and sends one additive authenticated request for a batch', async () => {
+    const original = globalThis.fetch;
+    const requests = [];
+    globalThis.fetch = async (url, options) => {
+      requests.push({ url, options });
+      return Response.json({ version: 1, items: { 'source-a': ['existing', '溶图'] } });
+    };
+    try {
+      await addImportedTags('https://blog.example', 'test-only', ['source-a'], []);
+      await addImportedTags('https://blog.example', 'test-only', [], ['溶图']);
+      assert.equal(requests.length, 0);
+      await addImportedTags('https://blog.example', 'test-only', ['source-a', 'source-a', 'source-b'], ['溶图', '现实']);
+      assert.equal(requests.length, 1);
+      assert.equal(requests[0].url, 'https://blog.example/api/style-gallery/tags');
+      const { options } = requests[0];
+      assert.equal(options.method, 'PUT');
+      assert.equal(options.headers.origin, 'https://blog.example');
+      assert.equal(options.headers.authorization, 'Bearer test-only');
+      assert.deepEqual(JSON.parse(options.body), { slugs: ['source-a', 'source-b'], tags: ['溶图', '现实'] });
+      globalThis.fetch = async () => new Response('Tag vocabulary limit reached', { status: 400 });
+      await assert.rejects(addImportedTags('https://blog.example', 'test-only', ['source-a'], ['new']), /400|vocabulary/);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  it('metadata-only excludes new sources from tag additions', async () => {
+    const prepared = await buildImportData(
+      [{ images: ['data:image/png;base64,YQ=='], prompt: 'test' }],
+      '/tmp/session.jsonl',
+      new Map(),
+      true,
+      null,
+    );
+    assert.deepEqual(prepared.sourceSlugs, []);
+    assert.equal(prepared.skippedNewMetadata, 1);
   });
 });

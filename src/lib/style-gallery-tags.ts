@@ -13,9 +13,26 @@ export function normalizeGalleryTag(value: string): string {
   return value.normalize('NFKC').trim().replace(/^#+/, '').trim().replace(/\s+/gu, ' ').toLowerCase();
 }
 
+/** Shared by the HTTP editor and JSONL importer after normalization. */
+export function isValidGalleryTag(tag: string): boolean {
+  return (
+    tag !== 'null' &&
+    Array.from(tag).length > 0 &&
+    Array.from(tag).length <= MAX_GALLERY_TAG_LENGTH &&
+    !/[\p{Cc}\p{Cf}<>#]/u.test(tag)
+  );
+}
+
+/** Hashtags are exact, AND-combined categories; #null is reserved for sources with no tags.
+ * Split before each hashtag so existing category names containing spaces remain searchable.
+ */
 export function galleryTagMatches(tags: readonly string[], query: string): boolean {
-  const q = normalizeGalleryTag(query);
-  return Boolean(q) && tags.some((tag) => tag.includes(q));
+  const terms = query
+    .normalize('NFKC')
+    .trim()
+    .split(/\s+(?=#)/u)
+    .map(normalizeGalleryTag);
+  return terms.every((term) => Boolean(term) && (term === 'null' ? tags.length === 0 : tags.includes(term)));
 }
 
 /** Suggestions include the entire small vocabulary when empty, with usage counts for discovery. */

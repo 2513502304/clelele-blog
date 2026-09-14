@@ -1,6 +1,7 @@
 import { Icon } from '@iconify/react';
+import { guardGalleryNavigation } from '@lib/style-gallery-navigation-guard';
 import { $galleryTagEditor } from '@store/gallery-tags';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 /** Selection covers all filtered source IDs, including cards not yet progressively mounted. */
 export function useGalleryTagSelection(slugs: string[], locale: string, pending = false) {
@@ -19,6 +20,7 @@ export function useGalleryTagSelection(slugs: string[], locale: string, pending 
         select: '选择来源',
         count: '个来源',
         waiting: '正在完成筛选…',
+        leave: '离开此页面会丢失当前批量标签的图片选择，确定离开吗？',
       }
     : locale.startsWith('ja')
       ? {
@@ -30,6 +32,7 @@ export function useGalleryTagSelection(slugs: string[], locale: string, pending 
           select: '元画像を選択',
           count: '件',
           waiting: '検索中…',
+          leave: 'このページを離れると画像の選択が失われます。移動しますか？',
         }
       : {
           mode: 'Bulk tags',
@@ -40,7 +43,11 @@ export function useGalleryTagSelection(slugs: string[], locale: string, pending 
           select: 'Select source',
           count: 'sources',
           waiting: 'Finishing search…',
+          leave: 'Leaving this page will discard your bulk-tag image selection. Leave anyway?',
         };
+  useEffect(() => {
+    if (enabled) return guardGalleryNavigation(text.leave);
+  }, [enabled, text.leave]);
   const toggle = (slug: string) => {
     setSelection((previous) => {
       const next = new Set([...previous].filter((id) => available.has(id)));
