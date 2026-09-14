@@ -30,7 +30,8 @@ import { NuqsAdapter } from 'nuqs/adapters/react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useProgressiveList } from '@/hooks/useProgressiveList';
 import type { StyleGalleryCardData } from '@/types/style-gallery';
-import { GalleryTagFilter } from './StyleGalleryTags';
+import { useGalleryTagSelection } from './StyleGalleryTagSelection';
+import { GalleryTagEditor, GalleryTagFilter } from './StyleGalleryTags';
 
 interface StyleGalleryImageIndexProps {
   items: StyleGalleryCardData[];
@@ -87,7 +88,7 @@ function StyleGalleryImageIndexContent({
   lightboxCopyLabels,
 }: StyleGalleryImageIndexProps) {
   const [query, setQuery] = useQueryState('q', parseAsString.withDefault(''));
-  const { index: tagIndex } = useGalleryTags();
+  const { index: tagIndex, status: tagStatus } = useGalleryTags();
   const [tag, setTag] = useQueryState('tag', parseAsString.withDefault(''));
   const tagQuery = query.trim().startsWith('#');
   const [{ sort: sortKey, dir: sortDirection }, setSortState] = useQueryStates({
@@ -142,7 +143,7 @@ function StyleGalleryImageIndexContent({
       const matchesQuery = tagQuery
         ? galleryTagMatches(itemTags, normalizedQuery)
         : !normalizedQuery ||
-          normalize(`${item.title} ${item.imageHash} ${item.slug} ${itemTags.join(' ')}`).includes(normalizedQuery) ||
+          normalize(`${item.title} ${item.imageHash} ${item.slug}`).includes(normalizedQuery) ||
           (promptSearchIndex ? promptSearchIndex[item.slug]?.includes(normalizedQuery) : promptSearchStatus !== 'failed');
       return matchesQuery && matchesDateRange(item.date) && (visualMatches === null || visualMatches.has(item.slug));
     });
@@ -219,6 +220,13 @@ function StyleGalleryImageIndexContent({
   function changeSortKey(nextSortKey: StyleGallerySortKey) {
     void setSortState({ sort: nextSortKey, dir: getStyleGalleryDefaultSortDirection(nextSortKey) }).catch(reportUrlStateError);
   }
+
+  const tagSelection = useGalleryTagSelection(
+    visibleItems.map((item) => item.slug),
+    locale,
+    (Boolean(query.trim()) && ((!tagQuery && promptSearchStatus !== 'ready') || (tagQuery && tagStatus !== 'ready'))) ||
+      (Boolean(tag) && tagStatus !== 'ready'),
+  );
 
   return (
     <section className="space-y-4" aria-label="Image style prompt gallery index">
@@ -297,6 +305,8 @@ function StyleGalleryImageIndexContent({
         </div>
       </div>
 
+      <GalleryTagEditor locale={locale} />
+      {tagSelection.toolbar}
       {visibleItems.length ? (
         <>
           <div className="grid grid-cols-[repeat(auto-fill,minmax(92px,1fr))] gap-2.5 md:grid-cols-[repeat(auto-fill,minmax(76px,1fr))] md:gap-2">
@@ -307,6 +317,7 @@ function StyleGalleryImageIndexContent({
                 tabIndex={-1}
                 className="group relative aspect-square min-w-0 overflow-hidden rounded-md border border-border bg-muted shadow-sm transition focus-within:z-10 focus-within:ring-2 focus-within:ring-primary hover:z-10 hover:-translate-y-0.5 hover:border-primary/60 hover:shadow-md"
               >
+                {tagSelection.checkbox(item.slug)}
                 <a
                   href={`${galleryBasePath}/${item.slug}`}
                   data-astro-prefetch="false"

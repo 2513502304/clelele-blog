@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   getSelectedStyleGalleryPrompt,
+  getSelectedStyleGalleryPromptDetail,
   STYLE_GALLERY_PROMPT_SELECTED_EVENT,
   type StyleGalleryPromptSelectedDetail,
   selectStyleGalleryPrompt,
@@ -18,10 +19,13 @@ describe('style gallery prompt selection', () => {
     });
 
     try {
-      const detail = { slug: 'prompt-selection-test', prompt: 'Selected prompt variant' };
+      const detail = { slug: 'prompt-selection-test', prompt: 'Selected prompt variant', originalPrompt: 'Original request' };
       selectStyleGalleryPrompt(detail);
       assert.deepEqual(observed, detail);
       assert.equal(getSelectedStyleGalleryPrompt(detail.slug), detail.prompt);
+      assert.equal(getSelectedStyleGalleryPromptDetail(detail.slug)?.originalPrompt, detail.originalPrompt);
+      selectStyleGalleryPrompt({ slug: detail.slug, prompt: 'Variant without original' });
+      assert.equal(getSelectedStyleGalleryPromptDetail(detail.slug)?.originalPrompt, undefined);
     } finally {
       if (previousWindow) Object.defineProperty(globalThis, 'window', previousWindow);
       else Reflect.deleteProperty(globalThis, 'window');

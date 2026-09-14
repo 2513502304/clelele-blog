@@ -54,15 +54,15 @@ export default function StyleGallerySourceStack({
             />
           </div>
         ))}
-      <span className="absolute right-3 bottom-3 flex items-center gap-2 text-xs tabular-nums">
-        <span className="flex items-center gap-1.5 rounded-full bg-black/65 px-2.5 py-1 text-white backdrop-blur-sm">
+      <span className="absolute right-2 bottom-2 flex items-center gap-2 text-xs tabular-nums">
+        <span className="gallery-image-badge flex items-center gap-1.5 rounded-full bg-black/65 px-2.5 py-1 text-white backdrop-blur-sm">
           <Icon icon="ri:stack-line" />
           {examples.length}
         </span>
         <span
           data-group-likes={likeCount}
           title={likesLabel}
-          className="flex items-center gap-1.5 rounded-full bg-black/65 px-2.5 py-1 text-white backdrop-blur-sm"
+          className="gallery-image-badge flex items-center gap-1.5 rounded-full bg-black/65 px-2.5 py-1 text-white backdrop-blur-sm"
         >
           <Icon icon="ri:heart-fill" className="text-rose-400" />
           <span className="sr-only">{likesLabel}: </span>

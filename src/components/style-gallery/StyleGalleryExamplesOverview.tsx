@@ -15,10 +15,10 @@ import {
   deleteStyleGalleryExample,
   getStyleGalleryLightboxElementId,
   locateStyleGalleryElement,
-  STYLE_GALLERY_UPLOAD_TOKEN_STORAGE_KEY,
   type StyleGalleryLightboxActionLabels,
 } from '@lib/style-gallery-lightbox-actions';
 import { STYLE_GALLERY_EXAMPLE_LIGHTBOX_PREFETCH } from '@lib/style-gallery-lightbox-prefetch';
+import { getStyleGalleryManagementToken, STYLE_GALLERY_TOKEN_CHANGED_EVENT } from '@lib/style-gallery-management-token';
 import { STYLE_GALLERY_PLATFORMS } from '@lib/style-gallery-platforms';
 import { loadStyleGalleryDefaultPrompt, loadStyleGalleryPromptChoices } from '@lib/style-gallery-prompt-client';
 import { loadStyleGalleryPromptSearchIndex } from '@lib/style-gallery-prompt-search-client';
@@ -46,6 +46,7 @@ import {
 } from './StyleGalleryLikeButton';
 import StyleGallerySharedImage from './StyleGallerySharedImage';
 import StyleGallerySourceStack from './StyleGallerySourceStack';
+import { useGalleryTagSelection } from './StyleGalleryTagSelection';
 import { GalleryTagEditor, GalleryTagFilter, GalleryTagPills } from './StyleGalleryTags';
 
 interface Props {
@@ -117,7 +118,7 @@ function StyleGalleryExamplesOverviewContent({
   const [uploadToken, setUploadToken] = useState('');
   const [platform, setPlatform] = useQueryState('platform', parseAsString.withDefault('all'));
   const [query, setQuery] = useQueryState('q', parseAsString.withDefault(''));
-  const { index: tagIndex } = useGalleryTags();
+  const { index: tagIndex, status: tagStatus } = useGalleryTags();
   const [tag, setTag] = useQueryState('tag', parseAsString.withDefault(''));
   const tagQuery = query.trim().startsWith('#');
   const [{ sort: sortKey, dir: sortDirection }, setSortState] = useQueryStates({
@@ -134,7 +135,10 @@ function StyleGalleryExamplesOverviewContent({
   const [sourceSearchIndex, setSourceSearchIndex] = useState<Record<string, string> | null>(null);
   const [searchIndexStatus, setSearchIndexStatus] = useState<'idle' | 'loading' | 'ready' | 'failed'>('idle');
   useEffect(() => {
-    setUploadToken(localStorage.getItem(STYLE_GALLERY_UPLOAD_TOKEN_STORAGE_KEY) ?? '');
+    const syncToken = () => setUploadToken(getStyleGalleryManagementToken());
+    syncToken();
+    window.addEventListener(STYLE_GALLERY_TOKEN_CHANGED_EVENT, syncToken);
+    return () => window.removeEventListener(STYLE_GALLERY_TOKEN_CHANGED_EVENT, syncToken);
   }, []);
   // 点赞计数实时更新，但排序快照由用户主动刷新，避免连续浏览或 popup 点赞时网格在背景中跳位。
   const [likeSortCounts, setLikeSortCounts] = useState<Record<string, number>>(() =>
@@ -195,7 +199,7 @@ function StyleGalleryExamplesOverviewContent({
       const matchesDate = matchesDateRange(example.uploadedAt);
       return (
         matchesPlatform &&
-        (tagQuery ? galleryTagMatches(sourceTags, query) : matchesTextQuery(example) || galleryTagMatches(sourceTags, query)) &&
+        (tagQuery ? galleryTagMatches(sourceTags, query) : matchesTextQuery(example)) &&
         matchesDate &&
         (visualMatches === null || visualMatches.has(example.id))
       );
@@ -321,6 +325,13 @@ function StyleGalleryExamplesOverviewContent({
     setSortState({ dir: sortDirection === 'asc' ? 'desc' : 'asc' }).catch(reportUrlStateError);
   }
 
+  const tagSelection = useGalleryTagSelection(
+    filtered.map((item) => item.sourceSlug),
+    locale,
+    (Boolean(query.trim()) && ((!tagQuery && searchIndexStatus !== 'ready') || (tagQuery && tagStatus !== 'ready'))) ||
+      (Boolean(tag) && tagStatus !== 'ready'),
+  );
+
   return (
     <section className="space-y-5" aria-label="Generated example overview">
       <GalleryTagEditor locale={locale} />
@@ -344,7 +355,7 @@ function StyleGalleryExamplesOverviewContent({
             />
           )}
         </label>
-        <div className="mt-3 flex flex-wrap items-center gap-3 border-border border-t pt-3">
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-border border-t pt-3">
           <StyleGalleryVisualFilter
             scope="example"
             labels={labels.visualFilter}
@@ -382,22 +393,6 @@ function StyleGalleryExamplesOverviewContent({
             availableDateKeys={availableDateKeys}
             onApply={(range) => void setDateRange(range).catch(reportUrlStateError)}
           />
-          <StyleGalleryLayoutToggle
-            masonry={masonry}
-            locale={locale}
-            onChange={() => void setLayout(masonry ? 'grid' : 'masonry').catch(reportUrlStateError)}
-          />
-          <button
-            type="button"
-            aria-pressed={grouped}
-            onClick={() => {
-              void setGrouped(!grouped).catch(reportUrlStateError);
-            }}
-            className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm transition hover:border-primary/40 aria-pressed:border-primary aria-pressed:text-primary"
-          >
-            <Icon icon="ri:stack-line" className="size-4" />
-            {groupLabel}
-          </button>
           <GalleryTagFilter
             value={tag}
             onChange={(value) => {
@@ -405,10 +400,30 @@ function StyleGalleryExamplesOverviewContent({
             }}
             locale={locale}
           />
-          <span className="shrink-0 text-muted-foreground text-sm tabular-nums">
-            {filtered.length} / {examples.length}
-          </span>
-          <div className="ml-auto flex items-center gap-3 md:ml-0 md:flex-wrap">
+        </div>
+        <div className="gallery-display-toolbar mt-3 flex flex-wrap items-center justify-between gap-2 border-border border-t pt-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <StyleGalleryLayoutToggle
+              masonry={masonry}
+              locale={locale}
+              onChange={() => void setLayout(masonry ? 'grid' : 'masonry').catch(reportUrlStateError)}
+            />
+            <button
+              type="button"
+              aria-pressed={grouped}
+              onClick={() => {
+                void setGrouped(!grouped).catch(reportUrlStateError);
+              }}
+              className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm transition hover:border-primary/40 aria-pressed:border-primary aria-pressed:text-primary"
+            >
+              <Icon icon="ri:stack-line" className="size-4" />
+              {groupLabel}
+            </button>
+            <span className="shrink-0 text-muted-foreground text-sm tabular-nums">
+              {filtered.length} / {examples.length}
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
             <label className="sr-only" htmlFor="example-sort">
               {labels.sortItems}
             </label>
@@ -453,6 +468,7 @@ function StyleGalleryExamplesOverviewContent({
         </div>
       </div>
 
+      {tagSelection.toolbar}
       {filtered.length ? (
         <>
           <StyleGalleryGrid masonry={masonry}>
@@ -507,10 +523,11 @@ function StyleGalleryExamplesOverviewContent({
                         exampleId={example.id}
                         controller={likes}
                         labels={labels.likes}
-                        className="absolute right-2 bottom-2 z-10"
+                        className="gallery-image-badge absolute right-2 bottom-2 z-10"
                       />
                     </>
                   )}
+                  {tagSelection.checkbox(example.sourceSlug)}
                   <GalleryTagPills
                     slug={example.sourceSlug}
                     locale={locale}

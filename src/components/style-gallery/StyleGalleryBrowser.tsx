@@ -40,6 +40,7 @@ import { Dialog, DialogContent } from '../ui/dialog';
 import StyleGalleryGrid, { StyleGalleryLayoutToggle, useStyleGalleryLayout } from './StyleGalleryGrid';
 import { StyleGalleryPromptChooser } from './StyleGalleryPromptChooser';
 import StyleGallerySharedImage from './StyleGallerySharedImage';
+import { useGalleryTagSelection } from './StyleGalleryTagSelection';
 import { GalleryTagEditor, GalleryTagFilter, GalleryTagPills } from './StyleGalleryTags';
 
 export interface StyleGalleryBrowserItem {
@@ -130,7 +131,7 @@ function createPromptPickerState(
 function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, lightboxCopyLabels }: StyleGalleryBrowserProps) {
   const shouldReduceMotion = useReducedMotion();
   const [query, setQuery] = useQueryState('q', parseAsString.withDefault(''));
-  const { index: tagIndex } = useGalleryTags();
+  const { index: tagIndex, status: tagStatus } = useGalleryTags();
   const [tag, setTag] = useQueryState('tag', parseAsString.withDefault(''));
   const tagQuery = query.trim().startsWith('#');
   const [{ sort: sortKey, dir: sortDirection }, setSortState] = useQueryStates({
@@ -189,7 +190,7 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
     const filtered = items.filter((item) => {
       const itemTags = tagIndex.items[item.slug] ?? [];
       if (tag && !itemTags.includes(normalizeGalleryTag(tag))) return false;
-      const localSearchable = [item.title, item.imageHash, item.slug, ...itemTags].filter(Boolean).join(' ');
+      const localSearchable = [item.title, item.imageHash, item.slug].filter(Boolean).join(' ');
       const matchesQuery = tagQuery
         ? galleryTagMatches(itemTags, q)
         : !q ||
@@ -347,6 +348,13 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
     return copyPromptText(promptPicker.item, prompt.prompt);
   }
 
+  const tagSelection = useGalleryTagSelection(
+    filteredItems.map((item) => item.slug),
+    locale,
+    (Boolean(query.trim()) && ((!tagQuery && promptSearchStatus !== 'ready') || (tagQuery && tagStatus !== 'ready'))) ||
+      (Boolean(tag) && tagStatus !== 'ready'),
+  );
+
   return (
     <section className="space-y-6" aria-label="Image style prompt gallery browser">
       <GalleryTagEditor locale={locale} />
@@ -441,6 +449,7 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
         </div>
       </div>
 
+      {tagSelection.toolbar}
       <StyleGalleryGrid masonry={masonry}>
         {visibleItems.map((item, index) => (
           <article
@@ -467,18 +476,19 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
                   className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
                 />
                 <span className="absolute right-2 bottom-2 flex items-center gap-1.5">
-                  <span className="inline-flex min-w-8 items-center justify-center gap-1 rounded-md bg-gray-950/80 px-2 py-1 font-bold text-[11px] text-white tabular-nums shadow-sm backdrop-blur-sm">
+                  <span className="gallery-image-badge inline-flex min-w-8 items-center justify-center gap-1 rounded-md bg-gray-950/80 px-2 py-1 font-bold text-[11px] text-white tabular-nums shadow-sm backdrop-blur-sm">
                     <Icon icon="ri:image-2-fill" className="size-3" />
                     <span className="sr-only">{labels.exampleCount.replace('{count}', String(item.exampleCount))}</span>
                     <span aria-hidden="true">{item.exampleCount}</span>
                   </span>
-                  <span className="inline-flex min-w-8 items-center justify-center gap-1 rounded-md bg-rose-500/90 px-2 py-1 font-bold text-[11px] text-white tabular-nums shadow-sm backdrop-blur-sm">
+                  <span className="gallery-image-badge inline-flex min-w-8 items-center justify-center gap-1 rounded-md bg-rose-500/90 px-2 py-1 font-bold text-[11px] text-white tabular-nums shadow-sm backdrop-blur-sm">
                     <Icon icon="ri:heart-3-fill" className="size-3" />
                     <span className="sr-only">{labels.likeCount.replace('{count}', String(item.likeCount))}</span>
                     <span aria-hidden="true">{item.likeCount}</span>
                   </span>
                 </span>
               </a>
+              {tagSelection.checkbox(item.slug)}
               <GalleryTagPills
                 slug={item.slug}
                 locale={locale}
