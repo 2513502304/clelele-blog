@@ -182,6 +182,7 @@ for (const path of ['', '/index', '/examples']) {
     await page.route('**/api/style-gallery/prompt-search-index', (route) => route.fulfill({ status: 503 }));
     // A source hash remains a valid local match when full-text prompt search is unavailable.
     await page.goto(`/image-style-prompt-gallery${path}?q=4eaf44ebd787`);
+    await expect(page.locator('[data-gallery-selection]').locator('xpath=ancestor::astro-island')).not.toHaveAttribute('ssr');
     await page.getByRole('button', { name: '批量标签', exact: true }).click();
     await expect(page.getByRole('button', { name: '全选筛选结果', exact: true })).toBeEnabled();
     await page.getByRole('button', { name: '全选筛选结果', exact: true }).click();
@@ -203,6 +204,7 @@ for (const path of ['', '/index', '/examples']) {
 test('batch select-all includes unmounted sources and only submits sources in the current filter', async ({ page }) => {
   const state = await fixture(page);
   await page.goto('/image-style-prompt-gallery');
+  await expect(page.locator('[data-gallery-selection]').locator('xpath=ancestor::astro-island')).not.toHaveAttribute('ssr');
   await page.getByRole('button', { name: '批量标签', exact: true }).click();
   await page.getByRole('button', { name: '全选筛选结果', exact: true }).click();
   const selectedCount = Number((await page.locator('[data-gallery-selection] output').innerText()).split(' / ')[0]);
@@ -224,6 +226,7 @@ test('mobile index selection reuses the zoom slot without covering count badges'
   await page.goto('/image-style-prompt-gallery/index');
   const card = page.locator('[id^="style-gallery-index-source-"]').first();
   await expect(card.getByRole('button')).toHaveCount(1);
+  await expect(page.locator('[data-gallery-selection]').locator('xpath=ancestor::astro-island')).not.toHaveAttribute('ssr');
   await page.getByRole('button', { name: '批量标签', exact: true }).click();
   await expect(card.getByRole('button')).toHaveCount(0);
   await card.getByRole('checkbox').check();
@@ -304,4 +307,166 @@ test('detail Lightbox reports a failed tag request and retries without reloading
   failTags = false;
   await dialog.getByRole('button', { name: /标签暂时不可用/ }).click();
   await expect(dialog.getByRole('link', { name: '#溶图', exact: true })).toBeVisible();
+});
+
+test('detail left column follows the longer prompt to its bottom', async ({ page }) => {
+  await fixture(page);
+  await page.goto('/image-style-prompt-gallery/2026-08-18-4a3484f05086');
+  const article = page.locator('article[data-pagefind-body]');
+  const aside = article.locator('aside');
+  await expect(aside.locator('astro-island[ssr]')).toHaveCount(0);
+  await article.evaluate((element) => window.scrollTo(0, element.getBoundingClientRect().bottom + scrollY - innerHeight + 24));
+  await expect
+    .poll(async () =>
+      article.evaluate((element) =>
+        Math.abs(
+          element.getBoundingClientRect().bottom -
+            (element.querySelector('aside')?.getBoundingClientRect().bottom ?? Number.NaN),
+        ),
+      ),
+    )
+    .toBeLessThan(3);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(aside).toHaveCSS('position', 'static');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+});
+
+for (const path of ['', '/index', '/examples']) {
+  test(`AND hashtags and untagged search stay local on ${path || 'preview'}`, async ({ page }) => {
+    const state = await fixture(page);
+    await page.goto(`/image-style-prompt-gallery${path}?q=${encodeURIComponent('#插画   #专辑')}`);
+    await expect(page.getByRole('combobox', { name: '标签', exact: true })).toBeEnabled();
+    await expect(page.locator('[data-gallery-selection]').locator('xpath=ancestor::astro-island')).not.toHaveAttribute('ssr');
+    await page.getByRole('button', { name: '批量标签', exact: true }).click();
+    const output = page.locator('[data-gallery-selection] output');
+    // The fixture's second source has both categories but no generated examples.
+    await expect(output).toHaveText(path === '/examples' ? '0 / 0 个来源' : '0 / 1 个来源');
+    const search = page.locator('input[placeholder]').filter({ visible: true }).first();
+    await search.fill('#null');
+    await expect(output).not.toHaveText('0 / 0 个来源');
+    await expect(page.getByRole('button', { name: '#溶图', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '#插画', exact: true })).toHaveCount(0);
+    expect(state.prompts()).toBe(0);
+  });
+}
+
+test('bulk selection cancels link exits, preserves filters, and confirms an accepted exit only once', async ({ page }) => {
+  await fixture(page);
+  await page.goto('/image-style-prompt-gallery');
+  await expect(page.locator('[data-gallery-selection]').locator('xpath=ancestor::astro-island')).not.toHaveAttribute('ssr');
+  await page.getByRole('button', { name: '批量标签', exact: true }).click();
+  await page.getByRole('button', { name: '全选筛选结果', exact: true }).click();
+  await page.getByRole('combobox', { name: '标签', exact: true }).selectOption('溶图');
+  const output = page.locator('[data-gallery-selection] output');
+  await expect(output).toHaveText('2 / 2 个来源');
+  let dialogs = 0;
+  const cancel = async (dialog: import('@playwright/test').Dialog) => {
+    dialogs++;
+    await dialog.dismiss();
+  };
+  page.on('dialog', cancel);
+  const link = page.locator(`a[href$="/${slug}"]`).first();
+  await link.click();
+  await expect(output).toHaveText('2 / 2 个来源');
+  expect(dialogs).toBe(1);
+  page.off('dialog', cancel);
+  page.on('dialog', async (dialog) => {
+    dialogs++;
+    await dialog.accept();
+  });
+  await link.click();
+  await expect(page).toHaveURL(new RegExp(`/${slug}$`));
+  expect(dialogs).toBe(2);
+});
+
+test('bulk selection cancels and then permits browser Back without losing history or selection', async ({ page }) => {
+  await fixture(page);
+  await page.goto(`/image-style-prompt-gallery/${slug}`);
+  await page.locator('nav a[href="/image-style-prompt-gallery"]').click();
+  await expect(page.locator('[data-gallery-selection]').locator('xpath=ancestor::astro-island')).not.toHaveAttribute('ssr');
+  await page.getByRole('button', { name: '批量标签', exact: true }).click();
+  await page.getByRole('button', { name: '全选筛选结果', exact: true }).click();
+  const output = page.locator('[data-gallery-selection] output');
+  const count = await output.textContent();
+  const url = page.url();
+  let dialogs = 0;
+  const cancel = async (dialog: import('@playwright/test').Dialog) => {
+    dialogs++;
+    await dialog.dismiss();
+  };
+  page.on('dialog', cancel);
+  await page.evaluate(() => history.back());
+  await expect.poll(() => dialogs).toBe(1);
+  await expect(page).toHaveURL(url);
+  await expect(output).toHaveText(count ?? '');
+  page.off('dialog', cancel);
+  page.on('dialog', async (dialog) => {
+    dialogs++;
+    await dialog.accept();
+  });
+  await page.evaluate(() => history.back());
+  await expect(page).toHaveURL(new RegExp(`/${slug}$`));
+  expect(dialogs).toBe(2);
+});
+
+test('bulk selection uses native confirmation for refresh and removes it after exiting selection', async ({ page }) => {
+  await fixture(page);
+  await page.goto('/image-style-prompt-gallery');
+  await expect(page.locator('[data-gallery-selection]').locator('xpath=ancestor::astro-island')).not.toHaveAttribute('ssr');
+  await page.getByRole('button', { name: '批量标签', exact: true }).click();
+  await page.getByRole('button', { name: '全选筛选结果', exact: true }).click();
+  let dialogs = 0;
+  page.on('dialog', async (dialog) => {
+    dialogs++;
+    expect(dialog.type()).toBe('beforeunload');
+    await dialog.dismiss();
+  });
+  await page.evaluate(() => location.reload());
+  await expect.poll(() => dialogs).toBe(1);
+  await expect(page.getByRole('button', { name: '退出多选', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '退出多选', exact: true }).click();
+  await page.reload();
+  expect(dialogs).toBe(1);
+});
+
+test('bulk selection guards Forward and leaves new tabs and same-page anchors alone', async ({ page }) => {
+  await fixture(page);
+  await page.goto('/image-style-prompt-gallery');
+  await page.locator(`a[href$="/${slug}"]`).first().click();
+  await expect(page).toHaveURL(new RegExp(`/${slug}$`));
+  await page.goBack();
+  await expect(page.locator('[data-gallery-selection]').locator('xpath=ancestor::astro-island')).not.toHaveAttribute('ssr');
+  await page.getByRole('button', { name: '批量标签', exact: true }).click();
+  await page.getByRole('button', { name: '全选筛选结果', exact: true }).click();
+  const output = page.locator('[data-gallery-selection] output');
+  const count = await output.textContent();
+  const url = page.url();
+  let dialogs = 0;
+  page.on('dialog', async (dialog) => {
+    dialogs++;
+    await dialog.dismiss();
+  });
+  await page.evaluate(() => history.forward());
+  await expect.poll(() => dialogs).toBe(1);
+  await expect(page).toHaveURL(url);
+  await expect(output).toHaveText(count ?? '');
+  const sourceLink = page.locator(`a[href$="/${slug}"]`).first();
+  await sourceLink.evaluate((el) => el.setAttribute('target', '_blank'));
+  const popupPromise = page.waitForEvent('popup');
+  await sourceLink.click();
+  const popup = await popupPromise;
+  await popup.close();
+  expect(dialogs).toBe(1);
+  await page.evaluate(() => {
+    const anchor = document.createElement('a');
+    anchor.href = '#gallery-test-anchor';
+    anchor.textContent = 'Test anchor';
+    document.querySelector('[data-gallery-selection]')?.append(anchor);
+  });
+  await page.getByRole('link', { name: 'Test anchor', exact: true }).click();
+  await expect(page).toHaveURL(/#gallery-test-anchor$/);
+  await page.evaluate(() => history.back());
+  await expect(page).toHaveURL(url);
+  expect(dialogs).toBe(1);
+  await expect(output).toHaveText(count ?? '');
 });

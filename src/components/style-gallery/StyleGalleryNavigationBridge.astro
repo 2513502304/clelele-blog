@@ -1,0 +1,14 @@
+<!-- Install before ClientRouter: window popstate handlers run in registration order.
+     Bulk selection can cancel this bridge before Astro or nuqs observes the traversal. -->
+<script is:inline>
+  (() => {
+    const key = Symbol.for('style-gallery-history-bridge');
+    if (window[key]) return;
+    window[key] = true;
+    window.addEventListener('popstate', (event) => {
+      const check = new CustomEvent('gallery:before-history-traverse', { cancelable: true, detail: event });
+      window.dispatchEvent(check);
+      if (check.defaultPrevented) event.stopImmediatePropagation();
+    }, true);
+  })();
+</script>

@@ -25,6 +25,7 @@ import Live2DWidget from '@components/live2d/Live2DWidget';
 import CodeBlockFullscreen from '@components/markdown/CodeBlockFullscreen';
 import DiagramFullscreen from '@components/markdown/DiagramFullscreen';
 import ImageLightbox from '@components/markdown/ImageLightbox';
+import StyleGalleryNavigationBridge from '@components/style-gallery/StyleGalleryNavigationBridge.astro';
 import { Toaster } from '@components/ui/sonner';
 import { bgmConfig, christmasConfig, live2dConfig, live2dEnabled, seoConfig, siteConfig } from '@constants/site-config';
 import { getOgImageUrl } from '@lib/seo/og-image';
@@ -97,6 +98,7 @@ const keywords = keywordsOverride || siteConfig.keywords || [siteConfig.title];
       </>
     )}
 
+    <StyleGalleryNavigationBridge />
     <ClientRouter />
     <LoadingIndicator color="#e9536a" />
     <Tooltips />
