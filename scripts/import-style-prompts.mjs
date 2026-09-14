@@ -5,6 +5,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import sharp from 'sharp';
 import { readStyleGalleryImageDimensions } from '../src/lib/style-gallery-image-dimensions.ts';
+import { isValidGalleryTag, MAX_GALLERY_TAGS_PER_ITEM, normalizeGalleryTag } from '../src/lib/style-gallery-tags.ts';
 import { computeStyleGalleryVisualFeaturesFromBytes } from '../src/lib/style-gallery-visual-feature-node.ts';
 import { configureEnvironmentProxy } from './lib/environment-proxy.mjs';
 
@@ -23,7 +24,7 @@ class NonRetryableRequestError extends Error {}
 
 function usage() {
   console.error(
-    'Usage: node scripts/import-style-prompts.mjs <codex-session.jsonl> [--dry-run] [--metadata-only] [--prompt-model=<name>] [--api-base-url=<url>]',
+    'Usage: node scripts/import-style-prompts.mjs <codex-session.jsonl> [--dry-run] [--metadata-only] [--prompt-model=<name>] [--tag <label>]... [--api-base-url=<url>]',
   );
   console.error('Required for writes: STYLE_GALLERY_UPLOAD_TOKEN');
 }
@@ -35,17 +36,27 @@ function parseArgs(argv) {
   let promptModel = null;
   let dryRun = false;
   let help = false;
-  for (const arg of argv) {
+  const tags = [];
+  for (let index = 0; index < argv.length; index++) {
+    const arg = argv[index];
     if (arg === '--help' || arg === '-h') help = true;
     else if (arg === '--dry-run') dryRun = true;
     else if (arg === '--metadata-only' || arg === '--update-metadata-only') metadataOnly = true;
-    else if (arg.startsWith('--prompt-model=')) promptModel = arg.slice('--prompt-model='.length).trim() || null;
+    else if (arg === '--tag' || arg.startsWith('--tag=')) {
+      const raw = arg === '--tag' ? argv[++index] : arg.slice('--tag='.length);
+      if (!raw || raw.startsWith('--') || raw.length > 100) throw new Error('--tag requires a valid category label.');
+      const tag = normalizeGalleryTag(raw);
+      if (!isValidGalleryTag(tag) || tag === 'null')
+        throw new Error('--tag requires 1–24 visible characters; null is reserved for untagged search.');
+      if (!tags.includes(tag)) tags.push(tag);
+      if (tags.length > MAX_GALLERY_TAGS_PER_ITEM) throw new Error(`At most ${MAX_GALLERY_TAGS_PER_ITEM} tags are allowed.`);
+    } else if (arg.startsWith('--prompt-model=')) promptModel = arg.slice('--prompt-model='.length).trim() || null;
     else if (arg.startsWith('--api-base-url=')) apiBaseUrl = arg.slice('--api-base-url='.length);
     else if (arg.startsWith('--')) throw new Error(`Unknown option: ${arg}`);
     else if (!sessionPath) sessionPath = arg;
     else throw new Error(`Unexpected positional argument: ${arg}`);
   }
-  return { apiBaseUrl: apiBaseUrl.replace(/\/$/, ''), dryRun, help, metadataOnly, promptModel, sessionPath };
+  return { apiBaseUrl: apiBaseUrl.replace(/\/$/, ''), dryRun, help, metadataOnly, promptModel, sessionPath, tags };
 }
 
 function positiveInteger(value, fallback) {
@@ -229,6 +240,7 @@ async function buildImportData(extractedItems, sessionPath, existingByHash, meta
   const assets = new Map();
   const imageBytesByHash = new Map();
   const itemsByHash = new Map();
+  const sourceSlugs = new Map();
   let skippedDuplicates = 0;
   let skippedNewMetadata = 0;
 
@@ -242,6 +254,12 @@ async function buildImportData(extractedItems, sessionPath, existingByHash, meta
       skippedNewMetadata += 1;
       continue;
     }
+    // Keep duplicate records eligible: rerunning after a tag-write failure must repair tags
+    // without re-uploading assets or adding duplicate prompts. Reuse the first identity in a session.
+    const shortHash = itemHash.slice(0, 12);
+    const date = extracted.timestamp ? new Date(extracted.timestamp) : new Date();
+    const slug = existing?.slug ?? sourceSlugs.get(itemHash) ?? `${date.toISOString().slice(0, 10)}-${shortHash}`;
+    sourceSlugs.set(itemHash, slug);
     const normalizedPrompt = normalizePrompt(extracted.prompt);
     const existingPrompts = existing?.prompts ?? [];
     if (existing && !metadataOnly && existingPrompts.some((prompt) => normalizePrompt(prompt) === normalizedPrompt)) {
@@ -249,9 +267,6 @@ async function buildImportData(extractedItems, sessionPath, existingByHash, meta
       continue;
     }
 
-    const shortHash = itemHash.slice(0, 12);
-    const date = extracted.timestamp ? new Date(extracted.timestamp) : new Date();
-    const slug = existing?.slug ?? `${date.toISOString().slice(0, 10)}-${shortHash}`;
     const title = existing?.title ?? `Style Prompt ${shortHash}`;
     const imageRefs = [];
 
@@ -320,7 +335,14 @@ async function buildImportData(extractedItems, sessionPath, existingByHash, meta
       examples: [],
     });
   }
-  return { assets, imageBytesByHash, items: [...itemsByHash.values()], skippedDuplicates, skippedNewMetadata };
+  return {
+    assets,
+    imageBytesByHash,
+    items: [...itemsByHash.values()],
+    sourceSlugs: [...sourceSlugs.values()],
+    skippedDuplicates,
+    skippedNewMetadata,
+  };
 }
 
 /**
@@ -526,7 +548,7 @@ function sleep(ms) {
 
 async function main() {
   configureEnvironmentProxy();
-  const { apiBaseUrl, dryRun, help, metadataOnly, promptModel, sessionPath } = parseArgs(process.argv.slice(2));
+  const { apiBaseUrl, dryRun, help, metadataOnly, promptModel, sessionPath, tags } = parseArgs(process.argv.slice(2));
   if (help || !sessionPath) {
     usage();
     process.exit(help ? 0 : 1);
@@ -552,6 +574,10 @@ async function main() {
     console.log(
       `Dry run: ${prepared.items.length - updates} new item(s), ${updates} existing item(s) with candidate prompts, ${prepared.skippedDuplicates} exact duplicate(s), ${prepared.assets.size} asset object(s) would be prepared.`,
     );
+    if (tags.length)
+      console.log(
+        `Dry run: would add ${tags.map((tag) => `#${tag}`).join(' ')} to ${prepared.sourceSlugs.length} source(s), including duplicates.`,
+      );
     return;
   }
   let uploadedKeys = [];
@@ -611,9 +637,35 @@ async function main() {
     await cleanupAssets(apiBaseUrl, token, uploadedKeys);
     throw error;
   }
+  // Tag storage is separate from image metadata. A failed addition must never roll back imported images.
+  try {
+    await addImportedTags(apiBaseUrl, token, prepared.sourceSlugs, tags);
+    if (tags.length)
+      console.log(`Added ${tags.map((tag) => `#${tag}`).join(' ')} to ${prepared.sourceSlugs.length} source(s).`);
+  } catch (error) {
+    throw new Error('Images/prompts are saved, but tags could not be added. Rerun the same command to retry tags safely.', {
+      cause: error,
+    });
+  }
 }
 
-export { buildImportData, extractItems, loadExistingItemsByHash, parseArgs, uniqueImagesByHash };
+/** Add categories through the existing atomic, additive API, with no request when --tag is absent. */
+async function addImportedTags(apiBaseUrl, token, slugs, tags) {
+  if (!tags.length) return;
+  for (const batch of chunks([...new Set(slugs)], 10000)) {
+    await requestJson(
+      `${apiBaseUrl}/api/style-gallery/tags`,
+      {
+        method: 'PUT',
+        headers: { authorization: `Bearer ${token}`, origin: new URL(apiBaseUrl).origin, 'content-type': 'application/json' },
+        body: JSON.stringify({ slugs: batch, tags }),
+      },
+      UPLOAD_TIMEOUT_MS,
+    );
+  }
+}
+
+export { addImportedTags, buildImportData, extractItems, loadExistingItemsByHash, parseArgs, uniqueImagesByHash };
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((error) => {
@@ -625,6 +677,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 
 /*
 npm run import:style-prompts -- <session.jsonl> --prompt-model='gpt-5.6-sol'
+npm run import:style-prompts -- <session.jsonl> --tag "溶图" --tag "现实"
+
+# --tag 可重复传入，向本次来源（包括已导入的重复图）追加标签，保留已有标签；省略则不读写标签。
+# 标签使用同一个 Upload Token；标签失败可重跑同一命令，不会重复上传图片或 Prompt。
+# --metadata-only 配合 --tag 时只标记已存在的来源；每批最多 10000 个来源，单批原子写入。
 
 # JSONL 的 turn_context 已包含正确模型时，可省略 --prompt-model；该参数用于缺失或手动覆盖来源模型。
 # 写入前只核对新建/更新/重复数量时追加 --dry-run；该模式不需要 Upload Token，也不会修改 HF。

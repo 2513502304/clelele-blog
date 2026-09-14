@@ -4,7 +4,7 @@ import { getStyleGalleryObjectTextSnapshot, putStyleGalleryObject, StyleGalleryO
 import { getStyleGalleryCatalog } from './style-gallery-store';
 import {
   getGalleryTagVocabulary,
-  MAX_GALLERY_TAG_LENGTH,
+  isValidGalleryTag,
   MAX_GALLERY_TAG_VOCABULARY,
   MAX_GALLERY_TAGS_PER_ITEM,
   normalizeGalleryTag,
@@ -17,10 +17,7 @@ const tagSchema = z
   .string()
   .max(100)
   .transform(normalizeGalleryTag)
-  .refine(
-    (tag) => Array.from(tag).length > 0 && Array.from(tag).length <= MAX_GALLERY_TAG_LENGTH && !/[\p{Cc}\p{Cf}<>#]/u.test(tag),
-    'Tags must contain 1–24 visible characters, without # or markup.',
-  );
+  .refine(isValidGalleryTag, 'Tags must contain 1–24 visible characters, without # or markup.');
 const tagsSchema = z
   .array(tagSchema)
   .max(MAX_GALLERY_TAGS_PER_ITEM)
