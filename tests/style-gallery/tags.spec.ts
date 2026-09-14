@@ -23,7 +23,17 @@ async function fixture(page: Page, authorized = true) {
         const body = route.request().postDataJSON();
         writes.push(body);
         if (body.slugs) {
-          for (const id of body.slugs) index.items[id] = [...new Set([...(index.items[id] ?? []), ...body.tags])];
+          for (const id of body.slugs) {
+            const existing = index.items[id] ?? [];
+            const next =
+              body.mode === 'replace'
+                ? body.tags
+                : body.mode === 'remove'
+                  ? existing.filter((tag: string) => !body.tags.includes(tag))
+                  : [...new Set([...existing, ...body.tags])];
+            if (next.length) index.items[id] = next;
+            else delete index.items[id];
+          }
         } else index = { ...index, items: { ...index.items, [body.slug]: body.tags } };
         expect(route.request().headers().authorization).toBe('Bearer test-only');
         return route.fulfill({ json: index });
@@ -46,7 +56,8 @@ async function fixture(page: Page, authorized = true) {
 
 test('preview tags filter immediately, keyboard suggestions save and all cards share one read', async ({ page }) => {
   const state = await fixture(page);
-  await page.goto('/image-style-prompt-gallery');
+  // Keep the fixture sources mounted even as newly imported production images move them off the first page.
+  await page.goto(`/image-style-prompt-gallery?tag=${encodeURIComponent('溶图')}`);
   const first = page
     .locator('article')
     .filter({ has: page.locator(`a[href$="/${slug}"]`) })
@@ -187,7 +198,7 @@ for (const path of ['', '/index', '/examples']) {
     await expect(page.getByRole('button', { name: '全选筛选结果', exact: true })).toBeEnabled();
     await page.getByRole('button', { name: '全选筛选结果', exact: true }).click();
     await expect(page.locator('[data-gallery-selection] output')).toHaveText('1 / 1 个来源');
-    await page.getByRole('button', { name: '添加标签', exact: true }).click();
+    await page.getByRole('button', { name: '批量编辑标签', exact: true }).click();
     await expect(page.getByRole('dialog').getByRole('combobox')).toBeFocused();
   });
 
@@ -211,11 +222,11 @@ test('batch select-all includes unmounted sources and only submits sources in th
   expect(selectedCount).toBeGreaterThan(await page.locator('input[type="checkbox"]').count());
   await page.getByRole('combobox', { name: '标签', exact: true }).selectOption('溶图');
   await expect(page.locator('[data-gallery-selection] output')).toHaveText('2 / 2 个来源');
-  await page.getByRole('button', { name: '添加标签', exact: true }).click();
+  await page.getByRole('button', { name: '批量编辑标签', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByRole('combobox')).toBeFocused();
   await dialog.getByRole('combobox').fill('插画');
-  await dialog.getByRole('button', { name: '保存标签', exact: true }).click();
+  await dialog.getByRole('button', { name: '添加标签', exact: true }).click();
   await expect(dialog).not.toBeVisible();
   expect(state.writes).toEqual([{ slugs: [slug, sourceSlug], tags: ['插画'] }]);
 });
@@ -309,27 +320,37 @@ test('detail Lightbox reports a failed tag request and retries without reloading
   await expect(dialog.getByRole('link', { name: '#溶图', exact: true })).toBeVisible();
 });
 
-test('detail left column follows the longer prompt to its bottom', async ({ page }) => {
-  await fixture(page);
-  await page.goto('/image-style-prompt-gallery/2026-08-18-4a3484f05086');
-  const article = page.locator('article[data-pagefind-body]');
-  const aside = article.locator('aside');
-  await expect(aside.locator('astro-island[ssr]')).toHaveCount(0);
-  await article.evaluate((element) => window.scrollTo(0, element.getBoundingClientRect().bottom + scrollY - innerHeight + 24));
-  await expect
-    .poll(async () =>
-      article.evaluate((element) =>
-        Math.abs(
-          element.getBoundingClientRect().bottom -
-            (element.querySelector('aside')?.getBoundingClientRect().bottom ?? Number.NaN),
-        ),
-      ),
-    )
-    .toBeLessThan(3);
-  await page.setViewportSize({ width: 390, height: 844 });
-  await expect(aside).toHaveCSS('position', 'static');
-  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
-});
+for (const source of ['2026-08-18-4a3484f05086', '2026-09-07-b392b6b4ea33']) {
+  test(`detail visible columns align at the end of scrolling: ${source}`, async ({ page }) => {
+    await fixture(page);
+    await page.goto(`/image-style-prompt-gallery/${source}`);
+    const article = page.locator('article[data-pagefind-body]');
+    const aside = article.locator('aside');
+    await expect(article.locator('astro-island[ssr]')).toHaveCount(0);
+    await page.evaluate(() => document.fonts.ready);
+    await aside
+      .locator('img')
+      .first()
+      .evaluate((image: HTMLImageElement) => image.decode());
+    await article.evaluate((element) => {
+      const left = element.querySelector('aside')?.getBoundingClientRect();
+      if (!left) throw new Error('Missing left column');
+      window.scrollTo(0, element.getBoundingClientRect().bottom + scrollY - Math.min(innerHeight - 24, left.height + 24) + 80);
+    });
+    // Compare painted panels, not the grid wrapper: an invisible live region used to add 20px below the prompt.
+    await expect
+      .poll(async () => {
+        const left = await aside.locator('[data-gallery-original-prompt]').boundingBox();
+        const right = await article.locator(':scope > section .overflow-hidden').first().boundingBox();
+        if (!left || !right) return Number.POSITIVE_INFINITY;
+        return Math.abs(left.y + left.height - right.y - right.height);
+      })
+      .toBeLessThan(1);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(aside).toHaveCSS('position', 'static');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+  });
+}
 
 for (const path of ['', '/index', '/examples']) {
   test(`AND hashtags and untagged search stay local on ${path || 'preview'}`, async ({ page }) => {
@@ -383,6 +404,7 @@ test('bulk selection cancels and then permits browser Back without losing histor
   await fixture(page);
   await page.goto(`/image-style-prompt-gallery/${slug}`);
   await page.locator('nav a[href="/image-style-prompt-gallery"]').click();
+  await expect(page).toHaveURL(/\/image-style-prompt-gallery$/, { timeout: 60_000 });
   await expect(page.locator('[data-gallery-selection]').locator('xpath=ancestor::astro-island')).not.toHaveAttribute('ssr');
   await page.getByRole('button', { name: '批量标签', exact: true }).click();
   await page.getByRole('button', { name: '全选筛选结果', exact: true }).click();
@@ -431,7 +453,7 @@ test('bulk selection uses native confirmation for refresh and removes it after e
 
 test('bulk selection guards Forward and leaves new tabs and same-page anchors alone', async ({ page }) => {
   await fixture(page);
-  await page.goto('/image-style-prompt-gallery');
+  await page.goto(`/image-style-prompt-gallery?tag=${encodeURIComponent('溶图')}`);
   await page.locator(`a[href$="/${slug}"]`).first().click();
   await expect(page).toHaveURL(new RegExp(`/${slug}$`));
   await page.goBack();
@@ -484,3 +506,67 @@ test('the editor rejects the reserved null category before making a write', asyn
   await expect(dialog.getByRole('alert')).toContainText('null 为保留词');
   expect(state.writes).toHaveLength(0);
 });
+
+for (const path of ['', '/index', '/examples']) {
+  test(`bulk replace, selective removal and clearing require confirmation on ${path || 'preview'}`, async ({ page }) => {
+    if (path === '/index') await page.setViewportSize({ width: 390, height: 844 });
+    const state = await fixture(page);
+    await page.goto(`/image-style-prompt-gallery${path}?q=${encodeURIComponent('#溶图')}`);
+    await expect(page.locator('[data-gallery-selection]').locator('xpath=ancestor::astro-island')).not.toHaveAttribute('ssr');
+    await page.getByRole('button', { name: '批量标签', exact: true }).click();
+    await page.getByRole('button', { name: '全选筛选结果', exact: true }).click();
+    const edit = page.getByRole('button', { name: '批量编辑标签', exact: true });
+    await edit.click();
+    const dialog = page.getByRole('dialog', { name: /编辑标签/ });
+    await expect(dialog.getByRole('radio', { name: '添加', exact: true })).toBeChecked();
+    await dialog.getByRole('radio', { name: '覆盖', exact: true }).check();
+    await dialog.getByRole('combobox').fill('现实');
+    await dialog.getByRole('combobox').press('Enter');
+    await dialog.getByRole('combobox').fill('溶图');
+    await dialog.getByRole('combobox').press('Enter');
+    await expect(dialog.locator('[data-gallery-tag-impact]')).toContainText('移除 0');
+    await dialog.getByRole('button', { name: '覆盖标签', exact: true }).click();
+    await expect(dialog.getByRole('group', { name: '确认批量修改' })).toBeVisible();
+    expect(state.writes).toHaveLength(0);
+    await dialog.getByRole('button', { name: '返回编辑', exact: true }).click();
+    await expect(dialog.getByRole('button', { name: '移除 现实', exact: true })).toBeVisible();
+    await dialog.getByRole('button', { name: '覆盖标签', exact: true }).click();
+    await dialog.getByRole('button', { name: '确认应用', exact: true }).click();
+    await expect(dialog).not.toBeVisible();
+    const replacement = state.writes[0] as {
+      slugs: string[];
+      tags: string[];
+      mode: string;
+      previousTagsBySlug: Record<string, string[]>;
+    };
+    expect(replacement.mode).toBe('replace');
+    expect(replacement.tags).toEqual(['现实', '溶图']);
+    expect(Object.keys(replacement.previousTagsBySlug)).toEqual(replacement.slugs);
+    expect(Object.values(replacement.previousTagsBySlug).every((tags) => tags.join() === '溶图')).toBe(true);
+    // The selection remains available after a write. Removing one category leaves the other intact.
+    await edit.click();
+    await dialog.getByRole('radio', { name: '移除', exact: true }).check();
+    await expect(dialog.getByRole('option', { name: /#专辑/ })).toHaveCount(0);
+    await dialog.getByRole('combobox').fill('现实');
+    await dialog.getByRole('combobox').press('Tab');
+    await dialog.getByRole('button', { name: '移除标签', exact: true }).click();
+    expect(state.writes).toHaveLength(1);
+    await dialog.getByRole('button', { name: '确认应用', exact: true }).click();
+    await expect(dialog).not.toBeVisible();
+    expect(state.writes[1]).toEqual({ slugs: replacement.slugs, tags: ['现实'], mode: 'remove' });
+    await edit.click();
+    await dialog.getByRole('radio', { name: '覆盖', exact: true }).check();
+    await dialog.getByRole('button', { name: '清空全部标签', exact: true }).click();
+    expect(state.writes).toHaveLength(2);
+    await dialog.getByRole('button', { name: '确认应用', exact: true }).click();
+    await expect(dialog).not.toBeVisible();
+    expect(state.writes[2]).toEqual({
+      slugs: replacement.slugs,
+      tags: [],
+      mode: 'replace',
+      previousTagsBySlug: replacement.previousTagsBySlug,
+    });
+    await expect(edit).toBeDisabled();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+  });
+}

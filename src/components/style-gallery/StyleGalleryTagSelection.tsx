@@ -15,7 +15,7 @@ export function useGalleryTagSelection(slugs: string[], locale: string, pending 
         mode: '批量标签',
         all: '全选筛选结果',
         clear: '清空选择',
-        add: '添加标签',
+        edit: '批量编辑标签',
         exit: '退出多选',
         select: '选择来源',
         count: '个来源',
@@ -24,10 +24,10 @@ export function useGalleryTagSelection(slugs: string[], locale: string, pending 
       }
     : locale.startsWith('ja')
       ? {
-          mode: 'タグを一括追加',
+          mode: 'タグを一括編集',
           all: '検索結果をすべて選択',
           clear: '選択を解除',
-          add: 'タグを追加',
+          edit: 'タグを一括編集する',
           exit: '選択を終了',
           select: '元画像を選択',
           count: '件',
@@ -38,7 +38,7 @@ export function useGalleryTagSelection(slugs: string[], locale: string, pending 
           mode: 'Bulk tags',
           all: 'Select all filtered results',
           clear: 'Clear selection',
-          add: 'Add tags',
+          edit: 'Edit selected tags',
           exit: 'Exit selection',
           select: 'Select source',
           count: 'sources',
@@ -97,7 +97,7 @@ export function useGalleryTagSelection(slugs: string[], locale: string, pending 
               onClick={() => $galleryTagEditor.set(selected)}
             >
               <Icon icon="ri:price-tag-3-line" className="size-4" />
-              {text.add}
+              {text.edit}
             </button>
           </>
         )}

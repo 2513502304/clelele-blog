@@ -8,6 +8,18 @@ export const MAX_GALLERY_TAGS_PER_ITEM = 12;
 export const MAX_GALLERY_TAG_LENGTH = 24;
 export const MAX_GALLERY_TAG_VOCABULARY = 100;
 
+export type GalleryTagMutationMode = 'add' | 'remove' | 'replace';
+
+/** Apply the same category operation for the editor preview and the conditional storage write. */
+export function applyGalleryTagMutation(
+  existing: readonly string[],
+  tags: readonly string[],
+  mode: GalleryTagMutationMode,
+): string[] {
+  if (mode === 'remove') return existing.filter((tag) => !tags.includes(tag)).sort();
+  return [...new Set(mode === 'add' ? [...existing, ...tags] : tags)].sort();
+}
+
 /** Normalize pasted hashtags, full-width characters and Latin case into one category identity. */
 export function normalizeGalleryTag(value: string): string {
   return value.normalize('NFKC').trim().replace(/^#+/, '').trim().replace(/\s+/gu, ' ').toLowerCase();
