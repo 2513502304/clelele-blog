@@ -224,7 +224,9 @@ function StyleGalleryImageIndexContent({
   const tagSelection = useGalleryTagSelection(
     visibleItems.map((item) => item.slug),
     locale,
-    (Boolean(query.trim()) && ((!tagQuery && promptSearchStatus !== 'ready') || (tagQuery && tagStatus !== 'ready'))) ||
+    (Boolean(query.trim()) &&
+      ((!tagQuery && (promptSearchStatus === 'idle' || promptSearchStatus === 'loading')) ||
+        (tagQuery && tagStatus !== 'ready'))) ||
       (Boolean(tag) && tagStatus !== 'ready'),
   );
 

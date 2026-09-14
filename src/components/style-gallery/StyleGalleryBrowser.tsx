@@ -351,7 +351,9 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
   const tagSelection = useGalleryTagSelection(
     filteredItems.map((item) => item.slug),
     locale,
-    (Boolean(query.trim()) && ((!tagQuery && promptSearchStatus !== 'ready') || (tagQuery && tagStatus !== 'ready'))) ||
+    (Boolean(query.trim()) &&
+      ((!tagQuery && (promptSearchStatus === 'idle' || promptSearchStatus === 'loading')) ||
+        (tagQuery && tagStatus !== 'ready'))) ||
       (Boolean(tag) && tagStatus !== 'ready'),
   );
 

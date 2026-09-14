@@ -19,7 +19,6 @@ interface StyleGalleryReferenceImagesProps {
   locale: string;
   basePath: string;
   importedAt: string;
-  imageHash: string;
   exampleCount: number;
   likeCount: number;
   exampleCountLabel: string;
@@ -42,7 +41,6 @@ function StyleGalleryReferenceImagesContent({
   locale,
   basePath,
   importedAt,
-  imageHash,
   exampleCount,
   likeCount,
   exampleCountLabel,
@@ -118,8 +116,8 @@ function StyleGalleryReferenceImagesContent({
               />
             </button>
             <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-2">
-              <span className="glass-image-action rounded-lg px-2 py-1 font-mono text-white text-xs" title={imageHash}>
-                {imageHash.slice(0, 12)}
+              <span className="glass-image-action rounded-lg px-2 py-1 font-mono text-white text-xs" title={image.imageHash}>
+                {image.imageHash.slice(0, 12)}
                 {images.length > 1 ? ` · ${index + 1}/${images.length}` : ''}
               </span>
               <time className="glass-image-action whitespace-nowrap rounded-lg px-2 py-1 text-white text-xs">{importedAt}</time>

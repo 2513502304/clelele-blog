@@ -328,7 +328,9 @@ function StyleGalleryExamplesOverviewContent({
   const tagSelection = useGalleryTagSelection(
     filtered.map((item) => item.sourceSlug),
     locale,
-    (Boolean(query.trim()) && ((!tagQuery && searchIndexStatus !== 'ready') || (tagQuery && tagStatus !== 'ready'))) ||
+    (Boolean(query.trim()) &&
+      ((!tagQuery && (searchIndexStatus === 'idle' || searchIndexStatus === 'loading')) ||
+        (tagQuery && tagStatus !== 'ready'))) ||
       (Boolean(tag) && tagStatus !== 'ready'),
   );
 

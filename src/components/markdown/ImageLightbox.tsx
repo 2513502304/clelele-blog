@@ -6,6 +6,7 @@
  * Listens for 'open-image-lightbox' custom events dispatched by image-enhancer.ts.
  */
 
+import { ErrorBoundary, InlineErrorFallback } from '@components/common';
 import { FloatingFocusManager, FloatingPortal, useDismiss, useFloating, useInteractions, useRole } from '@floating-ui/react';
 import { useBackdropClickDismiss } from '@hooks/useBackdropClickDismiss';
 import { useKeyboardShortcut } from '@hooks/useKeyboardShortcut';
@@ -922,12 +923,14 @@ export default function ImageLightbox() {
                     data-lightbox-scroll-region
                     onPointerDown={(event) => event.stopPropagation()}
                   >
-                    <GalleryLightboxTags
-                      slug={currentImage.gallerySourceSlug}
-                      onNavigate={closeModal}
-                      locale={locale}
-                      basePath={locale === 'zh' ? '/image-style-prompt-gallery' : `/${locale}/image-style-prompt-gallery`}
-                    />
+                    <ErrorBoundary FallbackComponent={InlineErrorFallback} resetKeys={[currentImage.gallerySourceSlug]}>
+                      <GalleryLightboxTags
+                        slug={currentImage.gallerySourceSlug}
+                        onNavigate={closeModal}
+                        locale={locale}
+                        basePath={locale === 'zh' ? '/image-style-prompt-gallery' : `/${locale}/image-style-prompt-gallery`}
+                      />
+                    </ErrorBoundary>
                   </div>
                 )}
                 {/* Navigation bar */}

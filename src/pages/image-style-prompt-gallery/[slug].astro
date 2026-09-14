@@ -72,7 +72,6 @@ setStyleGalleryPublicCacheHeaders(Astro.response.headers, [getStyleGalleryItemCa
               locale={locale}
               basePath={galleryPath}
               importedAt={new Intl.DateTimeFormat(locale, { timeZone: 'Asia/Shanghai' }).format(new Date(data.date))}
-              imageHash={data.imageHash}
               exampleCount={data.examples.length}
               likeCount={totalLikes}
               exampleCountLabel={t(locale, 'gallery.exampleCount', { count: data.examples.length })}

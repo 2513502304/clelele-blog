@@ -177,6 +177,19 @@ test('a concurrent edit reports a conflict and preserves the local draft', async
 });
 
 for (const path of ['', '/index', '/examples']) {
+  test(`failed prompt search allows bulk tagging the remaining local matches on ${path || 'preview'}`, async ({ page }) => {
+    await fixture(page);
+    await page.route('**/api/style-gallery/prompt-search-index', (route) => route.fulfill({ status: 503 }));
+    // A source hash remains a valid local match when full-text prompt search is unavailable.
+    await page.goto(`/image-style-prompt-gallery${path}?q=4eaf44ebd787`);
+    await page.getByRole('button', { name: '批量标签', exact: true }).click();
+    await expect(page.getByRole('button', { name: '全选筛选结果', exact: true })).toBeEnabled();
+    await page.getByRole('button', { name: '全选筛选结果', exact: true }).click();
+    await expect(page.locator('[data-gallery-selection] output')).toHaveText('1 / 1 个来源');
+    await page.getByRole('button', { name: '添加标签', exact: true }).click();
+    await expect(page.getByRole('dialog').getByRole('combobox')).toBeFocused();
+  });
+
   test(`plain text excludes tag-only matches on ${path || 'preview'}`, async ({ page }) => {
     const state = await fixture(page);
     await page.goto(`/image-style-prompt-gallery${path}?q=${encodeURIComponent('专辑')}`);
