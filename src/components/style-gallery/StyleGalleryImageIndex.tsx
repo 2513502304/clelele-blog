@@ -257,7 +257,7 @@ function StyleGalleryImageIndexContent({
           <GalleryTagFilter
             value={tag}
             onChange={(value) => {
-              void setTag(value);
+              void setTag(value).catch(reportUrlStateError);
             }}
             locale={locale}
           />

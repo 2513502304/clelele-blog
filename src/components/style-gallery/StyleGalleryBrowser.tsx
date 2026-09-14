@@ -255,7 +255,7 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
   }, [prefetchPromptChoices, visibleItems]);
 
   function handleQueryChange(value: string) {
-    setQuery(value);
+    void setQuery(value).catch(reportUrlStateError);
   }
 
   function handleSortChange(key: StyleGallerySortKey) {
@@ -395,7 +395,7 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
           <GalleryTagFilter
             value={tag}
             onChange={(value) => {
-              void setTag(value);
+              void setTag(value).catch(reportUrlStateError);
             }}
             locale={locale}
           />
@@ -486,7 +486,7 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
                 overlay
                 editable
                 onSelect={(value) => {
-                  void setTag(value);
+                  void setTag(value).catch(reportUrlStateError);
                 }}
               />
               <button

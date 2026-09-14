@@ -401,7 +401,7 @@ function StyleGalleryExamplesOverviewContent({
           <GalleryTagFilter
             value={tag}
             onChange={(value) => {
-              void setTag(value);
+              void setTag(value).catch(reportUrlStateError);
             }}
             locale={locale}
           />
@@ -518,7 +518,7 @@ function StyleGalleryExamplesOverviewContent({
                     overlay
                     editable
                     onSelect={(value) => {
-                      void setTag(value);
+                      void setTag(value).catch(reportUrlStateError);
                     }}
                   />
                 </div>

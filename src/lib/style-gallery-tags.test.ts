@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { after, before, describe, it } from 'node:test';
+import { after, before, beforeEach, describe, it } from 'node:test';
 import type { APIContext, AstroCookies } from 'astro';
 import { GET, PUT } from '../pages/api/style-gallery/tags';
 import { setStyleGallerySession } from './style-gallery-github-auth';
@@ -92,6 +92,12 @@ describe('shared gallery categories', () => {
       throw new Error(`Unexpected storage request: ${new URL(url).pathname}`);
     };
   });
+  beforeEach(() => {
+    stored = null;
+    etag = '"one"';
+    writes = 0;
+    conflict = false;
+  });
   after(() => {
     globalThis.fetch = originalFetch;
     for (const key of envKeys) {
@@ -142,6 +148,8 @@ describe('shared gallery categories', () => {
     assert.equal(writes, beforeWrites, 'retrying a successful save is write-free');
   });
   it('removes empty assignments and unused vocabulary without changing other sources', async () => {
+    stored = JSON.stringify({ version: 1, items: { 'source-one': ['溶图'], 'source-two': ['插画'] } });
+    etag = '"remove-fixture"';
     const result = await setGalleryTags({ slug: 'source-one', tags: [], previousTags: ['溶图'] });
     assert.deepEqual(result.items, { 'source-two': ['插画'] });
     assert.deepEqual(getGalleryTagVocabulary(result), [{ tag: '插画', count: 1 }]);
