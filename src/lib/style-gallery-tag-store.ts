@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { getStyleGalleryObjectTextSnapshot, putStyleGalleryObject, StyleGalleryObjectConflictError } from './hf-s3-presign';
 import { getStyleGalleryCatalog } from './style-gallery-store';
 import {
+  applyGalleryTagMutation,
   getGalleryTagVocabulary,
   isValidGalleryTag,
   MAX_GALLERY_TAG_VOCABULARY,
@@ -27,17 +28,37 @@ const singleTagMutationSchema = z.object({
   tags: tagsSchema,
   previousTags: tagsSchema,
 });
-/** Bulk additions use one conditional write, keeping unrelated tags and concurrent edits intact. */
+/** Every bulk mode is atomic; replacement additionally compares each source's editing snapshot. */
 export const galleryTagMutationSchema = z.union([
   singleTagMutationSchema,
-  z.object({
-    slugs: z
-      .array(z.string().regex(/^[a-z0-9-]{1,160}$/i))
-      .min(1)
-      .max(10000)
-      .transform((slugs) => [...new Set(slugs)]),
-    tags: tagsSchema.refine((tags) => tags.length > 0, 'Choose at least one tag.'),
-  }),
+  z
+    .object({
+      slugs: z
+        .array(z.string().regex(/^[a-z0-9-]{1,160}$/i))
+        .min(1)
+        .max(10000)
+        .transform((slugs) => [...new Set(slugs)]),
+      mode: z.enum(['add', 'remove', 'replace']).optional(),
+      // Removal can target the vocabulary across many sources, not just one source's 12 tags.
+      tags: z
+        .array(tagSchema)
+        .max(MAX_GALLERY_TAG_VOCABULARY)
+        .transform((tags) => [...new Set(tags)].sort()),
+      previousTagsBySlug: z.record(z.string().regex(/^[a-z0-9-]{1,160}$/i), tagsSchema).optional(),
+    })
+    .superRefine((input, ctx) => {
+      const mode = input.mode ?? 'add';
+      if (mode !== 'replace' && !input.tags.length)
+        ctx.addIssue({ code: 'custom', path: ['tags'], message: 'Choose at least one tag.' });
+      if (mode !== 'remove' && input.tags.length > MAX_GALLERY_TAGS_PER_ITEM)
+        ctx.addIssue({ code: 'custom', path: ['tags'], message: 'At most 12 tags are allowed.' });
+      if (mode === 'replace' && input.slugs.some((slug) => !Object.hasOwn(input.previousTagsBySlug ?? {}, slug)))
+        ctx.addIssue({
+          code: 'custom',
+          path: ['previousTagsBySlug'],
+          message: 'Replacement requires a base for every source.',
+        });
+    }),
 ]);
 const indexSchema = z.object({ version: z.literal(1), items: z.record(z.string().regex(/^[a-z0-9-]{1,160}$/i), tagsSchema) });
 
@@ -75,9 +96,15 @@ export async function setGalleryTags(input: z.infer<typeof galleryTagMutationSch
     let changed = false;
     for (const slug of slugs) {
       const existing = current.items[slug] ?? [];
-      const updated = 'slugs' in mutation ? [...new Set([...existing, ...tags])].sort() : tags;
+      const updated = 'slugs' in mutation ? applyGalleryTagMutation(existing, tags, mutation.mode ?? 'add') : tags;
       if (JSON.stringify(existing) === JSON.stringify(updated)) continue;
-      if (!('slugs' in mutation) && JSON.stringify(existing) !== JSON.stringify(mutation.previousTags))
+      const previous =
+        'slugs' in mutation
+          ? mutation.mode === 'replace'
+            ? mutation.previousTagsBySlug?.[slug]
+            : undefined
+          : mutation.previousTags;
+      if (previous && JSON.stringify(existing) !== JSON.stringify(previous))
         throw new GalleryTagWriteError('Tags changed in another session. Reopen the editor before saving.', 409);
       if (updated.length > MAX_GALLERY_TAGS_PER_ITEM)
         throw new GalleryTagWriteError(`Adding these tags would exceed 12 tags for ${slug}. No changes were saved.`, 400);

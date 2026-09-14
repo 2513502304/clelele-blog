@@ -3,12 +3,12 @@ import crypto from 'node:crypto';
 import { describe, it } from 'node:test';
 import { assertStyleGalleryItemConsistency } from '../src/lib/style-gallery-assets.ts';
 import {
-  addImportedTags,
   buildImportData,
   extractItems,
   loadExistingItemsByHash,
   parseArgs,
   uniqueImagesByHash,
+  writeImportedTags,
 } from './import-style-prompts.mjs';
 
 const PLACEHOLDER = '[在此处替换为您想要生成的主体内容]';
@@ -186,6 +186,7 @@ describe('style prompt import variants', () => {
     assert.equal(prepared.assets.size, 0);
     assert.equal(prepared.items.length, 1);
     assert.equal(prepared.items[0].slug, existing.slug);
+    assert.deepEqual(prepared.sourceSlugs, [existing.slug]);
     assert.equal(prepared.items[0].prompts[0].model, 'gpt-5.6-terra');
     assert.deepEqual(prepared.items[0].images, existing.images);
     assert.doesNotThrow(() => assertStyleGalleryItemConsistency(prepared.items[0]));
@@ -326,10 +327,10 @@ describe('import category flags', () => {
       return Response.json({ version: 1, items: { 'source-a': ['existing', '溶图'] } });
     };
     try {
-      await addImportedTags('https://blog.example', 'test-only', ['source-a'], []);
-      await addImportedTags('https://blog.example', 'test-only', [], ['溶图']);
+      await writeImportedTags('https://blog.example', 'test-only', ['source-a'], []);
+      await writeImportedTags('https://blog.example', 'test-only', [], ['溶图']);
       assert.equal(requests.length, 0);
-      await addImportedTags('https://blog.example', 'test-only', ['source-a', 'source-a', 'source-b'], ['溶图', '现实']);
+      await writeImportedTags('https://blog.example', 'test-only', ['source-a', 'source-a', 'source-b'], ['溶图', '现实']);
       assert.equal(requests.length, 1);
       assert.equal(requests[0].url, 'https://blog.example/api/style-gallery/tags');
       const { options } = requests[0];
@@ -338,7 +339,75 @@ describe('import category flags', () => {
       assert.equal(options.headers.authorization, 'Bearer test-only');
       assert.deepEqual(JSON.parse(options.body), { slugs: ['source-a', 'source-b'], tags: ['溶图', '现实'] });
       globalThis.fetch = async () => new Response('Tag vocabulary limit reached', { status: 400 });
-      await assert.rejects(addImportedTags('https://blog.example', 'test-only', ['source-a'], ['new']), /400|vocabulary/);
+      await assert.rejects(writeImportedTags('https://blog.example', 'test-only', ['source-a'], ['new']), /400|vocabulary/);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  it('requires explicit overwrite plus tags and compares the latest tags when replacing', async () => {
+    assert.equal(parseArgs(['session.jsonl']).overwriteTag, false);
+    assert.equal(parseArgs(['session.jsonl', '--tag=现实', '--overwrite-tag']).overwriteTag, true);
+    assert.throws(() => parseArgs(['session.jsonl', '--overwrite-tag']), /requires.*--tag/);
+    const original = globalThis.fetch;
+    const requests = [];
+    globalThis.fetch = async (url, options) => {
+      requests.push({ url, options });
+      return Response.json({ version: 1, items: { 'source-a': ['插画', '溶图'] } });
+    };
+    try {
+      await writeImportedTags('https://blog.example', 'test-only', ['source-a', 'source-b'], ['现实'], true);
+      assert.equal(requests.length, 2);
+      assert.equal(new URL(requests[0].url).searchParams.get('edit'), '1');
+      assert.equal(requests[0].options.cache, 'no-store');
+      assert.equal(requests[0].options.headers.authorization, 'Bearer test-only');
+      assert.deepEqual(JSON.parse(requests[1].options.body), {
+        slugs: ['source-a', 'source-b'],
+        tags: ['现实'],
+        mode: 'replace',
+        previousTagsBySlug: { 'source-a': ['插画', '溶图'], 'source-b': [] },
+      });
+      // A conflict must not be retried with a refreshed base, which would silently discard concurrent edits.
+      let puts = 0;
+      globalThis.fetch = async (_url, options) => {
+        if (options.method === 'PUT') {
+          puts++;
+          return new Response('Tags changed', { status: 409 });
+        }
+        return Response.json({ version: 1, items: {} });
+      };
+      await assert.rejects(writeImportedTags('https://blog.example', 'test-only', ['source-a'], ['现实'], true), /409|changed/);
+      assert.equal(puts, 1);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  it('keeps replacement requests under 2 MB with maximum-length source IDs and four-byte labels', async () => {
+    const original = globalThis.fetch;
+    const slugs = Array.from({ length: 2001 }, (_, i) => `${'s'.repeat(156)}${String(i).padStart(4, '0')}`);
+    const tags = Array.from({ length: 12 }, (_, i) => String.fromCodePoint(0x20000 + i).repeat(24));
+    const items = Object.fromEntries(slugs.map((slug) => [slug, tags]));
+    const batches = [];
+    let reads = 0;
+    globalThis.fetch = async (_url, options) => {
+      if (options.method === 'PUT') {
+        assert.ok(Buffer.byteLength(options.body, 'utf8') < 2_000_000);
+        const body = JSON.parse(options.body);
+        assert.deepEqual(Object.keys(body.previousTagsBySlug), body.slugs);
+        for (const base of Object.values(body.previousTagsBySlug)) assert.deepEqual(base, tags);
+        batches.push(body.slugs);
+      } else reads++;
+      return Response.json({ version: 1, items });
+    };
+    try {
+      await writeImportedTags('https://blog.example', 'test-only', [...slugs, slugs[0]], ['现实'], true);
+      assert.deepEqual(
+        batches.map((batch) => batch.length),
+        [1000, 1000, 1],
+      );
+      assert.deepEqual(batches.flat(), slugs);
+      assert.equal(reads, 3);
     } finally {
       globalThis.fetch = original;
     }

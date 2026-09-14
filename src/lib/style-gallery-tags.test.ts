@@ -180,6 +180,70 @@ describe('shared gallery categories', () => {
     await setGalleryTags({ slugs: ['source-one', 'source-two'], tags: ['专辑'] });
     assert.equal(writes, 1, 'replaying the batch is write-free');
   });
+  it('removes chosen labels across a batch while retaining unrelated labels', async () => {
+    stored = JSON.stringify({ version: 1, items: { 'source-one': ['插画', '溶图'], 'source-two': ['插画'] } });
+    const result = await PUT(context({ slugs: ['source-one', 'source-two'], mode: 'remove', tags: ['插画'] }));
+    assert.equal(result.status, 200);
+    assert.deepEqual((await result.json()).items, { 'source-one': ['溶图'] });
+    assert.equal(writes, 1);
+  });
+  it('replaces a whole batch from a fresh base and supports clearing all labels', async () => {
+    const previousTagsBySlug = { 'source-one': ['溶图'], 'source-two': ['插画'] };
+    stored = JSON.stringify({ version: 1, items: previousTagsBySlug });
+    const input = { slugs: ['source-one', 'source-two'], mode: 'replace', tags: ['现实'], previousTagsBySlug };
+    const result = await PUT(context(input));
+    assert.equal(result.status, 200);
+    assert.deepEqual((await result.json()).items, { 'source-one': ['现实'], 'source-two': ['现实'] });
+    assert.equal((await PUT(context(input))).status, 200, 'a repeated successful replacement is idempotent');
+    assert.equal(writes, 1);
+    const clear = await PUT(
+      context({ ...input, tags: [], previousTagsBySlug: { 'source-one': ['现实'], 'source-two': ['现实'] } }),
+    );
+    assert.equal(clear.status, 200);
+    assert.deepEqual((await clear.json()).items, {});
+  });
+  it('rejects the entire replacement if a selected source changes during the conditional write', async () => {
+    conflict = true;
+    const response = await PUT(
+      context({
+        slugs: ['source-one', 'source-two'],
+        mode: 'replace',
+        tags: ['现实'],
+        previousTagsBySlug: { 'source-one': [], 'source-two': [] },
+      }),
+    );
+    assert.equal(response.status, 409);
+    assert.deepEqual(JSON.parse(stored ?? '{}').items, { 'source-two': ['插画'] });
+    assert.equal(writes, 1, 'only the failed conditional write was attempted');
+  });
+  it('replays removals against fresh storage without losing concurrent unrelated categories', async () => {
+    stored = JSON.stringify({ version: 1, items: { 'source-one': ['溶图'] } });
+    conflict = true;
+    const response = await PUT(context({ slugs: ['source-one', 'source-two'], mode: 'remove', tags: ['溶图'] }));
+    assert.equal(response.status, 200);
+    assert.deepEqual((await response.json()).items, { 'source-two': ['插画'] });
+    assert.equal(writes, 1);
+  });
+  it('validates mutation modes, replacement bases and empty sets before storage writes', async () => {
+    for (const extra of [
+      { mode: 'unknown', tags: ['插画'] },
+      { mode: 'add', tags: [] },
+      { mode: 'remove', tags: [] },
+      { mode: 'replace', tags: ['插画'] },
+      { mode: 'replace', tags: [], previousTagsBySlug: {} },
+    ]) {
+      assert.equal((await PUT(context({ slugs: ['source-one'], ...extra }))).status, 400);
+    }
+    assert.equal(writes, 0);
+    assert.equal(
+      galleryTagMutationSchema.safeParse({
+        slugs: ['source-one'],
+        mode: 'remove',
+        tags: Array.from({ length: 100 }, (_, i) => `tag${i}`),
+      }).success,
+      true,
+    );
+  });
   it('replays a batch union after a concurrent write without deleting new tags', async () => {
     conflict = true;
     const next = await setGalleryTags({ slugs: ['source-one', 'source-two'], tags: ['溶图'] });

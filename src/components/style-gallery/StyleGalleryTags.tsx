@@ -1,8 +1,11 @@
 import { Icon } from '@iconify/react';
 import { getStyleGalleryManagementToken, rememberStyleGalleryManagementToken } from '@lib/style-gallery-management-token';
 import {
+  applyGalleryTagMutation,
+  type GalleryTagMutationMode,
   getGalleryTagVocabulary,
   isValidGalleryTag,
+  MAX_GALLERY_TAG_VOCABULARY,
   MAX_GALLERY_TAGS_PER_ITEM,
   normalizeGalleryTag,
 } from '@lib/style-gallery-tags';
@@ -84,6 +87,69 @@ function labels(locale: string) {
           more: 'View all tags',
           hint: '↑ ↓ select · Tab / Enter add',
           saving: 'Saving…',
+        };
+}
+
+/** Bulk operations spell out their effect before any categories can be removed. */
+function bulkLabels(locale: string) {
+  return locale.startsWith('zh')
+    ? {
+        operation: '标签操作',
+        add: '添加',
+        remove: '移除',
+        replace: '覆盖',
+        addDescription: '追加选中的标签，保留每张图已有的标签。同源示例一起生效。',
+        removeDescription: '仅移除选中的标签，其他标签保持不变。',
+        replaceDescription: '每张图的标签都将替换为下方这一组；留空将清空全部标签。',
+        impact: '{sources} 个来源将变化 · 新增 {added} 项标签 · 移除 {removed} 项标签',
+        addAction: '添加标签',
+        removeAction: '移除标签',
+        replaceAction: '覆盖标签',
+        clearAction: '清空全部标签',
+        confirm: '确认应用',
+        back: '返回编辑',
+        review: '确认批量修改',
+        unchanged: '当前设置不会改变选中图片的标签',
+        empty: '选中的图片中没有匹配的标签',
+      }
+    : locale.startsWith('ja')
+      ? {
+          operation: 'タグ操作',
+          add: '追加',
+          remove: '削除',
+          replace: '置換',
+          addDescription: '選択したタグを追加し、既存のタグを保持します。同じ元画像の作例にも反映されます。',
+          removeDescription: '選択したタグだけを削除します。他のタグは保持されます。',
+          replaceDescription: '各画像のタグを以下の組み合わせに置換します。空欄ではすべて削除します。',
+          impact: '{sources} 件を変更 · {added} 個追加 · {removed} 個削除',
+          addAction: 'タグを追加',
+          removeAction: 'タグを削除',
+          replaceAction: 'タグを置換',
+          clearAction: 'すべてのタグを削除',
+          confirm: '変更を確定',
+          back: '編集に戻る',
+          review: '一括変更の確認',
+          unchanged: '選択した画像のタグは変更されません',
+          empty: '選択した画像に一致するタグがありません',
+        }
+      : {
+          operation: 'Tag operation',
+          add: 'Add',
+          remove: 'Remove',
+          replace: 'Replace',
+          addDescription: 'Add these tags while keeping each image’s existing categories. Generated examples share the change.',
+          removeDescription: 'Remove only the chosen tags. Keep all other categories.',
+          replaceDescription: 'Replace every image’s tags with the set below. Leave it empty to clear all tags.',
+          impact: '{sources} sources will change · {added} tag assignments added · {removed} removed',
+          addAction: 'Add tags',
+          removeAction: 'Remove tags',
+          replaceAction: 'Replace tags',
+          clearAction: 'Clear all tags',
+          confirm: 'Confirm changes',
+          back: 'Back to editing',
+          review: 'Confirm bulk changes',
+          unchanged: 'These settings will not change the selected images’ tags',
+          empty: 'No matching tags on the selected images',
         };
 }
 
@@ -248,6 +314,10 @@ export function GalleryTagFilter({
 export function GalleryTagEditor({ locale = 'zh' }: { locale?: string }) {
   const target = useStore($galleryTagEditor);
   const bulk = Array.isArray(target);
+  const bulkText = bulkLabels(locale);
+  const [mode, setMode] = useState<GalleryTagMutationMode>('add');
+  const [confirming, setConfirming] = useState(false);
+  const [baseBySlug, setBaseBySlug] = useState<Record<string, string[]>>({});
   const slug = typeof target === 'string' ? target : null;
   const [token, setToken] = useState('');
   const tokenRef = useRef('');
@@ -260,6 +330,7 @@ export function GalleryTagEditor({ locale = 'zh' }: { locale?: string }) {
   const [status, setStatus] = useState<'loading' | 'ready' | 'login' | 'error' | 'saving'>('loading');
   const [message, setMessage] = useState('');
   const input = useRef<HTMLInputElement>(null);
+  const saveButton = useRef<HTMLButtonElement>(null);
   const listId = useId();
   const [attempt, setAttempt] = useState(0);
   const lastTarget = useRef<typeof target>(null);
@@ -268,7 +339,11 @@ export function GalleryTagEditor({ locale = 'zh' }: { locale?: string }) {
       lastTarget.current = null;
       return;
     }
-    if (lastTarget.current !== target) tokenRef.current = getStyleGalleryManagementToken();
+    if (lastTarget.current !== target) {
+      tokenRef.current = getStyleGalleryManagementToken();
+      setMode('add');
+      setConfirming(false);
+    }
     lastTarget.current = target;
     setToken(tokenRef.current);
     if (!tokenRef.current) {
@@ -276,6 +351,7 @@ export function GalleryTagEditor({ locale = 'zh' }: { locale?: string }) {
       return;
     }
     const controller = new AbortController();
+    setConfirming(false);
     setStatus('loading');
     setMessage('');
     setQuery('');
@@ -298,6 +374,7 @@ export function GalleryTagEditor({ locale = 'zh' }: { locale?: string }) {
         publishGalleryTags(next);
         setTags(slug ? (next.items[slug] ?? []) : []);
         setBase(slug ? (next.items[slug] ?? []) : []);
+        setBaseBySlug(Object.fromEntries((Array.isArray(target) ? target : []).map((id) => [id, next.items[id] ?? []])));
         setStatus('ready');
       })
       .catch(() => {
@@ -306,16 +383,50 @@ export function GalleryTagEditor({ locale = 'zh' }: { locale?: string }) {
     return () => controller.abort();
   }, [target, slug, attempt]);
   useEffect(() => {
-    if (status === 'ready' && target) input.current?.focus();
-  }, [status, target]);
+    if (status === 'ready' && target) (confirming ? saveButton.current : input.current)?.focus();
+  }, [status, target, confirming]);
   const normalized = normalizeGalleryTag(query);
+  const removal = bulk && mode === 'remove';
+  const maxTags = removal ? MAX_GALLERY_TAG_VOCABULARY : MAX_GALLERY_TAGS_PER_ITEM;
+  const draft = useMemo(() => (normalized ? [...new Set([...tags, normalized])] : tags), [normalized, tags]);
+  const impact = useMemo(() => {
+    let sources = 0,
+      added = 0,
+      removed = 0;
+    if (bulk)
+      for (const existing of Object.values(baseBySlug)) {
+        const next = applyGalleryTagMutation(existing, draft, mode);
+        const additions = next.filter((tag) => !existing.includes(tag)).length;
+        const removals = existing.filter((tag) => !next.includes(tag)).length;
+        if (additions || removals) sources++;
+        added += additions;
+        removed += removals;
+      }
+    return { sources, added, removed };
+  }, [bulk, baseBySlug, draft, mode]);
+  const impactText = bulkText.impact
+    .replace('{sources}', String(impact.sources))
+    .replace('{added}', String(impact.added))
+    .replace('{removed}', String(impact.removed));
+  const actionText =
+    mode === 'replace'
+      ? draft.length
+        ? bulkText.replaceAction
+        : bulkText.clearAction
+      : mode === 'remove'
+        ? bulkText.removeAction
+        : bulkText.addAction;
   const suggestions = useMemo(
-    () => getGalleryTagVocabulary(index).filter(({ tag }) => !tags.includes(tag) && (!normalized || tag.includes(normalized))),
-    [index, tags, normalized],
+    () =>
+      getGalleryTagVocabulary(removal ? { version: 1, items: baseBySlug } : index).filter(
+        ({ tag }) => !tags.includes(tag) && (!normalized || tag.includes(normalized)),
+      ),
+    [index, baseBySlug, removal, tags, normalized],
   );
-  const choices = tags.length < MAX_GALLERY_TAGS_PER_ITEM ? [...suggestions.map((entry) => ({ ...entry, create: false }))] : [];
+  const choices = tags.length < maxTags ? [...suggestions.map((entry) => ({ ...entry, create: false }))] : [];
   if (
-    tags.length < MAX_GALLERY_TAGS_PER_ITEM &&
+    tags.length < maxTags &&
+    !removal &&
     normalized &&
     !tags.includes(normalized) &&
     !suggestions.some(({ tag }) => tag === normalized)
@@ -326,7 +437,7 @@ export function GalleryTagEditor({ locale = 'zh' }: { locale?: string }) {
     if (target && status === 'ready') document.getElementById(`${listId}-${selected}`)?.scrollIntoView({ block: 'nearest' });
   }, [selected, listId, target, status]);
   function add(tag: string) {
-    if (tags.length >= MAX_GALLERY_TAGS_PER_ITEM || !isValidGalleryTag(tag)) {
+    if (tags.length >= maxTags || !isValidGalleryTag(tag)) {
       setMessage(text.limit);
       return;
     }
@@ -336,16 +447,19 @@ export function GalleryTagEditor({ locale = 'zh' }: { locale?: string }) {
     setMessage('');
     input.current?.focus();
   }
-  async function save() {
+  async function save(confirmed = false) {
     if (!target || status !== 'ready') return;
     // An uncommitted draft is included rather than silently discarded by the Save button.
-    const draft = normalized ? [...new Set([...tags, normalized])] : tags;
     if (
-      (bulk && draft.length === 0) ||
-      draft.length > MAX_GALLERY_TAGS_PER_ITEM ||
+      (bulk && mode !== 'replace' && draft.length === 0) ||
+      draft.length > maxTags ||
       draft.some((tag) => !isValidGalleryTag(tag))
     ) {
       setMessage(text.limit);
+      return;
+    }
+    if (bulk && mode !== 'add' && !confirmed) {
+      setConfirming(true);
       return;
     }
     setStatus('saving');
@@ -354,7 +468,16 @@ export function GalleryTagEditor({ locale = 'zh' }: { locale?: string }) {
       const response = await fetch('/api/style-gallery/tags', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenRef.current}` },
-        body: JSON.stringify(bulk ? { slugs: target, tags: draft } : { slug, tags: draft, previousTags: base }),
+        body: JSON.stringify(
+          bulk
+            ? {
+                slugs: target,
+                tags: draft,
+                ...(mode !== 'add' ? { mode } : {}),
+                ...(mode === 'replace' ? { previousTagsBySlug: baseBySlug } : {}),
+              }
+            : { slug, tags: draft, previousTags: base },
+        ),
         signal: AbortSignal.timeout(30_000),
       });
       if (response.status === 401) {
@@ -385,15 +508,7 @@ export function GalleryTagEditor({ locale = 'zh' }: { locale?: string }) {
           {text.edit}
           {bulk ? ` · ${target.length}` : ''}
         </DialogTitle>
-        <DialogDescription>
-          {bulk
-            ? locale.startsWith('zh')
-              ? '为选中的来源图片追加标签，保留已有标签。同源示例一起生效。'
-              : locale.startsWith('ja')
-                ? '選択した元画像にタグを追加します。既存タグは保持されます。'
-                : 'Add tags to the selected sources, keeping their existing categories.'
-            : text.description}
-        </DialogDescription>
+        <DialogDescription>{bulk ? bulkText[`${mode}Description`] : text.description}</DialogDescription>
         {status === 'loading' && <output>{text.loading}</output>}
         {status === 'login' && (
           <form
@@ -427,100 +542,156 @@ export function GalleryTagEditor({ locale = 'zh' }: { locale?: string }) {
         )}
         {(status === 'ready' || status === 'saving') && (
           <>
-            <div className="gallery-tag-input-shell">
-              <div className="gallery-tags">
-                {tags.map((tag) => (
-                  <button
-                    type="button"
-                    disabled={status === 'saving'}
-                    key={tag}
-                    className="gallery-tag"
-                    aria-label={`${text.remove} ${tag}`}
-                    onClick={() => setTags(tags.filter((entry) => entry !== tag))}
-                  >
-                    #{tag}
-                    <Icon icon="ri:close-line" className="size-3.5" />
-                  </button>
+            {bulk && !confirming && (
+              <fieldset className="gallery-tag-modes" disabled={status === 'saving'}>
+                <legend className="sr-only">{bulkText.operation}</legend>
+                {(['add', 'remove', 'replace'] as const).map((value) => (
+                  <label className="gallery-tag-mode" key={value}>
+                    <input
+                      type="radio"
+                      className="absolute inset-0 z-10 m-0 size-full cursor-pointer opacity-0"
+                      name={`${listId}-mode`}
+                      value={value}
+                      checked={mode === value}
+                      onChange={() => {
+                        setMode(value);
+                        setQuery('');
+                        setActive(0);
+                        setMessage('');
+                      }}
+                    />
+                    <Icon
+                      icon={
+                        value === 'add' ? 'ri:add-line' : value === 'remove' ? 'ri:subtract-line' : 'ri:arrow-left-right-line'
+                      }
+                      className="size-4"
+                    />
+                    {bulkText[value]}
+                  </label>
                 ))}
-              </div>
-              <input
-                ref={input}
-                role="combobox"
-                aria-label={text.input}
-                aria-autocomplete="list"
-                aria-expanded={choices.length > 0}
-                aria-controls={listId}
-                aria-activedescendant={choices.length ? `${listId}-${selected}` : undefined}
-                value={query}
-                maxLength={100}
-                placeholder={text.input}
-                disabled={status === 'saving'}
-                onChange={(e) => {
-                  setQuery(e.target.value);
-                  setActive(0);
-                }}
-                onKeyDown={(e) => {
-                  if (e.nativeEvent.isComposing) return;
-                  if (['ArrowDown', 'ArrowUp'].includes(e.key) && choices.length) {
-                    e.preventDefault();
-                    setActive((selected + (e.key === 'ArrowDown' ? 1 : -1) + choices.length) % choices.length);
-                  } else if ((e.key === 'Enter' || (e.key === 'Tab' && !e.shiftKey)) && choices.length) {
-                    e.preventDefault();
-                    add(choices[selected].tag);
-                  }
-                }}
-              />
-            </div>
-            <div className="flex justify-between text-muted-foreground text-xs">
-              <span>{text.suggestions}</span>
-              <span>{text.hint}</span>
-            </div>
-            <div id={listId} role="listbox" aria-label={text.suggestions} className="gallery-tag-suggestions">
-              {choices.map(({ tag, count, create }, i) => (
-                <button
-                  id={`${listId}-${i}`}
-                  key={tag}
-                  type="button"
-                  role="option"
-                  aria-selected={selected === i}
-                  tabIndex={-1}
-                  disabled={status === 'saving'}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onMouseEnter={() => setActive(i)}
-                  onClick={() => add(tag)}
-                  className="gallery-tag-option"
-                >
-                  <span>
-                    {create ? `${text.create} ` : ''}#{tag}
-                  </span>
-                  <span className="text-muted-foreground text-xs">{selected === i ? 'Tab' : count || '+'}</span>
-                </button>
-              ))}
-              {!choices.length && <p className="p-3 text-muted-foreground text-sm">{tags.length ? text.limit : text.empty}</p>}
-            </div>
+              </fieldset>
+            )}
+            {confirming ? (
+              <fieldset className="gallery-tag-review" aria-label={bulkText.review}>
+                <p className="font-semibold text-sm">{actionText}</p>
+                <div className="gallery-tags">
+                  {draft.map((tag) => (
+                    <span key={tag} className="gallery-tag">
+                      #{tag}
+                    </span>
+                  ))}
+                </div>
+              </fieldset>
+            ) : (
+              <>
+                <div className="gallery-tag-input-shell">
+                  <div className="gallery-tags">
+                    {tags.map((tag) => (
+                      <button
+                        type="button"
+                        disabled={status === 'saving'}
+                        key={tag}
+                        className="gallery-tag"
+                        aria-label={`${text.remove} ${tag}`}
+                        onClick={() => setTags(tags.filter((entry) => entry !== tag))}
+                      >
+                        #{tag}
+                        <Icon icon="ri:close-line" className="size-3.5" />
+                      </button>
+                    ))}
+                  </div>
+                  <input
+                    ref={input}
+                    role="combobox"
+                    aria-label={text.input}
+                    aria-autocomplete="list"
+                    aria-expanded={choices.length > 0}
+                    aria-controls={listId}
+                    aria-activedescendant={choices.length ? `${listId}-${selected}` : undefined}
+                    value={query}
+                    maxLength={100}
+                    placeholder={text.input}
+                    disabled={status === 'saving'}
+                    onChange={(e) => {
+                      setQuery(e.target.value);
+                      setActive(0);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.nativeEvent.isComposing) return;
+                      if (['ArrowDown', 'ArrowUp'].includes(e.key) && choices.length) {
+                        e.preventDefault();
+                        setActive((selected + (e.key === 'ArrowDown' ? 1 : -1) + choices.length) % choices.length);
+                      } else if ((e.key === 'Enter' || (e.key === 'Tab' && !e.shiftKey)) && choices.length) {
+                        e.preventDefault();
+                        add(choices[selected].tag);
+                      }
+                    }}
+                  />
+                </div>
+                <div className="flex justify-between text-muted-foreground text-xs">
+                  <span>{text.suggestions}</span>
+                  <span>{text.hint}</span>
+                </div>
+                <div id={listId} role="listbox" aria-label={text.suggestions} className="gallery-tag-suggestions">
+                  {choices.map(({ tag, count, create }, i) => (
+                    <button
+                      id={`${listId}-${i}`}
+                      key={tag}
+                      type="button"
+                      role="option"
+                      aria-selected={selected === i}
+                      tabIndex={-1}
+                      disabled={status === 'saving'}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onMouseEnter={() => setActive(i)}
+                      onClick={() => add(tag)}
+                      className="gallery-tag-option"
+                    >
+                      <span>
+                        {create ? `${text.create} ` : ''}#{tag}
+                      </span>
+                      <span className="text-muted-foreground text-xs">{selected === i ? 'Tab' : count || '+'}</span>
+                    </button>
+                  ))}
+                  {!choices.length && (
+                    <p className="p-3 text-muted-foreground text-sm">
+                      {removal ? bulkText.empty : tags.length ? text.limit : text.empty}
+                    </p>
+                  )}
+                </div>
+              </>
+            )}
+            {bulk && (
+              <output className="text-muted-foreground text-xs" data-gallery-tag-impact>
+                {impact.sources ? impactText : bulkText.unchanged}
+              </output>
+            )}
             {message && (
               <p role="alert" className="text-destructive text-sm">
                 {message}
               </p>
             )}
             <div className="flex items-center justify-between gap-3">
-              <span className="text-muted-foreground text-xs">{tags.length} / 12</span>
+              <span className="text-muted-foreground text-xs">
+                {draft.length} / {maxTags}
+              </span>
               <div className="flex gap-2">
                 <button
                   type="button"
                   className="rounded-lg border border-border px-4 py-2 text-sm"
                   disabled={status === 'saving'}
-                  onClick={() => $galleryTagEditor.set(null)}
+                  onClick={() => (confirming ? setConfirming(false) : $galleryTagEditor.set(null))}
                 >
-                  {text.cancel}
+                  {confirming ? bulkText.back : text.cancel}
                 </button>
                 <button
                   type="button"
                   className="rounded-lg bg-primary px-4 py-2 text-primary-foreground text-sm"
-                  disabled={status === 'saving'}
-                  onClick={() => void save()}
+                  disabled={status === 'saving' || (bulk && !impact.sources)}
+                  ref={saveButton}
+                  onClick={() => void save(confirming)}
                 >
-                  {status === 'saving' ? text.saving : text.save}
+                  {status === 'saving' ? text.saving : confirming ? bulkText.confirm : bulk ? actionText : text.save}
                 </button>
               </div>
             </div>
