@@ -1,6 +1,6 @@
+import { invalidateByTag } from '@vercel/functions';
 import { z } from 'zod';
 import { getStyleGalleryObjectTextSnapshot, putStyleGalleryObject, StyleGalleryObjectConflictError } from './hf-s3-presign';
-import { invalidateStyleGalleryPublicCache } from './style-gallery-public-cache';
 import { getStyleGalleryCatalog } from './style-gallery-store';
 import {
   getGalleryTagVocabulary,
@@ -12,6 +12,7 @@ import {
 } from './style-gallery-tags';
 
 export const STYLE_GALLERY_TAG_KEY = 'metadata/tags-v1.json';
+export const STYLE_GALLERY_TAG_CACHE_TAG = 'style-gallery-tags';
 const tagSchema = z
   .string()
   .max(100)
@@ -30,7 +31,6 @@ export const galleryTagMutationSchema = z.object({
   previousTags: tagsSchema,
 });
 const indexSchema = z.object({ version: z.literal(1), items: z.record(z.string().regex(/^[a-z0-9-]{1,160}$/i), tagsSchema) });
-let cache: { value: StyleGalleryTagIndex; expiresAt: number } | undefined;
 
 export class GalleryTagWriteError extends Error {
   constructor(
@@ -41,12 +41,10 @@ export class GalleryTagWriteError extends Error {
   }
 }
 
-/** A sparse, independently cached index avoids enlarging every item or copying tags into examples. */
-export async function getGalleryTagIndex(fresh = false): Promise<StyleGalleryTagIndex> {
-  if (!fresh && cache && cache.expiresAt > Date.now()) return cache.value;
+/** CDN misses read storage directly so another worker cannot republish a stale process snapshot. */
+export async function getGalleryTagIndex(): Promise<StyleGalleryTagIndex> {
   const snapshot = await getStyleGalleryObjectTextSnapshot(STYLE_GALLERY_TAG_KEY);
   const value = snapshot.text ? indexSchema.parse(JSON.parse(snapshot.text)) : { version: 1 as const, items: {} };
-  cache = { value, expiresAt: Date.now() + 30_000 };
   return value;
 }
 
@@ -77,8 +75,12 @@ export async function setGalleryTags(input: z.infer<typeof galleryTagMutationSch
         'application/json; charset=utf-8',
         snapshot.etag ? { ifMatch: snapshot.etag } : { ifNoneMatch: '*' },
       );
-      cache = { value: next, expiresAt: Date.now() + 30_000 };
-      await invalidateStyleGalleryPublicCache([slug]);
+      // Tags are client-loaded; invalidating list/item SSR would only recreate unchanged payloads.
+      try {
+        await invalidateByTag(STYLE_GALLERY_TAG_CACHE_TAG);
+      } catch (error) {
+        console.error('[style-gallery] Tags were saved but tag-cache invalidation failed.', error);
+      }
       return next;
     } catch (error) {
       if (!(error instanceof StyleGalleryObjectConflictError) || attempt === 5) throw error;

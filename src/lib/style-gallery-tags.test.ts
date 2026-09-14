@@ -108,7 +108,15 @@ describe('shared gallery categories', () => {
       assert.equal(galleryTagMutationSchema.safeParse({ slug: 'source-one', tags, previousTags: [] }).success, false);
   });
   it('supports an empty installation without migrating any item', async () => {
-    assert.deepEqual(await getGalleryTagIndex(true), { version: 1, items: {} });
+    assert.deepEqual(await getGalleryTagIndex(), { version: 1, items: {} });
+  });
+  it('isolates tag invalidation from SSR and never republishes another worker’s stale snapshot', async () => {
+    const first = await GET(context({}));
+    assert.equal(first.headers.get('vercel-cache-tag'), 'style-gallery-tags');
+    assert.deepEqual(await first.json(), { version: 1, items: {} });
+    stored = JSON.stringify({ version: 1, items: { 'source-two': ['插画'] } });
+    assert.deepEqual(await (await GET(context({}))).json(), JSON.parse(stored));
+    stored = null;
   });
   it('rejects guests and missing/foreign origins before touching storage', async () => {
     const beforeWrites = writes;

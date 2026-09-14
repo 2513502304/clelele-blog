@@ -1,9 +1,10 @@
 import { getStyleGalleryViewer, isStyleGalleryGitHubAuthEnabled } from '@lib/style-gallery-github-auth';
-import { STYLE_GALLERY_LIST_CACHE_TAG, setStyleGalleryPublicCacheHeaders } from '@lib/style-gallery-public-cache';
+import { setStyleGalleryPublicCacheHeaders } from '@lib/style-gallery-public-cache';
 import {
   GalleryTagWriteError,
   galleryTagMutationSchema,
   getGalleryTagIndex,
+  STYLE_GALLERY_TAG_CACHE_TAG,
   setGalleryTags,
 } from '@lib/style-gallery-tag-store';
 import type { APIRoute } from 'astro';
@@ -17,8 +18,8 @@ export const GET: APIRoute = async ({ cookies, url }) => {
   const headers = new Headers({ 'Cache-Control': 'private, no-store' });
   if (editing && !getStyleGalleryViewer(cookies)) return new Response('GitHub login is required.', { status: 401, headers });
   try {
-    const index = await getGalleryTagIndex(editing);
-    if (!editing) setStyleGalleryPublicCacheHeaders(headers, [STYLE_GALLERY_LIST_CACHE_TAG]);
+    const index = await getGalleryTagIndex();
+    if (!editing) setStyleGalleryPublicCacheHeaders(headers, [STYLE_GALLERY_TAG_CACHE_TAG]);
     return Response.json(index, { headers });
   } catch (error) {
     console.error('[style-gallery] Failed to read tags.', error);

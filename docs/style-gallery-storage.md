@@ -110,7 +110,7 @@ All gallery islands share one CDN-cached public `GET /api/style-gallery/tags` re
 
 Editing uses the existing signed GitHub session, not the upload token. `GET ?edit=1` is authenticated, fresh and private. Same-origin `PUT` accepts `{slug,tags,previousTags}` and permits any signed-in visitor to edit the shared source categories. Tags are normalized with NFKC, trimmed, deduplicated and Latin case-folded; limits are 12 per source, 24 Unicode characters per label and 100 active categories. Invisible controls and markup are rejected. The editor supports substring suggestions, mouse selection, arrow keys, Tab/Enter completion and IME composition; no role/character taxonomy is imposed.
 
-The write path compares the source's previous tags and returns 409 for a competing edit to that source. ETag retries preserve edits to other sources, and first-write races use `If-None-Match: *`. Successful edits publish to all local cards/Lightboxes and invalidate the shared public cache tag. Upload and image-processing code remain untouched; tagging performs no image reads, signing or transformations.
+The write path compares the source's previous tags and returns 409 for a competing edit to that source. ETag retries preserve edits to other sources, and first-write races use `If-None-Match: *`. Successful edits publish to all local cards/Lightboxes and invalidate only the `style-gallery-tags` CDN tag; unchanged list/detail SSR caches remain warm. CDN misses read HF directly rather than republishing a potentially stale per-worker snapshot. Upload and image-processing code remain untouched; tagging performs no image reads, signing or transformations.
 
 ## Removing redundant reference-thumbnail fields
 
