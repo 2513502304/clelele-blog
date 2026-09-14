@@ -221,3 +221,11 @@ describe('shared gallery categories', () => {
     );
   });
 });
+
+it('rejects normalized null categories in single and bulk mutation schemas', () => {
+  for (const tag of ['null', '#NULL', ' ＃ＮＵＬＬ ']) {
+    assert.equal(galleryTagMutationSchema.safeParse({ slug: 'source-one', tags: [tag], previousTags: [] }).success, false);
+    assert.equal(galleryTagMutationSchema.safeParse({ slugs: ['source-one'], tags: [tag] }).success, false);
+  }
+  assert.equal(galleryTagMutationSchema.safeParse({ slug: 'source-one', tags: [], previousTags: [] }).success, true);
+});

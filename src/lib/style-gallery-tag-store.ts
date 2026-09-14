@@ -17,7 +17,7 @@ const tagSchema = z
   .string()
   .max(100)
   .transform(normalizeGalleryTag)
-  .refine(isValidGalleryTag, 'Tags must contain 1–24 visible characters, without # or markup.');
+  .refine(isValidGalleryTag, 'Tags must contain 1–24 visible characters, without # or markup; null is reserved.');
 const tagsSchema = z
   .array(tagSchema)
   .max(MAX_GALLERY_TAGS_PER_ITEM)

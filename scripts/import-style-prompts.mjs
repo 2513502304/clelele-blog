@@ -46,7 +46,7 @@ function parseArgs(argv) {
       const raw = arg === '--tag' ? argv[++index] : arg.slice('--tag='.length);
       if (!raw || raw.startsWith('--') || raw.length > 100) throw new Error('--tag requires a valid category label.');
       const tag = normalizeGalleryTag(raw);
-      if (!isValidGalleryTag(tag) || tag === 'null')
+      if (!isValidGalleryTag(tag))
         throw new Error('--tag requires 1–24 visible characters; null is reserved for untagged search.');
       if (!tags.includes(tag)) tags.push(tag);
       if (tags.length > MAX_GALLERY_TAGS_PER_ITEM) throw new Error(`At most ${MAX_GALLERY_TAGS_PER_ITEM} tags are allowed.`);

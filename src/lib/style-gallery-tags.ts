@@ -15,7 +15,12 @@ export function normalizeGalleryTag(value: string): string {
 
 /** Shared by the HTTP editor and JSONL importer after normalization. */
 export function isValidGalleryTag(tag: string): boolean {
-  return Array.from(tag).length > 0 && Array.from(tag).length <= MAX_GALLERY_TAG_LENGTH && !/[\p{Cc}\p{Cf}<>#]/u.test(tag);
+  return (
+    tag !== 'null' &&
+    Array.from(tag).length > 0 &&
+    Array.from(tag).length <= MAX_GALLERY_TAG_LENGTH &&
+    !/[\p{Cc}\p{Cf}<>#]/u.test(tag)
+  );
 }
 
 /** Hashtags are exact, AND-combined categories; #null is reserved for sources with no tags.

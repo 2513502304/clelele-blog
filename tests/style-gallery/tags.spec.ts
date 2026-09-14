@@ -470,3 +470,17 @@ test('bulk selection guards Forward and leaves new tabs and same-page anchors al
   expect(dialogs).toBe(1);
   await expect(output).toHaveText(count ?? '');
 });
+
+test('the editor rejects the reserved null category before making a write', async ({ page }) => {
+  const state = await fixture(page);
+  await page.goto('/image-style-prompt-gallery');
+  await page.getByRole('button', { name: '编辑标签', exact: true }).first().click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('combobox')).toBeFocused();
+  await dialog.getByRole('combobox').fill('#NULL');
+  await dialog.getByRole('combobox').press('Enter');
+  await expect(dialog.getByRole('alert')).toContainText('null 为保留词');
+  await dialog.getByRole('button', { name: '保存标签', exact: true }).click();
+  await expect(dialog.getByRole('alert')).toContainText('null 为保留词');
+  expect(state.writes).toHaveLength(0);
+});
