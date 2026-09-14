@@ -6,6 +6,7 @@
  * Listens for 'open-image-lightbox' custom events dispatched by image-enhancer.ts.
  */
 
+import { ErrorBoundary, InlineErrorFallback } from '@components/common';
 import { FloatingFocusManager, FloatingPortal, useDismiss, useFloating, useInteractions, useRole } from '@floating-ui/react';
 import { useBackdropClickDismiss } from '@hooks/useBackdropClickDismiss';
 import { useKeyboardShortcut } from '@hooks/useKeyboardShortcut';
@@ -42,7 +43,7 @@ import {
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleGalleryPromptChooser } from '../style-gallery/StyleGalleryPromptChooser';
-import { GalleryTagPills } from '../style-gallery/StyleGalleryTags';
+import { GalleryLightboxTags } from '../style-gallery/StyleGalleryTags';
 import { Dialog, DialogContent } from '../ui/dialog';
 import { LightboxLikeButton, NavButton, ToolbarButton, ToolbarLink, ZoomHint } from './ImageLightboxControls';
 
@@ -922,12 +923,14 @@ export default function ImageLightbox() {
                     data-lightbox-scroll-region
                     onPointerDown={(event) => event.stopPropagation()}
                   >
-                    <GalleryTagPills
-                      slug={currentImage.gallerySourceSlug}
-                      onNavigate={closeModal}
-                      locale={locale}
-                      basePath={locale === 'zh' ? '/image-style-prompt-gallery' : `/${locale}/image-style-prompt-gallery`}
-                    />
+                    <ErrorBoundary FallbackComponent={InlineErrorFallback} resetKeys={[currentImage.gallerySourceSlug]}>
+                      <GalleryLightboxTags
+                        slug={currentImage.gallerySourceSlug}
+                        onNavigate={closeModal}
+                        locale={locale}
+                        basePath={locale === 'zh' ? '/image-style-prompt-gallery' : `/${locale}/image-style-prompt-gallery`}
+                      />
+                    </ErrorBoundary>
                   </div>
                 )}
                 {/* Navigation bar */}

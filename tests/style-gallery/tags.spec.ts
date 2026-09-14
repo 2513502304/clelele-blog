@@ -7,7 +7,8 @@ const svg =
   '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="900"><rect width="640" height="900" fill="#ddadb8"/></svg>';
 
 /** Browser tag writes are intercepted; these tests never change the configured HF account. */
-async function fixture(page: Page, loggedIn = true) {
+async function fixture(page: Page, authorized = true) {
+  if (authorized) await page.addInitScript(() => localStorage.setItem('style-gallery-upload-token', 'test-only'));
   let index = {
     version: 1,
     items: { [slug]: ['溶图'], [otherSlug]: ['专辑', '插画'], [sourceSlug]: ['溶图'] } as Record<string, string[]>,
@@ -21,10 +22,14 @@ async function fixture(page: Page, loggedIn = true) {
       if (route.request().method() === 'PUT') {
         const body = route.request().postDataJSON();
         writes.push(body);
-        index = { ...index, items: { ...index.items, [body.slug]: body.tags } };
+        if (body.slugs) {
+          for (const id of body.slugs) index.items[id] = [...new Set([...(index.items[id] ?? []), ...body.tags])];
+        } else index = { ...index, items: { ...index.items, [body.slug]: body.tags } };
+        expect(route.request().headers().authorization).toBe('Bearer test-only');
         return route.fulfill({ json: index });
       }
-      if (url.searchParams.has('edit') && !loggedIn) return route.fulfill({ status: 401, body: 'Login required' });
+      if (url.searchParams.has('edit') && route.request().headers().authorization !== 'Bearer test-only')
+        return route.fulfill({ status: 401, body: 'Login required' });
       reads++;
       return route.fulfill({ json: index });
     }
@@ -66,11 +71,11 @@ test('preview tags filter immediately, keyboard suggestions save and all cards s
   expect(state.prompts()).toBe(0);
 });
 
-test('guests see GitHub login instead of editable fields', async ({ page }) => {
+test('guests need the management token instead of a GitHub login', async ({ page }) => {
   const state = await fixture(page, false);
   await page.goto('/image-style-prompt-gallery');
   await page.getByRole('button', { name: '编辑标签', exact: true }).first().click();
-  await expect(page.getByRole('dialog').getByRole('link', { name: /GitHub/ })).toBeVisible();
+  await expect(page.getByRole('dialog').getByLabel('Management token')).toBeVisible();
   await expect(page.getByRole('dialog').getByRole('combobox')).toHaveCount(0);
   expect(state.writes).toHaveLength(0);
 });
@@ -89,7 +94,12 @@ test('detail shows full labels and a source-image Lightbox inherits them', async
   await fixture(page);
   await page.goto(`/image-style-prompt-gallery/${slug}`);
   await expect(page.getByRole('link', { name: '#溶图', exact: true })).toBeVisible();
-  await page.locator('[id^="style-gallery-detail-source-"]').first().click();
+  const source = page.locator('[id^="style-gallery-detail-source-"]').first();
+  await expect(source.locator('xpath=ancestor::astro-island')).not.toHaveAttribute('ssr');
+  await source
+    .getByRole('button', { name: /放大|查看|原图|lightbox/i })
+    .first()
+    .click();
   await expect(page.getByRole('dialog').getByRole('link', { name: '#溶图', exact: true })).toBeVisible();
 });
 
@@ -164,4 +174,134 @@ test('a concurrent edit reports a conflict and preserves the local draft', async
   await dialog.getByRole('button', { name: '保存标签', exact: true }).click();
   await expect(dialog.getByRole('alert')).toContainText('其他会话');
   await expect(dialog.getByRole('combobox')).toHaveValue('未丢失');
+});
+
+for (const path of ['', '/index', '/examples']) {
+  test(`failed prompt search allows bulk tagging the remaining local matches on ${path || 'preview'}`, async ({ page }) => {
+    await fixture(page);
+    await page.route('**/api/style-gallery/prompt-search-index', (route) => route.fulfill({ status: 503 }));
+    // A source hash remains a valid local match when full-text prompt search is unavailable.
+    await page.goto(`/image-style-prompt-gallery${path}?q=4eaf44ebd787`);
+    await page.getByRole('button', { name: '批量标签', exact: true }).click();
+    await expect(page.getByRole('button', { name: '全选筛选结果', exact: true })).toBeEnabled();
+    await page.getByRole('button', { name: '全选筛选结果', exact: true }).click();
+    await expect(page.locator('[data-gallery-selection] output')).toHaveText('1 / 1 个来源');
+    await page.getByRole('button', { name: '添加标签', exact: true }).click();
+    await expect(page.getByRole('dialog').getByRole('combobox')).toBeFocused();
+  });
+
+  test(`plain text excludes tag-only matches on ${path || 'preview'}`, async ({ page }) => {
+    const state = await fixture(page);
+    await page.goto(`/image-style-prompt-gallery${path}?q=${encodeURIComponent('专辑')}`);
+    await expect.poll(state.prompts).toBe(1);
+    await expect(
+      page.locator('[id^="style-gallery-preview-source-"], [id^="style-gallery-index-source-"], [data-source-slug]'),
+    ).toHaveCount(0);
+  });
+}
+
+test('batch select-all includes unmounted sources and only submits sources in the current filter', async ({ page }) => {
+  const state = await fixture(page);
+  await page.goto('/image-style-prompt-gallery');
+  await page.getByRole('button', { name: '批量标签', exact: true }).click();
+  await page.getByRole('button', { name: '全选筛选结果', exact: true }).click();
+  const selectedCount = Number((await page.locator('[data-gallery-selection] output').innerText()).split(' / ')[0]);
+  expect(selectedCount).toBeGreaterThan(await page.locator('input[type="checkbox"]').count());
+  await page.getByRole('combobox', { name: '标签', exact: true }).selectOption('溶图');
+  await expect(page.locator('[data-gallery-selection] output')).toHaveText('2 / 2 个来源');
+  await page.getByRole('button', { name: '添加标签', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('combobox')).toBeFocused();
+  await dialog.getByRole('combobox').fill('插画');
+  await dialog.getByRole('button', { name: '保存标签', exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  expect(state.writes).toEqual([{ slugs: [slug, sourceSlug], tags: ['插画'] }]);
+});
+
+test('mobile index selection reuses the zoom slot without covering count badges', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await fixture(page);
+  await page.goto('/image-style-prompt-gallery/index');
+  const card = page.locator('[id^="style-gallery-index-source-"]').first();
+  await expect(card.getByRole('button')).toHaveCount(1);
+  await page.getByRole('button', { name: '批量标签', exact: true }).click();
+  await expect(card.getByRole('button')).toHaveCount(0);
+  await card.getByRole('checkbox').check();
+  const selection = await card.locator('label').boundingBox();
+  const counts = await card.locator('span.absolute.bottom-6').boundingBox();
+  if (!selection || !counts) throw new Error('Index selection controls are missing');
+  expect(selection.y + selection.height).toBeLessThanOrEqual(counts.y);
+  await page.getByRole('button', { name: '退出多选', exact: true }).click();
+  await expect(card.getByRole('button')).toHaveCount(1);
+  await expect(card.getByRole('checkbox')).toHaveCount(0);
+});
+
+test('detail example Lightbox shows source tags and its source badge', async ({ page }) => {
+  await fixture(page);
+  await page.goto(`/image-style-prompt-gallery/${sourceSlug}`);
+  const card = page.locator('[id^="style-gallery-detail-example-"]').first();
+  await expect(card.locator('xpath=ancestor::astro-island')).not.toHaveAttribute('ssr');
+  await card.getByRole('button').first().click();
+  await expect(page.getByRole('dialog').getByRole('link', { name: '#溶图', exact: true })).toBeVisible();
+  await expect(page.locator('[data-lightbox-source]')).toContainText('4eaf44ebd787');
+});
+
+test('a verified management token is remembered and reused on the next editor', async ({ page }) => {
+  await fixture(page, false);
+  await page.goto('/image-style-prompt-gallery');
+  await page.getByRole('button', { name: '编辑标签', exact: true }).first().click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('Management token').fill('wrong');
+  await dialog.getByRole('button', { name: '重试', exact: true }).click();
+  await expect(dialog.getByLabel('Management token')).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('style-gallery-upload-token'))).toBeNull();
+  await dialog.getByLabel('Management token').fill('test-only');
+  await dialog.getByRole('button', { name: '重试', exact: true }).click();
+  await expect(dialog.getByRole('combobox')).toBeFocused();
+  expect(await page.evaluate(() => localStorage.getItem('style-gallery-upload-token'))).toBe('test-only');
+  await dialog.getByRole('button', { name: '取消', exact: true }).click();
+  await page.getByRole('button', { name: '编辑标签', exact: true }).nth(1).click();
+  await expect(dialog.getByRole('combobox')).toBeFocused();
+});
+
+for (const path of ['', `/${slug}`, '/examples']) {
+  test(`image tag and count badges have matching geometry on ${path || 'preview'}`, async ({ page }) => {
+    await fixture(page);
+    await page.goto(`/image-style-prompt-gallery${path}`);
+    const card = page
+      .locator('[id^="style-gallery-preview-source-"], [id^="style-gallery-detail-source-"], [data-source-slug]')
+      .first();
+    await expect(card.locator('.gallery-tags-overlay .gallery-tag').first()).toBeVisible();
+    const tagBox = await card.locator('.gallery-tags-overlay .gallery-tag').last().boundingBox();
+    const badgeBox = await card.locator('.gallery-image-badge').first().boundingBox();
+    if (!tagBox || !badgeBox) throw new Error('Image badges are missing');
+    expect(Math.abs(tagBox.height - badgeBox.height)).toBeLessThan(0.5);
+    expect(Math.abs(tagBox.y + tagBox.height - badgeBox.y - badgeBox.height)).toBeLessThan(0.5);
+    if (path === `/${slug}`) {
+      const dimensions = await card
+        .locator('img')
+        .first()
+        .evaluate((img) => ({
+          image: img.getBoundingClientRect().width,
+          container: img.parentElement?.getBoundingClientRect().width ?? 0,
+        }));
+      expect(Math.abs(dimensions.image - dimensions.container)).toBeLessThan(0.5);
+      await expect(page.locator('aside [data-gallery-original-prompt]')).toHaveCount(1);
+    }
+  });
+}
+
+test('detail Lightbox reports a failed tag request and retries without reloading the image', async ({ page }) => {
+  await fixture(page);
+  let failTags = true;
+  await page.route('**/api/style-gallery/tags', (route) => (failTags ? route.fulfill({ status: 503 }) : route.fallback()));
+  await page.goto(`/image-style-prompt-gallery/${sourceSlug}`);
+  const card = page.locator('[id^="style-gallery-detail-example-"]').first();
+  await expect(card.locator('xpath=ancestor::astro-island')).not.toHaveAttribute('ssr');
+  await card.getByRole('button').first().click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('button', { name: /标签暂时不可用/ })).toBeVisible();
+  failTags = false;
+  await dialog.getByRole('button', { name: /标签暂时不可用/ }).click();
+  await expect(dialog.getByRole('link', { name: '#溶图', exact: true })).toBeVisible();
 });

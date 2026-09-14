@@ -8,7 +8,7 @@ const $tags = atom<{ index: StyleGalleryTagIndex; status: 'idle' | 'loading' | '
   index: EMPTY,
   status: 'idle',
 });
-export const $galleryTagEditor = atom<string | null>(null);
+export const $galleryTagEditor = atom<string | string[] | null>(null);
 let pending: Promise<void> | undefined;
 let revision = 0;
 

@@ -15,7 +15,6 @@ export interface StylePromptCopyProps {
   chooserLabel: string;
   promptOptionLabel: string;
   unknownModelLabel: string;
-  originalPromptLabel: string;
   className?: string;
 }
 
@@ -28,7 +27,6 @@ function StylePromptCopyContent({
   chooserLabel,
   promptOptionLabel,
   unknownModelLabel,
-  originalPromptLabel,
   className = '',
 }: StylePromptCopyProps) {
   const [activePromptId, setActivePromptId] = useState(prompts[0]?.id ?? '');
@@ -66,7 +64,12 @@ function StylePromptCopyContent({
                   const nextPrompt = prompts.find((prompt) => prompt.id === nextPromptId);
                   setActivePromptId(nextPromptId);
                   setCopied(false);
-                  if (nextPrompt) selectStyleGalleryPrompt({ slug: itemSlug, prompt: nextPrompt.prompt });
+                  if (nextPrompt)
+                    selectStyleGalleryPrompt({
+                      slug: itemSlug,
+                      prompt: nextPrompt.prompt,
+                      originalPrompt: nextPrompt.originalPrompt,
+                    });
                 }}
                 aria-label={chooserLabel}
                 className="h-9 min-w-0 max-w-64 rounded-md border border-rose-200 bg-white px-2 text-gray-700 text-xs outline-none focus:border-rose-400 dark:border-rose-900 dark:bg-gray-900 dark:text-gray-200"
@@ -99,14 +102,6 @@ function StylePromptCopyContent({
           </p>
         )}
       </div>
-      {activePrompt?.originalPrompt && (
-        <div className="rounded-lg border border-sky-100 bg-sky-50/70 p-5 shadow-sm dark:border-sky-950/60 dark:bg-sky-950/30">
-          <p className="font-bold text-sky-500 text-xs uppercase tracking-wider dark:text-sky-200">{originalPromptLabel}</p>
-          <p className="mt-2 whitespace-pre-wrap text-gray-700 text-sm leading-7 dark:text-gray-200">
-            {activePrompt.originalPrompt}
-          </p>
-        </div>
-      )}
       <span className="sr-only" aria-live="polite">
         {copied ? copiedLabel : ''}
       </span>

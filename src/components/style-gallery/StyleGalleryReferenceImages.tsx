@@ -1,4 +1,5 @@
 import { ErrorBoundary, InlineErrorFallback } from '@components/common';
+import { Icon } from '@iconify/react';
 import { rememberLoadedStyleGalleryImage } from '@lib/style-gallery-image-client';
 import {
   createStyleGallerySourceLightboxData,
@@ -11,9 +12,17 @@ import { getSelectedStyleGalleryPrompt } from '@lib/style-gallery-prompt-selecti
 import { openModal } from '@store/modal';
 import { useRef } from 'react';
 import type { StyleGalleryImageRef } from '@/types/style-gallery';
+import { GalleryTagEditor, GalleryTagPills } from './StyleGalleryTags';
 
 interface StyleGalleryReferenceImagesProps {
   images: StyleGalleryImageRef[];
+  locale: string;
+  basePath: string;
+  importedAt: string;
+  exampleCount: number;
+  likeCount: number;
+  exampleCountLabel: string;
+  likeCountLabel: string;
   itemSlug: string;
   prompt: string;
   promptCount: number;
@@ -29,6 +38,13 @@ interface StyleGalleryReferenceImagesProps {
  */
 function StyleGalleryReferenceImagesContent({
   images,
+  locale,
+  basePath,
+  importedAt,
+  exampleCount,
+  likeCount,
+  exampleCountLabel,
+  likeCountLabel,
   itemSlug,
   prompt,
   promptCount,
@@ -64,6 +80,7 @@ function StyleGalleryReferenceImagesContent({
 
   return (
     <div className={`grid gap-3 ${images.length > 1 ? 'grid-cols-2 md:grid-cols-1' : 'grid-cols-1'}`}>
+      <GalleryTagEditor locale={locale} />
       {images.map((image, index) => {
         const indexedLabel = getReferenceImageLabel(index);
         const alt = image.sourceImageAlt ?? indexedLabel;
@@ -72,7 +89,7 @@ function StyleGalleryReferenceImagesContent({
             key={`${image.imageHash}:${index}`}
             id={getStyleGalleryLightboxElementId('detail-source', `${itemSlug}-${index}`)}
             tabIndex={-1}
-            className="w-full min-w-0 overflow-hidden rounded-md bg-rose-50 dark:bg-gray-900"
+            className="relative w-full min-w-0 overflow-hidden rounded-md bg-rose-50 dark:bg-gray-900"
           >
             <button
               type="button"
@@ -93,17 +110,35 @@ function StyleGalleryReferenceImagesContent({
                 onLoad={(event) =>
                   rememberLoadedStyleGalleryImage(loadedSourceImages.current, image.sourceImage, event.currentTarget)
                 }
-                className="max-h-[68vh] w-full object-contain transition duration-200 group-hover:scale-[1.01]"
+                className="block h-auto w-full"
+                width={image.dimensions?.width}
+                height={image.dimensions?.height}
               />
             </button>
-            {images.length > 1 && (
-              <figcaption className="flex items-center justify-between gap-2 px-3 py-2 text-gray-500 text-xs dark:text-gray-300">
-                <span className="font-bold">{indexedLabel}</span>
-                <span className="truncate font-mono" title={image.imageHash}>
-                  {image.imageHash.slice(0, 12)}
-                </span>
-              </figcaption>
-            )}
+            <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-2">
+              <span className="glass-image-action rounded-lg px-2 py-1 font-mono text-white text-xs" title={image.imageHash}>
+                {image.imageHash.slice(0, 12)}
+                {images.length > 1 ? ` · ${index + 1}/${images.length}` : ''}
+              </span>
+              <time className="glass-image-action whitespace-nowrap rounded-lg px-2 py-1 text-white text-xs">{importedAt}</time>
+            </div>
+            <GalleryTagPills slug={itemSlug} locale={locale} basePath={basePath} overlay editable maxVisible={12} />
+            <div className="pointer-events-none absolute right-2 bottom-2 flex items-center gap-1.5">
+              <span
+                className="gallery-image-badge inline-flex items-center gap-1 rounded-md bg-gray-950/80 px-2 py-1 font-bold text-white text-xs backdrop-blur-sm"
+                title={exampleCountLabel}
+              >
+                <Icon icon="ri:image-2-fill" className="size-3" />
+                {exampleCount}
+              </span>
+              <span
+                className="gallery-image-badge inline-flex items-center gap-1 rounded-md bg-rose-500/90 px-2 py-1 font-bold text-white text-xs backdrop-blur-sm"
+                title={likeCountLabel}
+              >
+                <Icon icon="ri:heart-3-fill" className="size-3" />
+                {likeCount}
+              </span>
+            </div>
           </figure>
         );
       })}

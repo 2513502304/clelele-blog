@@ -33,8 +33,8 @@
 .gallery-tags-overlay {
   position: absolute;
   z-index: 10;
-  bottom: 9px;
-  left: 9px;
+  bottom: 8px;
+  left: 8px;
   right: 108px;
   align-content: flex-end;
 }
@@ -110,4 +110,19 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Image captions share an exact baseline and box height, including their borders. */
+.gallery-image-badge.gallery-image-badge,
+.gallery-tags-overlay .gallery-tag {
+  box-sizing: border-box;
+  height: 26px;
+  line-height: 16px;
+  align-items: center;
+}
+.gallery-tags-overlay .gallery-tag:not(.gallery-tag-edit) {
+  padding-block: 4px;
+}
+.gallery-tags-overlay .gallery-tag-edit {
+  padding-block: 4px;
 }

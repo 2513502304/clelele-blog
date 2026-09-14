@@ -1,4 +1,5 @@
 import { Icon } from '@iconify/react';
+import { getStyleGalleryManagementToken, rememberStyleGalleryManagementToken } from '@lib/style-gallery-management-token';
 import {
   getGalleryTagVocabulary,
   MAX_GALLERY_TAG_LENGTH,
@@ -24,7 +25,7 @@ function labels(locale: string) {
         save: '保存标签',
         cancel: '取消',
         loading: '正在读取标签…',
-        login: '使用 GitHub 登录后即可编辑标签',
+        login: '输入管理 token，与上传图片共用',
         failed: '标签暂时不可用，请重试',
         retry: '重试',
         remove: '移除',
@@ -48,7 +49,7 @@ function labels(locale: string) {
           save: '保存',
           cancel: 'キャンセル',
           loading: '読み込み中…',
-          login: 'GitHub でログインして編集',
+          login: 'アップロードと共通の管理トークン',
           failed: 'タグを読み込めません',
           retry: '再試行',
           remove: '削除',
@@ -72,7 +73,7 @@ function labels(locale: string) {
           save: 'Save tags',
           cancel: 'Cancel',
           loading: 'Loading tags…',
-          login: 'Sign in with GitHub to edit tags',
+          login: 'Management token, shared with image uploads',
           failed: 'Tags are unavailable. Please retry.',
           retry: 'Retry',
           remove: 'Remove',
@@ -93,6 +94,7 @@ export function GalleryTagPills({
   basePath = '/image-style-prompt-gallery',
   overlay = false,
   editable = false,
+  maxVisible = 2,
   onSelect,
   onNavigate,
 }: {
@@ -101,13 +103,14 @@ export function GalleryTagPills({
   basePath?: string;
   overlay?: boolean;
   editable?: boolean;
+  maxVisible?: number;
   onSelect?: (tag: string) => void;
   onNavigate?: () => void;
 }) {
   const { index } = useGalleryTags();
   const tags = index.items[slug] ?? [];
   const text = labels(locale);
-  const visible = overlay ? tags.slice(0, 2) : tags;
+  const visible = overlay ? tags.slice(0, maxVisible) : tags;
   if (!tags.length && !editable) return null;
   return (
     <nav className={`gallery-tags ${overlay ? 'gallery-tags-overlay' : ''}`} aria-label={text.tags}>
@@ -170,6 +173,35 @@ export function GalleryTagPills({
   );
 }
 
+/** Lightbox failures stay visible and recoverable instead of silently appearing as an untagged image. */
+export function GalleryLightboxTags({
+  slug,
+  locale,
+  basePath,
+  onNavigate,
+}: {
+  slug: string;
+  locale: string;
+  basePath: string;
+  onNavigate: () => void;
+}) {
+  const { status } = useGalleryTags();
+  const text = labels(locale);
+  if (status === 'error')
+    return (
+      <button
+        type="button"
+        className="rounded-full bg-black/70 px-3 py-2 text-white text-xs"
+        onClick={() => void loadGalleryTags()}
+      >
+        {text.failed} · {text.retry}
+      </button>
+    );
+  if (status !== 'ready')
+    return <output className="rounded-full bg-black/70 px-3 py-2 text-white/80 text-xs">{text.loading}</output>;
+  return <GalleryTagPills slug={slug} locale={locale} basePath={basePath} onNavigate={onNavigate} />;
+}
+
 /** Exact tag filters work without fetching the large prompt-search index. */
 export function GalleryTagFilter({
   value,
@@ -214,7 +246,11 @@ export function GalleryTagFilter({
 
 /** One editor host per gallery page. Fresh snapshots plus base-tag comparison prevent lost edits. */
 export function GalleryTagEditor({ locale = 'zh' }: { locale?: string }) {
-  const slug = useStore($galleryTagEditor);
+  const target = useStore($galleryTagEditor);
+  const bulk = Array.isArray(target);
+  const slug = typeof target === 'string' ? target : null;
+  const [token, setToken] = useState('');
+  const tokenRef = useRef('');
   const { index } = useGalleryTags();
   const text = labels(locale);
   const [tags, setTags] = useState<string[]>([]);
@@ -226,8 +262,19 @@ export function GalleryTagEditor({ locale = 'zh' }: { locale?: string }) {
   const input = useRef<HTMLInputElement>(null);
   const listId = useId();
   const [attempt, setAttempt] = useState(0);
+  const lastTarget = useRef<typeof target>(null);
   useEffect(() => {
-    if (!slug) return;
+    if (!target) {
+      lastTarget.current = null;
+      return;
+    }
+    if (lastTarget.current !== target) tokenRef.current = getStyleGalleryManagementToken();
+    lastTarget.current = target;
+    setToken(tokenRef.current);
+    if (!tokenRef.current) {
+      setStatus('login');
+      return;
+    }
     const controller = new AbortController();
     setStatus('loading');
     setMessage('');
@@ -235,6 +282,7 @@ export function GalleryTagEditor({ locale = 'zh' }: { locale?: string }) {
     setActive(0);
     void fetch(`/api/style-gallery/tags?edit=1&attempt=${attempt}`, {
       cache: 'no-store',
+      headers: { Authorization: `Bearer ${tokenRef.current}` },
       signal: AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)]),
     })
       .then(async (response) => {
@@ -246,19 +294,20 @@ export function GalleryTagEditor({ locale = 'zh' }: { locale?: string }) {
         if (!response.ok) throw new Error('Read failed');
         const next = await response.json();
         if (controller.signal.aborted) return;
+        rememberStyleGalleryManagementToken(tokenRef.current);
         publishGalleryTags(next);
-        setTags(next.items[slug] ?? []);
-        setBase(next.items[slug] ?? []);
+        setTags(slug ? (next.items[slug] ?? []) : []);
+        setBase(slug ? (next.items[slug] ?? []) : []);
         setStatus('ready');
       })
       .catch(() => {
         if (!controller.signal.aborted) setStatus('error');
       });
     return () => controller.abort();
-  }, [slug, attempt]);
+  }, [target, slug, attempt]);
   useEffect(() => {
-    if (status === 'ready' && slug) input.current?.focus();
-  }, [status, slug]);
+    if (status === 'ready' && target) input.current?.focus();
+  }, [status, target]);
   const normalized = normalizeGalleryTag(query);
   const suggestions = useMemo(
     () => getGalleryTagVocabulary(index).filter(({ tag }) => !tags.includes(tag) && (!normalized || tag.includes(normalized))),
@@ -274,8 +323,8 @@ export function GalleryTagEditor({ locale = 'zh' }: { locale?: string }) {
     choices.push({ tag: normalized, count: 0, create: true });
   const selected = Math.min(active, Math.max(0, choices.length - 1));
   useEffect(() => {
-    if (slug && status === 'ready') document.getElementById(`${listId}-${selected}`)?.scrollIntoView({ block: 'nearest' });
-  }, [selected, listId, slug, status]);
+    if (target && status === 'ready') document.getElementById(`${listId}-${selected}`)?.scrollIntoView({ block: 'nearest' });
+  }, [selected, listId, target, status]);
   function add(tag: string) {
     if (
       tags.length >= MAX_GALLERY_TAGS_PER_ITEM ||
@@ -292,10 +341,11 @@ export function GalleryTagEditor({ locale = 'zh' }: { locale?: string }) {
     input.current?.focus();
   }
   async function save() {
-    if (!slug || status !== 'ready') return;
+    if (!target || status !== 'ready') return;
     // An uncommitted draft is included rather than silently discarded by the Save button.
     const draft = normalized ? [...new Set([...tags, normalized])] : tags;
     if (
+      (bulk && draft.length === 0) ||
       draft.length > MAX_GALLERY_TAGS_PER_ITEM ||
       draft.some((tag) => Array.from(tag).length > MAX_GALLERY_TAG_LENGTH || /[\p{Cc}\p{Cf}<>#]/u.test(tag))
     ) {
@@ -307,8 +357,8 @@ export function GalleryTagEditor({ locale = 'zh' }: { locale?: string }) {
     try {
       const response = await fetch('/api/style-gallery/tags', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slug, tags: draft, previousTags: base }),
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenRef.current}` },
+        body: JSON.stringify(bulk ? { slugs: target, tags: draft } : { slug, tags: draft, previousTags: base }),
         signal: AbortSignal.timeout(30_000),
       });
       if (response.status === 401) {
@@ -316,7 +366,7 @@ export function GalleryTagEditor({ locale = 'zh' }: { locale?: string }) {
         return;
       }
       if (!response.ok) {
-        setMessage(response.status === 409 ? text.conflict : text.failed);
+        setMessage(response.status === 409 ? text.conflict : response.status === 400 ? await response.text() : text.failed);
         setStatus('ready');
         return;
       }
@@ -329,23 +379,50 @@ export function GalleryTagEditor({ locale = 'zh' }: { locale?: string }) {
   }
   return (
     <Dialog
-      open={Boolean(slug)}
+      open={Boolean(target)}
       onOpenChange={(open) => {
         if (!open && status !== 'saving') $galleryTagEditor.set(null);
       }}
     >
       <DialogContent className="gallery-tag-dialog sm:max-w-lg">
-        <DialogTitle>{text.edit}</DialogTitle>
-        <DialogDescription>{text.description}</DialogDescription>
+        <DialogTitle>
+          {text.edit}
+          {bulk ? ` · ${target.length}` : ''}
+        </DialogTitle>
+        <DialogDescription>
+          {bulk
+            ? locale.startsWith('zh')
+              ? '为选中的来源图片追加标签，保留已有标签。同源示例一起生效。'
+              : locale.startsWith('ja')
+                ? '選択した元画像にタグを追加します。既存タグは保持されます。'
+                : 'Add tags to the selected sources, keeping their existing categories.'
+            : text.description}
+        </DialogDescription>
         {status === 'loading' && <output>{text.loading}</output>}
         {status === 'login' && (
-          <a
-            className="rounded-lg bg-primary p-3 text-center text-primary-foreground"
-            href={`/api/style-gallery/auth/github/login?returnTo=${encodeURIComponent(typeof window === 'undefined' ? '/' : window.location.pathname + window.location.search)}`}
+          <form
+            className="flex flex-col gap-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              tokenRef.current = token.trim();
+              setAttempt((n) => n + 1);
+            }}
           >
-            <Icon icon="ri:github-fill" className="mr-2 inline size-5" />
-            {text.login}
-          </a>
+            <label className="flex flex-col gap-2 text-sm">
+              {text.login}
+              <input
+                type="password"
+                aria-label="Management token"
+                autoComplete="off"
+                value={token}
+                onChange={(event) => setToken(event.target.value)}
+                className="h-10 rounded-lg border border-border bg-background px-3"
+              />
+            </label>
+            <button type="submit" disabled={!token.trim()} className="rounded-lg bg-primary p-3 text-primary-foreground">
+              {text.retry}
+            </button>
+          </form>
         )}
         {status === 'error' && (
           <button type="button" onClick={() => setAttempt((n) => n + 1)}>
@@ -455,15 +532,5 @@ export function GalleryTagEditor({ locale = 'zh' }: { locale?: string }) {
         )}
       </DialogContent>
     </Dialog>
-  );
-}
-
-export default function StyleGalleryDetailTags({ slug, locale, basePath }: { slug: string; locale: string; basePath: string }) {
-  return (
-    <section className="min-h-20 rounded-xl border border-border bg-background p-4">
-      <h2 className="mb-3 font-semibold text-sm">{labels(locale).tags}</h2>
-      <GalleryTagPills slug={slug} locale={locale} basePath={basePath} editable />
-      <GalleryTagEditor locale={locale} />
-    </section>
   );
 }

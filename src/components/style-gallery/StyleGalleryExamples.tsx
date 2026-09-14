@@ -12,10 +12,14 @@ import {
   createStyleGalleryDeleteAction,
   getStyleGalleryLightboxElementId,
   locateStyleGalleryElement,
-  STYLE_GALLERY_UPLOAD_TOKEN_STORAGE_KEY,
   type StyleGalleryLightboxActionLabels,
 } from '@lib/style-gallery-lightbox-actions';
 import { STYLE_GALLERY_EXAMPLE_LIGHTBOX_PREFETCH } from '@lib/style-gallery-lightbox-prefetch';
+import {
+  getStyleGalleryManagementToken,
+  rememberStyleGalleryManagementToken,
+  STYLE_GALLERY_TOKEN_CHANGED_EVENT,
+} from '@lib/style-gallery-management-token';
 import { groupStyleGalleryExamplesByPlatform, STYLE_GALLERY_PLATFORMS } from '@lib/style-gallery-platforms';
 import { loadStyleGalleryPromptChoices } from '@lib/style-gallery-prompt-client';
 import {
@@ -327,7 +331,10 @@ export default function StyleGalleryExamples({
   const loadedExampleSources = useRef(new Set<string>());
 
   useEffect(() => {
-    setToken(localStorage.getItem(STYLE_GALLERY_UPLOAD_TOKEN_STORAGE_KEY) ?? '');
+    const syncToken = () => setToken(getStyleGalleryManagementToken());
+    syncToken();
+    window.addEventListener(STYLE_GALLERY_TOKEN_CHANGED_EVENT, syncToken);
+    return () => window.removeEventListener(STYLE_GALLERY_TOKEN_CHANGED_EVENT, syncToken);
   }, []);
 
   useEffect(() => {
@@ -419,7 +426,7 @@ export default function StyleGalleryExamples({
     if (!response.ok) throw new Error((await response.text()) || `Request failed with ${response.status}`);
     const data = (await response.json()) as ExamplesResponse;
     setExamples(data.examples ?? []);
-    localStorage.setItem(STYLE_GALLERY_UPLOAD_TOKEN_STORAGE_KEY, token);
+    rememberStyleGalleryManagementToken(token);
     return data.examples ?? [];
   }
 
@@ -729,7 +736,7 @@ export default function StyleGalleryExamples({
       );
 
       try {
-        localStorage.setItem(STYLE_GALLERY_UPLOAD_TOKEN_STORAGE_KEY, token);
+        rememberStyleGalleryManagementToken(token);
       } catch {
         // 浏览器存储不可用不应把已经完成的上传误报为失败。
       }
