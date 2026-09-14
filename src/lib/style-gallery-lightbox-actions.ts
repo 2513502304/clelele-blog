@@ -101,6 +101,7 @@ export function createStyleGalleryCopyAction(
 }
 
 export interface StyleGallerySourceLightboxItem {
+  gallerySourceSlug?: string;
   id: string;
   src: string;
   previewSrc?: string;
@@ -159,6 +160,7 @@ export function createStyleGallerySourceLightboxData(
   );
   const images = items.map((item) => ({
     id: item.id,
+    gallerySourceSlug: item.gallerySourceSlug,
     src: item.src,
     // 已签名缓存优先；每张确认加载完成的高清图都可复用 canonical URL，未加载项继续批量签名。
     resolvedSrc: getReusableStyleGalleryImageUrl(item.src, Boolean(item.sourceLoaded)),

@@ -3,6 +3,7 @@ import HomeSider from '@components/layout/HomeSider.astro';
 import StyleGalleryExamples from '@components/style-gallery/StyleGalleryExamples';
 import StyleGalleryReferenceImages from '@components/style-gallery/StyleGalleryReferenceImages';
 import StyleGalleryStorageHints from '@components/style-gallery/StyleGalleryStorageHints.astro';
+import StyleGalleryDetailTags from '@components/style-gallery/StyleGalleryTags';
 import StylePromptCopy from '@components/style-gallery/StylePromptCopy';
 import Cover from '@components/ui/cover/Cover.astro';
 import { CONTENT_PADDING } from '@constants/layout';
@@ -63,6 +64,7 @@ setStyleGalleryPublicCacheHeaders(Astro.response.headers, [getStyleGalleryItemCa
               ))}
             </div>
           </header>
+          <StyleGalleryDetailTags client:load slug={data.slug} locale={locale} basePath={galleryPath} />
 
           <div class="rounded-lg border border-rose-100 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-gray-950">
             <StyleGalleryReferenceImages

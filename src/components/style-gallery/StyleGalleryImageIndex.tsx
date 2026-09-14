@@ -22,12 +22,15 @@ import {
   STYLE_GALLERY_SORT_KEYS,
   type StyleGallerySortKey,
 } from '@lib/style-gallery-sort';
+import { galleryTagMatches, normalizeGalleryTag } from '@lib/style-gallery-tags';
+import { useGalleryTags } from '@store/gallery-tags';
 import { openModal } from '@store/modal';
 import { parseAsString, parseAsStringLiteral, useQueryState, useQueryStates } from 'nuqs';
 import { NuqsAdapter } from 'nuqs/adapters/react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useProgressiveList } from '@/hooks/useProgressiveList';
 import type { StyleGalleryCardData } from '@/types/style-gallery';
+import { GalleryTagFilter } from './StyleGalleryTags';
 
 interface StyleGalleryImageIndexProps {
   items: StyleGalleryCardData[];
@@ -84,6 +87,9 @@ function StyleGalleryImageIndexContent({
   lightboxCopyLabels,
 }: StyleGalleryImageIndexProps) {
   const [query, setQuery] = useQueryState('q', parseAsString.withDefault(''));
+  const { index: tagIndex } = useGalleryTags();
+  const [tag, setTag] = useQueryState('tag', parseAsString.withDefault(''));
+  const tagQuery = query.trim().startsWith('#');
   const [{ sort: sortKey, dir: sortDirection }, setSortState] = useQueryStates({
     sort: parseAsStringLiteral(STYLE_GALLERY_SORT_KEYS).withDefault('default'),
     dir: parseAsStringLiteral(STYLE_GALLERY_SORT_DIRECTIONS).withDefault('asc'),
@@ -125,16 +131,19 @@ function StyleGalleryImageIndexContent({
   }, [promptSearchIndex, promptSearchStatus]);
 
   useEffect(() => {
-    if (query.trim() && promptSearchStatus === 'idle') void ensurePromptSearchIndex();
-  }, [ensurePromptSearchIndex, promptSearchStatus, query]);
+    if (!tagQuery && query.trim() && promptSearchStatus === 'idle') void ensurePromptSearchIndex();
+  }, [ensurePromptSearchIndex, promptSearchStatus, query, tagQuery]);
 
   const visibleItems = useMemo(() => {
     const normalizedQuery = normalize(query);
     const filtered = items.filter((item) => {
-      const matchesQuery =
-        !normalizedQuery ||
-        normalize(`${item.title} ${item.imageHash} ${item.slug}`).includes(normalizedQuery) ||
-        (promptSearchIndex ? promptSearchIndex[item.slug]?.includes(normalizedQuery) : promptSearchStatus !== 'failed');
+      const itemTags = tagIndex.items[item.slug] ?? [];
+      if (tag && !itemTags.includes(normalizeGalleryTag(tag))) return false;
+      const matchesQuery = tagQuery
+        ? galleryTagMatches(itemTags, normalizedQuery)
+        : !normalizedQuery ||
+          normalize(`${item.title} ${item.imageHash} ${item.slug} ${itemTags.join(' ')}`).includes(normalizedQuery) ||
+          (promptSearchIndex ? promptSearchIndex[item.slug]?.includes(normalizedQuery) : promptSearchStatus !== 'failed');
       return matchesQuery && matchesDateRange(item.date) && (visualMatches === null || visualMatches.has(item.slug));
     });
     const sorted = [...filtered];
@@ -149,7 +158,19 @@ function StyleGalleryImageIndexContent({
     }
 
     return sortDirection === 'desc' ? sorted.reverse() : sorted;
-  }, [items, matchesDateRange, promptSearchIndex, promptSearchStatus, query, sortDirection, sortKey, visualMatches]);
+  }, [
+    tagIndex,
+    tag,
+    tagQuery,
+    items,
+    matchesDateRange,
+    promptSearchIndex,
+    promptSearchStatus,
+    query,
+    sortDirection,
+    sortKey,
+    visualMatches,
+  ]);
   const {
     hasMore,
     loadMore,
@@ -160,7 +181,7 @@ function StyleGalleryImageIndexContent({
     initialCount: INITIAL_INDEX_ITEM_COUNT,
     batchSize: INDEX_ITEM_BATCH_SIZE,
     // revision 不能只用结果数量：两个不同查询可能恰好命中同样多的图片，仍必须重置渐进列表窗口。
-    resetKey: `${query.trim().toLowerCase()}\u0000${dateFrom}\u0000${dateTo}\u0000${sortKey}\u0000${sortDirection}\u0000${visualRevision}`,
+    resetKey: `${tag}\u0000${query.trim().toLowerCase()}\u0000${dateFrom}\u0000${dateTo}\u0000${sortKey}\u0000${sortDirection}\u0000${visualRevision}`,
     rootMargin: '-120px 0px',
   });
 
@@ -168,6 +189,7 @@ function StyleGalleryImageIndexContent({
     const data = createStyleGallerySourceLightboxData(
       visibleItems.map((candidate) => ({
         id: candidate.slug,
+        gallerySourceSlug: candidate.slug,
         src: candidate.sourceImage,
         dimensions: candidate.dimensions,
         previewSrc: getStyleGallerySourceThumbnail(candidate.sourceImage),
@@ -206,7 +228,9 @@ function StyleGalleryImageIndexContent({
           <input
             value={query}
             onChange={(event) => setQuery(event.currentTarget.value).catch(reportUrlStateError)}
-            onFocus={() => void ensurePromptSearchIndex()}
+            onFocus={() => {
+              if (query.trim() && !tagQuery) void ensurePromptSearchIndex();
+            }}
             placeholder={labels.searchPlaceholder}
             className="h-10 w-full rounded-md border border-border bg-background pr-3 pl-9 text-sm outline-none transition-colors focus:border-primary"
           />
@@ -230,6 +254,13 @@ function StyleGalleryImageIndexContent({
         />
 
         <div className="flex items-center gap-2 md:justify-between">
+          <GalleryTagFilter
+            value={tag}
+            onChange={(value) => {
+              void setTag(value).catch(reportUrlStateError);
+            }}
+            locale={locale}
+          />
           <span className="shrink-0 text-muted-foreground text-sm tabular-nums">
             {visibleItems.length} / {items.length}
           </span>

@@ -44,6 +44,7 @@ function StyleGalleryReferenceImagesContent({
   function openReferenceImage(currentIndex: number) {
     const lightboxItems = images.map((image, index) => ({
       id: `${image.imageHash}:${index}`,
+      gallerySourceSlug: itemSlug,
       src: image.sourceImage,
       previewSrc: image.sourceImage,
       sourceLoaded: loadedSourceImages.current.has(image.sourceImage),

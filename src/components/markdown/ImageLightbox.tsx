@@ -42,6 +42,7 @@ import {
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleGalleryPromptChooser } from '../style-gallery/StyleGalleryPromptChooser';
+import { GalleryTagPills } from '../style-gallery/StyleGalleryTags';
 import { Dialog, DialogContent } from '../ui/dialog';
 import { LightboxLikeButton, NavButton, ToolbarButton, ToolbarLink, ZoomHint } from './ImageLightboxControls';
 
@@ -268,7 +269,7 @@ function LightboxImageStage({
 }
 
 export default function ImageLightbox() {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const shouldReduceMotion = useReducedMotion();
   const data = useStore($imageLightboxData);
   const isOpen = data !== null;
@@ -914,6 +915,20 @@ export default function ImageLightbox() {
                     <span className="font-mono text-sm">{currentImage.source.hash}</span>
                     <Icon icon="ri:arrow-right-up-line" className="size-4" />
                   </a>
+                )}
+                {currentImage?.gallerySourceSlug && (
+                  <div
+                    className="absolute right-20 bottom-28 left-4 max-h-24 overflow-y-auto"
+                    data-lightbox-scroll-region
+                    onPointerDown={(event) => event.stopPropagation()}
+                  >
+                    <GalleryTagPills
+                      slug={currentImage.gallerySourceSlug}
+                      onNavigate={closeModal}
+                      locale={locale}
+                      basePath={locale === 'zh' ? '/image-style-prompt-gallery' : `/${locale}/image-style-prompt-gallery`}
+                    />
+                  </div>
                 )}
                 {/* Navigation bar */}
                 {data.images.length > 1 && (
