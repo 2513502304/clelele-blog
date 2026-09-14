@@ -10,6 +10,7 @@ import { getGalleryTagVocabulary, normalizeGalleryTag } from './style-gallery-ta
 
 const originalFetch = globalThis.fetch;
 const envKeys = [
+  'STYLE_GALLERY_UPLOAD_TOKEN',
   'HF_S3_ACCESS_KEY_ID',
   'HF_S3_SECRET_ACCESS_KEY',
   'STYLE_GALLERY_SESSION_SECRET',
@@ -60,7 +61,11 @@ function context(body: unknown, auth = true, origin: string | null = 'https://bl
     cookies: cookies(auth),
     request: new Request('https://blog.example/api/style-gallery/tags', {
       method: 'PUT',
-      headers: { 'content-type': 'application/json', ...(origin ? { origin } : {}) },
+      headers: {
+        'content-type': 'application/json',
+        ...(origin ? { origin } : {}),
+        ...(auth ? { authorization: 'Bearer test-only' } : {}),
+      },
       body: JSON.stringify(body),
     }),
   } as APIContext;
@@ -124,8 +129,14 @@ describe('shared gallery categories', () => {
     assert.deepEqual(await (await GET(context({}))).json(), JSON.parse(stored));
     stored = null;
   });
-  it('rejects guests and missing/foreign origins before touching storage', async () => {
+  it('rejects GitHub-only sessions and missing/foreign origins before touching storage', async () => {
     const beforeWrites = writes;
+    const githubOnly = context({});
+    githubOnly.request.headers.delete('authorization');
+    assert.equal((await PUT(githubOnly)).status, 401);
+    const wrongToken = context({});
+    wrongToken.request.headers.set('authorization', 'Bearer wrong-token');
+    assert.equal((await PUT(wrongToken)).status, 401);
     assert.equal((await PUT(context({}, false))).status, 401);
     assert.equal((await PUT(context({}, true, 'https://evil.example'))).status, 403);
     assert.equal((await PUT(context({}, true, null))).status, 403);
@@ -147,6 +158,33 @@ describe('shared gallery categories', () => {
     await setGalleryTags({ slug: 'source-one', tags: ['溶图'], previousTags: [] });
     assert.equal(writes, beforeWrites, 'retrying a successful save is write-free');
   });
+  it('adds tags to all selected sources atomically while preserving their individual categories', async () => {
+    stored = JSON.stringify({ version: 1, items: { 'source-one': ['溶图'], 'source-two': ['插画'] } });
+    const response = await PUT(context({ slugs: ['source-one', 'source-two', 'source-one'], tags: ['专辑'] }));
+    assert.equal(response.status, 200);
+    assert.deepEqual((await response.json()).items, { 'source-one': ['专辑', '溶图'], 'source-two': ['专辑', '插画'] });
+    assert.equal(writes, 1);
+    await setGalleryTags({ slugs: ['source-one', 'source-two'], tags: ['专辑'] });
+    assert.equal(writes, 1, 'replaying the batch is write-free');
+  });
+  it('replays a batch union after a concurrent write without deleting new tags', async () => {
+    conflict = true;
+    const next = await setGalleryTags({ slugs: ['source-one', 'source-two'], tags: ['溶图'] });
+    assert.deepEqual(next.items, { 'source-one': ['溶图'], 'source-two': ['插画', '溶图'] });
+    assert.equal(writes, 2);
+  });
+  it('rejects an entire batch before writing if any source is unknown or exceeds its tag limit', async () => {
+    stored = JSON.stringify({ version: 1, items: { 'source-two': Array.from({ length: 12 }, (_, i) => `tag${i}`) } });
+    const original = stored;
+    for (const slugs of [
+      ['source-one', 'source-two'],
+      ['source-one', 'missing'],
+    ]) {
+      await assert.rejects(setGalleryTags({ slugs, tags: ['插画'] }), GalleryTagWriteError);
+      assert.equal(writes, 0);
+      assert.equal(stored, original);
+    }
+  });
   it('removes empty assignments and unused vocabulary without changing other sources', async () => {
     stored = JSON.stringify({ version: 1, items: { 'source-one': ['溶图'], 'source-two': ['插画'] } });
     etag = '"remove-fixture"';
@@ -159,7 +197,7 @@ describe('shared gallery categories', () => {
     );
   });
   it('rejects oversized requests and more than 100 shared categories', async () => {
-    assert.equal((await PUT(context({ junk: 'x'.repeat(9000) }))).status, 413);
+    assert.equal((await PUT(context({ junk: 'x'.repeat(2_000_001) }))).status, 413);
     stored = JSON.stringify({
       version: 1,
       items: Object.fromEntries(Array.from({ length: 100 }, (_, i) => [`item-${i}`, [`category${i}`]])),
