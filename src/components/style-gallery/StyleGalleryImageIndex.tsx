@@ -319,7 +319,7 @@ function StyleGalleryImageIndexContent({
                 tabIndex={-1}
                 className="group relative aspect-square min-w-0 overflow-hidden rounded-md border border-border bg-muted shadow-sm transition focus-within:z-10 focus-within:ring-2 focus-within:ring-primary hover:z-10 hover:-translate-y-0.5 hover:border-primary/60 hover:shadow-md"
               >
-                {tagSelection.checkbox(item.slug)}
+                {tagSelection.checkbox(item.slug, true)}
                 <a
                   href={`${galleryBasePath}/${item.slug}`}
                   data-astro-prefetch="false"
@@ -338,21 +338,24 @@ function StyleGalleryImageIndexContent({
                     className="h-full w-full object-cover transition duration-200 group-hover:scale-105"
                   />
                 </a>
-                <button
-                  type="button"
-                  onClick={() => openSourceLightbox(item)}
-                  className="group/index-lightbox absolute top-1 left-1 z-10 flex min-h-5 min-w-7 cursor-zoom-in items-center justify-center rounded-sm bg-black/65 px-1 py-0.5 font-mono text-[9px] text-white tabular-nums transition hover:bg-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
-                  aria-label={`${labels.openImage}: ${item.title}`}
-                  title={labels.openImage}
-                >
-                  <span className="group-hover/index-lightbox:hidden group-focus-visible/index-lightbox:hidden">
-                    {String(index + 1).padStart(3, '0')}
-                  </span>
-                  <Icon
-                    icon="ri:zoom-in-line"
-                    className="hidden size-3 group-hover/index-lightbox:block group-focus-visible/index-lightbox:block"
-                  />
-                </button>
+                {/* Dense cards reuse the zoom slot for selection to keep controls from overlapping. */}
+                {!tagSelection.enabled && (
+                  <button
+                    type="button"
+                    onClick={() => openSourceLightbox(item)}
+                    className="group/index-lightbox absolute top-1 left-1 z-10 flex min-h-5 min-w-7 cursor-zoom-in items-center justify-center rounded-sm bg-black/65 px-1 py-0.5 font-mono text-[9px] text-white tabular-nums transition hover:bg-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                    aria-label={`${labels.openImage}: ${item.title}`}
+                    title={labels.openImage}
+                  >
+                    <span className="group-hover/index-lightbox:hidden group-focus-visible/index-lightbox:hidden">
+                      {String(index + 1).padStart(3, '0')}
+                    </span>
+                    <Icon
+                      icon="ri:zoom-in-line"
+                      className="hidden size-3 group-hover/index-lightbox:block group-focus-visible/index-lightbox:block"
+                    />
+                  </button>
+                )}
                 {item.imageCount > 1 && (
                   <span
                     className="pointer-events-none absolute top-1 right-1 flex min-w-5 items-center justify-center rounded-sm bg-sky-500/90 px-1 py-0.5 font-bold text-[9px] text-white"

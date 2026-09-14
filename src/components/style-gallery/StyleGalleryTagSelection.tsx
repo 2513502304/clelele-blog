@@ -96,9 +96,11 @@ export function useGalleryTagSelection(slugs: string[], locale: string, pending 
         )}
       </div>
     ),
-    checkbox: (slug: string) =>
+    checkbox: (slug: string, compact = false) =>
       enabled ? (
-        <label className="absolute top-2 left-1/2 z-20 flex size-9 -translate-x-1/2 cursor-pointer items-center justify-center rounded-lg border border-white/40 bg-black/60 text-white shadow-sm backdrop-blur-md">
+        <label
+          className={`absolute z-20 flex cursor-pointer items-center justify-center border border-white/40 bg-black/60 text-white shadow-sm backdrop-blur-md ${compact ? 'top-1 left-1 size-7 rounded-sm' : 'top-2 left-1/2 size-9 -translate-x-1/2 rounded-lg'}`}
+        >
           <input
             type="checkbox"
             checked={available.has(slug) && selection.has(slug)}

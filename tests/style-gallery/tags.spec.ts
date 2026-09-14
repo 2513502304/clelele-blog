@@ -218,6 +218,24 @@ test('batch select-all includes unmounted sources and only submits sources in th
   expect(state.writes).toEqual([{ slugs: [slug, sourceSlug], tags: ['插画'] }]);
 });
 
+test('mobile index selection reuses the zoom slot without covering count badges', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await fixture(page);
+  await page.goto('/image-style-prompt-gallery/index');
+  const card = page.locator('[id^="style-gallery-index-source-"]').first();
+  await expect(card.getByRole('button')).toHaveCount(1);
+  await page.getByRole('button', { name: '批量标签', exact: true }).click();
+  await expect(card.getByRole('button')).toHaveCount(0);
+  await card.getByRole('checkbox').check();
+  const selection = await card.locator('label').boundingBox();
+  const counts = await card.locator('span.absolute.bottom-6').boundingBox();
+  if (!selection || !counts) throw new Error('Index selection controls are missing');
+  expect(selection.y + selection.height).toBeLessThanOrEqual(counts.y);
+  await page.getByRole('button', { name: '退出多选', exact: true }).click();
+  await expect(card.getByRole('button')).toHaveCount(1);
+  await expect(card.getByRole('checkbox')).toHaveCount(0);
+});
+
 test('detail example Lightbox shows source tags and its source badge', async ({ page }) => {
   await fixture(page);
   await page.goto(`/image-style-prompt-gallery/${sourceSlug}`);
