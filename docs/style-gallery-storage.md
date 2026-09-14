@@ -96,6 +96,22 @@ The one-time v2 migration combined `metadata/items/<slug>.json` and `examples/<s
 
 The like-index migration copied all 196 groups and 2219 examples from `examples/index.json` into `examples/index-v2.json`, initialized `likedBy` arrays, and verified the uploaded snapshot byte-for-byte. The versioned key keeps the old deployment operational during rollout; after the v2 code is deployed, `examples/index.json` is an unused migration artifact and can be deleted.
 
+## Shared category tags
+
+`metadata/tags-v1.json` is the single source of truth for manually curated categories:
+
+```json
+{"version":1,"items":{"2026-09-06-c63bb01cb14a":["插画","溶图"]}}
+```
+
+Only tagged source slugs are stored. Empty assignments are removed; the small vocabulary and usage counts are derived from this index. Tags are not copied into item, catalog, prompt-search or example metadata, so CLI imports, browser uploads and platform changes cannot overwrite manual classification. No backfill is required: a missing index is an empty installation and the first authenticated edit creates it conditionally.
+
+All gallery islands share one CDN-cached public `GET /api/style-gallery/tags` request. Ordinary article Lightboxes do not request tags. Exact `?tag=` filters and `#tag` searches operate locally without downloading the prompt-search index; free-text search also matches category labels. The dense index supports filtering but leaves its tiny cards unlabelled. Sub-gallery cards and every Gallery Lightbox display their source's tags. A detail page exposes the full set; card overlays show two labels plus an overflow link.
+
+Editing uses the existing signed GitHub session, not the upload token. `GET ?edit=1` is authenticated, fresh and private. Same-origin `PUT` accepts `{slug,tags,previousTags}` and permits any signed-in visitor to edit the shared source categories. Tags are normalized with NFKC, trimmed, deduplicated and Latin case-folded; limits are 12 per source, 24 Unicode characters per label and 100 active categories. Invisible controls and markup are rejected. The editor supports substring suggestions, mouse selection, arrow keys, Tab/Enter completion and IME composition; no role/character taxonomy is imposed.
+
+The write path compares the source's previous tags and returns 409 for a competing edit to that source. ETag retries preserve edits to other sources, and first-write races use `If-None-Match: *`. Successful edits publish to all local cards/Lightboxes and invalidate the shared public cache tag. Upload and image-processing code remain untouched; tagging performs no image reads, signing or transformations.
+
 ## Removing redundant reference-thumbnail fields
 
 Reference previews retain their existing `thumb/<hash-prefix>.webp` objects. The index and source badges derive this path from the original source filename; a multi-image item's combined hash must not be used. `thumbnailImage` is no longer stored in catalog entries, item top-level fields, or reference-image records. Import, validation, asset cleanup, and reconciliation use the same derived contract. No additional HF reads or image processing are needed for derivation.

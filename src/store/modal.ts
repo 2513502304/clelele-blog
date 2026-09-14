@@ -94,6 +94,8 @@ export interface ImageLightboxLocateAction {
 }
 
 export interface ImageLightboxImage {
+  /** Source identity for shared gallery categories; absent for ordinary article images. */
+  gallerySourceSlug?: string;
   id?: string;
   src: string;
   /** 当前实际加载地址：通常是 HF 签名直连，也可暂存页面已加载的 canonical src 以复用浏览器缓存。 */

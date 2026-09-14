@@ -28,6 +28,8 @@ import {
   STYLE_GALLERY_SORT_KEYS,
   type StyleGallerySortKey,
 } from '@lib/style-gallery-sort';
+import { galleryTagMatches, normalizeGalleryTag } from '@lib/style-gallery-tags';
+import { useGalleryTags } from '@store/gallery-tags';
 import { openModal } from '@store/modal';
 import { parseAsBoolean, parseAsString, parseAsStringLiteral, useQueryState, useQueryStates } from 'nuqs';
 import { NuqsAdapter } from 'nuqs/adapters/react';
@@ -44,6 +46,7 @@ import {
 } from './StyleGalleryLikeButton';
 import StyleGallerySharedImage from './StyleGallerySharedImage';
 import StyleGallerySourceStack from './StyleGallerySourceStack';
+import { GalleryTagEditor, GalleryTagFilter, GalleryTagPills } from './StyleGalleryTags';
 
 interface Props {
   examples: StyleGalleryExampleOverviewItem[];
@@ -114,6 +117,9 @@ function StyleGalleryExamplesOverviewContent({
   const [uploadToken, setUploadToken] = useState('');
   const [platform, setPlatform] = useQueryState('platform', parseAsString.withDefault('all'));
   const [query, setQuery] = useQueryState('q', parseAsString.withDefault(''));
+  const { index: tagIndex } = useGalleryTags();
+  const [tag, setTag] = useQueryState('tag', parseAsString.withDefault(''));
+  const tagQuery = query.trim().startsWith('#');
   const [{ sort: sortKey, dir: sortDirection }, setSortState] = useQueryStates({
     sort: parseAsStringLiteral(STYLE_GALLERY_SORT_KEYS).withDefault('default'),
     dir: parseAsStringLiteral(STYLE_GALLERY_SORT_DIRECTIONS).withDefault('asc'),
@@ -175,18 +181,23 @@ function StyleGalleryExamplesOverviewContent({
     }
   }, [searchIndexStatus, sourceSearchIndex]);
   useEffect(() => {
-    if (query.trim() && searchIndexStatus === 'idle') void ensureSearchIndex();
-  }, [ensureSearchIndex, query, searchIndexStatus]);
+    if (!tagQuery && query.trim() && searchIndexStatus === 'idle') void ensureSearchIndex();
+  }, [ensureSearchIndex, query, searchIndexStatus, tagQuery]);
   const matchesTextQuery = useMemo(
     () => createStyleGalleryExampleQueryMatcher(sourceSearchIndex ?? EMPTY_SOURCE_SEARCH_INDEX, query),
     [query, sourceSearchIndex],
   );
   const filtered = useMemo(() => {
     const matches = examples.filter((example) => {
+      const sourceTags = tagIndex.items[example.sourceSlug] ?? [];
+      if (tag && !sourceTags.includes(normalizeGalleryTag(tag))) return false;
       const matchesPlatform = platform === 'all' || example.model === platform;
       const matchesDate = matchesDateRange(example.uploadedAt);
       return (
-        matchesPlatform && matchesTextQuery(example) && matchesDate && (visualMatches === null || visualMatches.has(example.id))
+        matchesPlatform &&
+        (tagQuery ? galleryTagMatches(sourceTags, query) : matchesTextQuery(example) || galleryTagMatches(sourceTags, query)) &&
+        matchesDate &&
+        (visualMatches === null || visualMatches.has(example.id))
       );
     });
     const sorted = [...matches];
@@ -199,7 +210,20 @@ function StyleGalleryExamplesOverviewContent({
       });
     }
     return sortDirection === 'desc' ? sorted.reverse() : sorted;
-  }, [examples, likeSortCounts, matchesDateRange, matchesTextQuery, platform, sortDirection, sortKey, visualMatches]);
+  }, [
+    tagIndex,
+    tag,
+    tagQuery,
+    query,
+    examples,
+    likeSortCounts,
+    matchesDateRange,
+    matchesTextQuery,
+    platform,
+    sortDirection,
+    sortKey,
+    visualMatches,
+  ]);
   const hasPendingLikeSort =
     sortKey === 'likes' && examples.some((example) => (likeSortCounts[example.id] ?? 0) !== likes.getCount(example.id));
   const deleteOverviewExample = useCallback(
@@ -220,6 +244,7 @@ function StyleGalleryExamplesOverviewContent({
     // 仅在用户打开 popup 时构造导航动作；点赞状态更新不再重复映射数千个未打开的示例。
     const lightboxImages = navigation.map((candidate) => ({
       id: candidate.id,
+      gallerySourceSlug: candidate.sourceSlug,
       src: candidate.src,
       dimensions: candidate.dimensions,
       resolvedSrc: getReusableStyleGalleryImageUrl(candidate.src, loadedExampleSources.current.has(candidate.src)),
@@ -279,7 +304,7 @@ function StyleGalleryExamplesOverviewContent({
   const { hasMore, loadMore, loadMoreRef, revealThrough, visibleItems } = useProgressiveList(sourceCards, {
     initialCount: INITIAL_EXAMPLE_COUNT,
     batchSize: EXAMPLE_BATCH_SIZE,
-    resetKey: `${platform}\u0000${query.trim().toLowerCase()}\u0000${dateFrom}\u0000${dateTo}\u0000${sortKey}\u0000${sortDirection}\u0000${visualRevision}`,
+    resetKey: `${tag}\u0000${platform}\u0000${query.trim().toLowerCase()}\u0000${dateFrom}\u0000${dateTo}\u0000${sortKey}\u0000${sortDirection}\u0000${visualRevision}`,
   });
 
   function refreshLikeSortCounts() {
@@ -298,13 +323,16 @@ function StyleGalleryExamplesOverviewContent({
 
   return (
     <section className="space-y-5" aria-label="Generated example overview">
+      <GalleryTagEditor locale={locale} />
       <div className="glass-surface glass-toolbar p-4">
         <label className="relative block w-full">
           <Icon icon="ri:search-line" className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
           <input
             value={query}
             aria-busy={searchIndexStatus === 'loading'}
-            onFocus={() => void ensureSearchIndex()}
+            onFocus={() => {
+              if (query.trim() && !tagQuery) void ensureSearchIndex();
+            }}
             onChange={(event) => setQuery(event.currentTarget.value).catch(reportUrlStateError)}
             placeholder={labels.searchPlaceholder}
             className="h-10 w-full rounded-md border border-border bg-background pr-9 pl-9 text-sm outline-none focus:border-primary"
@@ -370,6 +398,13 @@ function StyleGalleryExamplesOverviewContent({
             <Icon icon="ri:stack-line" className="size-4" />
             {groupLabel}
           </button>
+          <GalleryTagFilter
+            value={tag}
+            onChange={(value) => {
+              void setTag(value);
+            }}
+            locale={locale}
+          />
           <span className="shrink-0 text-muted-foreground text-sm tabular-nums">
             {filtered.length} / {examples.length}
           </span>
@@ -476,6 +511,16 @@ function StyleGalleryExamplesOverviewContent({
                       />
                     </>
                   )}
+                  <GalleryTagPills
+                    slug={example.sourceSlug}
+                    locale={locale}
+                    basePath={galleryBasePath}
+                    overlay
+                    editable
+                    onSelect={(value) => {
+                      void setTag(value);
+                    }}
+                  />
                 </div>
                 <figcaption className="flex flex-1 flex-col gap-3 p-3">
                   <div className="flex items-center justify-between gap-2">

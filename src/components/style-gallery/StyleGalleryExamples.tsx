@@ -375,6 +375,7 @@ export default function StyleGalleryExamples({
     };
     const lightboxImages = platformExamples.map((candidate) => ({
       id: candidate.id,
+      gallerySourceSlug: slug,
       src: candidate.src,
       resolvedSrc: getReusableStyleGalleryImageUrl(candidate.src, loadedExampleSources.current.has(candidate.src)),
       alt: candidate.alt ?? candidate.model ?? 'Generated example',

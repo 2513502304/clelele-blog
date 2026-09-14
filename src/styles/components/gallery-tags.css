@@ -1,0 +1,113 @@
+.gallery-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.gallery-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 4px 9px;
+  border: 1px solid color-mix(in srgb, hsl(var(--primary)) 18%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, hsl(var(--primary)) 7%, hsl(var(--background)));
+  color: hsl(var(--foreground));
+  font-size: 11px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+.gallery-tag:hover {
+  background: color-mix(in srgb, hsl(var(--primary)) 16%, hsl(var(--background)));
+  border-color: hsl(var(--primary));
+}
+.gallery-tag:focus-visible {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 2px;
+}
+.gallery-tags-overlay {
+  position: absolute;
+  z-index: 10;
+  bottom: 9px;
+  left: 9px;
+  right: 108px;
+  align-content: flex-end;
+}
+.gallery-tags-overlay .gallery-tag {
+  color: white;
+  border-color: #ffffff30;
+  background: #15151bcc;
+  box-shadow: 0 1px 5px #0002;
+  backdrop-filter: blur(12px) saturate(140%);
+}
+.gallery-tags-overlay .gallery-tag:hover {
+  background: #25252bf2;
+  border-color: #ffffff88;
+}
+.gallery-tag-edit {
+  padding: 5px;
+}
+.gallery-tag-input-shell {
+  padding: 12px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 14px;
+  background: color-mix(in srgb, hsl(var(--muted)) 30%, hsl(var(--background)));
+}
+.gallery-tag-input-shell:focus-within {
+  border-color: hsl(var(--primary));
+  box-shadow: 0 0 0 3px color-mix(in srgb, hsl(var(--primary)) 9%, transparent);
+}
+.gallery-tag-input-shell input {
+  width: 100%;
+  margin-top: 9px;
+  outline: none;
+  background: transparent;
+  font-size: 14px;
+}
+.gallery-tag-input-shell .gallery-tag {
+  font-size: 12px;
+}
+.gallery-tag-suggestions {
+  max-height: 240px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid hsl(var(--border));
+  border-radius: 12px;
+}
+.gallery-tag-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  text-align: left;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.gallery-tag-option[aria-selected="true"] {
+  background: color-mix(in srgb, hsl(var(--primary)) 9%, hsl(var(--background)));
+  color: hsl(var(--primary));
+}
+.gallery-tag-dialog {
+  border-radius: 20px;
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+}
+@media (prefers-reduced-motion: reduce) {
+  .gallery-tag {
+    transition: none;
+  }
+}
+
+.gallery-tags-overlay .gallery-tag:not(.gallery-tag-edit) {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
