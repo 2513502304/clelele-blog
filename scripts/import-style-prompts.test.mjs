@@ -383,6 +383,36 @@ describe('import category flags', () => {
     }
   });
 
+  it('keeps replacement requests under 2 MB with maximum-length source IDs and four-byte labels', async () => {
+    const original = globalThis.fetch;
+    const slugs = Array.from({ length: 2001 }, (_, i) => `${'s'.repeat(156)}${String(i).padStart(4, '0')}`);
+    const tags = Array.from({ length: 12 }, (_, i) => String.fromCodePoint(0x20000 + i).repeat(24));
+    const items = Object.fromEntries(slugs.map((slug) => [slug, tags]));
+    const batches = [];
+    let reads = 0;
+    globalThis.fetch = async (_url, options) => {
+      if (options.method === 'PUT') {
+        assert.ok(Buffer.byteLength(options.body, 'utf8') < 2_000_000);
+        const body = JSON.parse(options.body);
+        assert.deepEqual(Object.keys(body.previousTagsBySlug), body.slugs);
+        for (const base of Object.values(body.previousTagsBySlug)) assert.deepEqual(base, tags);
+        batches.push(body.slugs);
+      } else reads++;
+      return Response.json({ version: 1, items });
+    };
+    try {
+      await writeImportedTags('https://blog.example', 'test-only', [...slugs, slugs[0]], ['现实'], true);
+      assert.deepEqual(
+        batches.map((batch) => batch.length),
+        [1000, 1000, 1],
+      );
+      assert.deepEqual(batches.flat(), slugs);
+      assert.equal(reads, 3);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
   it('metadata-only excludes new sources from tag additions', async () => {
     const prepared = await buildImportData(
       [{ images: ['data:image/png;base64,YQ=='], prompt: 'test' }],

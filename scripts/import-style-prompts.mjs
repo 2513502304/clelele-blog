@@ -671,7 +671,9 @@ async function main() {
 /** Preserve existing tags by default; explicit replacement compares a fresh base and never auto-rebases conflicts. */
 async function writeImportedTags(apiBaseUrl, token, slugs, tags, overwriteTag = false) {
   if (!tags.length) return;
-  for (const batch of chunks([...new Set(slugs)], 10000)) {
+  // Replacement repeats source IDs and up to 12 base labels; 1,000 worst-case sources fit below 2 MB.
+  const batchSize = overwriteTag ? 1000 : 10000;
+  for (const batch of chunks([...new Set(slugs)], batchSize)) {
     let replacement;
     if (overwriteTag) {
       const current = await requestJson(`${apiBaseUrl}/api/style-gallery/tags?edit=1`, {
@@ -714,7 +716,7 @@ npm run import:style-prompts -- <session.jsonl> --tag "溶图" --tag "现实" --
 # --overwrite-tag 必须配合 --tag：以本次标签完整替换来源标签，适用于同图不同 Prompt 和完全重复的记录。
 # 覆盖前读取最新标签；遇到并发修改会停止，请核对后再重跑，不会自动覆盖其他会话的修改。
 # 标签使用同一个 Upload Token；标签失败可重跑同一命令，不会重复上传图片或 Prompt。
-# --metadata-only 配合 --tag 时只标记已存在的来源；每批最多 10000 个来源，单批原子写入。
+# --metadata-only 配合 --tag 时只标记已存在的来源；追加每批最多 10000 个，覆盖最多 1000 个，单批原子写入。
 
 # JSONL 的 turn_context 已包含正确模型时，可省略 --prompt-model；该参数用于缺失或手动覆盖来源模型。
 # 写入前只核对新建/更新/重复数量时追加 --dry-run；该模式不需要 Upload Token，也不会修改 HF。
