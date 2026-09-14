@@ -24,7 +24,7 @@ class NonRetryableRequestError extends Error {}
 
 function usage() {
   console.error(
-    'Usage: node scripts/import-style-prompts.mjs <codex-session.jsonl> [--dry-run] [--metadata-only] [--prompt-model=<name>] [--tag <label>]... [--api-base-url=<url>]',
+    'Usage: node scripts/import-style-prompts.mjs <codex-session.jsonl> [--dry-run] [--metadata-only] [--prompt-model=<name>] [--tag <label>]... [--overwrite-tag] [--api-base-url=<url>]',
   );
   console.error('Required for writes: STYLE_GALLERY_UPLOAD_TOKEN');
 }
@@ -33,6 +33,7 @@ function parseArgs(argv) {
   let sessionPath = null;
   let apiBaseUrl = DEFAULT_API_BASE_URL;
   let metadataOnly = false;
+  let overwriteTag = false;
   let promptModel = null;
   let dryRun = false;
   let help = false;
@@ -42,6 +43,7 @@ function parseArgs(argv) {
     if (arg === '--help' || arg === '-h') help = true;
     else if (arg === '--dry-run') dryRun = true;
     else if (arg === '--metadata-only' || arg === '--update-metadata-only') metadataOnly = true;
+    else if (arg === '--overwrite-tag') overwriteTag = true;
     else if (arg === '--tag' || arg.startsWith('--tag=')) {
       const raw = arg === '--tag' ? argv[++index] : arg.slice('--tag='.length);
       if (!raw || raw.startsWith('--') || raw.length > 100) throw new Error('--tag requires a valid category label.');
@@ -56,7 +58,17 @@ function parseArgs(argv) {
     else if (!sessionPath) sessionPath = arg;
     else throw new Error(`Unexpected positional argument: ${arg}`);
   }
-  return { apiBaseUrl: apiBaseUrl.replace(/\/$/, ''), dryRun, help, metadataOnly, promptModel, sessionPath, tags };
+  if (overwriteTag && !tags.length && !help) throw new Error('--overwrite-tag requires at least one --tag.');
+  return {
+    apiBaseUrl: apiBaseUrl.replace(/\/$/, ''),
+    dryRun,
+    help,
+    metadataOnly,
+    overwriteTag,
+    promptModel,
+    sessionPath,
+    tags,
+  };
 }
 
 function positiveInteger(value, fallback) {
@@ -548,7 +560,9 @@ function sleep(ms) {
 
 async function main() {
   configureEnvironmentProxy();
-  const { apiBaseUrl, dryRun, help, metadataOnly, promptModel, sessionPath, tags } = parseArgs(process.argv.slice(2));
+  const { apiBaseUrl, dryRun, help, metadataOnly, overwriteTag, promptModel, sessionPath, tags } = parseArgs(
+    process.argv.slice(2),
+  );
   if (help || !sessionPath) {
     usage();
     process.exit(help ? 0 : 1);
@@ -576,7 +590,7 @@ async function main() {
     );
     if (tags.length)
       console.log(
-        `Dry run: would add ${tags.map((tag) => `#${tag}`).join(' ')} to ${prepared.sourceSlugs.length} source(s), including duplicates.`,
+        `Dry run: would ${overwriteTag ? 'replace tags with' : 'add'} ${tags.map((tag) => `#${tag}`).join(' ')} to ${prepared.sourceSlugs.length} source(s), including duplicates.`,
       );
     return;
   }
@@ -637,35 +651,51 @@ async function main() {
     await cleanupAssets(apiBaseUrl, token, uploadedKeys);
     throw error;
   }
-  // Tag storage is separate from image metadata. A failed addition must never roll back imported images.
+  // Tag storage is separate from image metadata. A failed tag write must never roll back imported images.
   try {
-    await addImportedTags(apiBaseUrl, token, prepared.sourceSlugs, tags);
+    await writeImportedTags(apiBaseUrl, token, prepared.sourceSlugs, tags, overwriteTag);
     if (tags.length)
-      console.log(`Added ${tags.map((tag) => `#${tag}`).join(' ')} to ${prepared.sourceSlugs.length} source(s).`);
+      console.log(
+        `${overwriteTag ? 'Replaced tags with' : 'Added'} ${tags.map((tag) => `#${tag}`).join(' ')} to ${prepared.sourceSlugs.length} source(s).`,
+      );
   } catch (error) {
-    throw new Error('Images/prompts are saved, but tags could not be added. Rerun the same command to retry tags safely.', {
-      cause: error,
-    });
+    throw new Error(
+      'Images/prompts are saved, but tags could not be saved. Review any tag conflict before rerunning the same command.',
+      {
+        cause: error,
+      },
+    );
   }
 }
 
-/** Add categories through the existing atomic, additive API, with no request when --tag is absent. */
-async function addImportedTags(apiBaseUrl, token, slugs, tags) {
+/** Preserve existing tags by default; explicit replacement compares a fresh base and never auto-rebases conflicts. */
+async function writeImportedTags(apiBaseUrl, token, slugs, tags, overwriteTag = false) {
   if (!tags.length) return;
   for (const batch of chunks([...new Set(slugs)], 10000)) {
+    let replacement;
+    if (overwriteTag) {
+      const current = await requestJson(`${apiBaseUrl}/api/style-gallery/tags?edit=1`, {
+        cache: 'no-store',
+        headers: { authorization: `Bearer ${token}` },
+      });
+      replacement = {
+        mode: 'replace',
+        previousTagsBySlug: Object.fromEntries(batch.map((slug) => [slug, current.items[slug] ?? []])),
+      };
+    }
     await requestJson(
       `${apiBaseUrl}/api/style-gallery/tags`,
       {
         method: 'PUT',
         headers: { authorization: `Bearer ${token}`, origin: new URL(apiBaseUrl).origin, 'content-type': 'application/json' },
-        body: JSON.stringify({ slugs: batch, tags }),
+        body: JSON.stringify({ slugs: batch, tags, ...replacement }),
       },
       UPLOAD_TIMEOUT_MS,
     );
   }
 }
 
-export { addImportedTags, buildImportData, extractItems, loadExistingItemsByHash, parseArgs, uniqueImagesByHash };
+export { writeImportedTags, buildImportData, extractItems, loadExistingItemsByHash, parseArgs, uniqueImagesByHash };
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((error) => {
@@ -678,8 +708,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 /*
 npm run import:style-prompts -- <session.jsonl> --prompt-model='gpt-5.6-sol'
 npm run import:style-prompts -- <session.jsonl> --tag "溶图" --tag "现实"
+npm run import:style-prompts -- <session.jsonl> --tag "溶图" --tag "现实" --overwrite-tag
 
 # --tag 可重复传入，向本次来源（包括已导入的重复图）追加标签，保留已有标签；省略则不读写标签。
+# --overwrite-tag 必须配合 --tag：以本次标签完整替换来源标签，适用于同图不同 Prompt 和完全重复的记录。
+# 覆盖前读取最新标签；遇到并发修改会停止，请核对后再重跑，不会自动覆盖其他会话的修改。
 # 标签使用同一个 Upload Token；标签失败可重跑同一命令，不会重复上传图片或 Prompt。
 # --metadata-only 配合 --tag 时只标记已存在的来源；每批最多 10000 个来源，单批原子写入。
 
