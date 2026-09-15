@@ -379,7 +379,6 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
 
         {/* 三个 Gallery 工具栏保持同一信息顺序：筛选与实时结果数在左，排序在右；不能因删减控件把整组筛选推到右侧。 */}
         <div className="mt-4 flex flex-wrap items-center gap-2 border-rose-100 border-t pt-4 dark:border-gray-800">
-          <StyleGalleryCuration locale={locale} />
           <StyleGalleryVisualFilter
             scope="source"
             labels={labels.visualFilter}
@@ -453,7 +452,10 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
         </div>
       </div>
 
-      {tagSelection.toolbar}
+      <div className="flex items-start justify-between gap-3" data-gallery-management>
+        <div className="min-w-0 flex-1">{tagSelection.toolbar}</div>
+        <StyleGalleryCuration locale={locale} />
+      </div>
       <StyleGalleryGrid masonry={masonry}>
         {visibleItems.map((item, index) => (
           <article

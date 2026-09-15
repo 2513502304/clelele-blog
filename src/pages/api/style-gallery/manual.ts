@@ -7,6 +7,7 @@ import { readStyleGalleryImageDimensions } from '@lib/style-gallery-image-dimens
 import { createManualStyleGalleryItem } from '@lib/style-gallery-manual-item';
 import { styleGalleryVisualRecordInputSchema } from '@lib/style-gallery-schema';
 import { getStoredStyleGalleryItem, getStyleGalleryCatalog, mutateStyleGalleryVisualIndex } from '@lib/style-gallery-store';
+import { galleryTagsSchema, setGalleryTags } from '@lib/style-gallery-tag-store';
 import { upsertStyleGalleryVisualRecords } from '@lib/style-gallery-visual-index';
 import { writeStyleGalleryItems } from '@lib/style-gallery-write';
 import type { APIRoute } from 'astro';
@@ -20,6 +21,7 @@ const schema = z
     extension: z.enum(['jpg', 'png', 'webp']),
     prompt: z.string().trim().min(1).max(100_000),
     originalPrompt: z.string().max(20_000).optional(),
+    tags: galleryTagsSchema.optional(),
     model: z.string().trim().max(120).optional(),
     feature: styleGalleryVisualRecordInputSchema.shape.feature,
   })
@@ -75,8 +77,18 @@ export const POST: APIRoute = async ({ request }) => {
       visualIndexUpdated = false;
       console.error('[style-gallery] Manual item saved; visual index needs retry.', error);
     }
+    let tagsUpdated = true;
+    if (body.tags?.length) {
+      try {
+        // Additive and idempotent: collecting an existing image never replaces its categories.
+        await setGalleryTags({ slugs: [slug], tags: body.tags });
+      } catch (error) {
+        tagsUpdated = false;
+        console.error('[style-gallery] Manual item saved; tags need retry.', error);
+      }
+    }
     return Response.json(
-      { slug, created: result.created > 0, visualIndexUpdated },
+      { slug, created: result.created > 0, visualIndexUpdated, tagsUpdated },
       { headers: { 'Cache-Control': 'no-store' } },
     );
   } catch (error) {

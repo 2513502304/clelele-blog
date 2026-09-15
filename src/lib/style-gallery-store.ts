@@ -35,6 +35,8 @@ export const STYLE_GALLERY_VISUAL_INDEX_KEY = 'metadata/visual-index-v1.json';
 
 const CACHE_TTL_MS = 30_000;
 const VISUAL_INDEX_TRANSFER_TIMEOUT_MS = 60_000;
+let catalogRead: Promise<StyleGalleryCatalog> | null = null;
+let catalogReadRevision = 0;
 let catalogCache: { value: StyleGalleryCatalog; expiresAt: number } | null = null;
 let promptSearchIndexCache: { value: StyleGalleryPromptSearchIndex; etag: string | null; expiresAt: number } | null = null;
 let exampleIndexCache: { value: StyleGalleryExampleIndex; etag: string | null; expiresAt: number } | null = null;
@@ -56,20 +58,38 @@ export function getStyleGalleryItemKey(slug: string): string {
 export async function getStyleGalleryCatalog(options: { fresh?: boolean } = {}): Promise<StyleGalleryCatalog> {
   const now = Date.now();
   if (!options.fresh && catalogCache && catalogCache.expiresAt > now) return catalogCache.value;
-
-  try {
-    const raw = await getStyleGalleryObjectText(STYLE_GALLERY_CATALOG_KEY);
-    if (!raw) throw new Error('Style gallery catalog does not exist in HF storage.');
-    const value = styleGalleryCatalogSchema.parse(JSON.parse(raw));
-    catalogCache = { value, expiresAt: now + CACHE_TTL_MS };
-    return value;
-  } catch (error) {
-    if (!options.fresh && catalogCache) {
-      console.warn('[style-gallery] Serving a stale catalog after an HF storage read failed.', error);
-      return catalogCache.value;
+  if (!options.fresh && catalogRead) return catalogRead;
+  // Concurrent cold SSR requests share one download and schema parse. Forced management reads
+  // bypass this request, and a successful write prevents older reads from republishing stale data.
+  if (options.fresh) invalidateCatalogRead();
+  const revision = catalogReadRevision;
+  const read = (async () => {
+    try {
+      const raw = await getStyleGalleryObjectText(STYLE_GALLERY_CATALOG_KEY);
+      if (!raw) throw new Error('Style gallery catalog does not exist in HF storage.');
+      const value = styleGalleryCatalogSchema.parse(JSON.parse(raw));
+      if (revision === catalogReadRevision) catalogCache = { value, expiresAt: Date.now() + CACHE_TTL_MS };
+      return value;
+    } catch (error) {
+      if (!options.fresh && catalogCache) {
+        console.warn('[style-gallery] Serving a stale catalog after an HF storage read failed.', error);
+        return catalogCache.value;
+      }
+      throw error;
     }
-    throw error;
+  })();
+  if (!options.fresh) catalogRead = read;
+  try {
+    return await read;
+  } finally {
+    if (catalogRead === read) catalogRead = null;
   }
+}
+
+/** Detach old in-flight reads when a writer publishes or invalidates the catalog. */
+function invalidateCatalogRead(): void {
+  catalogReadRevision++;
+  catalogRead = null;
 }
 
 /** 写路径使用带 ETag 的强制快照，以便跨 Vercel 实例进行条件提交。 */
@@ -78,6 +98,7 @@ export async function getStyleGalleryCatalogSnapshot(): Promise<{ value: StyleGa
   if (!snapshot.text) throw new Error('Style gallery catalog does not exist in HF storage.');
   if (!snapshot.etag) throw new Error('HF did not return an ETag for the style gallery catalog.');
   const value = styleGalleryCatalogSchema.parse(JSON.parse(snapshot.text));
+  invalidateCatalogRead();
   catalogCache = { value, expiresAt: Date.now() + CACHE_TTL_MS };
   return { value, etag: snapshot.etag };
 }
@@ -181,6 +202,7 @@ export async function putStyleGalleryCatalog(
 ): Promise<string | null> {
   const value = styleGalleryCatalogSchema.parse(catalog);
   const etag = await putJson(STYLE_GALLERY_CATALOG_KEY, value, conditions);
+  invalidateCatalogRead();
   catalogCache = { value, expiresAt: Date.now() + CACHE_TTL_MS };
   return etag;
 }
@@ -371,6 +393,7 @@ export function mutateStyleGalleryVisualIndex(
  * 都会无意义地重新下载整个向量文件。视觉索引自身用 ETag 冲突重放保证跨实例一致性。
  */
 export function invalidateStyleGalleryStoreCache(): void {
+  invalidateCatalogRead();
   catalogCache = null;
   promptSearchIndexCache = null;
   exampleIndexCache = null;

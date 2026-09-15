@@ -4,8 +4,10 @@ import { MAX_STYLE_GALLERY_EXAMPLE_FILE_SIZE } from '@lib/style-gallery-chunk-up
 import { getStyleGalleryExampleExtension } from '@lib/style-gallery-image-type';
 import { getStyleGalleryManagementToken, rememberStyleGalleryManagementToken } from '@lib/style-gallery-management-token';
 import { guardGalleryNavigation } from '@lib/style-gallery-navigation-guard';
+import { isValidGalleryTag, MAX_GALLERY_TAGS_PER_ITEM, normalizeGalleryTag } from '@lib/style-gallery-tags';
 import { useEffect, useId, useRef, useState } from 'react';
 import type { StyleGalleryPromptVariant } from '@/types/style-gallery';
+import GalleryCollectionTags from './GalleryCollectionTags';
 
 function labels(locale: string) {
   return locale.startsWith('zh')
@@ -28,7 +30,7 @@ function labels(locale: string) {
         conflict: '该提示词已被修改或与另一候选重复。请保留草稿，刷新后核对。',
         discard: '放弃尚未保存的修改？',
         format: 'JPG / PNG / WebP，最大 12 MB',
-        indexFailed: '图片已收藏，视觉索引未完成。再次保存即可重试。',
+        indexFailed: '图片已收藏，标签或视觉索引未完成。再次保存即可重试。',
       }
     : {
         collect: 'Collect image',
@@ -49,7 +51,7 @@ function labels(locale: string) {
         conflict: 'This prompt changed or duplicates another variant. Keep your draft and reload to compare.',
         discard: 'Discard unsaved changes?',
         format: 'JPG / PNG / WebP, up to 12 MB',
-        indexFailed: 'Image saved; visual index incomplete. Save again to retry.',
+        indexFailed: 'Image saved; tags or visual index incomplete. Save again to retry.',
       };
 }
 const fieldClass =
@@ -72,6 +74,8 @@ export default function StyleGalleryCuration({
   const [open, setOpen] = useState(false);
   const [prompt, setPrompt] = useState('');
   const [original, setOriginal] = useState('');
+  const [tags, setTags] = useState<string[]>([]);
+  const [tagQuery, setTagQuery] = useState('');
   const [model, setModel] = useState('');
   const [token, setToken] = useState('');
   const [file, setFile] = useState<File | null>(null);
@@ -81,7 +85,9 @@ export default function StyleGalleryCuration({
   const [error, setError] = useState('');
   const releaseGuard = useRef<(() => void) | undefined>(undefined);
   const editing = Boolean(variant && slug);
-  const dirty = editing ? prompt !== variant?.prompt : Boolean(prompt || original || model || file);
+  const dirty = editing
+    ? prompt !== variant?.prompt || original !== (variant?.originalPrompt ?? '')
+    : Boolean(prompt || original || model || file || tags.length || tagQuery);
   useEffect(() => {
     if (!file) {
       setPreview('');
@@ -103,7 +109,9 @@ export default function StyleGalleryCuration({
     if (busy || (!next && dirty && !window.confirm(text.discard))) return;
     if (next) {
       setPrompt(variant?.prompt ?? '');
-      setOriginal('');
+      setOriginal(variant?.originalPrompt ?? '');
+      setTags([]);
+      setTagQuery('');
       setModel('');
       setFile(null);
       setToken(getStyleGalleryManagementToken());
@@ -123,10 +131,22 @@ export default function StyleGalleryCuration({
         response = await fetch(`/api/style-gallery/prompts/${slug}`, {
           method: 'PATCH',
           headers: { authorization: `Bearer ${token.trim()}`, 'content-type': 'application/json' },
-          body: JSON.stringify({ id: variant.id, prompt }),
+          body: JSON.stringify({
+            id: variant.id,
+            prompt,
+            originalPrompt: original,
+            previousOriginalPrompt: variant.originalPrompt ?? '',
+          }),
           signal: AbortSignal.timeout(120_000),
         });
       } else {
+        const draftTags = [...new Set([...tags, normalizeGalleryTag(tagQuery)].filter(Boolean))];
+        if (draftTags.length > MAX_GALLERY_TAGS_PER_ITEM || draftTags.some((tag) => !isValidGalleryTag(tag)))
+          throw new Error(
+            locale.startsWith('zh')
+              ? '标签最多 12 个，每个 1–24 字；不能含 #、尖括号或控制字符，null 为保留词。'
+              : 'Choose up to 12 valid tags.',
+          );
         if (!file || !file.size || file.size > MAX_STYLE_GALLERY_EXAMPLE_FILE_SIZE) throw new Error(text.format);
         const extension = getStyleGalleryExampleExtension(file.type, file.name);
         setStatus(text.prepare);
@@ -149,7 +169,7 @@ export default function StyleGalleryCuration({
         response = await fetch('/api/style-gallery/manual', {
           method: 'POST',
           headers: { authorization: `Bearer ${token.trim()}`, 'content-type': 'application/json' },
-          body: JSON.stringify({ imageHash, extension, feature, prompt, originalPrompt: original, model }),
+          body: JSON.stringify({ imageHash, extension, feature, prompt, originalPrompt: original, model, tags: draftTags }),
           signal: AbortSignal.timeout(120_000),
         });
       }
@@ -162,7 +182,7 @@ export default function StyleGalleryCuration({
       if (editing) {
         onSaved?.(result.prompts, result.activePromptId);
         setOpen(false);
-      } else if (result.visualIndexUpdated === false) {
+      } else if (result.visualIndexUpdated === false || result.tagsUpdated === false) {
         setError(text.indexFailed);
       } else {
         releaseGuard.current?.();
@@ -188,7 +208,7 @@ export default function StyleGalleryCuration({
         className={
           editing
             ? 'flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground transition hover:text-primary'
-            : 'flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg border border-border bg-background px-3 text-sm transition hover:border-primary/40 hover:text-primary'
+            : 'flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border border-border bg-background px-3 text-sm transition hover:border-primary/40 hover:text-primary'
         }
       >
         <Icon icon={editing ? 'ri:edit-line' : 'ri:image-add-line'} className="size-4" />
@@ -197,10 +217,10 @@ export default function StyleGalleryCuration({
       <Dialog open={open} onOpenChange={changeOpen}>
         <DialogContent
           stableScroll
-          className="flex max-h-[90dvh] max-w-2xl flex-col overflow-hidden rounded-2xl p-0"
+          className="flex max-h-[90dvh] w-[calc(100%-2rem)] max-w-2xl flex-col gap-0 overflow-hidden rounded-2xl p-0"
           showClose={!busy}
         >
-          <header className="border-border border-b p-5 pr-12">
+          <header className="shrink-0 border-border border-b p-5 pr-12">
             <DialogTitle>{editing ? text.edit : text.collect}</DialogTitle>
             <DialogDescription className="mt-2">{editing ? text.editDescription : text.description}</DialogDescription>
           </header>
@@ -211,7 +231,10 @@ export default function StyleGalleryCuration({
             }}
             className="flex min-h-0 flex-col"
           >
-            <fieldset disabled={busy} className="min-h-0 space-y-4 overflow-y-auto p-5">
+            <fieldset
+              disabled={busy}
+              className="vertical-scrollbar min-h-0 min-w-0 space-y-4 overflow-y-auto overscroll-contain p-5"
+            >
               {!editing && (
                 <>
                   <label className="block space-y-2 text-sm" htmlFor={`${id}-file`}>
@@ -230,20 +253,20 @@ export default function StyleGalleryCuration({
                   {preview && (
                     <img src={preview} alt={text.image} className="mx-auto max-h-44 max-w-full rounded-lg object-contain" />
                   )}
-                  <label className="block space-y-2 text-sm" htmlFor={`${id}-original`}>
-                    <span>{text.original}</span>
-                    <textarea
-                      id={`${id}-original`}
-                      value={original}
-                      onChange={(event) => setOriginal(event.target.value)}
-                      maxLength={20000}
-                      rows={2}
-                      style={{ minHeight: 72 }}
-                      className={fieldClass}
-                    />
-                  </label>
                 </>
               )}
+              <label className="block space-y-2 text-sm" htmlFor={`${id}-original`}>
+                <span>{text.original}</span>
+                <textarea
+                  id={`${id}-original`}
+                  value={original}
+                  onChange={(event) => setOriginal(event.target.value)}
+                  maxLength={20000}
+                  rows={2}
+                  style={{ fieldSizing: 'fixed', height: 96, overflowY: 'auto', resize: 'none' }}
+                  className={`${fieldClass} vertical-scrollbar`}
+                />
+              </label>
               <label className="block space-y-2 text-sm" htmlFor={`${id}-prompt`}>
                 <span>{text.prompt}</span>
                 <textarea
@@ -253,8 +276,8 @@ export default function StyleGalleryCuration({
                   required
                   maxLength={100000}
                   rows={editing ? 12 : 6}
-                  style={{ minHeight: editing ? 240 : 144 }}
-                  className={`${fieldClass} leading-6`}
+                  style={{ fieldSizing: 'fixed', height: editing ? 240 : 168, overflowY: 'auto', resize: 'none' }}
+                  className={`${fieldClass} vertical-scrollbar leading-6`}
                 />
               </label>
               {!editing && (
@@ -270,6 +293,15 @@ export default function StyleGalleryCuration({
                   />
                 </label>
               )}
+              {!editing && (
+                <GalleryCollectionTags
+                  locale={locale}
+                  tags={tags}
+                  onChange={setTags}
+                  query={tagQuery}
+                  onQueryChange={setTagQuery}
+                />
+              )}
               <label className="block space-y-2 text-sm" htmlFor={`${id}-token`}>
                 <span>{text.token}</span>
                 <input
@@ -283,7 +315,7 @@ export default function StyleGalleryCuration({
                 />
               </label>
             </fieldset>
-            <footer className="space-y-3 border-border border-t p-4">
+            <footer className="shrink-0 space-y-3 border-border border-t bg-background p-4">
               {error && (
                 <p role="alert" className="text-rose-500 text-sm">
                   {error}
