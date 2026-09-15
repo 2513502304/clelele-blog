@@ -92,7 +92,8 @@ export function serializeStyleGalleryWrite<T>(operation: () => Promise<T>): Prom
  */
 export async function writeStyleGalleryItems(
   submittedItems: StoredStyleGalleryItem[],
-  mode: 'create' | 'upsert',
+  mode: 'create' | 'upsert' | 'replace-prompts',
+  expectedPrompts?: ReadonlyMap<string, StoredStyleGalleryItem['prompts']>,
 ): Promise<WriteItemsResult> {
   return serializeStyleGalleryWrite(async () => {
     const byHash = new Map<string, StoredStyleGalleryItem>();
@@ -133,7 +134,8 @@ export async function writeStyleGalleryItems(
     const nextPromptsBySlug = new Map(Object.entries(previousPromptSearchIndex.entries));
     const slugByHash = new Map(previousCatalog.items.map((item) => [item.imageHash, item.slug]));
     // `create` 下的既有图片只追加 prompt，不重新 HEAD 已经由 item 引用的图片对象。
-    await validateItemAssets(mode === 'upsert' ? items : items.filter((item) => !slugByHash.has(item.imageHash)));
+    if (mode !== 'replace-prompts')
+      await validateItemAssets(mode === 'upsert' ? items : items.filter((item) => !slugByHash.has(item.imageHash)));
     const previousItemBodies = new Map<string, { body: string | null; writtenEtag: string }>();
     const writtenItems: StoredStyleGalleryItem[] = [];
     const attemptedIndexGroups = new Map<string, StyleGalleryExampleIndexGroup | null>();
@@ -155,7 +157,13 @@ export async function writeStyleGalleryItems(
           throw new StyleGalleryClientError(`Style gallery slug collision: ${slug}`, 409);
         }
         reservedSlugHashes.set(slug, submittedItem.imageHash);
-        candidates.push({ slug, submittedItem, mode, existingInCatalog: Boolean(existingSlug) });
+        candidates.push({
+          slug,
+          submittedItem,
+          mode,
+          existingInCatalog: Boolean(existingSlug),
+          expectedPrompts: expectedPrompts?.get(slug),
+        });
       }
 
       const writeOutcomes = await mapWithConcurrency(candidates, ITEM_WRITE_CONCURRENCY, writeItemCandidate);
@@ -167,6 +175,7 @@ export async function writeStyleGalleryItems(
         }
       }
       const writeErrors = writeOutcomes.flatMap((outcome) => (outcome.error ? [outcome.error] : []));
+      if (writeErrors.length === 1) throw writeErrors[0];
       if (writeErrors.length) throw new AggregateError(writeErrors, 'Failed to write one or more style gallery items.');
 
       for (const outcome of writeOutcomes) {
@@ -261,7 +270,8 @@ export async function writeStyleGalleryItems(
 interface ItemWriteCandidate {
   slug: string;
   submittedItem: StoredStyleGalleryItem;
-  mode: 'create' | 'upsert';
+  mode: 'create' | 'upsert' | 'replace-prompts';
+  expectedPrompts?: StoredStyleGalleryItem['prompts'];
   existingInCatalog: boolean;
 }
 
@@ -290,6 +300,15 @@ async function writeItemCandidate(candidate: ItemWriteCandidate): Promise<ItemWr
       if (candidate.existingInCatalog && !existingItem) {
         throw new Error(`Catalog references missing style gallery item metadata: ${candidate.slug}`);
       }
+      // Prompt edits replace text identities; replaying an old editor must never overwrite a newer variant.
+      if (
+        candidate.mode === 'replace-prompts' &&
+        (!existingItem ||
+          !candidate.expectedPrompts ||
+          JSON.stringify(existingItem.prompts) !== JSON.stringify(candidate.expectedPrompts))
+      ) {
+        throw new StyleGalleryClientError('Prompts changed. Reopen the editor before saving.', 409);
+      }
       const merged = mergeStyleGalleryPromptVariants(existingItem?.prompts ?? [], candidate.submittedItem.prompts, {
         updateExisting: candidate.mode === 'upsert',
       });
@@ -305,14 +324,16 @@ async function writeItemCandidate(candidate: ItemWriteCandidate): Promise<ItemWr
         };
       }
       item = styleGalleryItemSchema.parse(
-        existingItem && candidate.mode === 'create'
-          ? { ...existingItem, prompts: merged.prompts, updated: new Date().toISOString() }
-          : {
-              ...candidate.submittedItem,
-              slug: candidate.slug,
-              prompts: merged.prompts,
-              examples: existingItem?.examples ?? [],
-            },
+        existingItem && candidate.mode === 'replace-prompts'
+          ? { ...existingItem, prompts: candidate.submittedItem.prompts, updated: new Date().toISOString() }
+          : existingItem && candidate.mode === 'create'
+            ? { ...existingItem, prompts: merged.prompts, updated: new Date().toISOString() }
+            : {
+                ...candidate.submittedItem,
+                slug: candidate.slug,
+                prompts: merged.prompts,
+                examples: existingItem?.examples ?? [],
+              },
       );
       const writtenEtag = await requireWrittenObjectEtag(
         getStyleGalleryItemKey(candidate.slug),
