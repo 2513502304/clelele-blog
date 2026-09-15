@@ -144,7 +144,7 @@ export default function StyleGalleryCuration({
         if (draftTags.length > MAX_GALLERY_TAGS_PER_ITEM || draftTags.some((tag) => !isValidGalleryTag(tag)))
           throw new Error(
             locale.startsWith('zh')
-              ? '标签最多 12 个，每个最多 24 字，不能包含空格、# 或标记。'
+              ? '标签最多 12 个，每个 1–24 字；不能含 #、尖括号或控制字符，null 为保留词。'
               : 'Choose up to 12 valid tags.',
           );
         if (!file || !file.size || file.size > MAX_STYLE_GALLERY_EXAMPLE_FILE_SIZE) throw new Error(text.format);
