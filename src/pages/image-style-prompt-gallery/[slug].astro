@@ -96,7 +96,9 @@ setStyleGalleryPublicCacheHeaders(Astro.response.headers, [getStyleGalleryItemCa
           <div>
             <StylePromptCopy
               client:load
+              locale={locale}
               itemSlug={data.slug}
+              promptRevision={data.promptRevision}
               prompts={data.prompts}
               label={t(locale, 'gallery.prompt')}
               copyLabel={t(locale, 'gallery.copy')}

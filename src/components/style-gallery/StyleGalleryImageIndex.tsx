@@ -30,6 +30,7 @@ import { NuqsAdapter } from 'nuqs/adapters/react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useProgressiveList } from '@/hooks/useProgressiveList';
 import type { StyleGalleryCardData } from '@/types/style-gallery';
+import StyleGalleryCuration from './StyleGalleryCuration';
 import { useGalleryTagSelection } from './StyleGalleryTagSelection';
 import { GalleryTagEditor, GalleryTagFilter } from './StyleGalleryTags';
 
@@ -246,6 +247,7 @@ function StyleGalleryImageIndexContent({
           />
         </label>
 
+        <StyleGalleryCuration locale={locale} />
         <StyleGalleryVisualFilter
           scope="source"
           labels={labels.visualFilter}

@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 import { getStyleGalleryPromptId } from '@lib/style-gallery-prompts';
 import type { StoredStyleGalleryItem, StyleGalleryExample } from '@/types/style-gallery';
 import { POST as writeItems } from '../pages/api/style-gallery/items';
+import { PATCH as editPrompt } from '../pages/api/style-gallery/prompts/[slug]';
 import { encodeQuantizedEmbedding } from './style-gallery-visual-feature';
 import { STYLE_GALLERY_VISUAL_EMBEDDING_DIMENSION, type StyleGalleryVisualRecordInput } from './style-gallery-visual-types';
 
@@ -251,6 +252,36 @@ describe('style gallery bulk item writes', () => {
       assert.equal(duplicateResult.skippedDuplicates, 1);
       assert.equal(catalogPutCount, 2);
       assert.equal(promptSearchIndexPutCount, 2);
+
+      const edit = (id: string, prompt: string, credential = token) =>
+        editPrompt({
+          params: { slug: items[0].slug },
+          request: new Request('https://example.test/api/style-gallery/prompts/test', {
+            method: 'PATCH',
+            headers: { authorization: `Bearer ${credential}`, 'content-type': 'application/json' },
+            body: JSON.stringify({ id, prompt }),
+          }),
+        } as never);
+      const originalId = appendedItem.prompts[0].id;
+      assert.equal((await edit(originalId, 'Edited prompt', 'wrong')).status, 401);
+      assert.equal((await edit(originalId, ' ')).status, 400);
+      assert.equal((await edit(originalId, alternatePrompt)).status, 409);
+      const edited = await edit(originalId, 'Edited prompt');
+      assert.equal(edited.status, 200, await edited.clone().text());
+      const editedItem = JSON.parse(objects.get(`items/${items[0].slug}.json`) ?? '{}');
+      assert.equal(editedItem.prompts[0].id, getStyleGalleryPromptId('Edited prompt'));
+      assert.equal(editedItem.prompts[1].prompt, alternatePrompt);
+      assert.deepEqual(editedItem.examples, appendedItem.examples);
+      const editedCatalog = JSON.parse(objects.get('metadata/catalog-v5.json') ?? '{}').items.find(
+        (item: StoredStyleGalleryItem) => item.slug === items[0].slug,
+      );
+      assert.equal(editedCatalog.promptExcerpt, 'Edited prompt');
+      assert.ok(objects.get('metadata/prompt-search-index.json')?.includes('Edited prompt'));
+      assert.equal((await edit(originalId, 'Stale editor')).status, 409);
+      assert.equal((await edit(getStyleGalleryPromptId('Edited prompt'), 'Edited prompt')).status, 200);
+      assert.equal(catalogPutCount, 3);
+      assert.equal(promptSearchIndexPutCount, 3);
+      assert.equal(exampleIndexPutCount, 0);
     } finally {
       globalThis.fetch = previousFetch;
       for (const [name, value] of Object.entries({

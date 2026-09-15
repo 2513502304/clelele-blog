@@ -11,6 +11,12 @@ const promptCache = new Map<string, StyleGalleryPromptChoice[]>();
 const promptRequests = new Map<string, Promise<StyleGalleryPromptChoice[]>>();
 const PROMPT_REQUEST_TIMEOUT_MS = 15_000;
 
+/** Refresh already-mounted islands after an edit, including their old SSR revision keys. */
+export function publishStyleGalleryPromptChoices(slug: string, revision: string, prompts: StyleGalleryPromptChoice[]): void {
+  const keys = new Set([getStyleGalleryPromptCacheKey(slug, revision), ...promptCache.keys(), ...promptRequests.keys()]);
+  for (const key of keys) if (key.startsWith(`${slug}:`)) promptCache.set(key, prompts);
+}
+
 /** 所有 Gallery 入口共享候选缓存，避免列表预取、lightbox 和详情交互重复读取同一 item。 */
 export async function loadStyleGalleryPromptChoices(slug: string, promptRevision: string): Promise<StyleGalleryPromptChoice[]> {
   const cacheKey = getStyleGalleryPromptCacheKey(slug, promptRevision);
@@ -27,8 +33,16 @@ export async function loadStyleGalleryPromptChoices(slug: string, promptRevision
       if (!response.ok) throw new Error(`Prompt request failed with HTTP ${response.status}.`);
       const data = (await response.json()) as { prompts?: StyleGalleryPromptChoice[] };
       if (!data.prompts?.length) throw new Error('Prompt response was empty.');
+      // An edit may have published newer choices while this read was in flight.
+      const published = promptCache.get(cacheKey);
+      if (published) return published;
       promptCache.set(cacheKey, data.prompts);
       return data.prompts;
+    })
+    .catch((error) => {
+      const published = promptCache.get(cacheKey);
+      if (published) return published;
+      throw error;
     })
     .finally(() => promptRequests.delete(cacheKey));
   promptRequests.set(cacheKey, request);
