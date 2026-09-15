@@ -7,7 +7,7 @@ import { readStyleGalleryImageDimensions } from '@lib/style-gallery-image-dimens
 import { createManualStyleGalleryItem } from '@lib/style-gallery-manual-item';
 import { styleGalleryVisualRecordInputSchema } from '@lib/style-gallery-schema';
 import { getStoredStyleGalleryItem, getStyleGalleryCatalog, mutateStyleGalleryVisualIndex } from '@lib/style-gallery-store';
-import { replaceStyleGallerySourceVisualRecords } from '@lib/style-gallery-visual-index';
+import { upsertStyleGalleryVisualRecords } from '@lib/style-gallery-visual-index';
 import { writeStyleGalleryItems } from '@lib/style-gallery-write';
 import type { APIRoute } from 'astro';
 import sharp from 'sharp';
@@ -66,7 +66,8 @@ export const POST: APIRoute = async ({ request }) => {
     let visualIndexUpdated = true;
     try {
       await mutateStyleGalleryVisualIndex((current) =>
-        replaceStyleGallerySourceVisualRecords(current, new Set([slug]), [
+        // An existing collection may contain more source images; update only the uploaded image.
+        upsertStyleGalleryVisualRecords(current, [
           { kind: 'source', sourceSlug: slug, imageId: body.imageHash, feature: body.feature },
         ]),
       );

@@ -124,7 +124,17 @@ it('manually collects verified source/thumbnail/visual metadata and appends dupl
     assert.equal(thumbnail.format, 'webp');
     assert.equal(thumbnail.width, 48);
     assert.equal(json('metadata/visual-index-v1.json').records[0].sourceSlug, result.slug);
+    const visual = json('metadata/visual-index-v1.json');
+    visual.features.push({ ...body.feature, imageHash: 'b'.repeat(64) });
+    visual.records.push({ kind: 'source', sourceSlug: result.slug, imageId: 'b'.repeat(64), featureIndex: 1 });
+    objects.set('metadata/visual-index-v1.json', encode(visual));
+    versions.set('metadata/visual-index-v1.json', (versions.get('metadata/visual-index-v1.json') ?? 1) + 1);
+    invalidateStyleGalleryStoreCache();
     assert.equal((await (await save()).json()).slug, result.slug);
+    assert.equal(json('metadata/visual-index-v1.json').records.length, 2);
+    assert.ok(
+      json('metadata/visual-index-v1.json').records.some((record: { imageId: string }) => record.imageId === 'b'.repeat(64)),
+    );
     assert.equal(json(`items/${result.slug}.json`).prompts.length, 1);
     assert.equal((await (await save({ ...body, prompt: 'Another extraction' })).json()).slug, result.slug);
     assert.equal(json(`items/${result.slug}.json`).prompts.length, 2);
