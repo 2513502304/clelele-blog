@@ -1,13 +1,17 @@
 import { ErrorBoundary, InlineErrorFallback } from '@components/common';
 import { Icon } from '@iconify/react';
+import { publishStyleGalleryPromptChoices } from '@lib/style-gallery-prompt-client';
 import { groupStyleGalleryPromptsByModel } from '@lib/style-gallery-prompt-groups';
 import { selectStyleGalleryPrompt } from '@lib/style-gallery-prompt-selection';
 import { cn } from '@lib/utils';
 import { useMemo, useState } from 'react';
 import type { StyleGalleryPromptVariant } from '@/types/style-gallery';
+import StyleGalleryCuration from './StyleGalleryCuration';
 
 export interface StylePromptCopyProps {
   itemSlug: string;
+  locale?: string;
+  promptRevision: string;
   prompts: StyleGalleryPromptVariant[];
   label: string;
   copyLabel: string;
@@ -20,7 +24,9 @@ export interface StylePromptCopyProps {
 
 function StylePromptCopyContent({
   itemSlug,
-  prompts,
+  prompts: initialPrompts,
+  locale = 'zh',
+  promptRevision,
   label,
   copyLabel,
   copiedLabel,
@@ -29,6 +35,7 @@ function StylePromptCopyContent({
   unknownModelLabel,
   className = '',
 }: StylePromptCopyProps) {
+  const [prompts, setPrompts] = useState(initialPrompts);
   const [activePromptId, setActivePromptId] = useState(prompts[0]?.id ?? '');
   const [copied, setCopied] = useState(false);
   const activePrompt = prompts.find((prompt) => prompt.id === activePromptId) ?? prompts[0];
@@ -87,15 +94,31 @@ function StylePromptCopyContent({
               </select>
             )}
           </div>
-          <button
-            type="button"
-            onClick={copyPrompt}
-            className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-rose-200 bg-white text-rose-500 shadow-sm transition hover:-translate-y-0.5 hover:border-rose-300 hover:text-rose-600 dark:border-rose-900 dark:bg-gray-900 dark:text-rose-300"
-            aria-label={copied ? copiedLabel : copyLabel}
-            title={copied ? copiedLabel : copyLabel}
-          >
-            <Icon icon={copied ? 'ri:check-line' : 'ri:file-copy-line'} className="size-4" />
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            <StyleGalleryCuration
+              locale={locale}
+              slug={itemSlug}
+              variant={activePrompt}
+              onSaved={(updated, id) => {
+                publishStyleGalleryPromptChoices(itemSlug, promptRevision, updated);
+                setPrompts(updated);
+                setActivePromptId(id);
+                setCopied(false);
+                const next = updated.find((prompt) => prompt.id === id);
+                if (next)
+                  selectStyleGalleryPrompt({ slug: itemSlug, prompt: next.prompt, originalPrompt: next.originalPrompt });
+              }}
+            />
+            <button
+              type="button"
+              onClick={copyPrompt}
+              className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-rose-200 bg-white text-rose-500 shadow-sm transition hover:-translate-y-0.5 hover:border-rose-300 hover:text-rose-600 dark:border-rose-900 dark:bg-gray-900 dark:text-rose-300"
+              aria-label={copied ? copiedLabel : copyLabel}
+              title={copied ? copiedLabel : copyLabel}
+            >
+              <Icon icon={copied ? 'ri:check-line' : 'ri:file-copy-line'} className="size-4" />
+            </button>
+          </div>
         </div>
         {activePrompt && (
           <p className="whitespace-pre-wrap text-pretty p-5 text-gray-700 text-sm leading-8 dark:text-gray-200">
