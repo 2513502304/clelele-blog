@@ -5,6 +5,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import sharp from 'sharp';
 import { readStyleGalleryImageDimensions } from '../src/lib/style-gallery-image-dimensions.ts';
+import { sanitizeImportedOriginalPrompt, sanitizeImportedPrompt } from '../src/lib/style-gallery-prompt-sanitize.ts';
 import { isValidGalleryTag, MAX_GALLERY_TAGS_PER_ITEM, normalizeGalleryTag } from '../src/lib/style-gallery-tags.ts';
 import { computeStyleGalleryVisualFeaturesFromBytes } from '../src/lib/style-gallery-visual-feature-node.ts';
 import { configureEnvironmentProxy } from './lib/environment-proxy.mjs';
@@ -86,10 +87,7 @@ function parseDataUri(uri) {
 
 /** 移除原始用户 prompt 中的本机 skill 绝对路径，只保留可公开展示的 `/skill-name`。 */
 function sanitizeOriginalPrompt(prompt) {
-  return prompt
-    .replace(/\[\$([^\]\s]+)\]\((?:file:\/\/)?(?:~|\/Users|\/home)[^)]*\/SKILL\.md\)/g, '/$1')
-    .replace(/(?:file:\/\/)?(?:~|\/Users|\/home)\/[^\s)]+\/([^/\s)]+)\/SKILL\.md/g, '/$1')
-    .trim();
+  return sanitizeImportedOriginalPrompt(prompt);
 }
 
 /** 单图沿用图片哈希；多图按用户输入顺序拼接各图哈希后再次计算，作为组合 item 的稳定身份。 */
@@ -106,7 +104,7 @@ function getExtractedItemHash(extracted) {
 }
 
 function normalizePrompt(prompt) {
-  return prompt.replace(/\r\n?/g, '\n').trim();
+  return sanitizeImportedPrompt(prompt);
 }
 
 function promptId(prompt) {
@@ -718,6 +716,7 @@ npm run import:style-prompts -- <session.jsonl> --tag "溶图" --tag "现实" --
 # 标签使用同一个 Upload Token；标签失败可重跑同一命令，不会重复上传图片或 Prompt。
 # --metadata-only 配合 --tag 时只标记已存在的来源；追加每批最多 10000 个，覆盖最多 1000 个，单批原子写入。
 
+# 新版桌面附件包装仅提取 My request 正文；记忆引用块在计算 Prompt ID 前移除，保留 <...> 风格占位符。
 # JSONL 的 turn_context 已包含正确模型时，可省略 --prompt-model；该参数用于缺失或手动覆盖来源模型。
 # 写入前只核对新建/更新/重复数量时追加 --dry-run；该模式不需要 Upload Token，也不会修改 HF。
 # Upload Token、HF 凭证和可选调优项自动读取 .env.local；package script 会自动启用 shell 中已有的代理。
