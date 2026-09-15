@@ -33,3 +33,19 @@ it('infers UTC+8 collection date and valid source/prompt identities without requ
   assert.equal(item.prompts[0].sourceSession, undefined);
   assert.equal(styleGalleryItemSchema.safeParse(item).success, true);
 });
+
+it('removes only empty desktop image envelopes from original prompts, never model text', () => {
+  const wrapper = '<image name=[Image #1] path="/Users/test/a.jpg">\n\n</image>';
+  assert.equal(sanitizeImportedOriginalPrompt(`request\n${wrapper}`), 'request');
+  assert.equal(sanitizeImportedOriginalPrompt(`request\n${wrapper}\n${wrapper.replace('#1', '#2')}`), 'request');
+  assert.equal(sanitizeImportedOriginalPrompt(`${wrapper}\nrequest`), 'request');
+  for (const content of [
+    wrapper.replace('\n\n', 'real content'),
+    '<image>keep</image>',
+    `Describe ${wrapper}`,
+    'Use <主体> with <image name=[Image #1] path="file.jpg">',
+  ]) {
+    assert.equal(sanitizeImportedOriginalPrompt(content), content);
+  }
+  assert.equal(sanitizeImportedPrompt(`Model template <主体>\n${wrapper}`), `Model template <主体>\n${wrapper}`);
+});
