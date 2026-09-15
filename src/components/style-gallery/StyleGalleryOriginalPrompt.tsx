@@ -29,7 +29,7 @@ export default function StyleGalleryOriginalPrompt({
   if (!prompt) return null;
   return (
     <section
-      className="rounded-lg border border-sky-100 bg-sky-50/70 p-5 shadow-sm dark:border-sky-950/60 dark:bg-sky-950/30"
+      className="mt-4 rounded-lg border border-sky-100 bg-sky-50/70 p-5 shadow-sm dark:border-sky-950/60 dark:bg-sky-950/30"
       data-gallery-original-prompt
     >
       <h2 className="font-bold text-sky-500 text-xs uppercase tracking-wider dark:text-sky-200">{label}</h2>

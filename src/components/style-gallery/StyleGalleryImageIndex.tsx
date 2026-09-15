@@ -247,7 +247,6 @@ function StyleGalleryImageIndexContent({
           />
         </label>
 
-        <StyleGalleryCuration locale={locale} />
         <StyleGalleryVisualFilter
           scope="source"
           labels={labels.visualFilter}
@@ -310,7 +309,10 @@ function StyleGalleryImageIndexContent({
       </div>
 
       <GalleryTagEditor locale={locale} />
-      {tagSelection.toolbar}
+      <div className="flex items-start justify-between gap-3" data-gallery-management>
+        <div className="min-w-0 flex-1">{tagSelection.toolbar}</div>
+        <StyleGalleryCuration locale={locale} />
+      </div>
       {visibleItems.length ? (
         <>
           <div className="grid grid-cols-[repeat(auto-fill,minmax(92px,1fr))] gap-2.5 md:grid-cols-[repeat(auto-fill,minmax(76px,1fr))] md:gap-2">

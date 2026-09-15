@@ -19,14 +19,14 @@ const tagSchema = z
   .max(100)
   .transform(normalizeGalleryTag)
   .refine(isValidGalleryTag, 'Tags must contain 1–24 visible characters, without # or markup; null is reserved.');
-const tagsSchema = z
+export const galleryTagsSchema = z
   .array(tagSchema)
   .max(MAX_GALLERY_TAGS_PER_ITEM)
   .transform((tags) => [...new Set(tags)].sort());
 const singleTagMutationSchema = z.object({
   slug: z.string().regex(/^[a-z0-9-]{1,160}$/i),
-  tags: tagsSchema,
-  previousTags: tagsSchema,
+  tags: galleryTagsSchema,
+  previousTags: galleryTagsSchema,
 });
 /** Every bulk mode is atomic; replacement additionally compares each source's editing snapshot. */
 export const galleryTagMutationSchema = z.union([
@@ -44,7 +44,7 @@ export const galleryTagMutationSchema = z.union([
         .array(tagSchema)
         .max(MAX_GALLERY_TAG_VOCABULARY)
         .transform((tags) => [...new Set(tags)].sort()),
-      previousTagsBySlug: z.record(z.string().regex(/^[a-z0-9-]{1,160}$/i), tagsSchema).optional(),
+      previousTagsBySlug: z.record(z.string().regex(/^[a-z0-9-]{1,160}$/i), galleryTagsSchema).optional(),
     })
     .superRefine((input, ctx) => {
       const mode = input.mode ?? 'add';
@@ -60,7 +60,10 @@ export const galleryTagMutationSchema = z.union([
         });
     }),
 ]);
-const indexSchema = z.object({ version: z.literal(1), items: z.record(z.string().regex(/^[a-z0-9-]{1,160}$/i), tagsSchema) });
+const indexSchema = z.object({
+  version: z.literal(1),
+  items: z.record(z.string().regex(/^[a-z0-9-]{1,160}$/i), galleryTagsSchema),
+});
 
 export class GalleryTagWriteError extends Error {
   constructor(

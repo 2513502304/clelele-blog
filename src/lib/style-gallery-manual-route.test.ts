@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { it } from 'node:test';
 import sharp from 'sharp';
 import { POST as collect } from '../pages/api/style-gallery/manual';
+import { PATCH as edit } from '../pages/api/style-gallery/prompts/[slug]';
 import { POST as upload } from '../pages/api/style-gallery/source-upload';
 import { STYLE_GALLERY_PLATFORMS } from './style-gallery-platforms';
 import { invalidateStyleGalleryStoreCache } from './style-gallery-store';
@@ -145,6 +146,7 @@ it('manually collects verified source/thumbnail/visual metadata and appends dupl
       prompt: 'A collected prompt\nSecond line\n\nThird paragraph',
       originalPrompt: 'Source instruction\nNext instruction',
       model: 'Personal collection',
+      tags: ['插画'],
       feature: {
         imageHash: hash,
         perceptualHash: '0'.repeat(16),
@@ -164,12 +166,15 @@ it('manually collects verified source/thumbnail/visual metadata and appends dupl
     assert.equal((await save(body, 'wrong')).status, 401);
     assert.equal((await save({ ...body, prompt: '' })).status, 400);
     assert.equal((await save({ ...body, feature: { ...body.feature, imageHash: 'b'.repeat(64) } })).status, 400);
+    assert.equal((await save({ ...body, tags: ['null'] })).status, 400);
     const response = await save();
     assert.equal(response.status, 200, await response.clone().text());
     const result = await response.json();
     assert.equal(result.created, true);
     assert.equal(result.visualIndexUpdated, true);
+    assert.equal(result.tagsUpdated, true);
     const json = (key: string) => JSON.parse(new TextDecoder().decode(objects.get(key)));
+    assert.deepEqual(json('metadata/tags-v1.json').items[result.slug], ['插画']);
     const stored = json(`items/${result.slug}.json`);
     assert.equal(stored.prompts[0].originalPrompt, body.originalPrompt);
     assert.equal(stored.prompts[0].prompt, body.prompt);
@@ -194,6 +199,32 @@ it('manually collects verified source/thumbnail/visual metadata and appends dupl
     assert.equal((await (await save({ ...body, prompt: 'Another extraction' })).json()).slug, result.slug);
     assert.equal(json(`items/${result.slug}.json`).prompts.length, 2);
     assert.equal(json('metadata/catalog-v5.json').items.length, 1);
+    await save({ ...body, tags: ['现实'] });
+    assert.deepEqual(json('metadata/tags-v1.json').items[result.slug], ['插画', '现实']);
+    await save({ ...body, tags: [] });
+    assert.deepEqual(json('metadata/tags-v1.json').items[result.slug], ['插画', '现实']);
+    const unchangedId = stored.prompts[0].id;
+    const patch = (fields: Record<string, unknown>, credential = 'test-token') =>
+      edit({
+        params: { slug: result.slug },
+        request: new Request(`https://example.test/api/style-gallery/prompts/${result.slug}`, {
+          method: 'PATCH',
+          headers: { authorization: `Bearer ${credential}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ id: unchangedId, prompt: body.prompt, ...fields }),
+        }),
+      } as never);
+    const writeCount = writes;
+    assert.equal((await patch({ originalPrompt: 'New', previousOriginalPrompt: body.originalPrompt }, 'wrong')).status, 401);
+    assert.equal((await patch({ originalPrompt: 'New', previousOriginalPrompt: 'stale' })).status, 409);
+    assert.equal(writes, writeCount);
+    assert.equal((await patch({ originalPrompt: '', previousOriginalPrompt: body.originalPrompt })).status, 200);
+    assert.equal(json(`items/${result.slug}.json`).prompts[0].originalPrompt, undefined);
+    assert.equal((await patch({ originalPrompt: 'Added later\nSecond line', previousOriginalPrompt: '' })).status, 200);
+    const edited = json(`items/${result.slug}.json`).prompts;
+    assert.equal(edited[0].id, unchangedId);
+    assert.equal(edited[0].prompt, body.prompt);
+    assert.equal(edited[0].originalPrompt, 'Added later\nSecond line');
+    assert.equal(edited[1].prompt, 'Another extraction');
   } finally {
     globalThis.fetch = previousFetch;
     invalidateStyleGalleryStoreCache();

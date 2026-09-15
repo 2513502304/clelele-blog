@@ -55,8 +55,8 @@ setStyleGalleryPublicCacheHeaders(Astro.response.headers, [getStyleGalleryItemCa
       </nav>
 
       <article class="grid grid-cols-2 items-start gap-6 lg:grid-cols-1" data-pagefind-body>
-        <aside data-gallery-detail-sticky class="sticky min-w-0 self-start space-y-4 lg:static" style="top: min(1.5rem, calc(100dvh - var(--gallery-detail-height, 0px) - 1.5rem))">
-          <header class="space-y-3 px-1">
+        <aside data-gallery-detail-sticky class="sticky min-w-0 self-start lg:static" style="top: min(1.5rem, calc(100dvh - var(--gallery-detail-height, 0px) - 1.5rem))">
+          <header class="mb-4 space-y-3 px-1">
             <h1 class="whitespace-nowrap font-black text-2xl text-gray-950 lg:whitespace-normal dark:text-white">{data.title}</h1>
             <div class="flex flex-nowrap gap-1.5 lg:flex-wrap">
               {(data.modelTargets ?? []).map((target) => (
