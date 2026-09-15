@@ -80,3 +80,23 @@ test('a successful edit supersedes an in-flight chooser read and refreshes exist
     globalThis.fetch = previousFetch;
   }
 });
+
+test('published edits remain available when the superseded chooser request fails', async () => {
+  const previousFetch = globalThis.fetch;
+  let fail: ((reason: Error) => void) | undefined;
+  globalThis.fetch = () =>
+    new Promise<Response>((_resolve, reject) => {
+      fail = reject;
+    });
+  resetStyleGalleryPromptClientCache();
+  try {
+    const pending = loadStyleGalleryPromptChoices('edited-item', 'old-revision');
+    const updated = [{ id: 'new-id', prompt: 'Edited prompt', importedAt: '2026-09-15' }];
+    publishStyleGalleryPromptChoices('edited-item', 'old-revision', updated);
+    fail?.(new TypeError('Network failed'));
+    assert.deepEqual(await pending, updated);
+  } finally {
+    resetStyleGalleryPromptClientCache();
+    globalThis.fetch = previousFetch;
+  }
+});

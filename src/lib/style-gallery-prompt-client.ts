@@ -39,6 +39,11 @@ export async function loadStyleGalleryPromptChoices(slug: string, promptRevision
       promptCache.set(cacheKey, data.prompts);
       return data.prompts;
     })
+    .catch((error) => {
+      const published = promptCache.get(cacheKey);
+      if (published) return published;
+      throw error;
+    })
     .finally(() => promptRequests.delete(cacheKey));
   promptRequests.set(cacheKey, request);
   return request;

@@ -81,6 +81,61 @@ it('manually collects verified source/thumbnail/visual metadata and appends dupl
     assert.equal((await makeUpload('wrong')).status, 401);
     assert.equal(writes, 0);
     assert.equal((await makeUpload('test-token', Buffer.from('wrong'))).status, 409);
+    const invalidBytes = Buffer.from('Not an image');
+    const invalidHash = createHash('sha256').update(invalidBytes).digest('hex');
+    const sendSource = (target: URL, body: BodyInit, contentType: string) =>
+      upload({
+        url: target,
+        request: new Request(target, {
+          method: 'POST',
+          headers: { authorization: 'Bearer test-token', 'content-type': contentType },
+          body,
+        }),
+      } as never);
+    assert.equal(
+      (
+        await sendSource(
+          new URL(`https://example.test/api/style-gallery/source-upload?action=direct&imageHash=${invalidHash}`),
+          invalidBytes,
+          'image/png',
+        )
+      ).status,
+      400,
+    );
+    assert.equal((await sendSource(url, Uint8Array.from(bytes), 'image/jpeg')).status, 400);
+    const uploadId = 'e22c3ad4-2528-4a2d-a5c5-60c6481d81a9';
+    assert.equal(
+      (
+        await sendSource(
+          new URL(
+            `https://example.test/api/style-gallery/source-upload?action=chunk&uploadId=${uploadId}&partIndex=0&partCount=1&chunkHash=${invalidHash}`,
+          ),
+          invalidBytes,
+          'application/octet-stream',
+        )
+      ).status,
+      200,
+    );
+    assert.equal(
+      (
+        await sendSource(
+          new URL('https://example.test/api/style-gallery/source-upload'),
+          JSON.stringify({
+            action: 'complete',
+            uploadId,
+            imageHash: invalidHash,
+            extension: 'png',
+            contentType: 'image/png',
+            size: invalidBytes.length,
+            parts: [{ index: 0, size: invalidBytes.length, hash: invalidHash }],
+          }),
+          'application/json',
+        )
+      ).status,
+      400,
+    );
+    assert.equal(objects.has(`source/${invalidHash.slice(0, 12)}.png`), false);
+    assert.equal(JSON.parse(new TextDecoder().decode(objects.get('metadata/catalog-v5.json'))).items.length, 0);
     assert.equal((await makeUpload('test-token')).status, 200);
     const embedding = new Float32Array(STYLE_GALLERY_VISUAL_EMBEDDING_DIMENSION);
     embedding[0] = 1;

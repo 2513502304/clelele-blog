@@ -19,6 +19,7 @@ import {
   getStyleGalleryExampleKey,
   MAX_STYLE_GALLERY_EXAMPLE_FILE_SIZE,
 } from '@lib/style-gallery-example-upload';
+import sharp from 'sharp';
 import { z } from 'zod';
 
 const imageHashSchema = z.string().regex(/^[a-f0-9]{64}$/i);
@@ -49,6 +50,16 @@ const abortSchema = z.object({
 
 function hashBytes(bytes: Uint8Array): string {
   return createHash('sha256').update(bytes).digest('hex');
+}
+
+/** Source objects can also be published by the item API, so validate before making them reusable assets. */
+async function validateSourceImage(bytes: Uint8Array, extension: string): Promise<boolean> {
+  try {
+    const metadata = await sharp(bytes).metadata();
+    return Boolean(metadata.width && metadata.height && metadata.format === (extension === 'jpg' ? 'jpeg' : extension));
+  } catch {
+    return false;
+  }
 }
 
 async function deleteUploadParts(uploadId: string, partCount: number): Promise<void> {
@@ -88,6 +99,8 @@ async function handleDirectUpload(request: Request, url: URL, kind: 'source' | '
   if (hashBytes(image) !== imageHash) {
     return new Response('Direct upload hash does not match.', { status: 409 });
   }
+  if (kind === 'source' && !(await validateSourceImage(image, extension)))
+    return new Response('Invalid source image or mismatched format.', { status: 400 });
 
   const finalKey =
     kind === 'source' ? `source/${imageHash.slice(0, 12)}.${extension}` : getStyleGalleryExampleKey(imageHash, extension);
@@ -183,6 +196,8 @@ async function handleCompleteUpload(rawBody: unknown, kind: 'source' | 'example'
   if (offset !== body.size || hashBytes(image) !== body.imageHash.toLowerCase()) {
     return new Response('Completed image hash does not match the prepared upload.', { status: 409 });
   }
+  if (kind === 'source' && !(await validateSourceImage(image, body.extension)))
+    return new Response('Invalid source image or mismatched format.', { status: 400 });
 
   await putStyleGalleryObject(finalKey, image, body.contentType);
   await deleteUploadParts(body.uploadId, parts.length).catch((error) => {
