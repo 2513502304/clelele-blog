@@ -99,7 +99,10 @@ export default function GalleryMergeCard({
               <span className="font-semibold text-primary text-xs">
                 {prompt.model || (zh ? '未注明模型' : 'Unspecified model')}
               </span>
-              <span className="vertical-scrollbar mt-2 block max-h-44 overflow-y-auto overscroll-contain whitespace-pre-wrap break-words leading-relaxed">
+              <span
+                data-merge-prompt
+                className="vertical-scrollbar mt-2 block max-h-44 overflow-y-scroll overscroll-contain whitespace-pre-wrap break-words leading-relaxed [scrollbar-gutter:stable]"
+              >
                 {prompt.prompt}
               </span>
             </span>
@@ -122,7 +125,10 @@ export default function GalleryMergeCard({
                 checked={choice.original?.side === side && choice.original.id === prompt.id}
                 onChange={() => onChange({ ...choice, original: { side, id: prompt.id } })}
               />
-              <span className="vertical-scrollbar max-h-32 overflow-y-auto overscroll-contain whitespace-pre-wrap break-words">
+              <span
+                data-merge-original
+                className="vertical-scrollbar max-h-32 min-w-0 flex-1 overflow-y-scroll overscroll-contain whitespace-pre-wrap break-words [scrollbar-gutter:stable]"
+              >
                 {prompt.originalPrompt}
               </span>
             </label>

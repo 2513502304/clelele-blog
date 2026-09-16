@@ -17,7 +17,7 @@ const cards = ['a', 'b'].map((letter, side) => ({
       {
         id: letter.repeat(64),
         prompt: `模型 ${side + 1} 的完整提示词\n${'保留换行与主体风格。'.repeat(45)}`,
-        originalPrompt: `原始请求 ${side + 1}`,
+        originalPrompt: side === 0 ? `原始请求 1\n${'较长的原始请求，保留换行。\n'.repeat(100)}` : '原始请求 2',
         model: `Model ${side + 1}`,
         importedAt: `2026-09-0${side + 1}T08:00:00Z`,
       },
@@ -74,6 +74,19 @@ for (const path of ['', '/index']) {
     await dialog.getByRole('button', { name: '加载对比', exact: true }).click();
     const right = dialog.getByRole('region', { name: '卡片 2', exact: true });
     await expect(right).toBeVisible();
+    const scrolling = await dialog
+      .locator('[data-merge-scroll], [data-merge-prompt], [data-merge-original]')
+      .evaluateAll((elements) =>
+        elements.map((element) => ({
+          height: element.clientHeight,
+          total: element.scrollHeight,
+          overflow: getComputedStyle(element).overflowY,
+        })),
+      );
+    expect(scrolling[0].total).toBeGreaterThan(scrolling[0].height);
+    expect(scrolling.filter((area) => area.total > area.height).length).toBeGreaterThanOrEqual(4);
+    expect(scrolling.every((area) => area.overflow === 'scroll')).toBe(true);
+    await expect(dialog.getByRole('button', { name: '确认合并…', exact: true })).toBeInViewport();
     await right.getByRole('radio', { name: '原始请求 2', exact: true }).check();
     await right.getByRole('radio', { name: /导入日期/ }).check();
     await right.getByRole('checkbox', { name: /Sub-images/ }).uncheck();
