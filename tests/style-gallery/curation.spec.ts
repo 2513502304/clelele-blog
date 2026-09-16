@@ -153,10 +153,12 @@ test('manual upload sends collection fields and navigates after saving without a
         prompt: 'My reusable prompt\nSecond line\n\nThird paragraph',
         originalPrompt: 'Original instruction\nNext instruction',
         model: 'My model',
-        extension: 'png',
         tags: ['插画', '现实'],
       });
-      expect(body.imageHash).toMatch(/^[a-f0-9]{64}$/);
+      expect(body.images).toHaveLength(2);
+      expect(body.images[0].imageHash).toMatch(/^[a-f0-9]{64}$/);
+      expect(body.images[1].imageHash).not.toBe(body.images[0].imageHash);
+      expect(body.images[0].extension).toBe('png');
       return route.fulfill({ json: { slug, created: true, visualIndexUpdated: true } });
     }
     return route.continue();
@@ -164,9 +166,10 @@ test('manual upload sends collection fields and navigates after saving without a
   await page.goto('/image-style-prompt-gallery', { waitUntil: 'domcontentloaded' });
   await openCuration(page, '收藏图片');
   const dialog = page.getByRole('dialog', { name: '收藏图片', exact: true });
-  await dialog
-    .getByLabel('参考图片', { exact: true })
-    .setInputFiles({ name: 'sample.png', mimeType: 'image/png', buffer: Buffer.from('test-image') });
+  await dialog.getByLabel('参考图片', { exact: true }).setInputFiles([
+    { name: 'sample.png', mimeType: 'image/png', buffer: Buffer.from('test-image') },
+    { name: 'second.png', mimeType: 'image/png', buffer: Buffer.from('second-image') },
+  ]);
   await dialog.getByLabel('模型反推 Prompt').fill('My reusable prompt\nSecond line\n\nThird paragraph');
   await dialog.getByLabel('用户原始 Prompt（选填）').fill('Original instruction\nNext instruction');
   await dialog.getByLabel('模型名称（选填）').fill('My model');
@@ -176,6 +179,80 @@ test('manual upload sends collection fields and navigates after saving without a
   await tagInput.fill('现实'); // Saving also includes the last uncommitted draft.
   await dialog.getByRole('button', { name: '保存', exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`${slug}$`), { timeout: 60_000 });
-  expect(writes).toEqual(['image', 'metadata']);
+  expect(writes).toEqual(['image', 'image', 'metadata']);
   expect(discardPrompts).toBe(0);
+});
+
+for (const mobile of [false, true]) {
+  test(`collection scroll contains selected images and visible tag suggestions ${mobile ? 'mobile' : 'desktop'}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(mobile ? { width: 390, height: 650 } : { width: 1280, height: 720 });
+    await page.route('**/api/style-gallery/tags*', (route) =>
+      route.fulfill({ json: { version: 1, updatedAt: new Date().toISOString(), items: { sample: ['插画', '现实'] } } }),
+    );
+    await page.goto('/image-style-prompt-gallery', { waitUntil: 'domcontentloaded' });
+    await openCuration(page, '收藏图片');
+    const dialog = page.getByRole('dialog', { name: '收藏图片', exact: true });
+    await dialog.getByLabel('参考图片', { exact: true }).setInputFiles({
+      name: 'sample.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aL1sAAAAASUVORK5CYII=',
+        'base64',
+      ),
+    });
+    const tags = dialog.getByRole('combobox', { name: '标签（选填）' });
+    await tags.fill('插画');
+    await expect(dialog.getByRole('option', { name: '#插画', exact: true })).toBeInViewport();
+    const scroll = dialog.locator('[data-curation-scroll]');
+    expect(await scroll.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+    await dialog.getByLabel('管理 token').scrollIntoViewIfNeeded();
+    await expect(dialog.getByLabel('管理 token')).toBeInViewport();
+    const pageY = await page.evaluate(() => window.scrollY);
+    await dialog.getByLabel('模型反推 Prompt').hover();
+    await page.mouse.wheel(0, 2500);
+    await page.waitForTimeout(250);
+    expect(await page.evaluate(() => window.scrollY)).toBe(pageY);
+    await page.screenshot({ path: `/tmp/gallery53-scroll-${mobile ? 'mobile' : 'desktop'}.png` });
+  });
+}
+
+test('local collection stack previews multiple images without losing the draft or unlocking the background', async ({
+  page,
+}) => {
+  await page.goto('/image-style-prompt-gallery', { waitUntil: 'domcontentloaded' });
+  await openCuration(page, '收藏图片');
+  const dialog = page.getByRole('dialog', { name: '收藏图片', exact: true });
+  const png = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aL1sAAAAASUVORK5CYII=',
+    'base64',
+  );
+  await dialog
+    .getByLabel('参考图片', { exact: true })
+    .setInputFiles([1, 2, 3, 4].map((n) => ({ name: `sample-${n}.png`, mimeType: 'image/png', buffer: png })));
+  const stack = dialog.getByRole('button', { name: '预览 4 张参考图片' });
+  await expect(stack.locator('img')).toHaveCount(3);
+  await dialog.getByLabel('模型反推 Prompt').fill('Keep this draft');
+  const pageY = await page.evaluate(() => window.scrollY);
+  await stack.click();
+  const viewer = page.getByRole('dialog', { name: '参考图片预览', exact: true });
+  await expect(viewer).toBeVisible();
+  await expect(viewer.getByText('1 / 4')).toBeVisible();
+  await expect(viewer.locator('img')).toHaveAttribute('src', /^blob:/);
+  await viewer.getByRole('button', { name: '下一张', exact: true }).click();
+  await expect(viewer.getByText('2 / 4')).toBeVisible();
+  await expect(viewer.getByRole('button', { name: /复制|定位|下载/ })).toHaveCount(0);
+  await page.mouse.wheel(0, 400);
+  await page.waitForTimeout(200);
+  expect(await page.evaluate(() => window.scrollY)).toBe(pageY);
+  await viewer.getByRole('button', { name: /^Close/ }).click();
+  await expect(viewer).not.toBeVisible();
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByLabel('模型反推 Prompt')).toHaveValue('Keep this draft');
+  expect(await page.evaluate(() => getComputedStyle(document.documentElement).overflowY)).toBe('hidden');
+  page.once('dialog', (confirmation) => confirmation.accept());
+  await dialog.getByRole('button', { name: '取消', exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).overflowY)).not.toBe('hidden');
 });
