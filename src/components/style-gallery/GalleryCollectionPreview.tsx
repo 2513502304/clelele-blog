@@ -9,7 +9,10 @@ interface PreviewImage {
   alt?: string;
 }
 
-/** A bounded stack and viewing-only lightbox; local files never trigger network writes. */
+/** A bounded stack and viewing-only lightbox; local files never trigger network writes.
+ * Closing this nested viewer must preserve the parent draft and its html scroll lock.
+ * Remote stacks use thumbnails; only the active original is mounted, regardless of group size.
+ */
 export default function GalleryCollectionPreview({
   files,
   images,

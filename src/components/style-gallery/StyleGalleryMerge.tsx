@@ -7,7 +7,10 @@ import { guardGalleryNavigation } from '@lib/style-gallery-navigation-guard';
 import { useEffect, useRef, useState } from 'react';
 import GalleryMergeCard from './GalleryMergeCard';
 
-/** The compare endpoint and mutation are loaded only after an administrator explicitly submits two hashes. */
+/** Two-card management only: explicit loading keeps list reads cheap; selection never mutates storage.
+ * Keep both guards: modal close and page navigation preserve drafts, while save confirms destructive publication.
+ * See docs/solutions/ui-bugs/gallery-management-dialogs-and-merges.md before changing modal geometry.
+ */
 export default function StyleGalleryMerge({ locale }: { locale: string }) {
   const zh = locale.startsWith('zh');
   const [open, setOpen] = useState(false);
@@ -142,6 +145,7 @@ export default function StyleGalleryMerge({ locale }: { locale: string }) {
                 : 'Choose one identity, date and original prompt; keep multiple generated prompts, sub-image groups and tags. Likes follow retained sub-images.'}
             </DialogDescription>
           </header>
+          {/* Keep scrolling outside fieldset; header/footer stay fixed while each long prompt scrolls independently. */}
           <div className="vertical-scrollbar min-h-0 flex-1 overflow-y-scroll overscroll-contain p-5" data-merge-scroll>
             <fieldset disabled={busy} className="min-w-0 space-y-5">
               <form

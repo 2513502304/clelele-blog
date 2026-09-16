@@ -239,6 +239,7 @@ export default function StyleGalleryCuration({
             }}
             className="flex min-h-0 flex-1 flex-col overflow-hidden"
           >
+            {/* Fieldsets resist flex shrinking: this wrapper owns scrolling so files and tag suggestions stay reachable. */}
             <div
               data-curation-scroll
               className="vertical-scrollbar min-h-0 flex-1 overflow-y-scroll overscroll-contain p-5"
