@@ -39,6 +39,7 @@ import type { StyleGalleryImageDimensions } from '@/types/style-gallery';
 import { Dialog, DialogContent } from '../ui/dialog';
 import StyleGalleryCuration from './StyleGalleryCuration';
 import StyleGalleryGrid, { StyleGalleryLayoutToggle, useStyleGalleryLayout } from './StyleGalleryGrid';
+import StyleGalleryMerge from './StyleGalleryMerge';
 import { StyleGalleryPromptChooser } from './StyleGalleryPromptChooser';
 import StyleGallerySharedImage from './StyleGallerySharedImage';
 import { useGalleryTagSelection } from './StyleGalleryTagSelection';
@@ -452,9 +453,12 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
         </div>
       </div>
 
-      <div className="flex items-start justify-between gap-3" data-gallery-management>
+      <div className="flex flex-wrap items-start justify-between gap-3" data-gallery-management>
         <div className="min-w-0 flex-1">{tagSelection.toolbar}</div>
-        <StyleGalleryCuration locale={locale} />
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <StyleGalleryCuration locale={locale} />
+          <StyleGalleryMerge locale={locale} />
+        </div>
       </div>
       <StyleGalleryGrid masonry={masonry}>
         {visibleItems.map((item, index) => (
