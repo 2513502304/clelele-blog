@@ -132,10 +132,10 @@ async function readRecords(sessionPath) {
 /**
  * 读取新版 `response_item` 中面向模型的用户输入投影。
  *
- * 同一内容还会出现在 `event_msg.item_completed` 的 UI 投影中；导入器只读取这里，避免把一轮图片重复配对。
+ * 同一内容也会出现在 UI 投影中；这里只创建一次配对，UI 的结构化 local_image 用于恢复原附件。
  *
  * @param {Record<string, unknown>} payload
- * @returns {{ images: string[], originalPrompt: string } | null}
+ * @returns {{ images: string[], originalPrompt: string, attachmentPaths: (string | null)[] } | null}
  */
 function responseItemInput(payload) {
   if (payload.type !== 'message' || payload.role !== 'user' || !Array.isArray(payload.content)) return null;
@@ -148,7 +148,15 @@ function responseItemInput(payload) {
     .filter((part) => part?.type === 'input_text' && typeof part.text === 'string')
     .map((part) => part.text)
     .join('\n');
-  return { images, originalPrompt };
+  // Only exact renderer-generated image wrappers can link to a structured UI attachment.
+  // Arbitrary paths in a user's prompt are never opened.
+  const attachmentPaths = payload.content.flatMap((part, index) => {
+    if (part.type !== 'input_image') return [];
+    const previous = payload.content[index - 1];
+    const match = previous?.type === 'input_text' && /^<image name=\[Image #\d+\] path="([^"\n]+)">\s*$/.exec(previous.text);
+    return [match ? match[1] : null];
+  });
+  return { images, originalPrompt, attachmentPaths };
 }
 
 /**
@@ -176,8 +184,8 @@ function responseItemOutput(payload) {
  * 从 Codex JSONL 中提取每个 task 的图片与最终 prompt 配对。
  *
  * Codex 目前存在两种会话格式：旧格式把用户图片和最终回复写入 `event_msg`；新格式只在
- * `response_item:message` 中保存 `input_image` / `output_text`。`item_completed`、`task_complete` 和压缩记录
- * 仍可能复制相同内容，因此这里刻意不读取这些副本。task 边界会清空未完成配对，避免异常或中断的上一轮
+ * `response_item:message` 中保存 `input_image` / `output_text`。`item_completed` 只补充经过路径和 turn
+ * 双重校验的原始附件，不再创建配对；task_complete 和压缩副本也不重复导入。task 边界会清空未完成配对，避免上一轮
  * 图片被错误关联到下一轮回复。
  */
 function extractItems(records) {
@@ -218,6 +226,8 @@ function extractItems(records) {
       if (input) {
         pendingInput = {
           images: input.images,
+          attachmentPaths: input.attachmentPaths,
+          turnId: payload.internal_chat_message_metadata_passthrough?.turn_id,
           originalPrompt: sanitizeOriginalPrompt(input.originalPrompt),
           sourceLine: index,
           timestamp: record.timestamp,
@@ -225,6 +235,26 @@ function extractItems(records) {
         };
         continue;
       }
+    }
+    // UI projections never create another item. Associate originals only when both the turn
+    // identity and every ordered attachment path match the model-facing message.
+    if (
+      pendingInput?.turnId &&
+      record.type === 'event_msg' &&
+      payload.type === 'item_completed' &&
+      payload.item?.type === 'UserMessage' &&
+      payload.turn_id === pendingInput.turnId
+    ) {
+      const paths = (payload.item.content ?? []).filter((part) => part.type === 'local_image').map((part) => part.path);
+      if (
+        paths.length === pendingInput.images.length &&
+        paths.every(
+          (value, i) => typeof value === 'string' && path.isAbsolute(value) && value === pendingInput.attachmentPaths?.[i],
+        )
+      ) {
+        pendingInput.localImagePaths = paths;
+      }
+      continue;
     }
     const message =
       record.type === 'event_msg' && payload.type === 'agent_message'
@@ -240,6 +270,65 @@ function extractItems(records) {
     }
   }
   return items;
+}
+
+/** Restore exact original bytes before identity lookup. Missing archived attachments fall back
+ * explicitly; never search the disk or merge different byte hashes using visual similarity.
+ * Local paths are extraction-only data and are never written to public metadata.
+ */
+async function resolveOriginalImages(items, warn = console.warn) {
+  let restored = 0;
+  let fallback = 0;
+  const resolved = [];
+  for (const item of items) {
+    const images = [...item.images];
+    for (const [index, originalPath] of (item.localImagePaths ?? []).entries()) {
+      try {
+        const stat = await fs.stat(originalPath);
+        if (!stat.isFile() || !stat.size || stat.size > 50 * 1024 * 1024) throw new Error('unsupported attachment size');
+        const bytes = await fs.readFile(originalPath);
+        const metadata = await sharp(bytes).metadata();
+        const mime = { jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' }[metadata.format];
+        if (!mime) throw new Error('unsupported image format');
+        const embedded = parseDataUri(images[index]);
+        const embeddedSize = await sharp(embedded.bytes).metadata();
+        // Refuse an obviously replaced file rather than silently associating another picture.
+        const ratio = (metadata.autoOrient?.width ?? metadata.width) / (metadata.autoOrient?.height ?? metadata.height);
+        if (
+          Math.abs(
+            ratio -
+              (embeddedSize.autoOrient?.width ?? embeddedSize.width) / (embeddedSize.autoOrient?.height ?? embeddedSize.height),
+          ) > 0.005
+        )
+          throw new Error('attachment dimensions no longer match');
+        if (!bytes.equals(embedded.bytes)) {
+          const pixels = (buffer) =>
+            sharp(buffer)
+              .rotate()
+              .flatten({ background: '#ffffff' })
+              .toColourspace('srgb')
+              .resize(64, 64, { fit: 'fill' })
+              .removeAlpha()
+              .raw()
+              .toBuffer();
+          const [originalPixels, sessionPixels] = await Promise.all([pixels(bytes), pixels(embedded.bytes)]);
+          const difference =
+            originalPixels.reduce((total, value, i) => total + Math.abs(value - sessionPixels[i]), 0) / originalPixels.length;
+          // This is only a stale-path guard, never a cross-item deduplication rule.
+          if (difference > 8) throw new Error('attachment content no longer matches the session image');
+        }
+        images[index] = `data:${mime};base64,${bytes.toString('base64')}`;
+        if (!bytes.equals(embedded.bytes)) restored++;
+      } catch (error) {
+        fallback++;
+        warn(
+          `Line ${item.sourceLine}, image ${index + 1}: original attachment unavailable (${error.code ?? error.message}); using session image bytes, which may have a different hash.`,
+        );
+      }
+    }
+    resolved.push({ ...item, images });
+  }
+  return { items: resolved, restored, fallback };
 }
 
 /**
@@ -569,7 +658,11 @@ async function main() {
   if (!dryRun && !token) throw new Error('STYLE_GALLERY_UPLOAD_TOKEN is required.');
   const absoluteSessionPath = path.resolve(sessionPath);
   const records = await readRecords(absoluteSessionPath);
-  const extractedItems = extractItems(records);
+  const originals = await resolveOriginalImages(extractItems(records));
+  const extractedItems = originals.items;
+  console.log(
+    `Restored ${originals.restored} original attachment(s); ${originals.fallback} attachment(s) fell back to session images.`,
+  );
   const catalogUrl = new URL('/api/style-gallery/catalog', apiBaseUrl);
   // 公网页面依赖长 CDN 缓存降低 Fluid CPU；命令行写入必须绕过旧列表，否则刚导入的 item 会被误判为新增。
   catalogUrl.searchParams.set('_', Date.now().toString());
@@ -651,10 +744,10 @@ async function main() {
   }
   // Tag storage is separate from image metadata. A failed tag write must never roll back imported images.
   try {
-    await writeImportedTags(apiBaseUrl, token, prepared.sourceSlugs, tags, overwriteTag);
+    const tagResult = await writeImportedTags(apiBaseUrl, token, prepared.sourceSlugs, tags, overwriteTag);
     if (tags.length)
       console.log(
-        `${overwriteTag ? 'Replaced tags with' : 'Added'} ${tags.map((tag) => `#${tag}`).join(' ')} to ${prepared.sourceSlugs.length} source(s).`,
+        `Tags ${tags.map((tag) => `#${tag}`).join(' ')}: ${tagResult.processed} source(s) processed; ${tagResult.changed === null ? 'change count unavailable from this server' : `${tagResult.changed} changed, ${tagResult.processed - tagResult.changed} unchanged`}.`,
       );
   } catch (error) {
     throw new Error(
@@ -668,7 +761,9 @@ async function main() {
 
 /** Preserve existing tags by default; explicit replacement compares a fresh base and never auto-rebases conflicts. */
 async function writeImportedTags(apiBaseUrl, token, slugs, tags, overwriteTag = false) {
-  if (!tags.length) return;
+  if (!tags.length) return { processed: 0, changed: 0 };
+  let processed = 0;
+  let changed = 0;
   // Replacement repeats source IDs and up to 12 base labels; 1,000 worst-case sources fit below 2 MB.
   const batchSize = overwriteTag ? 1000 : 10000;
   for (const batch of chunks([...new Set(slugs)], batchSize)) {
@@ -683,7 +778,7 @@ async function writeImportedTags(apiBaseUrl, token, slugs, tags, overwriteTag = 
         previousTagsBySlug: Object.fromEntries(batch.map((slug) => [slug, current.items[slug] ?? []])),
       };
     }
-    await requestJson(
+    const result = await requestJson(
       `${apiBaseUrl}/api/style-gallery/tags`,
       {
         method: 'PUT',
@@ -692,10 +787,22 @@ async function writeImportedTags(apiBaseUrl, token, slugs, tags, overwriteTag = 
       },
       UPLOAD_TIMEOUT_MS,
     );
+    processed += batch.length;
+    // Older deployments do not report mutations. Never label eligible sources as newly tagged.
+    changed = changed !== null && Number.isInteger(result.changedSources) ? changed + result.changedSources : null;
   }
+  return { processed, changed };
 }
 
-export { writeImportedTags, buildImportData, extractItems, loadExistingItemsByHash, parseArgs, uniqueImagesByHash };
+export {
+  resolveOriginalImages,
+  writeImportedTags,
+  buildImportData,
+  extractItems,
+  loadExistingItemsByHash,
+  parseArgs,
+  uniqueImagesByHash,
+};
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((error) => {
@@ -710,6 +817,9 @@ npm run import:style-prompts -- <session.jsonl> --prompt-model='gpt-5.6-sol'
 npm run import:style-prompts -- <session.jsonl> --tag "溶图" --tag "现实"
 npm run import:style-prompts -- <session.jsonl> --tag "溶图" --tag "现实" --overwrite-tag
 
+# 原始附件优先：仅使用同一 turn 中结构化 local_image 与图片包装路径一致的本地文件；不可用时警告并回退内嵌图。
+# Codex 可能缩放/重编码内嵌图；导入器不会改写 source 字节。请在临时附件仍存在时导入。
+# 标签输出区分 processed / changed / unchanged；重复图片也参与标签修复，但不会虚报为新增。
 # --tag 可重复传入，向本次来源（包括已导入的重复图）追加标签，保留已有标签；省略则不读写标签。
 # --overwrite-tag 必须配合 --tag：以本次标签完整替换来源标签，适用于同图不同 Prompt 和完全重复的记录。
 # 覆盖前读取最新标签；遇到并发修改会停止，请核对后再重跑，不会自动覆盖其他会话的修改。
