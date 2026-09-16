@@ -90,8 +90,8 @@ for (const path of ['', '/index']) {
     await right.getByRole('radio', { name: '原始请求 2', exact: true }).check();
     await right.getByRole('radio', { name: /导入日期/ }).check();
     await right.getByRole('checkbox', { name: /Sub-images/ }).uncheck();
-    await right.getByRole('button', { name: '预览 1 张参考图片', exact: true }).last().click();
-    const viewer = page.getByRole('dialog', { name: '参考图片预览', exact: true });
+    await right.getByRole('button', { name: '预览 1 张子图', exact: true }).last().click();
+    const viewer = page.getByRole('dialog', { name: '子图预览', exact: true });
     await expect(viewer).toBeVisible();
     await expect(viewer).toHaveCSS('opacity', '1');
     await viewer.getByRole('button', { name: /^Close/ }).click();

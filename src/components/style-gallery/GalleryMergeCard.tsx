@@ -157,7 +157,7 @@ export default function GalleryMergeCard({
           </small>
         </span>
       </label>
-      {examples.length > 0 && <GalleryCollectionPreview images={examples} locale={locale} />}
+      {examples.length > 0 && <GalleryCollectionPreview images={examples} locale={locale} label={zh ? '子图' : 'Sub-images'} />}
       <fieldset className="flex flex-wrap gap-2" aria-label={zh ? '保留标签' : 'Keep tags'}>
         {card.tags.map((tag) => (
           <button

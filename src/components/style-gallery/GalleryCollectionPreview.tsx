@@ -17,10 +17,13 @@ export default function GalleryCollectionPreview({
   files,
   images,
   locale,
+  label,
 }: {
   files?: File[];
   images?: PreviewImage[];
   locale: string;
+  /** Name the displayed group accurately when reused for generated examples. */
+  label?: string;
 }) {
   const [urls, setUrls] = useState<string[]>([]);
   const [loaded, setLoaded] = useState<string | null>(null);
@@ -47,7 +50,9 @@ export default function GalleryCollectionPreview({
       <button
         type="button"
         onClick={() => select(0)}
-        aria-label={zh ? `预览 ${urls.length} 张参考图片` : `Preview ${urls.length} reference images`}
+        aria-label={
+          zh ? `预览 ${urls.length} 张${label ?? '参考图片'}` : `Preview ${urls.length} ${label ?? 'reference images'}`
+        }
         className="group relative mx-auto block h-44 w-56 rounded-xl focus-visible:outline-2 focus-visible:outline-primary"
       >
         {urls
@@ -80,7 +85,9 @@ export default function GalleryCollectionPreview({
           className="z-[60] h-[90dvh] w-[calc(100%-2rem)] max-w-6xl overflow-hidden border-white/15 bg-black p-0 text-white"
           overlayClassName="z-[60] bg-black/90"
         >
-          <DialogTitle className="sr-only">{zh ? '参考图片预览' : 'Reference image preview'}</DialogTitle>
+          <DialogTitle className="sr-only">
+            {label ? (zh ? `${label}预览` : `${label} preview`) : zh ? '参考图片预览' : 'Reference image preview'}
+          </DialogTitle>
           <DialogDescription className="sr-only">
             {zh ? '滚轮缩放、拖动查看；左右切换图片。' : 'Scroll to zoom, drag to pan; switch with the arrows.'}
           </DialogDescription>
