@@ -225,6 +225,53 @@ it('manually collects verified source/thumbnail/visual metadata and appends dupl
     assert.equal(edited[0].prompt, body.prompt);
     assert.equal(edited[0].originalPrompt, 'Added later\nSecond line');
     assert.equal(edited[1].prompt, 'Another extraction');
+    const secondBytes = await sharp({ create: { width: 64, height: 80, channels: 3, background: '#aa3399' } })
+      .png()
+      .toBuffer();
+    const secondHash = createHash('sha256').update(secondBytes).digest('hex');
+    objects.set(`source/${secondHash.slice(0, 12)}.png`, secondBytes);
+    const images = [
+      { imageHash: hash, extension: 'png', feature: body.feature },
+      { imageHash: secondHash, extension: 'png', feature: { ...body.feature, imageHash: secondHash } },
+    ];
+    const groupBody = { images, prompt: 'Shared prompt', tags: ['组合'] };
+    const groupResponse = await save(groupBody as never);
+    assert.equal(groupResponse.status, 200, await groupResponse.clone().text());
+    const groupResult = await groupResponse.json();
+    const group = json(`items/${groupResult.slug}.json`);
+    assert.equal(group.imageHash, createHash('sha256').update([hash, secondHash].join('\n')).digest('hex'));
+    assert.deepEqual(
+      group.images.map((image: { imageHash: string }) => image.imageHash),
+      [hash, secondHash],
+    );
+    assert.equal(group.prompts.length, 1);
+    assert.equal(
+      json('metadata/catalog-v5.json').items.find((item: { slug: string }) => item.slug === groupResult.slug).imageCount,
+      2,
+    );
+    assert.equal(
+      json('metadata/visual-index-v1.json').records.filter(
+        (record: { sourceSlug: string }) => record.sourceSlug === groupResult.slug,
+      ).length,
+      2,
+    );
+    assert.equal((await (await save(groupBody as never)).json()).slug, groupResult.slug);
+    assert.equal(json(`items/${groupResult.slug}.json`).prompts.length, 1);
+    assert.equal((await save({ ...groupBody, images: [images[0], images[0]] } as never)).status, 400);
+    const countBeforeMissing = json('metadata/catalog-v5.json').items.length;
+    assert.equal(
+      (
+        await save({
+          ...groupBody,
+          images: [
+            images[0],
+            { ...images[1], imageHash: 'c'.repeat(64), feature: { ...body.feature, imageHash: 'c'.repeat(64) } },
+          ],
+        } as never)
+      ).status,
+      400,
+    );
+    assert.equal(json('metadata/catalog-v5.json').items.length, countBeforeMissing);
   } finally {
     globalThis.fetch = previousFetch;
     invalidateStyleGalleryStoreCache();
