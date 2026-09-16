@@ -94,7 +94,9 @@ for (const path of ['', '/index']) {
     const viewer = page.getByRole('dialog', { name: '子图预览', exact: true });
     await expect(viewer).toBeVisible();
     await expect(viewer).toHaveCSS('opacity', '1');
-    await viewer.getByRole('button', { name: /^Close/ }).click();
+    await expect(viewer.getByRole('button', { name: '旋转 90°', exact: true })).toBeVisible();
+    await expect(viewer.getByRole('button', { name: /复制|定位|下载/ })).toHaveCount(0);
+    await viewer.getByRole('button', { name: /关闭|Close/ }).click();
     await expect(right.getByRole('checkbox', { name: /Sub-images/ })).not.toBeChecked();
     const pageY = await page.evaluate(() => window.scrollY);
     await page.mouse.wheel(0, 1800);

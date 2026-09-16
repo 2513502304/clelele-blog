@@ -114,6 +114,11 @@ export interface ImageLightboxImage {
 }
 
 export interface ImageLightboxData {
+  /** Draft/merge previews hide download; callers may provide a local draft removal action. */
+  previewOnly?: boolean;
+  /** Nested management dialogs own focus and portal geometry; never persist these runtime values. */
+  portalRoot?: HTMLElement;
+  ownerId?: string;
   src: string;
   alt: string;
   images: ImageLightboxImage[];

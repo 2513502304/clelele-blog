@@ -1,7 +1,8 @@
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@components/ui/dialog';
-import { useZoomPan } from '@hooks/useZoomPan';
-import { Icon } from '@iconify/react';
-import { useEffect, useState } from 'react';
+import { useStore } from '@nanostores/react';
+import { $imageLightboxData, closeModal, openModal } from '@store/modal';
+import { useEffect, useId, useRef, useState } from 'react';
+import GalleryImageStack from './GalleryImageStack';
 
 interface PreviewImage {
   src: string;
@@ -9,147 +10,154 @@ interface PreviewImage {
   alt?: string;
 }
 
-/** A bounded stack and viewing-only lightbox; local files never trigger network writes.
- * Closing this nested viewer must preserve the parent draft and its html scroll lock.
- * Remote stacks use thumbnails; only the active original is mounted, regardless of group size.
+/** Use the sub-gallery fan and shared lightbox. Only active originals load in the viewer;
+ * owned blob URLs live as long as the draft and never revoke remote sources.
  */
 export default function GalleryCollectionPreview({
   files,
   images,
   locale,
   label,
+  onRemove,
 }: {
   files?: File[];
   images?: PreviewImage[];
   locale: string;
-  /** Name the displayed group accurately when reused for generated examples. */
   label?: string;
+  onRemove?: (file: File) => void;
 }) {
   const [urls, setUrls] = useState<string[]>([]);
-  const [loaded, setLoaded] = useState<string | null>(null);
-  const [index, setIndex] = useState<number | null>(null);
-  const { containerRef, state, reset, zoomTo } = useZoomPan(index !== null);
   const zh = locale.startsWith('zh');
+  const ownerId = useId();
+  const [active, setActive] = useState<number | null>(null);
+  const [portalRoot, setPortalRoot] = useState<HTMLDivElement | null>(null);
+  const viewer = useStore($imageLightboxData);
+  const [opened, setOpened] = useState(false);
+  const localUrls = useRef(new Map<File, string>());
   useEffect(() => {
-    const next = files ? files.map((file) => URL.createObjectURL(file)) : (images ?? []).map((image) => image.src);
+    const retained = new Set(files ?? []);
+    for (const [file, url] of localUrls.current) {
+      if (!retained.has(file)) {
+        URL.revokeObjectURL(url);
+        localUrls.current.delete(file);
+      }
+    }
+    const next = files
+      ? files.map((file) => {
+          let url = localUrls.current.get(file);
+          if (!url) {
+            url = URL.createObjectURL(file);
+            localUrls.current.set(file, url);
+          }
+          return url;
+        })
+      : (images ?? []).map((image) => image.src);
     setUrls(next);
-    setIndex(null);
-    return () =>
-      next.forEach((url) => {
-        if (files) URL.revokeObjectURL(url);
-      });
   }, [files, images]);
-  function select(next: number) {
-    reset();
-    setLoaded(null);
-    setIndex(next);
+  useEffect(() => {
+    const owned = localUrls.current;
+    return () => {
+      if ($imageLightboxData.get()?.ownerId === ownerId) closeModal();
+      for (const url of owned.values()) URL.revokeObjectURL(url);
+      owned.clear();
+    };
+  }, [ownerId]);
+  function preview(index: number) {
+    setActive(index);
   }
+  useEffect(() => {
+    if (active === null || !portalRoot || opened) return;
+    openModal('imageLightbox', {
+      src: urls[active],
+      alt: files?.[active]?.name ?? images?.[active]?.alt ?? '',
+      currentIndex: active,
+      previewOnly: true,
+      portalRoot,
+      ownerId,
+      prefetch: { preloadAhead: 0, nextBatchThreshold: 0 },
+      images: urls.map((src, i) => ({
+        id: src,
+        src,
+        previewSrc: images?.[i]?.thumbnail,
+        alt: files?.[i]?.name ?? images?.[i]?.alt ?? '',
+        ...(files?.[i] && onRemove
+          ? {
+              delete: {
+                imageId: src,
+                label: zh ? '移除当前图片' : 'Remove current image',
+                deletingLabel: zh ? '正在移除' : 'Removing',
+                failedLabel: zh ? '移除失败' : 'Unable to remove',
+                unavailableLabel: '',
+                enabled: true,
+                confirmMessage: zh
+                  ? '从本次收藏中移除这张图片？原文件不会被删除。'
+                  : 'Remove this image from the collection draft? The original file will not be deleted.',
+                // Capture File identity rather than an index: later removals shift the remaining positions.
+                run: async () => {
+                  onRemove(files[i]);
+                  return true;
+                },
+              },
+            }
+          : {}),
+      })),
+    });
+    setOpened(true);
+  }, [active, portalRoot, opened, urls, files, images, ownerId, onRemove, zh]);
+  useEffect(() => {
+    if (opened && viewer?.ownerId !== ownerId) {
+      setActive(null);
+      setOpened(false);
+    }
+  }, [viewer, opened, ownerId]);
   if (!urls.length) return null;
   return (
-    <>
-      <button
-        type="button"
-        onClick={() => select(0)}
-        aria-label={
-          zh ? `预览 ${urls.length} 张${label ?? '参考图片'}` : `Preview ${urls.length} ${label ?? 'reference images'}`
-        }
-        className="group relative mx-auto block h-44 w-56 rounded-xl focus-visible:outline-2 focus-visible:outline-primary"
-      >
-        {urls
-          .slice(0, 3)
-          .reverse()
-          .map((url, reverseIndex) => {
-            const layer = Math.min(urls.length, 3) - 1 - reverseIndex;
-            return (
-              <img
-                key={url}
-                src={images?.[layer]?.thumbnail ?? url}
-                alt=""
-                draggable={false}
-                className={`absolute inset-x-6 top-2 h-36 w-40 rounded-xl border-2 border-background bg-muted object-contain shadow-md transition-transform duration-300 motion-reduce:transition-none ${layer === 2 ? 'translate-x-3 rotate-6 group-hover:translate-x-6 group-hover:rotate-12' : layer === 1 ? '-translate-x-2 -rotate-3 group-hover:-translate-x-6 group-hover:-rotate-12' : ''}`}
-              />
-            );
-          })}
-        <span className="absolute bottom-0 left-1/2 -translate-x-1/2 rounded-full bg-foreground/85 px-3 py-1 text-background text-xs">
-          {urls.length} {zh ? '张 · 点击预览' : 'images · Preview'}
-        </span>
-      </button>
+    <div className="space-y-3">
+      <div className="mx-auto w-full max-w-sm overflow-hidden rounded-2xl border border-border">
+        <GalleryImageStack
+          onOpen={() => preview(0)}
+          label={zh ? `预览 ${urls.length} 张${label ?? '参考图片'}` : `Preview ${urls.length} ${label ?? 'reference images'}`}
+          images={urls.slice(0, 3).map((url, i) => ({
+            key: url,
+            content: (
+              <img src={images?.[i]?.thumbnail ?? url} alt="" draggable={false} className="block size-full object-cover" />
+            ),
+          }))}
+          badge={
+            <span className="absolute right-3 bottom-3 rounded-full bg-black/65 px-3 py-1.5 text-white text-xs backdrop-blur-sm">
+              {urls.length} {zh ? '张 · 点击预览' : 'images · Preview'}
+            </span>
+          }
+        />
+      </div>
+      {/* The shared viewer portals inside a real nested Radix scope. Do not toggle the
+          parent modal mode: Radix would remount its children and revoke draft blob URLs. */}
       <Dialog
-        open={index !== null}
+        open={active !== null}
         onOpenChange={(open) => {
-          if (!open) setIndex(null);
+          if (!open) {
+            closeModal();
+            setActive(null);
+            setOpened(false);
+          }
         }}
       >
         <DialogContent
           stableScroll
-          className="z-[60] h-[90dvh] w-[calc(100%-2rem)] max-w-6xl overflow-hidden border-white/15 bg-black p-0 text-white"
+          showClose={false}
+          ref={setPortalRoot}
+          style={{ top: 0, left: 0, translate: 'none' }}
+          className="z-[60] h-dvh w-screen max-w-none overflow-hidden rounded-none border-0 bg-black p-0"
           overlayClassName="z-[60] bg-black/90"
         >
           <DialogTitle className="sr-only">
-            {label ? (zh ? `${label}预览` : `${label} preview`) : zh ? '参考图片预览' : 'Reference image preview'}
+            {zh ? `${label ?? '参考图片'}预览` : `${label ?? 'Reference image'} preview`}
           </DialogTitle>
           <DialogDescription className="sr-only">
-            {zh ? '滚轮缩放、拖动查看；左右切换图片。' : 'Scroll to zoom, drag to pan; switch with the arrows.'}
+            {zh ? '缩放、旋转或切换图片，关闭后继续编辑。' : 'Zoom, rotate or switch images; close to continue editing.'}
           </DialogDescription>
-          {/* biome-ignore lint/a11y/useSemanticElements: shared zoom/pan hook owns an HTMLDivElement viewport; keyboard zoom is provided. */}
-          <div
-            role="button"
-            tabIndex={0}
-            aria-label={zh ? '缩放图片' : 'Zoom image'}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault();
-                state.scale > 1 ? reset() : zoomTo(2);
-              }
-              if (event.key === 'ArrowRight' && index !== null && index < urls.length - 1) select(index + 1);
-              if (event.key === 'ArrowLeft' && index !== null && index > 0) select(index - 1);
-            }}
-            ref={containerRef}
-            className="absolute inset-0 touch-none overflow-hidden"
-            onDoubleClick={() => (state.scale > 1 ? reset() : zoomTo(2))}
-          >
-            {index !== null && images?.[index]?.thumbnail && loaded !== urls[index] && (
-              <img src={images[index].thumbnail} alt="" className="absolute inset-0 h-full w-full object-contain p-8 pb-16" />
-            )}
-            {index !== null && urls[index] && (
-              <img
-                src={urls[index]}
-                alt={files?.[index]?.name ?? images?.[index]?.alt ?? ''}
-                onLoad={() => setLoaded(urls[index])}
-                draggable={false}
-                className="h-full w-full select-none object-contain p-8 pb-16"
-                style={{
-                  opacity: images?.[index]?.thumbnail && loaded !== urls[index] ? 0 : 1,
-                  transform: `translate(${state.translateX}px, ${state.translateY}px) scale(${state.scale})`,
-                }}
-              />
-            )}
-          </div>
-          <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-4 rounded-full bg-white/10 px-3 py-2 text-sm backdrop-blur">
-            <button
-              type="button"
-              aria-label={zh ? '上一张' : 'Previous image'}
-              disabled={index === 0}
-              onClick={() => select((index ?? 0) - 1)}
-              className="rounded-full p-2 disabled:opacity-30"
-            >
-              <Icon icon="ri:arrow-left-s-line" />
-            </button>
-            <span>
-              {(index ?? 0) + 1} / {urls.length}
-            </span>
-            <button
-              type="button"
-              aria-label={zh ? '下一张' : 'Next image'}
-              disabled={index === urls.length - 1}
-              onClick={() => select((index ?? 0) + 1)}
-              className="rounded-full p-2 disabled:opacity-30"
-            >
-              <Icon icon="ri:arrow-right-s-line" />
-            </button>
-          </div>
         </DialogContent>
       </Dialog>
-    </>
+    </div>
   );
 }

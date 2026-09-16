@@ -218,41 +218,85 @@ for (const mobile of [false, true]) {
   });
 }
 
-test('local collection stack previews multiple images without losing the draft or unlocking the background', async ({
-  page,
-}) => {
-  await page.goto('/image-style-prompt-gallery', { waitUntil: 'domcontentloaded' });
-  await openCuration(page, '收藏图片');
-  const dialog = page.getByRole('dialog', { name: '收藏图片', exact: true });
-  const png = Buffer.from(
-    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aL1sAAAAASUVORK5CYII=',
-    'base64',
-  );
-  await dialog
-    .getByLabel('参考图片', { exact: true })
-    .setInputFiles([1, 2, 3, 4].map((n) => ({ name: `sample-${n}.png`, mimeType: 'image/png', buffer: png })));
-  const stack = dialog.getByRole('button', { name: '预览 4 张参考图片' });
-  await expect(stack.locator('img')).toHaveCount(3);
-  await dialog.getByLabel('模型反推 Prompt').fill('Keep this draft');
-  const pageY = await page.evaluate(() => window.scrollY);
-  await stack.click();
-  const viewer = page.getByRole('dialog', { name: '参考图片预览', exact: true });
-  await expect(viewer).toBeVisible();
-  await expect(viewer.getByText('1 / 4')).toBeVisible();
-  await expect(viewer.locator('img')).toHaveAttribute('src', /^blob:/);
-  await viewer.getByRole('button', { name: '下一张', exact: true }).click();
-  await expect(viewer.getByText('2 / 4')).toBeVisible();
-  await expect(viewer.getByRole('button', { name: /复制|定位|下载/ })).toHaveCount(0);
-  await page.mouse.wheel(0, 400);
-  await page.waitForTimeout(200);
-  expect(await page.evaluate(() => window.scrollY)).toBe(pageY);
-  await viewer.getByRole('button', { name: /^Close/ }).click();
-  await expect(viewer).not.toBeVisible();
-  await expect(dialog).toBeVisible();
-  await expect(dialog.getByLabel('模型反推 Prompt')).toHaveValue('Keep this draft');
-  expect(await page.evaluate(() => getComputedStyle(document.documentElement).overflowY)).toBe('hidden');
-  page.once('dialog', (confirmation) => confirmation.accept());
-  await dialog.getByRole('button', { name: '取消', exact: true }).click();
-  await expect(dialog).not.toBeVisible();
-  await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).overflowY)).not.toBe('hidden');
-});
+for (const mobile of [false, true]) {
+  test(`local collection stack previews and removes images on ${mobile ? 'mobile' : 'desktop'}`, async ({ page }) => {
+    await page.goto('/image-style-prompt-gallery', { waitUntil: 'domcontentloaded' });
+    await openCuration(page, '收藏图片');
+    if (mobile) await page.setViewportSize({ width: 390, height: 844 });
+    const dialog = page.getByRole('dialog', { name: '收藏图片', exact: true });
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aL1sAAAAASUVORK5CYII=',
+      'base64',
+    );
+    const picker = dialog.getByLabel('参考图片', { exact: true });
+    await picker.setInputFiles({ name: 'sample-1.png', mimeType: 'image/png', buffer: png });
+    await picker.setInputFiles([2, 3].map((n) => ({ name: `sample-${n}.png`, mimeType: 'image/png', buffer: png })));
+    await dialog.evaluate(
+      (element, bytes) => {
+        const clipboardData = new DataTransfer();
+        clipboardData.items.add(new File([new Uint8Array(bytes)], 'pasted.png', { type: 'image/png' }));
+        element.dispatchEvent(new ClipboardEvent('paste', { clipboardData, bubbles: true, cancelable: true }));
+      },
+      [...png],
+    );
+    await expect(dialog.getByRole('list', { name: '已选图片' })).toHaveCount(0);
+    const stack = dialog.getByRole('button', { name: '预览 4 张参考图片' });
+    await expect(stack.locator('img')).toHaveCount(3);
+    expect((await stack.boundingBox())?.width).toBeGreaterThan(mobile ? 250 : 300);
+    await dialog.getByLabel('模型反推 Prompt').fill('Keep this draft');
+    const pageY = await page.evaluate(() => window.scrollY);
+    await stack.click();
+    const viewer = page.locator('[data-image-lightbox]');
+    await expect(viewer).toBeVisible();
+    await expect(viewer.getByText('1 / 4')).toBeVisible();
+    await expect(viewer.locator('img')).toHaveAttribute('src', /^blob:/);
+    await viewer.getByRole('button', { name: '下一张', exact: true }).click();
+    await expect(viewer.getByText('2 / 4')).toBeVisible();
+    page.once('dialog', (confirmation) => confirmation.dismiss());
+    await viewer.getByRole('button', { name: '移除当前图片', exact: true }).click();
+    await expect(viewer.getByText('2 / 4')).toBeVisible();
+    page.once('dialog', (confirmation) => confirmation.accept());
+    await viewer.getByRole('button', { name: '移除当前图片', exact: true }).click();
+    await expect(viewer.getByText('2 / 3')).toBeVisible();
+    await expect(viewer.locator('img')).toHaveAttribute('alt', 'sample-3.png');
+
+    await expect(viewer.getByRole('button', { name: /复制|定位|下载/ })).toHaveCount(0);
+    await viewer.getByRole('button', { name: '放大', exact: true }).click();
+    await expect(viewer.getByRole('button', { name: '重置缩放和旋转' })).toHaveText('150%');
+    await viewer.getByRole('button', { name: '缩小', exact: true }).click();
+    await viewer.getByRole('button', { name: '旋转 90°', exact: true }).click();
+    await viewer.getByRole('button', { name: '缩放灵敏度', exact: true }).click();
+    await expect(viewer.getByRole('slider', { name: '缩放灵敏度' })).toBeVisible();
+    await viewer.getByRole('button', { name: '重置缩放和旋转' }).click();
+    await expect(viewer.getByRole('button', { name: '重置缩放和旋转' })).toHaveText('100%');
+    await page.mouse.wheel(0, 400);
+    await page.waitForTimeout(200);
+    expect(await page.evaluate(() => window.scrollY)).toBe(pageY);
+    await viewer.getByRole('button', { name: /关闭|Close/ }).click();
+    await expect(viewer).not.toBeVisible();
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByLabel('模型反推 Prompt')).toHaveValue('Keep this draft');
+    await dialog.getByRole('button', { name: '预览 3 张参考图片' }).click();
+    await expect(viewer).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(viewer).not.toBeVisible();
+    await expect(dialog.getByLabel('模型反推 Prompt')).toHaveValue('Keep this draft');
+    await page.screenshot({ path: '/tmp/gallery54-collection.png' });
+    await dialog.getByRole('button', { name: '预览 3 张参考图片' }).click();
+    await expect(viewer).toBeVisible();
+    for (let remaining = 3; remaining > 0; remaining--) {
+      page.once('dialog', (confirmation) => confirmation.accept());
+      await viewer.getByRole('button', { name: '移除当前图片', exact: true }).click();
+      if (remaining > 2) await expect(viewer.getByText(`1 / ${remaining - 1}`)).toBeVisible();
+    }
+    await expect(viewer).not.toBeVisible();
+    await expect(dialog.getByLabel('模型反推 Prompt')).toHaveValue('Keep this draft');
+    await picker.setInputFiles({ name: 'sample-1.png', mimeType: 'image/png', buffer: png });
+    await expect(dialog.getByRole('button', { name: '预览 1 张参考图片' })).toBeVisible();
+    expect(await page.evaluate(() => getComputedStyle(document.documentElement).overflowY)).toBe('hidden');
+    page.once('dialog', (confirmation) => confirmation.accept());
+    await dialog.getByRole('button', { name: '取消', exact: true }).click();
+    await expect(dialog).not.toBeVisible();
+    await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).overflowY)).not.toBe('hidden');
+  });
+}

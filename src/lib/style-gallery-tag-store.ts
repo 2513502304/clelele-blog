@@ -82,7 +82,9 @@ export async function getGalleryTagIndex(): Promise<StyleGalleryTagIndex> {
 }
 
 /** Compare the edited source's base tags while replaying unrelated concurrent writes via ETag. */
-export async function setGalleryTags(input: z.infer<typeof galleryTagMutationSchema>): Promise<StyleGalleryTagIndex> {
+export async function setGalleryTags(
+  input: z.infer<typeof galleryTagMutationSchema>,
+): Promise<StyleGalleryTagIndex & { changedSources: number }> {
   const mutation = galleryTagMutationSchema.parse(input);
   const slugs = 'slugs' in mutation ? mutation.slugs : [mutation.slug];
   const { tags } = mutation;
@@ -96,7 +98,7 @@ export async function setGalleryTags(input: z.infer<typeof galleryTagMutationSch
       ? indexSchema.parse(JSON.parse(snapshot.text))
       : { version: 1 as const, items: {} as Record<string, string[]> };
     const next: StyleGalleryTagIndex = { version: 1, items: { ...current.items } };
-    let changed = false;
+    let changedSources = 0;
     for (const slug of slugs) {
       const existing = current.items[slug] ?? [];
       const updated = 'slugs' in mutation ? applyGalleryTagMutation(existing, tags, mutation.mode ?? 'add') : tags;
@@ -113,9 +115,9 @@ export async function setGalleryTags(input: z.infer<typeof galleryTagMutationSch
         throw new GalleryTagWriteError(`Adding these tags would exceed 12 tags for ${slug}. No changes were saved.`, 400);
       if (updated.length) next.items[slug] = updated;
       else delete next.items[slug];
-      changed = true;
+      changedSources++;
     }
-    if (!changed) return current;
+    if (!changedSources) return { ...current, changedSources: 0 };
     if (getGalleryTagVocabulary(next).length > MAX_GALLERY_TAG_VOCABULARY)
       throw new GalleryTagWriteError('The gallery supports up to 100 categories. Reuse an existing tag.', 400);
     try {
@@ -131,7 +133,8 @@ export async function setGalleryTags(input: z.infer<typeof galleryTagMutationSch
       } catch (error) {
         console.error('[style-gallery] Tags were saved but tag-cache invalidation failed.', error);
       }
-      return next;
+      // Response-only count comes from the successful CAS attempt, not a stale client snapshot.
+      return { ...next, changedSources };
     } catch (error) {
       if (!(error instanceof StyleGalleryObjectConflictError) || attempt === 5) throw error;
       await new Promise((resolve) => setTimeout(resolve, 40 * (attempt + 1)));

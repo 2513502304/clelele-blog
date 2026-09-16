@@ -180,6 +180,14 @@ describe('shared gallery categories', () => {
     await setGalleryTags({ slugs: ['source-one', 'source-two'], tags: ['专辑'] });
     assert.equal(writes, 1, 'replaying the batch is write-free');
   });
+  it('reports only actually changed sources and keeps counts out of persistent metadata', async () => {
+    stored = JSON.stringify({ version: 1, items: { 'source-one': ['插画'] } });
+    const first = await setGalleryTags({ slugs: ['source-one', 'source-two'], tags: ['插画'] });
+    assert.equal(first.changedSources, 1);
+    assert.equal(JSON.parse(stored).changedSources, undefined);
+    const replay = await setGalleryTags({ slugs: ['source-one', 'source-two'], tags: ['插画'] });
+    assert.equal(replay.changedSources, 0);
+  });
   it('removes chosen labels across a batch while retaining unrelated labels', async () => {
     stored = JSON.stringify({ version: 1, items: { 'source-one': ['插画', '溶图'], 'source-two': ['插画'] } });
     const result = await PUT(context({ slugs: ['source-one', 'source-two'], mode: 'remove', tags: ['插画'] }));

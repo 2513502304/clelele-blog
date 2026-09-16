@@ -98,6 +98,28 @@ export default function StyleGalleryCuration({
       releaseGuard.current = undefined;
     };
   }, [open, dirty, busy, text.discard]);
+  // File-picker selections append; clearing the native input lets a removed file be chosen again.
+  function appendFiles(incoming: File[]) {
+    if (busy || editing || !incoming.length) return;
+    try {
+      if (
+        files.length + incoming.length > 20 ||
+        incoming.some(
+          (file) =>
+            !getStyleGalleryExampleExtension(file.type, file.name) ||
+            !file.size ||
+            file.size > MAX_STYLE_GALLERY_EXAMPLE_FILE_SIZE,
+        )
+      ) {
+        setError(text.format);
+        return;
+      }
+      setFiles((current) => [...current, ...incoming]);
+      setError('');
+    } catch {
+      setError(text.format);
+    }
+  }
   function changeOpen(next: boolean) {
     if (busy || (!next && dirty && !window.confirm(text.discard))) return;
     if (next) {
@@ -225,6 +247,13 @@ export default function StyleGalleryCuration({
         <DialogContent
           stableScroll
           ref={dialogRef}
+          onPaste={(event) => {
+            const pasted = Array.from(event.clipboardData.files).filter((file) => file.type.startsWith('image/'));
+            if (!editing && pasted.length) {
+              event.preventDefault();
+              appendFiles(pasted);
+            }
+          }}
           className="flex h-[90dvh] max-h-[52rem] w-[calc(100%-2rem)] max-w-2xl flex-col gap-0 overflow-hidden rounded-2xl p-0"
           showClose={!busy}
         >
@@ -255,17 +284,25 @@ export default function StyleGalleryCuration({
                         type="file"
                         aria-label={text.image}
                         accept="image/jpeg,image/png,image/webp"
-                        required
                         multiple
                         className={fieldClass}
                         onChange={(event) => {
-                          setFiles(Array.from(event.target.files ?? []));
-                          setError('');
+                          appendFiles(Array.from(event.target.files ?? []));
+                          event.target.value = '';
                         }}
                       />
                       <span className="block text-muted-foreground text-xs">{text.format}</span>
                     </label>
-                    <GalleryCollectionPreview files={files} locale={locale} />
+                    <p className="text-muted-foreground text-xs">
+                      {locale.startsWith('zh')
+                        ? '可重复选择文件或直接粘贴图片；点击卡片预览，在大图工具栏移除单张。'
+                        : 'Add files repeatedly or paste images. Preview the stack to remove individual images from its toolbar.'}
+                    </p>
+                    <GalleryCollectionPreview
+                      files={files}
+                      locale={locale}
+                      onRemove={(file) => setFiles((current) => current.filter((selected) => selected !== file))}
+                    />
                   </>
                 )}
                 <label className="block space-y-2 text-sm" htmlFor={`${id}-original`}>
