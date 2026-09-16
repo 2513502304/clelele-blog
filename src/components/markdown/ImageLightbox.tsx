@@ -279,7 +279,7 @@ export default function ImageLightbox() {
   const currentCopy = currentImage?.copy;
   const currentDelete = currentImage?.delete;
   const currentLocate = currentImage?.locate;
-  const downloadAction = currentImage ? createImageLightboxDownloadAction(currentImage.src) : null;
+  const downloadAction = currentImage && !data?.previewOnly ? createImageLightboxDownloadAction(currentImage.src) : null;
   const currentImageKey = currentImage?.id ?? `${data?.currentIndex ?? 0}:${currentImage?.src ?? ''}`;
   const [rotation, setRotation] = useState(0);
   const [zoomSensitivity, setZoomSensitivity] = useState(DEFAULT_ZOOM_SENSITIVITY);
@@ -672,11 +672,12 @@ export default function ImageLightbox() {
   if (!data || !currentImage) return null;
 
   return (
-    <FloatingPortal>
+    <FloatingPortal root={data.portalRoot}>
       <AnimatePresence>
         {isOpen && (
           <motion.div
-            className="fixed inset-0 z-60"
+            data-image-lightbox
+            className="pointer-events-auto fixed inset-0 z-60"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
