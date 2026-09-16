@@ -75,6 +75,23 @@ describe('style prompt import variants', () => {
       const result = await resolveOriginalImages(extracted);
       assert.equal(result.restored, 1);
       assert.equal(result.fallback, 0);
+      const unchanged = await resolveOriginalImages(result.items);
+      assert.equal(unchanged.restored, 0);
+      assert.equal(unchanged.fallback, 0);
+      assert.deepEqual(unchanged.items[0].images, result.items[0].images);
+      // Invalid projection entries must not abort otherwise valid prompt/image extraction.
+      records[0].record.payload.content.unshift(null, 42);
+      records[1].record.payload.item.content.unshift(null, false);
+      assert.deepEqual(extractItems(records)[0].localImagePaths, [originalPath]);
+      const validContent = records[1].record.payload.item.content;
+      for (const content of [null, {}, 'invalid']) {
+        records[1].record.payload.item.content = content;
+        const malformed = extractItems(records);
+        assert.equal(malformed.length, 1);
+        assert.deepEqual(malformed[0].images, [uri]);
+        assert.equal(malformed[0].localImagePaths, undefined);
+      }
+      records[1].record.payload.item.content = validContent.filter(Boolean).filter((part) => typeof part === 'object');
       const prepared = await buildImportData(result.items, '/tmp/session.jsonl', new Map(), false);
       assert.equal(prepared.items[0].imageHash, crypto.createHash('sha256').update(bytes).digest('hex'));
       assert.deepEqual([...prepared.assets.values()][0].body, bytes);

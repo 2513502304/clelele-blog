@@ -1,3 +1,4 @@
+import { useReducedMotion } from 'motion/react';
 import type { ReactNode } from 'react';
 
 /** Shared sub-gallery fan geometry: only three layers, with transforms that never change layout. */
@@ -12,11 +13,13 @@ export default function GalleryImageStack({
   label: string;
   badge: ReactNode;
 }) {
+  const reducedMotion = useReducedMotion();
   return (
     <button
       type="button"
       onClick={onOpen}
       aria-label={label}
+      data-reduced-motion={reducedMotion || undefined}
       className="gallery-source-stack relative block aspect-[4/5] w-full overflow-hidden bg-muted/40 focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-[-2px]"
     >
       {images

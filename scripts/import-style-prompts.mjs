@@ -151,7 +151,7 @@ function responseItemInput(payload) {
   // Only exact renderer-generated image wrappers can link to a structured UI attachment.
   // Arbitrary paths in a user's prompt are never opened.
   const attachmentPaths = payload.content.flatMap((part, index) => {
-    if (part.type !== 'input_image') return [];
+    if (part?.type !== 'input_image') return [];
     const previous = payload.content[index - 1];
     const match = previous?.type === 'input_text' && /^<image name=\[Image #\d+\] path="([^"\n]+)">\s*$/.exec(previous.text);
     return [match ? match[1] : null];
@@ -245,7 +245,8 @@ function extractItems(records) {
       payload.item?.type === 'UserMessage' &&
       payload.turn_id === pendingInput.turnId
     ) {
-      const paths = (payload.item.content ?? []).filter((part) => part.type === 'local_image').map((part) => part.path);
+      const content = Array.isArray(payload.item.content) ? payload.item.content : [];
+      const paths = content.filter((part) => part?.type === 'local_image').map((part) => part.path);
       if (
         paths.length === pendingInput.images.length &&
         paths.every(
@@ -318,6 +319,7 @@ async function resolveOriginalImages(items, warn = console.warn) {
           if (difference > 8) throw new Error('attachment content no longer matches the session image');
         }
         images[index] = `data:${mime};base64,${bytes.toString('base64')}`;
+        // Count byte replacements; an already-original embedded image needs no restoration.
         if (!bytes.equals(embedded.bytes)) restored++;
       } catch (error) {
         fallback++;
@@ -661,7 +663,7 @@ async function main() {
   const originals = await resolveOriginalImages(extractItems(records));
   const extractedItems = originals.items;
   console.log(
-    `Restored ${originals.restored} original attachment(s); ${originals.fallback} attachment(s) fell back to session images.`,
+    `Replaced ${originals.restored} embedded image(s) with different original bytes; ${originals.fallback} attachment(s) fell back to session images.`,
   );
   const catalogUrl = new URL('/api/style-gallery/catalog', apiBaseUrl);
   // 公网页面依赖长 CDN 缓存降低 Fluid CPU；命令行写入必须绕过旧列表，否则刚导入的 item 会被误判为新增。
