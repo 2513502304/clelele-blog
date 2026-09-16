@@ -145,6 +145,16 @@ export async function getStoredStyleGalleryItem(
   slug: string,
   options: { fresh?: boolean } = {},
 ): Promise<StoredStyleGalleryItem | null> {
+  return readStoredItem(slug, options, new Set());
+}
+
+async function readStoredItem(
+  slug: string,
+  options: { fresh?: boolean },
+  visited: Set<string>,
+): Promise<StoredStyleGalleryItem | null> {
+  if (visited.has(slug) || visited.size >= 32) throw new Error('Invalid gallery merge redirect chain.');
+  visited.add(slug);
   const now = Date.now();
   const cached = itemCache.get(slug);
   if (!options.fresh && cached && cached.expiresAt > now) return cached.value;
@@ -152,7 +162,13 @@ export async function getStoredStyleGalleryItem(
   try {
     const raw = await getStyleGalleryObjectText(getStyleGalleryItemKey(slug));
     if (!raw) return null;
-    const value = styleGalleryItemSchema.parse(JSON.parse(raw));
+    const parsed = JSON.parse(raw);
+    if (typeof parsed.mergedInto === 'string' && /^[a-z0-9-]{1,160}$/i.test(parsed.mergedInto)) {
+      // Management reads must not silently edit a different card through a retired slug.
+      if (options.fresh) return null;
+      return readStoredItem(parsed.mergedInto, options, visited);
+    }
+    const value = styleGalleryItemSchema.parse(parsed);
     itemCache.set(slug, { value, expiresAt: now + CACHE_TTL_MS });
     return value;
   } catch (error) {

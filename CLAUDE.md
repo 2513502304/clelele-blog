@@ -387,3 +387,7 @@ Keep business logic pure, framework calls at boundaries.
 - Reusable hooks: `src/hooks/`
 - Animation presets: `src/constants/anim/`
 - Site configuration: `src/constants/site-config.ts`
+
+## Style Gallery maintenance memory
+
+Before editing Gallery management dialogs or data mutations, read [the regression boundaries](docs/solutions/ui-bugs/gallery-management-dialogs-and-merges.md) and [the storage contract](docs/style-gallery-storage.md). Preserve independent outer/inner scrolling, visible tag suggestions, the `html` page lock, draft-preserving nested previews, both merge/discard confirmations, token-only management rights, conditional recovery and lightweight list reads. Do not perform a production merge that the user has reserved for manual acceptance.

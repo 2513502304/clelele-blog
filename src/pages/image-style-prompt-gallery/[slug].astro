@@ -21,6 +21,7 @@ const { slug } = Astro.params;
 const locale = getLocaleFromUrl(Astro.url.pathname);
 const item = slug ? await getStyleGalleryItemBySlug(slug) : undefined;
 if (!item) return Astro.redirect(localizedPath('/image-style-prompt-gallery', locale), 302);
+if (item.slug !== slug) return Astro.redirect(localizedPath(`/image-style-prompt-gallery/${item.slug}`, locale), 308);
 
 const data = item;
 const title = `${data.title} | ${t(locale, 'gallery.title')} | ${siteConfig.title}`;

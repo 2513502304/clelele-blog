@@ -41,7 +41,7 @@ export async function getStyleGalleryItemBySlug(slug: string): Promise<StyleGall
   if (!item) return undefined;
   const primaryPrompt = getPrimaryStyleGalleryPrompt(item.prompts);
   const indexedById = new Map(
-    index.groups.find((group) => group.sourceSlug === slug)?.examples.map((example) => [example.id, example]),
+    index.groups.find((group) => group.sourceSlug === item.slug)?.examples.map((example) => [example.id, example]),
   );
   return {
     ...item,

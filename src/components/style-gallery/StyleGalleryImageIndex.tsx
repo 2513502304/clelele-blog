@@ -31,6 +31,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useProgressiveList } from '@/hooks/useProgressiveList';
 import type { StyleGalleryCardData } from '@/types/style-gallery';
 import StyleGalleryCuration from './StyleGalleryCuration';
+import StyleGalleryMerge from './StyleGalleryMerge';
 import { useGalleryTagSelection } from './StyleGalleryTagSelection';
 import { GalleryTagEditor, GalleryTagFilter } from './StyleGalleryTags';
 
@@ -309,9 +310,12 @@ function StyleGalleryImageIndexContent({
       </div>
 
       <GalleryTagEditor locale={locale} />
-      <div className="flex items-start justify-between gap-3" data-gallery-management>
+      <div className="flex flex-wrap items-start justify-between gap-3" data-gallery-management>
         <div className="min-w-0 flex-1">{tagSelection.toolbar}</div>
-        <StyleGalleryCuration locale={locale} />
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <StyleGalleryCuration locale={locale} />
+          <StyleGalleryMerge locale={locale} />
+        </div>
       </div>
       {visibleItems.length ? (
         <>

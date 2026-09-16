@@ -1,4 +1,5 @@
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@components/ui/dialog';
+import { useGalleryDialogScrollLock } from '@hooks/useGalleryDialogScrollLock';
 import { Icon } from '@iconify/react';
 import { MAX_STYLE_GALLERY_EXAMPLE_FILE_SIZE } from '@lib/style-gallery-chunk-upload';
 import { getStyleGalleryExampleExtension } from '@lib/style-gallery-image-type';
@@ -7,6 +8,7 @@ import { guardGalleryNavigation } from '@lib/style-gallery-navigation-guard';
 import { isValidGalleryTag, MAX_GALLERY_TAGS_PER_ITEM, normalizeGalleryTag } from '@lib/style-gallery-tags';
 import { useEffect, useId, useRef, useState } from 'react';
 import type { StyleGalleryPromptVariant } from '@/types/style-gallery';
+import GalleryCollectionPreview from './GalleryCollectionPreview';
 import GalleryCollectionTags from './GalleryCollectionTags';
 
 function labels(locale: string) {
@@ -29,7 +31,7 @@ function labels(locale: string) {
         failed: '保存失败，请重试。',
         conflict: '该提示词已被修改或与另一候选重复。请保留草稿，刷新后核对。',
         discard: '放弃尚未保存的修改？',
-        format: 'JPG / PNG / WebP，最大 12 MB',
+        format: 'JPG / PNG / WebP，每张最大 12 MB，最多 20 张',
         indexFailed: '图片已收藏，标签或视觉索引未完成。再次保存即可重试。',
       }
     : {
@@ -50,7 +52,7 @@ function labels(locale: string) {
         failed: 'Unable to save. Please retry.',
         conflict: 'This prompt changed or duplicates another variant. Keep your draft and reload to compare.',
         discard: 'Discard unsaved changes?',
-        format: 'JPG / PNG / WebP, up to 12 MB',
+        format: 'JPG / PNG / WebP, up to 12 MB each, 20 images maximum',
         indexFailed: 'Image saved; tags or visual index incomplete. Save again to retry.',
       };
 }
@@ -78,8 +80,7 @@ export default function StyleGalleryCuration({
   const [tagQuery, setTagQuery] = useState('');
   const [model, setModel] = useState('');
   const [token, setToken] = useState('');
-  const [file, setFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState('');
+  const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
@@ -87,16 +88,8 @@ export default function StyleGalleryCuration({
   const editing = Boolean(variant && slug);
   const dirty = editing
     ? prompt !== variant?.prompt || original !== (variant?.originalPrompt ?? '')
-    : Boolean(prompt || original || model || file || tags.length || tagQuery);
-  useEffect(() => {
-    if (!file) {
-      setPreview('');
-      return;
-    }
-    const url = URL.createObjectURL(file);
-    setPreview(url);
-    return () => URL.revokeObjectURL(url);
-  }, [file]);
+    : Boolean(prompt || original || model || files.length || tags.length || tagQuery);
+  const dialogRef = useGalleryDialogScrollLock(open);
   useEffect(() => {
     if (!open || (!dirty && !busy)) return;
     releaseGuard.current = guardGalleryNavigation(text.discard);
@@ -113,7 +106,7 @@ export default function StyleGalleryCuration({
       setTags([]);
       setTagQuery('');
       setModel('');
-      setFile(null);
+      setFiles([]);
       setToken(getStyleGalleryManagementToken());
       setError('');
       setStatus('');
@@ -147,29 +140,43 @@ export default function StyleGalleryCuration({
               ? '标签最多 12 个，每个 1–24 字；不能含 #、尖括号或控制字符，null 为保留词。'
               : 'Choose up to 12 valid tags.',
           );
-        if (!file || !file.size || file.size > MAX_STYLE_GALLERY_EXAMPLE_FILE_SIZE) throw new Error(text.format);
-        const extension = getStyleGalleryExampleExtension(file.type, file.name);
+        if (
+          !files.length ||
+          files.length > 20 ||
+          files.some((file) => !file.size || file.size > MAX_STYLE_GALLERY_EXAMPLE_FILE_SIZE)
+        )
+          throw new Error(text.format);
+        // Validate every file before the first network write; compute/upload sequentially to bound browser memory.
+        const extensions = files.map((file) => getStyleGalleryExampleExtension(file.type, file.name));
         setStatus(text.prepare);
         if (import.meta.env.SSR) throw new Error('Image processing requires a browser.');
         const { sha256, uploadFile } = await import('@lib/style-gallery-upload-client');
-        const imageHash = await sha256(file);
-        await uploadFile(
-          '/api/style-gallery/source-upload?source=1',
-          file,
-          imageHash,
-          extension,
-          token.trim(),
-          (loaded, total) => setStatus(`${text.upload} ${Math.round((loaded / total) * 100)}%`),
-          () => setStatus(text.saving),
-        );
-        setStatus(text.prepare);
         const { computeStyleGalleryVisualFeatureFromFile } = await import('@lib/style-gallery-visual-feature-browser');
-        const feature = await computeStyleGalleryVisualFeatureFromFile(file, imageHash);
+        const images = [];
+        const seen = new Set<string>();
+        for (const [i, file] of files.entries()) {
+          const imageHash = await sha256(file);
+          if (seen.has(imageHash)) continue;
+          seen.add(imageHash);
+          const extension = extensions[i];
+          await uploadFile(
+            '/api/style-gallery/source-upload?source=1',
+            file,
+            imageHash,
+            extension,
+            token.trim(),
+            (loaded, total) => setStatus(`${text.upload} ${i + 1}/${files.length} · ${Math.round((loaded / total) * 100)}%`),
+            () => setStatus(text.saving),
+          );
+          setStatus(`${text.prepare} ${i + 1}/${files.length}`);
+          const feature = await computeStyleGalleryVisualFeatureFromFile(file, imageHash);
+          images.push({ imageHash, extension, feature });
+        }
         setStatus(text.saving);
         response = await fetch('/api/style-gallery/manual', {
           method: 'POST',
           headers: { authorization: `Bearer ${token.trim()}`, 'content-type': 'application/json' },
-          body: JSON.stringify({ imageHash, extension, feature, prompt, originalPrompt: original, model, tags: draftTags }),
+          body: JSON.stringify({ images, prompt, originalPrompt: original, model, tags: draftTags }),
           signal: AbortSignal.timeout(120_000),
         });
       }
@@ -217,7 +224,8 @@ export default function StyleGalleryCuration({
       <Dialog open={open} onOpenChange={changeOpen}>
         <DialogContent
           stableScroll
-          className="flex max-h-[90dvh] w-[calc(100%-2rem)] max-w-2xl flex-col gap-0 overflow-hidden rounded-2xl p-0"
+          ref={dialogRef}
+          className="flex h-[90dvh] max-h-[52rem] w-[calc(100%-2rem)] max-w-2xl flex-col gap-0 overflow-hidden rounded-2xl p-0"
           showClose={!busy}
         >
           <header className="shrink-0 border-border border-b p-5 pr-12">
@@ -229,92 +237,98 @@ export default function StyleGalleryCuration({
               event.preventDefault();
               void save();
             }}
-            className="flex min-h-0 flex-col"
+            className="flex min-h-0 flex-1 flex-col overflow-hidden"
           >
-            <fieldset
-              disabled={busy}
-              className="vertical-scrollbar min-h-0 min-w-0 space-y-4 overflow-y-auto overscroll-contain p-5"
+            {/* Fieldsets resist flex shrinking: this wrapper owns scrolling so files and tag suggestions stay reachable. */}
+            <div
+              data-curation-scroll
+              className="vertical-scrollbar min-h-0 flex-1 overflow-y-scroll overscroll-contain p-5"
+              style={{ scrollbarGutter: 'stable' }}
             >
-              {!editing && (
-                <>
-                  <label className="block space-y-2 text-sm" htmlFor={`${id}-file`}>
-                    <span>{text.image}</span>
-                    <input
-                      id={`${id}-file`}
-                      type="file"
-                      aria-label={text.image}
-                      accept="image/jpeg,image/png,image/webp"
-                      required
-                      className={fieldClass}
-                      onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-                    />
-                    <span className="block text-muted-foreground text-xs">{text.format}</span>
-                  </label>
-                  {preview && (
-                    <img src={preview} alt={text.image} className="mx-auto max-h-44 max-w-full rounded-lg object-contain" />
-                  )}
-                </>
-              )}
-              <label className="block space-y-2 text-sm" htmlFor={`${id}-original`}>
-                <span>{text.original}</span>
-                <textarea
-                  id={`${id}-original`}
-                  value={original}
-                  onChange={(event) => setOriginal(event.target.value)}
-                  maxLength={20000}
-                  rows={2}
-                  style={{ fieldSizing: 'fixed', height: 96, overflowY: 'auto', resize: 'none' }}
-                  className={`${fieldClass} vertical-scrollbar`}
-                />
-              </label>
-              <label className="block space-y-2 text-sm" htmlFor={`${id}-prompt`}>
-                <span>{text.prompt}</span>
-                <textarea
-                  id={`${id}-prompt`}
-                  value={prompt}
-                  onChange={(event) => setPrompt(event.target.value)}
-                  required
-                  maxLength={100000}
-                  rows={editing ? 12 : 6}
-                  style={{ fieldSizing: 'fixed', height: editing ? 240 : 168, overflowY: 'auto', resize: 'none' }}
-                  className={`${fieldClass} vertical-scrollbar leading-6`}
-                />
-              </label>
-              {!editing && (
-                <label className="block space-y-2 text-sm" htmlFor={`${id}-model`}>
-                  <span>{text.model}</span>
-                  <input
-                    id={`${id}-model`}
-                    value={model}
-                    onChange={(event) => setModel(event.target.value)}
-                    maxLength={120}
-                    className={fieldClass}
-                    placeholder="GPT-Image / Gemini / …"
+              <fieldset disabled={busy} className="min-w-0 space-y-4">
+                {!editing && (
+                  <>
+                    <label className="block space-y-2 text-sm" htmlFor={`${id}-file`}>
+                      <span>{text.image}</span>
+                      <input
+                        id={`${id}-file`}
+                        type="file"
+                        aria-label={text.image}
+                        accept="image/jpeg,image/png,image/webp"
+                        required
+                        multiple
+                        className={fieldClass}
+                        onChange={(event) => {
+                          setFiles(Array.from(event.target.files ?? []));
+                          setError('');
+                        }}
+                      />
+                      <span className="block text-muted-foreground text-xs">{text.format}</span>
+                    </label>
+                    <GalleryCollectionPreview files={files} locale={locale} />
+                  </>
+                )}
+                <label className="block space-y-2 text-sm" htmlFor={`${id}-original`}>
+                  <span>{text.original}</span>
+                  <textarea
+                    id={`${id}-original`}
+                    value={original}
+                    onChange={(event) => setOriginal(event.target.value)}
+                    maxLength={20000}
+                    rows={2}
+                    style={{ fieldSizing: 'fixed', height: 96, overflowY: 'auto', resize: 'none' }}
+                    className={`${fieldClass} vertical-scrollbar`}
                   />
                 </label>
-              )}
-              {!editing && (
-                <GalleryCollectionTags
-                  locale={locale}
-                  tags={tags}
-                  onChange={setTags}
-                  query={tagQuery}
-                  onQueryChange={setTagQuery}
-                />
-              )}
-              <label className="block space-y-2 text-sm" htmlFor={`${id}-token`}>
-                <span>{text.token}</span>
-                <input
-                  id={`${id}-token`}
-                  type="password"
-                  autoComplete="off"
-                  value={token}
-                  onChange={(event) => setToken(event.target.value)}
-                  required
-                  className={fieldClass}
-                />
-              </label>
-            </fieldset>
+                <label className="block space-y-2 text-sm" htmlFor={`${id}-prompt`}>
+                  <span>{text.prompt}</span>
+                  <textarea
+                    id={`${id}-prompt`}
+                    value={prompt}
+                    onChange={(event) => setPrompt(event.target.value)}
+                    required
+                    maxLength={100000}
+                    rows={editing ? 12 : 6}
+                    style={{ fieldSizing: 'fixed', height: editing ? 240 : 168, overflowY: 'auto', resize: 'none' }}
+                    className={`${fieldClass} vertical-scrollbar leading-6`}
+                  />
+                </label>
+                {!editing && (
+                  <label className="block space-y-2 text-sm" htmlFor={`${id}-model`}>
+                    <span>{text.model}</span>
+                    <input
+                      id={`${id}-model`}
+                      value={model}
+                      onChange={(event) => setModel(event.target.value)}
+                      maxLength={120}
+                      className={`${fieldClass} h-11 leading-6 placeholder:text-xs`}
+                      placeholder="GPT-Image / Gemini / …"
+                    />
+                  </label>
+                )}
+                {!editing && (
+                  <GalleryCollectionTags
+                    locale={locale}
+                    tags={tags}
+                    onChange={setTags}
+                    query={tagQuery}
+                    onQueryChange={setTagQuery}
+                  />
+                )}
+                <label className="block space-y-2 text-sm" htmlFor={`${id}-token`}>
+                  <span>{text.token}</span>
+                  <input
+                    id={`${id}-token`}
+                    type="password"
+                    autoComplete="off"
+                    value={token}
+                    onChange={(event) => setToken(event.target.value)}
+                    required
+                    className={fieldClass}
+                  />
+                </label>
+              </fieldset>
+            </div>
             <footer className="shrink-0 space-y-3 border-border border-t bg-background p-4">
               {error && (
                 <p role="alert" className="text-rose-500 text-sm">
@@ -333,7 +347,7 @@ export default function StyleGalleryCuration({
                 </button>
                 <button
                   type="submit"
-                  disabled={busy || !prompt.trim() || !token.trim() || (!editing && !file)}
+                  disabled={busy || !prompt.trim() || !token.trim() || (!editing && !files.length)}
                   className="rounded-lg bg-primary px-5 py-2 font-semibold text-primary-foreground text-sm disabled:opacity-50"
                 >
                   {busy ? text.saving : text.save}

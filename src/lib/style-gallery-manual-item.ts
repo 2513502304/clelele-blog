@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { StoredStyleGalleryItem, StyleGalleryImageDimensions } from '@/types/style-gallery';
 import { getStyleGalleryDateKey } from './style-gallery-date-range';
 import { getStyleGalleryPromptId } from './style-gallery-prompts';
@@ -8,6 +9,7 @@ export function createManualStyleGalleryItem(
     imageHash: string;
     extension: string;
     dimensions: StyleGalleryImageDimensions;
+    images?: { imageHash: string; extension: string; dimensions: StyleGalleryImageDimensions }[];
     prompt: string;
     originalPrompt?: string;
     model?: string;
@@ -17,23 +19,32 @@ export function createManualStyleGalleryItem(
   // Keep the canonical UTC serialization used by catalog sorting; derive the visible calendar day in UTC+8.
   const date = now.toISOString();
   const dateKey = getStyleGalleryDateKey(now);
-  const shortHash = input.imageHash.slice(0, 12);
-  const image = {
-    imageHash: input.imageHash,
-    sourceImage: `/api/style-gallery/image/source/${shortHash}.${input.extension}`,
+  const refs = input.images ?? [input];
+  // Match session imports exactly: image order is part of a multi-image collection's identity.
+  const imageHash =
+    refs.length === 1
+      ? refs[0].imageHash
+      : createHash('sha256')
+          .update(refs.map((image) => image.imageHash).join('\n'))
+          .digest('hex');
+  const shortHash = imageHash.slice(0, 12);
+  const images = refs.map((ref) => ({
+    imageHash: ref.imageHash,
+    sourceImage: `/api/style-gallery/image/source/${ref.imageHash.slice(0, 12)}.${ref.extension}`,
     sourceImageAlt: `Style Prompt ${shortHash}`,
-    dimensions: input.dimensions,
-  };
+    dimensions: ref.dimensions,
+  }));
+  const image = images[0];
   const prompt = input.prompt.trim();
   return {
     version: 4,
     slug: `${dateKey}-${shortHash}`,
     title: `Style Prompt ${shortHash}`,
     date,
-    imageHash: input.imageHash,
+    imageHash,
     sourceImage: image.sourceImage,
     sourceImageAlt: image.sourceImageAlt,
-    images: [image],
+    images,
     examples: [],
     prompts: [
       {

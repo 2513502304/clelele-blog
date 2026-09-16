@@ -5,7 +5,7 @@ import {
   normalizeGalleryTag,
 } from '@lib/style-gallery-tags';
 import { useGalleryTags } from '@store/gallery-tags';
-import { useId, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 
 /** Draft-only categories reuse the page's vocabulary; persistence happens with collection submission. */
 export default function GalleryCollectionTags({
@@ -24,6 +24,7 @@ export default function GalleryCollectionTags({
   const { index } = useGalleryTags();
   const [active, setActive] = useState(0);
   const id = useId();
+  const section = useRef<HTMLElement>(null);
   const zh = locale.startsWith('zh');
   const normalized = normalizeGalleryTag(query);
   const choices =
@@ -46,7 +47,7 @@ export default function GalleryCollectionTags({
     setActive(0);
   };
   return (
-    <section className="space-y-2 text-sm" aria-label={zh ? '标签（选填）' : 'Tags (optional)'}>
+    <section ref={section} className="space-y-2 text-sm" aria-label={zh ? '标签（选填）' : 'Tags (optional)'}>
       <label htmlFor={id}>{zh ? '标签（选填）' : 'Tags (optional)'}</label>
       <div className="flex flex-wrap gap-2">
         {tags.map((tag) => (
@@ -72,6 +73,7 @@ export default function GalleryCollectionTags({
         maxLength={100}
         placeholder={zh ? '输入或选择标签' : 'Type or choose a tag'}
         className="h-10 w-full rounded-lg border border-border bg-background px-3 outline-none focus:border-primary"
+        onFocus={() => section.current?.scrollIntoView({ block: 'nearest' })}
         onChange={(event) => {
           onQueryChange(event.target.value);
           setActive(0);
@@ -93,7 +95,7 @@ export default function GalleryCollectionTags({
         id={`${id}-choices`}
         role="listbox"
         aria-label={zh ? '已有标签' : 'Existing tags'}
-        className="flex max-h-24 flex-wrap gap-1 overflow-y-auto overscroll-contain"
+        className="vertical-scrollbar flex max-h-24 min-h-16 flex-wrap content-start gap-1 overflow-y-auto overscroll-contain rounded-lg border border-border/60 p-2"
       >
         {choices.map((tag, i) => (
           <button
