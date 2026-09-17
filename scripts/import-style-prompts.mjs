@@ -112,11 +112,19 @@ function getExtractedItemHash(extracted) {
  * Computation stays on the importing machine; Vercel only receives four fixed-size hashes per record.
  */
 async function getDecodedItemHash(extracted) {
+  return getDecodedImageGroupHash(
+    extracted.images.map((uri) => {
+      const image = parseDataUri(uri);
+      if (!image) throw new Error('Invalid session image.');
+      return image.bytes;
+    }),
+  );
+}
+
+async function getDecodedImageGroupHash(images) {
   const imageHashes = [];
-  for (const uri of extracted.images) {
-    const image = parseDataUri(uri);
-    if (!image) throw new Error('Invalid session image.');
-    const { data, info } = await sharp(image.bytes)
+  for (const bytes of images) {
+    const { data, info } = await sharp(bytes)
       .rotate()
       .toColourspace('srgb')
       .ensureAlpha()
@@ -130,6 +138,26 @@ async function getDecodedItemHash(extracted) {
     .createHash('sha256')
     .update(`gallery-pixel-group-v1:${imageHashes.join('\n')}`)
     .digest('hex');
+}
+
+/** Reject malformed session dates before network writes; inventing today's date breaks repeatability. */
+function getImportDate(item) {
+  if (typeof item.timestamp !== 'string' || !item.timestamp.trim() || !Number.isFinite(Date.parse(item.timestamp)))
+    throw new Error(`Line ${item.sourceLine ?? '?'}: missing or invalid session timestamp.`);
+  return new Date(item.timestamp).toISOString().slice(0, 10);
+}
+
+/** Seed the canonical pixels too when an old projection resolves through a merge/alias. */
+async function buildCanonicalIdentityBinding(target, extracted, readCanonicalBytes) {
+  const pixelHash =
+    target.imageHash === getExtractedItemHash(extracted)
+      ? extracted.preferredPixelHash
+      : await getDecodedImageGroupHash(await Promise.all(target.images.map(readCanonicalBytes)));
+  return {
+    hashes: [...new Set([target.imageHash, pixelHash].filter(Boolean))],
+    slug: target.slug,
+    expectedHash: target.imageHash,
+  };
 }
 
 function normalizePrompt(prompt) {
@@ -651,7 +679,10 @@ async function main() {
     embeddedHash: getExtractedItemHash(item),
     embeddedPixelHash: '',
   }));
-  for (const item of rawItems) item.embeddedPixelHash = await getDecodedItemHash(item);
+  for (const item of rawItems) {
+    getImportDate(item);
+    item.embeddedPixelHash = await getDecodedItemHash(item);
+  }
   const identityRequest = (body) =>
     requestJson(
       `${apiBaseUrl}/api/style-gallery/import-identities`,
@@ -668,7 +699,7 @@ async function main() {
         [item.embeddedHash, getExtractedItemHash(item), item.embeddedPixelHash, item.preferredPixelHash].filter(Boolean),
       ),
     ],
-    legacySlug: `${new Date(item.timestamp).toISOString().slice(0, 10)}-${item.embeddedHash.slice(0, 12)}`,
+    legacySlug: `${getImportDate(item)}-${item.embeddedHash.slice(0, 12)}`,
   });
   const resolve = async (items) => {
     const matches = [];
@@ -749,28 +780,34 @@ async function main() {
   // metadata commits, the next import can still find that card even if its temp attachment vanished.
   // A pending alias never appears as a public card until the catalog actually contains its target.
   const pendingByHash = new Map(prepared.items.map((item) => [item.imageHash, item]));
-  const bindings = extractedItems.flatMap((item, index) => {
+  const readCanonicalBytes = async (image) => {
+    if (!prepared.imageBytesByHash.has(image.imageHash)) {
+      const response = await fetch(new URL(image.sourceImage, apiBaseUrl), { signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS) });
+      if (!response.ok) throw new Error(`Cannot read canonical source ${image.imageHash.slice(0, 12)}.`);
+      const bytes = Buffer.from(await response.arrayBuffer());
+      if (crypto.createHash('sha256').update(bytes).digest('hex') !== image.imageHash)
+        throw new Error(`Canonical source hash mismatch ${image.imageHash.slice(0, 12)}.`);
+      prepared.imageBytesByHash.set(image.imageHash, bytes);
+    }
+    return prepared.imageBytesByHash.get(image.imageHash);
+  };
+  const bindings = [];
+  const canonicalBindings = new Map();
+  for (const [index, item] of extractedItems.entries()) {
     const target = matches[index]?.item ?? pendingByHash.get(getExtractedItemHash(item));
-    return target ? [{ hashes: queryFor(item).hashes, slug: target.slug, expectedHash: target.imageHash }] : [];
-  });
+    if (!target) continue;
+    bindings.push({ hashes: queryFor(item).hashes, slug: target.slug, expectedHash: target.imageHash });
+    if (!canonicalBindings.has(target.slug)) {
+      canonicalBindings.set(target.slug, await buildCanonicalIdentityBinding(target, item, readCanonicalBytes));
+    }
+  }
+  bindings.push(...canonicalBindings.values());
   for (const batch of chunks(bindings, 100)) await identityRequest({ action: 'remember', bindings: batch });
   let uploadedKeys = [];
   try {
     console.log(`Computing visual features for ${prepared.items.length} metadata item(s)...`);
-    // Alias hits may append a new prompt while the session only contains a resized projection.
-    // Fetch canonical bytes only for those actual writes; never compute canonical features from fallback bytes.
-    for (const item of prepared.items)
-      for (const image of item.images) {
-        if (prepared.imageBytesByHash.has(image.imageHash)) continue;
-        const response = await fetch(new URL(image.sourceImage, apiBaseUrl), {
-          signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
-        });
-        if (!response.ok) throw new Error(`Cannot read canonical source for ${item.slug}.`);
-        const bytes = Buffer.from(await response.arrayBuffer());
-        if (crypto.createHash('sha256').update(bytes).digest('hex') !== image.imageHash)
-          throw new Error(`Canonical source hash mismatch for ${item.slug}.`);
-        prepared.imageBytesByHash.set(image.imageHash, bytes);
-      }
+    // Reuse verified canonical bytes for visual inference when an alias hit appends a prompt.
+    for (const item of prepared.items) for (const image of item.images) await readCanonicalBytes(image);
     const visualRecords = await buildSourceVisualRecords(prepared.items, prepared.imageBytesByHash);
     const visualRecordsBySlug = new Map();
     for (const record of visualRecords) {
@@ -920,6 +957,8 @@ async function writeImportedTags(apiBaseUrl, token, slugs, tags, overwriteTag = 
 export {
   getExtractedItemHash,
   getDecodedItemHash,
+  getImportDate,
+  buildCanonicalIdentityBinding,
   planImageMigrations,
   resolveOriginalImages,
   writeImportedTags,
@@ -957,7 +996,7 @@ npm run import:style-prompts -- <session.jsonl> --tag "溶图" --tag "现实" --
 
 # 新版桌面附件包装仅提取 My request 正文；记忆引用块在计算 Prompt ID 前移除，保留 <...> 风格占位符。
 # JSONL 的 turn_context 已包含正确模型时，可省略 --prompt-model；该参数用于缺失或手动覆盖来源模型。
-# 写入前只核对新建/更新/重复数量时追加 --dry-run；该模式不需要 Upload Token，也不会修改 HF。
+# 写入前只核对新建/更新/重复数量时追加 --dry-run；该模式需要 Upload Token 只读解析私有身份别名，不会修改 HF。
 # Upload Token、HF 凭证和可选调优项自动读取 .env.local；package script 会自动启用 shell 中已有的代理。
 */
 

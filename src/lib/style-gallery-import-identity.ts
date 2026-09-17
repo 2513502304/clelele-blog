@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { z } from 'zod';
 import type { StoredStyleGalleryItem } from '@/types/style-gallery';
 import {
   getStyleGalleryObjectTextSnapshot,
@@ -32,16 +33,24 @@ import { serializeStyleGalleryWrite } from './style-gallery-write';
 // Private import-only aliases: no list payload, SSR read, local attachment path or session text.
 export const IMPORT_IDENTITY_KEY = 'metadata/import-image-identities-v1.json';
 type Snapshot = Awaited<ReturnType<typeof getStyleGalleryObjectTextSnapshot>>;
-type Aliases = { version: 1; hashes: Record<string, string> };
+const importAliasesSchema = z
+  .object({
+    version: z.literal(1),
+    hashes: z.record(z.string().regex(/^[a-f0-9]{64}$/), z.string().regex(/^[a-z0-9-]{1,160}$/i)),
+  })
+  .strict();
+
+/** Only an absent object starts empty; corrupt stored aliases must never be silently discarded. */
+export function parseImportAliases(text: string | null) {
+  return importAliasesSchema.parse(text === null ? { version: 1, hashes: {} } : JSON.parse(text));
+}
 export type ImportIdentityQuery = { hashes: string[]; legacySlug: string };
 const revision = (text: string) => createHash('sha256').update(text).digest('hex');
 const conflict = (message: string) => new StyleGalleryClientError(message, 409);
 
 async function readAliases() {
   const snapshot = await getStyleGalleryObjectTextSnapshot(IMPORT_IDENTITY_KEY);
-  const value: Aliases = snapshot.text ? JSON.parse(snapshot.text) : { version: 1, hashes: {} };
-  if (value.version !== 1 || !value.hashes || typeof value.hashes !== 'object')
-    throw new Error('Invalid import identity index.');
+  const value = parseImportAliases(snapshot.text);
   return { snapshot, value };
 }
 
@@ -272,6 +281,7 @@ export async function replaceImportImageBatch(jobs: ImportImageReplacement[]) {
       `import-backups/${recoveryId}.json`,
       new TextEncoder().encode(
         JSON.stringify({
+          identitySnapshot: aliases.snapshot,
           changes: changed.map(({ previous, item, job }) => ({ item: previous, replacement: item, aliases: job.hashes })),
         }),
       ),

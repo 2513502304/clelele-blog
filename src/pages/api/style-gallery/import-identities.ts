@@ -55,7 +55,12 @@ export const POST: APIRoute = async ({ request }) => {
   try {
     const raw = await request.text();
     if (raw.length > 2_000_000) return new Response('Request too large.', { status: 413 });
-    const body = schema.parse(JSON.parse(raw));
+    let body: z.infer<typeof schema>;
+    try {
+      body = schema.parse(JSON.parse(raw));
+    } catch {
+      return new Response('Invalid import identity request.', { status: 400 });
+    }
     const result =
       body.action === 'resolve'
         ? await resolveImportIdentities(body.queries)
@@ -64,8 +69,9 @@ export const POST: APIRoute = async ({ request }) => {
           : await replaceImportImageBatch(body.replacements);
     return Response.json(result, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
-    if (error instanceof z.ZodError || error instanceof SyntaxError)
-      return new Response('Invalid import identity request.', { status: 400 });
+    // Persisted JSON/schema failures are server failures, not malformed client requests.
+    if (!getStyleGalleryClientErrorResponse(error))
+      console.error('[style-gallery] Import identity operation failed:', error instanceof Error ? error.name : 'UnknownError');
     return (
       getStyleGalleryClientErrorResponse(error) ??
       new Response('Image identity operation failed. Retry after checking the current card.', { status: 500 })

@@ -4,6 +4,7 @@ import { it } from 'node:test';
 import { POST } from '../pages/api/style-gallery/import-identities';
 import {
   IMPORT_IDENTITY_KEY,
+  parseImportAliases,
   rememberImportIdentities,
   replaceImportImageBatch,
   replaceImportImages,
@@ -14,6 +15,22 @@ import { STYLE_GALLERY_PLATFORMS } from './style-gallery-platforms';
 import { toStyleGalleryCatalogItem, toStyleGalleryPromptSearchEntry } from './style-gallery-schema';
 import { upsertStyleGalleryVisualRecords } from './style-gallery-visual-index';
 import type { StyleGalleryVisualRecordInput } from './style-gallery-visual-types';
+
+it('rejects malformed private identity ledgers without silently clearing aliases', () => {
+  assert.deepEqual(parseImportAliases(null), { version: 1, hashes: {} });
+  for (const value of [
+    null,
+    {},
+    { version: 2, hashes: {} },
+    { version: 1, hashes: [] },
+    { version: 1, hashes: { invalid: 'slug' } },
+    { version: 1, hashes: { ['a'.repeat(64)]: 42 } },
+    { version: 1, hashes: { ['a'.repeat(64)]: '../private' } },
+  ]) {
+    assert.throws(() => parseImportAliases(JSON.stringify(value)));
+  }
+  assert.throws(() => parseImportAliases(''));
+});
 
 it('authenticates alias resolution, preserves merged cards and transactionally replaces only source identity', async () => {
   const config = {
@@ -131,6 +148,27 @@ it('authenticates alias resolution, preserves merged cards and transactionally r
     } as never);
     assert.equal(denied.status, 401);
     assert.equal(requests, 0);
+    const request = async (body: string) =>
+      POST({
+        request: new Request('https://example.test/api/style-gallery/import-identities', {
+          method: 'POST',
+          headers: { authorization: 'Bearer test-token' },
+          body,
+        }),
+      } as never);
+    assert.equal((await request('{')).status, 400);
+    assert.equal((await request('{}')).status, 400);
+    const originalCatalog = objects.get('metadata/catalog-v5.json');
+    assert.ok(originalCatalog);
+    for (const invalid of ['{', '{}']) {
+      objects.set('metadata/catalog-v5.json', invalid);
+      assert.equal(
+        (await request(JSON.stringify({ action: 'resolve', queries: [{ hashes: [item.imageHash], legacySlug: item.slug }] })))
+          .status,
+        500,
+      );
+    }
+    objects.set('metadata/catalog-v5.json', originalCatalog);
     await rememberImportIdentities([
       {
         hashes: [hash('projection-pending'), replacement.imageHash],
@@ -153,11 +191,26 @@ it('authenticates alias resolution, preserves merged cards and transactionally r
     );
     assert.equal((await resolveImportIdentities([{ hashes: [hash('absent')], legacySlug: 'absent' }]))[0], null);
     await assert.rejects(replaceImportImages(item.slug, '0'.repeat(64), replacement, records, [item.imageHash]), /changed/);
-    const before = objects.get(`items/${item.slug}.json`);
+    const keys = [
+      `items/${item.slug}.json`,
+      'metadata/prompt-search-index.json',
+      'metadata/visual-index-v1.json',
+      IMPORT_IDENTITY_KEY,
+      'metadata/catalog-v5.json',
+    ];
+    const before = keys.map((key) => objects.get(key));
     failKey = 'metadata/catalog-v5.json';
     lostKey = `items/${item.slug}.json`;
     await assert.rejects(replaceImportImages(item.slug, resolved.revision, replacement, records, [item.imageHash]));
-    assert.equal(objects.get(`items/${item.slug}.json`), before);
+    assert.deepEqual(
+      keys.map((key) => objects.get(key)),
+      before,
+    );
+    const backupKey = [...objects.keys()].find((key) => key.startsWith('import-backups/'));
+    assert.ok(backupKey);
+    const backup = read(backupKey);
+    assert.equal(backup.identitySnapshot.text, before[3]);
+    assert.ok(backup.identitySnapshot.etag);
     assert.equal(read('metadata/catalog-v5.json').items[0].imageHash, item.imageHash);
     const result = await replaceImportImages(item.slug, resolved.revision, replacement, records, [item.imageHash]);
     assert.equal(result.item.slug, item.slug);

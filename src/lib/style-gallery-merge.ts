@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { invalidateByTag } from '@vercel/functions';
 import { getStyleGalleryObjectTextSnapshot, putStyleGalleryObject, StyleGalleryObjectConflictError } from './hf-s3-presign';
 import { StyleGalleryClientError } from './style-gallery-errors';
-import { IMPORT_IDENTITY_KEY } from './style-gallery-import-identity';
+import { IMPORT_IDENTITY_KEY, parseImportAliases } from './style-gallery-import-identity';
 import { buildGalleryMerge, galleryMergeRevision } from './style-gallery-merge-plan';
 import type { GalleryMergePreview, GalleryMergeSelection } from './style-gallery-merge-types';
 import { invalidateStyleGalleryPublicCache } from './style-gallery-public-cache';
@@ -143,7 +143,7 @@ export async function mergeGalleryCards(hashes: [string, string], revisions: [st
     }
     // Carry exact byte identities across future clipboard imports whose date/URL differs from the
     // retired card. Existing projection aliases can still follow its redirect; no full alias rewrite.
-    const identities = identitySnapshot.text ? JSON.parse(identitySnapshot.text) : { version: 1, hashes: {} };
+    const identities = parseImportAliases(identitySnapshot.text);
     identities.hashes[item.imageHash] = item.slug;
     identities.hashes[removed.imageHash] = item.slug;
     writes.push({ key: IMPORT_IDENTITY_KEY, before: identitySnapshot, value: identities, empty: { version: 1, hashes: {} } });
@@ -156,10 +156,11 @@ export async function mergeGalleryCards(hashes: [string, string], revisions: [st
     // Catalog publishes last, after details and all derived indexes are ready.
     writes.push({ key: STYLE_GALLERY_CATALOG_KEY, before: state.catalogSnapshot, value: catalog });
     const mergeId = randomUUID();
-    // A private recovery record keeps the two original details and votes without duplicating global indexes.
+    // Preserve opaque aliases too: they cannot be reconstructed from the original details after a failed rollback.
     await putStyleGalleryObject(
       `merge-backups/${mergeId}.json`,
       encode({
+        identitySnapshot,
         items: state.cards.map((card) => card.item),
         tags: state.cards.map((card) => card.tags),
         groups: state.index.groups.filter((entry) => state.cards.some((card) => card.item.slug === entry.sourceSlug)),

@@ -37,18 +37,21 @@ export const POST: APIRoute = async ({ request }) => {
   try {
     const raw = await request.text();
     if (raw.length > 32_000) return new Response('Merge request too large.', { status: 413 });
-    const body = schema.parse(JSON.parse(raw));
+    let body: z.infer<typeof schema>;
+    try {
+      body = schema.parse(JSON.parse(raw));
+    } catch {
+      return new Response('Invalid merge selection.', { status: 400 });
+    }
     const result =
       body.action === 'preview'
         ? await previewGalleryMerge(body.hashes)
         : await mergeGalleryCards(body.hashes, body.revisions, body.selection);
     return Response.json(result, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
-    if (error instanceof z.ZodError || error instanceof SyntaxError)
-      return new Response('Invalid merge selection.', { status: 400 });
     const response = getStyleGalleryClientErrorResponse(error);
     if (response) return response;
-    console.error('[style-gallery] Merge failed.', error);
+    console.error('[style-gallery] Merge failed:', error instanceof Error ? error.name : 'UnknownError');
     return new Response('Merge failed. Reload the comparison before retrying.', { status: 500 });
   }
 };

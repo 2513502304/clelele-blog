@@ -7,10 +7,12 @@ import { describe, it } from 'node:test';
 import sharp from 'sharp';
 import { assertStyleGalleryItemConsistency } from '../src/lib/style-gallery-assets.ts';
 import {
+  buildCanonicalIdentityBinding,
   buildImportData,
   extractItems,
   getDecodedItemHash,
   getExtractedItemHash,
+  getImportDate,
   parseArgs,
   planImageMigrations,
   resolveOriginalImages,
@@ -19,6 +21,35 @@ import {
 } from './import-style-prompts.mjs';
 
 const PLACEHOLDER = '[在此处替换为您想要生成的主体内容]';
+
+it('requires stable session dates before identity lookup or writes', () => {
+  for (const timestamp of [undefined, null, '', 'invalid'])
+    assert.throws(() => getImportDate({ timestamp, sourceLine: 42 }), /Line 42: missing or invalid/);
+  assert.equal(getImportDate({ timestamp: '2026-09-18T01:00:00+08:00' }), '2026-09-17');
+});
+
+it('seeds canonical pixel aliases after an old projection resolves through a manual merge', async () => {
+  const original = await sharp({ create: { width: 40, height: 60, channels: 3, background: '#adcefb' } })
+    .jpeg()
+    .toBuffer();
+  const resized = await sharp(original).resize(20, 30).jpeg().toBuffer();
+  const png = await sharp(original).png().toBuffer();
+  const imageHash = crypto.createHash('sha256').update(original).digest('hex');
+  const projection = { images: [`data:image/jpeg;base64,${resized.toString('base64')}`] };
+  let reads = 0;
+  const binding = await buildCanonicalIdentityBinding(
+    { imageHash, slug: 'canonical', images: [{ imageHash }] },
+    projection,
+    async () => {
+      reads++;
+      return original;
+    },
+  );
+  const clipboardHash = await getDecodedItemHash({ images: [`data:image/png;base64,${png.toString('base64')}`] });
+  assert.equal(reads, 1);
+  assert.deepEqual(binding.hashes, [imageHash, clipboardHash]);
+  assert.notEqual(clipboardHash, await getDecodedItemHash(projection));
+});
 
 describe('style prompt import variants', () => {
   it('restores only matched structured originals before hashing, with explicit missing-file fallback', async () => {
