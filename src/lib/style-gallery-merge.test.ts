@@ -211,6 +211,19 @@ it('authenticates two-card comparison, rejects stale choices, rolls back conflic
     const body = { action: 'merge', hashes, revisions: preview.cards.map((card) => card.revision), selection: choice };
     assert.equal((await send({ ...body, revisions: ['0'.repeat(64), body.revisions[1]] })).status, 409);
     assert.equal((await send({ ...body, selection: { ...choice, tags: ['不存在'] } })).status, 400);
+    const identityKey = 'metadata/import-image-identities-v1.json';
+    for (const invalid of [
+      { version: 1, hashes: [] },
+      { version: 2, hashes: {} },
+      { version: 1, hashes: { bad: 123 } },
+    ]) {
+      put(identityKey, invalid);
+      const before = [...objects.entries()];
+      assert.equal((await send(body)).status, 500);
+      assert.deepEqual([...objects.entries()], before);
+    }
+    put(identityKey, { version: 1, hashes: { [hash('old-alias')]: cards[1].slug } });
+    const originalIdentities = objects.get(identityKey);
     const originalCatalog = objects.get('metadata/catalog-v5.json');
     const originalLeft = objects.get(`items/${cards[0].slug}.json`);
     conflictKey = 'metadata/tags-v1.json';
@@ -225,12 +238,18 @@ it('authenticates two-card comparison, rejects stale choices, rolls back conflic
     assert.equal((await send(body)).status, 409);
     assert.deepEqual(read(`items/${cards[1].slug}.json`), cards[1]);
     assert.equal(objects.get(`items/${cards[0].slug}.json`), originalLeft);
+    assert.equal(objects.get(identityKey), originalIdentities);
+    for (const key of [...objects.keys()].filter((key) => key.startsWith('merge-backups/'))) {
+      assert.equal(read(key).identitySnapshot.text, originalIdentities);
+      assert.ok(read(key).identitySnapshot.etag);
+    }
     missingEtagKey = `items/${cards[0].slug}.json`;
     const success = await send(body);
     assert.equal(success.status, 200, await success.clone().text());
     const result = await success.json();
     assert.equal(result.slug, cards[0].slug);
     assert.equal(read('metadata/catalog-v5.json').items.length, 1);
+    assert.equal(read('metadata/import-image-identities-v1.json').hashes[cards[1].imageHash], cards[0].slug);
     assert.equal(read('metadata/catalog-v5.json').items[0].exampleCount, 3);
     assert.equal(read(`items/${cards[0].slug}.json`).prompts.length, 2);
     assert.deepEqual(read(`items/${cards[1].slug}.json`), { mergedInto: cards[0].slug });
