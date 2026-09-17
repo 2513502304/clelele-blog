@@ -231,6 +231,7 @@ it('authenticates two-card comparison, rejects stale choices, rolls back conflic
     const result = await success.json();
     assert.equal(result.slug, cards[0].slug);
     assert.equal(read('metadata/catalog-v5.json').items.length, 1);
+    assert.equal(read('metadata/import-image-identities-v1.json').hashes[cards[1].imageHash], cards[0].slug);
     assert.equal(read('metadata/catalog-v5.json').items[0].exampleCount, 3);
     assert.equal(read(`items/${cards[0].slug}.json`).prompts.length, 2);
     assert.deepEqual(read(`items/${cards[1].slug}.json`), { mergedInto: cards[0].slug });

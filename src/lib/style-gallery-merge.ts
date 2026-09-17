@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { invalidateByTag } from '@vercel/functions';
 import { getStyleGalleryObjectTextSnapshot, putStyleGalleryObject, StyleGalleryObjectConflictError } from './hf-s3-presign';
 import { StyleGalleryClientError } from './style-gallery-errors';
+import { IMPORT_IDENTITY_KEY } from './style-gallery-import-identity';
 import { buildGalleryMerge, galleryMergeRevision } from './style-gallery-merge-plan';
 import type { GalleryMergePreview, GalleryMergeSelection } from './style-gallery-merge-types';
 import { invalidateStyleGalleryPublicCache } from './style-gallery-public-cache';
@@ -89,9 +90,10 @@ export async function mergeGalleryCards(hashes: [string, string], revisions: [st
       choice,
       state.index,
     );
-    const [searchSnapshot, visualSnapshot] = await Promise.all([
+    const [searchSnapshot, visualSnapshot, identitySnapshot] = await Promise.all([
       getStyleGalleryObjectTextSnapshot(STYLE_GALLERY_PROMPT_SEARCH_INDEX_KEY),
       getStyleGalleryObjectTextSnapshot(STYLE_GALLERY_VISUAL_INDEX_KEY, 60_000),
+      getStyleGalleryObjectTextSnapshot(IMPORT_IDENTITY_KEY),
     ]);
     if (!searchSnapshot.text || !searchSnapshot.etag) throw new Error('Search snapshot unavailable.');
     const search = styleGalleryPromptSearchIndexSchema.parse(JSON.parse(searchSnapshot.text));
@@ -139,6 +141,12 @@ export async function mergeGalleryCards(hashes: [string, string], revisions: [st
         value: compactStyleGalleryVisualIndex(visual),
       });
     }
+    // Carry exact byte identities across future clipboard imports whose date/URL differs from the
+    // retired card. Existing projection aliases can still follow its redirect; no full alias rewrite.
+    const identities = identitySnapshot.text ? JSON.parse(identitySnapshot.text) : { version: 1, hashes: {} };
+    identities.hashes[item.imageHash] = item.slug;
+    identities.hashes[removed.imageHash] = item.slug;
+    writes.push({ key: IMPORT_IDENTITY_KEY, before: identitySnapshot, value: identities, empty: { version: 1, hashes: {} } });
     // Replace the retired detail with a tiny redirect; raw assets remain untouched and may be shared.
     writes.push({
       key: getStyleGalleryItemKey(removed.slug),
