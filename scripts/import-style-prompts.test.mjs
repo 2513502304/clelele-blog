@@ -9,8 +9,10 @@ import { assertStyleGalleryItemConsistency } from '../src/lib/style-gallery-asse
 import {
   buildImportData,
   extractItems,
-  loadExistingItemsByHash,
+  getDecodedItemHash,
+  getExtractedItemHash,
   parseArgs,
+  planImageMigrations,
   resolveOriginalImages,
   uniqueImagesByHash,
   writeImportedTags,
@@ -346,54 +348,6 @@ describe('style prompt import variants', () => {
     assert.equal(duplicateAdditionalPrompt.skippedDuplicates, 1);
   });
 
-  it('hydrates prompt arrays only for existing images referenced by the imported session', async () => {
-    const bytes = Buffer.from('existing image');
-    const imageHash = crypto.createHash('sha256').update(bytes).digest('hex');
-    const requests = [];
-    const catalogItems = [
-      { slug: 'existing-item', imageHash, promptRevision: 'revision-1' },
-      { slug: 'unrelated-item', imageHash: 'f'.repeat(64), promptRevision: 'revision-2' },
-    ];
-    const extracted = [
-      {
-        images: [`data:image/png;base64,${bytes.toString('base64')}`],
-        prompt: `${PLACEHOLDER}, second extraction`,
-      },
-    ];
-
-    const existingByHash = await loadExistingItemsByHash('https://example.test', catalogItems, extracted, async (url) => {
-      requests.push(url);
-      return {
-        prompts: [{ prompt: `${PLACEHOLDER}, first extraction` }],
-        item: {
-          slug: 'existing-item',
-          title: 'Existing item',
-          date: '2026-08-10T00:00:00.000Z',
-          sourceImage: `/api/style-gallery/image/source/${imageHash.slice(0, 12)}.png`,
-          sourceImageAlt: 'Existing reference image',
-          imageHash,
-          images: [
-            {
-              sourceImage: `/api/style-gallery/image/source/${imageHash.slice(0, 12)}.png`,
-              sourceImageAlt: 'Existing reference image',
-              imageHash,
-            },
-          ],
-        },
-      };
-    });
-
-    assert.deepEqual(requests, ['https://example.test/api/style-gallery/prompts/existing-item?v=revision-1']);
-    assert.deepEqual(existingByHash.get(imageHash)?.prompts, [`${PLACEHOLDER}, first extraction`]);
-    assert.equal(existingByHash.has('f'.repeat(64)), false);
-
-    const prepared = await buildImportData(extracted, '/tmp/session.jsonl', existingByHash, false, null);
-    assert.equal(prepared.items.length, 1);
-    assert.equal(prepared.assets.size, 0);
-    assert.equal(prepared.items[0].sourceImageAlt, 'Existing reference image');
-    assert.doesNotThrow(() => assertStyleGalleryItemConsistency(prepared.items[0]));
-  });
-
   it('groups ordered prompt variants for the same new image', async () => {
     const bytes = Buffer.from(
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
@@ -563,4 +517,78 @@ describe('import category flags', () => {
     assert.deepEqual(prepared.sourceSlugs, []);
     assert.equal(prepared.skippedNewMetadata, 1);
   });
+});
+
+it('image replacement is opt-in, deduplicated per card, and never downgrades missing originals', async () => {
+  const png = await sharp({ create: { width: 20, height: 30, channels: 3, background: '#aabbcc' } })
+    .png()
+    .toBuffer();
+  const item = {
+    images: [`data:image/png;base64,${png.toString('base64')}`],
+    prompt: `${PLACEHOLDER} test`,
+    timestamp: '2026-09-01T00:00:00Z',
+    sourceLine: 2,
+    embeddedHash: 'a'.repeat(64),
+    originalsVerified: 1,
+  };
+  const match = {
+    item: {
+      imageHash: 'a'.repeat(64),
+      slug: 'old-card',
+      images: [{ imageHash: 'a'.repeat(64), sourceImage: '/api/style-gallery/image/source/aaaaaaaaaaaa.jpg' }],
+      prompts: [],
+      title: 'Old',
+      date: item.timestamp,
+    },
+    revision: 'revision',
+  };
+  assert.equal(parseArgs(['test.jsonl']).overwriteImages, false);
+  assert.equal(parseArgs(['test.jsonl', '--overwrite-images']).overwriteImages, true);
+  assert.throws(() => parseArgs(['test.jsonl', '--overwrite-images', '--metadata-only']), /cannot/);
+  assert.equal(planImageMigrations([item], [match], false).length, 0);
+  assert.equal(planImageMigrations([item, item], [match, match], true).length, 1);
+  assert.equal(
+    planImageMigrations(
+      [{ ...item, originalDimensions: [{ width: 10, height: 10 }] }],
+      [{ ...match, item: { ...match.item, images: [{ ...match.item.images[0], dimensions: { width: 20, height: 20 } }] } }],
+      true,
+    ).length,
+    0,
+  );
+
+  assert.equal(
+    planImageMigrations([{ ...item, originalsVerified: 0, embeddedHash: getExtractedItemHash(item) }], [match], true).length,
+    0,
+  );
+  const existing = { ...match.item, prompts: [item.prompt] };
+  const prepared = await buildImportData(
+    [{ ...item, canonicalHash: existing.imageHash }],
+    '/tmp/session.jsonl',
+    new Map([[existing.imageHash, existing]]),
+    false,
+  );
+  assert.equal(prepared.assets.size, 0);
+  assert.equal(prepared.items.length, 0);
+  assert.equal(prepared.skippedDuplicates, 1);
+  const changed = await buildImportData(
+    [{ ...item, canonicalHash: existing.imageHash, prompt: `${PLACEHOLDER} new prompt` }],
+    '/tmp/session.jsonl',
+    new Map([[existing.imageHash, existing]]),
+    false,
+  );
+  assert.equal(changed.items[0].slug, 'old-card');
+  assert.deepEqual(changed.items[0].images, existing.images);
+  assert.equal(changed.assets.size, 0);
+});
+
+it('clipboard containers share exact decoded identity, but resized/edited pixels do not', async () => {
+  const jpeg = await sharp({ create: { width: 30, height: 40, channels: 3, background: '#123456' } })
+    .jpeg()
+    .toBuffer();
+  const png = await sharp(jpeg).png().toBuffer();
+  const resized = await sharp(jpeg).resize(15, 20).png().toBuffer();
+  const item = (bytes, mime) => ({ images: [`data:image/${mime};base64,${bytes.toString('base64')}`] });
+  assert.notEqual(getExtractedItemHash(item(jpeg, 'jpeg')), getExtractedItemHash(item(png, 'png')));
+  assert.equal(await getDecodedItemHash(item(jpeg, 'jpeg')), await getDecodedItemHash(item(png, 'png')));
+  assert.notEqual(await getDecodedItemHash(item(jpeg, 'jpeg')), await getDecodedItemHash(item(resized, 'png')));
 });

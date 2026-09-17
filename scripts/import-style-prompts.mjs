@@ -16,7 +16,6 @@ const REQUEST_TIMEOUT_MS = positiveInteger(process.env.STYLE_GALLERY_IMPORT_REQU
 const UPLOAD_TIMEOUT_MS = positiveInteger(process.env.STYLE_GALLERY_IMPORT_UPLOAD_TIMEOUT_MS, 300_000);
 const REQUEST_ATTEMPTS = positiveInteger(process.env.STYLE_GALLERY_IMPORT_ATTEMPTS, 3);
 const UPLOAD_CONCURRENCY = positiveInteger(process.env.STYLE_GALLERY_IMPORT_UPLOAD_CONCURRENCY, 5);
-const PROMPT_READ_CONCURRENCY = positiveInteger(process.env.STYLE_GALLERY_IMPORT_PROMPT_READ_CONCURRENCY, 5);
 // API 单批上限就是 100；默认填满可避免常见的 50-100 条 session 重复改写全量 catalog/视觉索引。
 const ITEM_BATCH_SIZE = Math.min(positiveInteger(process.env.STYLE_GALLERY_IMPORT_ITEM_BATCH_SIZE, 100), 100);
 const VISUAL_INFERENCE_BATCH_SIZE = Math.min(positiveInteger(process.env.STYLE_GALLERY_VISUAL_INFERENCE_BATCH_SIZE, 8), 16);
@@ -25,9 +24,9 @@ class NonRetryableRequestError extends Error {}
 
 function usage() {
   console.error(
-    'Usage: node scripts/import-style-prompts.mjs <codex-session.jsonl> [--dry-run] [--metadata-only] [--prompt-model=<name>] [--tag <label>]... [--overwrite-tag] [--api-base-url=<url>]',
+    'Usage: node scripts/import-style-prompts.mjs <codex-session.jsonl> [--dry-run] [--metadata-only] [--prompt-model=<name>] [--tag <label>]... [--overwrite-tag] [--overwrite-images] [--api-base-url=<url>]',
   );
-  console.error('Required for writes: STYLE_GALLERY_UPLOAD_TOKEN');
+  console.error('Required for imports and identity-aware dry runs: STYLE_GALLERY_UPLOAD_TOKEN');
 }
 
 function parseArgs(argv) {
@@ -35,6 +34,7 @@ function parseArgs(argv) {
   let apiBaseUrl = DEFAULT_API_BASE_URL;
   let metadataOnly = false;
   let overwriteTag = false;
+  let overwriteImages = false;
   let promptModel = null;
   let dryRun = false;
   let help = false;
@@ -45,6 +45,7 @@ function parseArgs(argv) {
     else if (arg === '--dry-run') dryRun = true;
     else if (arg === '--metadata-only' || arg === '--update-metadata-only') metadataOnly = true;
     else if (arg === '--overwrite-tag') overwriteTag = true;
+    else if (arg === '--overwrite-images') overwriteImages = true;
     else if (arg === '--tag' || arg.startsWith('--tag=')) {
       const raw = arg === '--tag' ? argv[++index] : arg.slice('--tag='.length);
       if (!raw || raw.startsWith('--') || raw.length > 100) throw new Error('--tag requires a valid category label.');
@@ -60,7 +61,9 @@ function parseArgs(argv) {
     else throw new Error(`Unexpected positional argument: ${arg}`);
   }
   if (overwriteTag && !tags.length && !help) throw new Error('--overwrite-tag requires at least one --tag.');
+  if (metadataOnly && overwriteImages) throw new Error('--overwrite-images cannot be combined with --metadata-only.');
   return {
+    overwriteImages,
     apiBaseUrl: apiBaseUrl.replace(/\/$/, ''),
     dryRun,
     help,
@@ -101,6 +104,32 @@ function getExtractedItemHash(extracted) {
   const parsedImages = extracted.images.map(parseDataUri);
   if (parsedImages.some((image) => !image)) return null;
   return itemHashFromImageHashes(parsedImages.map((image) => crypto.createHash('sha256').update(image.bytes).digest('hex')));
+}
+
+/** Exact decoded-pixel identity handles clipboard PNG/JPEG-container changes without perceptual guesses.
+ * Dimensions and ordered image boundaries are part of the digest. Lossy/resized variants only match
+ * when a previous validated attachment or an explicit admin merge established their byte/pixel aliases.
+ * Computation stays on the importing machine; Vercel only receives four fixed-size hashes per record.
+ */
+async function getDecodedItemHash(extracted) {
+  const imageHashes = [];
+  for (const uri of extracted.images) {
+    const image = parseDataUri(uri);
+    if (!image) throw new Error('Invalid session image.');
+    const { data, info } = await sharp(image.bytes)
+      .rotate()
+      .toColourspace('srgb')
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    imageHashes.push(
+      crypto.createHash('sha256').update(`gallery-pixels-v1:${info.width}:${info.height}:rgba\n`).update(data).digest('hex'),
+    );
+  }
+  return crypto
+    .createHash('sha256')
+    .update(`gallery-pixel-group-v1:${imageHashes.join('\n')}`)
+    .digest('hex');
 }
 
 function normalizePrompt(prompt) {
@@ -283,6 +312,8 @@ async function resolveOriginalImages(items, warn = console.warn) {
   const resolved = [];
   for (const item of items) {
     const images = [...item.images];
+    let originalsVerified = 0;
+    const originalDimensions = [];
     for (const [index, originalPath] of (item.localImagePaths ?? []).entries()) {
       try {
         const stat = await fs.stat(originalPath);
@@ -319,6 +350,11 @@ async function resolveOriginalImages(items, warn = console.warn) {
           if (difference > 8) throw new Error('attachment content no longer matches the session image');
         }
         images[index] = `data:${mime};base64,${bytes.toString('base64')}`;
+        originalsVerified++;
+        originalDimensions[index] = {
+          width: metadata.autoOrient?.width ?? metadata.width,
+          height: metadata.autoOrient?.height ?? metadata.height,
+        };
         // Count byte replacements; an already-original embedded image needs no restoration.
         if (!bytes.equals(embedded.bytes)) restored++;
       } catch (error) {
@@ -328,7 +364,7 @@ async function resolveOriginalImages(items, warn = console.warn) {
         );
       }
     }
-    resolved.push({ ...item, images });
+    resolved.push({ ...item, images, originalsVerified, originalDimensions });
   }
   return { items: resolved, restored, fallback };
 }
@@ -349,7 +385,7 @@ async function buildImportData(extractedItems, sessionPath, existingByHash, meta
     const parsedImages = extracted.images.map(parseDataUri);
     if (parsedImages.some((image) => !image)) continue;
     const imageHashes = parsedImages.map((image) => crypto.createHash('sha256').update(image.bytes).digest('hex'));
-    const itemHash = itemHashFromImageHashes(imageHashes);
+    const itemHash = extracted.canonicalHash ?? itemHashFromImageHashes(imageHashes);
     const existing = existingByHash.get(itemHash);
     if (!existing && metadataOnly) {
       skippedNewMetadata += 1;
@@ -399,8 +435,9 @@ async function buildImportData(extractedItems, sessionPath, existingByHash, meta
     // HF 详情中的完整引用；仅凭本轮 data URI 重建会让顶层字段与 images[0] 分叉并破坏持久化不变量。
     const storedImageRefs = existing?.images ?? imageRefs;
     if (
-      storedImageRefs.length !== imageHashes.length ||
-      storedImageRefs.some((image, index) => image.imageHash !== imageHashes[index])
+      !extracted.canonicalHash &&
+      (storedImageRefs.length !== imageHashes.length ||
+        storedImageRefs.some((image, index) => image.imageHash !== imageHashes[index]))
     ) {
       throw new Error(`Stored image metadata does not match imported image group for ${slug}.`);
     }
@@ -509,57 +546,6 @@ async function requestJson(url, options, timeoutMs = REQUEST_TIMEOUT_MS) {
   });
 }
 
-/** 使用固定 worker 数处理网络任务，避免大量既有图片同时请求 prompt item endpoint。 */
-async function mapConcurrent(items, concurrency, worker) {
-  const results = new Array(items.length);
-  let nextIndex = 0;
-  await Promise.all(
-    Array.from({ length: Math.min(concurrency, items.length) }, async () => {
-      while (nextIndex < items.length) {
-        const index = nextIndex;
-        nextIndex += 1;
-        results[index] = await worker(items[index], index);
-      }
-    }),
-  );
-  return results;
-}
-
-/**
- * Catalog 只保留列表字段，不能用于同图 prompt 去重，也不能重建多图引用。这里仅为本次 JSONL
- * 命中的既有 imageHash 并发读取详情；纯新增导入不额外请求，少量重复图也不会下载全量索引。
- */
-async function loadExistingItemsByHash(apiBaseUrl, catalogItems, extractedItems, request = requestJson) {
-  const importedHashes = new Set(extractedItems.map(getExtractedItemHash).filter(Boolean));
-  const matchedItems = catalogItems.filter((item) => importedHashes.has(item.imageHash));
-  const hydratedItems = await mapConcurrent(matchedItems, PROMPT_READ_CONCURRENCY, async (item) => {
-    const version = item.promptRevision ? `?v=${encodeURIComponent(item.promptRevision)}` : '';
-    const response = await request(`${apiBaseUrl}/api/style-gallery/prompts/${encodeURIComponent(item.slug)}${version}`, {
-      headers: { accept: 'application/json' },
-    });
-    if (!Array.isArray(response.prompts)) {
-      throw new Error(`Prompt response for ${item.slug} did not contain a prompt array.`);
-    }
-    if (
-      !response.item ||
-      response.item.slug !== item.slug ||
-      response.item.imageHash !== item.imageHash ||
-      !Array.isArray(response.item.images) ||
-      !response.item.images.length
-    ) {
-      throw new Error(`Prompt response for ${item.slug} did not contain matching image metadata.`);
-    }
-    const prompts = response.prompts.map((choice) => choice?.prompt).filter((prompt) => typeof prompt === 'string');
-    if (!prompts.length) throw new Error(`Prompt response for ${item.slug} did not contain any usable prompts.`);
-    return {
-      ...item,
-      ...response.item,
-      prompts,
-    };
-  });
-  return new Map(hydratedItems.map((item) => [item.imageHash, item]));
-}
-
 /** 上传一个 HF 签名 URL；每次重试都有独立 timeout，明确的非重试型 4xx 会立即失败。 */
 async function uploadObject(uploadUrl, asset) {
   let lastError;
@@ -649,7 +635,7 @@ function sleep(ms) {
 
 async function main() {
   configureEnvironmentProxy();
-  const { apiBaseUrl, dryRun, help, metadataOnly, overwriteTag, promptModel, sessionPath, tags } = parseArgs(
+  const { apiBaseUrl, dryRun, help, metadataOnly, overwriteTag, overwriteImages, promptModel, sessionPath, tags } = parseArgs(
     process.argv.slice(2),
   );
   if (help || !sessionPath) {
@@ -657,22 +643,94 @@ async function main() {
     process.exit(help ? 0 : 1);
   }
   const token = process.env.STYLE_GALLERY_UPLOAD_TOKEN;
-  if (!dryRun && !token) throw new Error('STYLE_GALLERY_UPLOAD_TOKEN is required.');
+  if (!token) throw new Error('STYLE_GALLERY_UPLOAD_TOKEN is required, including read-only identity planning.');
   const absoluteSessionPath = path.resolve(sessionPath);
   const records = await readRecords(absoluteSessionPath);
-  const originals = await resolveOriginalImages(extractItems(records));
-  const extractedItems = originals.items;
-  console.log(
-    `Replaced ${originals.restored} embedded image(s) with different original bytes; ${originals.fallback} attachment(s) fell back to session images.`,
-  );
-  const catalogUrl = new URL('/api/style-gallery/catalog', apiBaseUrl);
-  // 公网页面依赖长 CDN 缓存降低 Fluid CPU；命令行写入必须绕过旧列表，否则刚导入的 item 会被误判为新增。
-  catalogUrl.searchParams.set('_', Date.now().toString());
-  const catalog = await requestJson(catalogUrl.toString(), {
-    cache: 'no-store',
-    headers: { accept: 'application/json', 'cache-control': 'no-cache' },
+  const rawItems = extractItems(records).map((item) => ({
+    ...item,
+    embeddedHash: getExtractedItemHash(item),
+    embeddedPixelHash: '',
+  }));
+  for (const item of rawItems) item.embeddedPixelHash = await getDecodedItemHash(item);
+  const identityRequest = (body) =>
+    requestJson(
+      `${apiBaseUrl}/api/style-gallery/import-identities`,
+      {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      },
+      UPLOAD_TIMEOUT_MS,
+    );
+  const queryFor = (item) => ({
+    hashes: [
+      ...new Set(
+        [item.embeddedHash, getExtractedItemHash(item), item.embeddedPixelHash, item.preferredPixelHash].filter(Boolean),
+      ),
+    ],
+    legacySlug: `${new Date(item.timestamp).toISOString().slice(0, 10)}-${item.embeddedHash.slice(0, 12)}`,
   });
-  const existingByHash = await loadExistingItemsByHash(apiBaseUrl, catalog.items, extractedItems);
+  const resolve = async (items) => {
+    const matches = [];
+    for (const batch of chunks(items, 100))
+      matches.push(...(await identityRequest({ action: 'resolve', queries: batch.map(queryFor) })));
+    return matches;
+  };
+  // Resolve model-facing bytes first. A newer Codex attachment recovery policy must never silently
+  // create a second card, undo a manual merge, or replace an already published image on a normal rerun.
+  const initialMatches = await resolve(rawItems);
+  const originals = await resolveOriginalImages(
+    rawItems.map((item, index) => (initialMatches[index] && !overwriteImages ? { ...item, localImagePaths: [] } : item)),
+  );
+  const extractedItems = originals.items;
+  for (const item of extractedItems)
+    item.preferredPixelHash =
+      getExtractedItemHash(item) === item.embeddedHash ? item.embeddedPixelHash : await getDecodedItemHash(item);
+  const matches = await resolve(extractedItems);
+  const migrations = planImageMigrations(extractedItems, matches, overwriteImages);
+  console.log(
+    `Found ${extractedItems.length} image/prompt records; ${matches.filter(Boolean).length} already associated with published cards.`,
+  );
+  console.log(
+    `Recovered ${originals.restored} different original image(s); ${originals.fallback} unavailable attachment(s). ${migrations.length} card image replacement(s) ${dryRun ? 'planned' : 'requested'}.`,
+  );
+  if (!overwriteImages)
+    console.log('Existing image identities are preserved. Use --overwrite-images to explicitly migrate recoverable originals.');
+  if (migrations.length && !dryRun) {
+    const replacements = [];
+    for (const migration of migrations) {
+      const assets = await buildImportData([migration.extracted], absoluteSessionPath, new Map(), false, promptModel);
+      const replacement = { ...assets.items[0], slug: migration.match.item.slug };
+      const visualRecords = await buildSourceVisualRecords([replacement], assets.imageBytesByHash);
+      await prepareAndUploadAssets(apiBaseUrl, token, assets.assets);
+      // A failed/lost replacement response leaves immutable source assets available for safe retry.
+      // The server journals conditional metadata writes; it never deletes a shared old source object.
+      replacements.push({
+        slug: replacement.slug,
+        revision: migration.match.revision,
+        item: replacement,
+        visualRecords,
+        hashes: queryFor(migration.extracted).hashes,
+      });
+      console.log(
+        `Prepared replacement ${replacement.slug}: ${migration.match.item.imageHash.slice(0, 12)} -> ${replacement.imageHash.slice(0, 12)} (URL, prompts, tags and examples preserved).`,
+      );
+    }
+    for (const batch of chunks(replacements, 100)) {
+      const result = await identityRequest({ action: 'replace', replacements: batch });
+      console.log(
+        `Published ${result.changed} image replacement(s) with one shared-index update; recovery ${result.recoveryId ?? 'not needed'}.`,
+      );
+    }
+    matches.splice(0, matches.length, ...(await resolve(extractedItems)));
+  }
+  const existingByHash = new Map();
+  for (const [index, match] of matches.entries()) {
+    if (!match) continue;
+    extractedItems[index].canonicalHash = match.item.imageHash;
+    existingByHash.set(match.item.imageHash, { ...match.item, prompts: match.item.prompts.map((prompt) => prompt.prompt) });
+  }
+
   const prepared = await buildImportData(extractedItems, absoluteSessionPath, existingByHash, metadataOnly, promptModel);
 
   console.log(`Found ${extractedItems.length} image/prompt items.`);
@@ -687,9 +745,32 @@ async function main() {
       );
     return;
   }
+  // Reserve confirmed aliases before publishing new items. If a response/process is lost after
+  // metadata commits, the next import can still find that card even if its temp attachment vanished.
+  // A pending alias never appears as a public card until the catalog actually contains its target.
+  const pendingByHash = new Map(prepared.items.map((item) => [item.imageHash, item]));
+  const bindings = extractedItems.flatMap((item, index) => {
+    const target = matches[index]?.item ?? pendingByHash.get(getExtractedItemHash(item));
+    return target ? [{ hashes: queryFor(item).hashes, slug: target.slug, expectedHash: target.imageHash }] : [];
+  });
+  for (const batch of chunks(bindings, 100)) await identityRequest({ action: 'remember', bindings: batch });
   let uploadedKeys = [];
   try {
     console.log(`Computing visual features for ${prepared.items.length} metadata item(s)...`);
+    // Alias hits may append a new prompt while the session only contains a resized projection.
+    // Fetch canonical bytes only for those actual writes; never compute canonical features from fallback bytes.
+    for (const item of prepared.items)
+      for (const image of item.images) {
+        if (prepared.imageBytesByHash.has(image.imageHash)) continue;
+        const response = await fetch(new URL(image.sourceImage, apiBaseUrl), {
+          signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
+        });
+        if (!response.ok) throw new Error(`Cannot read canonical source for ${item.slug}.`);
+        const bytes = Buffer.from(await response.arrayBuffer());
+        if (crypto.createHash('sha256').update(bytes).digest('hex') !== image.imageHash)
+          throw new Error(`Canonical source hash mismatch for ${item.slug}.`);
+        prepared.imageBytesByHash.set(image.imageHash, bytes);
+      }
     const visualRecords = await buildSourceVisualRecords(prepared.items, prepared.imageBytesByHash);
     const visualRecordsBySlug = new Map();
     for (const record of visualRecords) {
@@ -744,6 +825,17 @@ async function main() {
     await cleanupAssets(apiBaseUrl, token, uploadedKeys);
     throw error;
   }
+  // Persist only after item publication. Exact transformed-byte aliases make later clipboard/session
+  // repeats stable without adding fields to the public catalog or using visual similarity as identity.
+  const published = await resolve(extractedItems);
+  for (const batch of chunks(
+    extractedItems
+      .map((item, index) => (published[index] ? { hashes: queryFor(item).hashes, slug: published[index].item.slug } : null))
+      .filter(Boolean),
+    100,
+  )) {
+    await identityRequest({ action: 'remember', bindings: batch });
+  }
   // Tag storage is separate from image metadata. A failed tag write must never roll back imported images.
   try {
     const tagResult = await writeImportedTags(apiBaseUrl, token, prepared.sourceSlugs, tags, overwriteTag);
@@ -759,6 +851,35 @@ async function main() {
       },
     );
   }
+}
+
+/** Only proven original recovery can replace an existing card; missing attachments never downgrade it. */
+function planImageMigrations(items, matches, overwriteImages) {
+  if (!overwriteImages) return [];
+  const bySlug = new Map();
+  for (const [index, extracted] of items.entries()) {
+    const match = matches[index];
+    const recoveredHash = getExtractedItemHash(extracted);
+    if (!match || extracted.originalsVerified !== extracted.images.length || recoveredHash === match.item.imageHash) continue;
+    // A clipboard temp file may itself be a derivative. Never replace a larger published original
+    // with a smaller decoded raster merely because both hashes are known aliases.
+    if (
+      match.item.images.some((image, imageIndex) => {
+        const candidate = extracted.originalDimensions?.[imageIndex];
+        return (
+          candidate && image.dimensions && candidate.width * candidate.height < image.dimensions.width * image.dimensions.height
+        );
+      })
+    ) {
+      console.warn(`Keeping higher-resolution published image for ${match.item.slug}; recovered attachment is smaller.`);
+      continue;
+    }
+    const previous = bySlug.get(match.item.slug);
+    if (previous && getExtractedItemHash(previous.extracted) !== recoveredHash)
+      throw new Error(`Conflicting originals for ${match.item.slug}; inspect the session before replacing images.`);
+    bySlug.set(match.item.slug, { extracted, match });
+  }
+  return [...bySlug.values()];
 }
 
 /** Preserve existing tags by default; explicit replacement compares a fresh base and never auto-rebases conflicts. */
@@ -797,11 +918,13 @@ async function writeImportedTags(apiBaseUrl, token, slugs, tags, overwriteTag = 
 }
 
 export {
+  getExtractedItemHash,
+  getDecodedItemHash,
+  planImageMigrations,
   resolveOriginalImages,
   writeImportedTags,
   buildImportData,
   extractItems,
-  loadExistingItemsByHash,
   parseArgs,
   uniqueImagesByHash,
 };
@@ -819,6 +942,10 @@ npm run import:style-prompts -- <session.jsonl> --prompt-model='gpt-5.6-sol'
 npm run import:style-prompts -- <session.jsonl> --tag "溶图" --tag "现实"
 npm run import:style-prompts -- <session.jsonl> --tag "溶图" --tag "现实" --overwrite-tag
 
+# 默认保留已发布图片身份；--overwrite-images 才会迁移可恢复的原始附件，并保留 URL、Prompt、标签、示例和点赞。
+# npm run import:style-prompts -- <session.jsonl> --tag "插画" --overwrite-images
+# Codex 新版会缩放/重编码，旧版未处理；此选项用于修复跨版本导入，而不是无条件重传全部资产。
+# 内嵌图哈希别名只记录已经确认的来源；手动合并的跳转也会被尊重，不按视觉相似度自动合并。
 # 原始附件优先：仅使用同一 turn 中结构化 local_image 与图片包装路径一致的本地文件；不可用时警告并回退内嵌图。
 # Codex 可能缩放/重编码内嵌图；导入器不会改写 source 字节。请在临时附件仍存在时导入。
 # 标签输出区分 processed / changed / unchanged；重复图片也参与标签修复，但不会虚报为新增。
