@@ -31,7 +31,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useProgressiveList } from '@/hooks/useProgressiveList';
 import type { StyleGalleryCardData } from '@/types/style-gallery';
 import StyleGalleryCuration from './StyleGalleryCuration';
-import StyleGalleryMerge from './StyleGalleryMerge';
 import { useGalleryTagSelection } from './StyleGalleryTagSelection';
 import { GalleryTagEditor, GalleryTagFilter } from './StyleGalleryTags';
 
@@ -230,10 +229,12 @@ function StyleGalleryImageIndexContent({
       ((!tagQuery && (promptSearchStatus === 'idle' || promptSearchStatus === 'loading')) ||
         (tagQuery && tagStatus !== 'ready'))) ||
       (Boolean(tag) && tagStatus !== 'ready'),
+    items,
   );
 
   return (
-    <section className="space-y-4" aria-label="Image style prompt gallery index">
+    <section ref={tagSelection.rootRef} className="space-y-4" aria-label="Image style prompt gallery index">
+      {tagSelection.overlays}
       <div className="glass-surface glass-toolbar flex items-center gap-3 p-3 md:flex-col md:items-stretch">
         <label className="relative min-w-52 flex-1 md:min-w-0">
           <Icon icon="ri:search-line" className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -314,15 +315,20 @@ function StyleGalleryImageIndexContent({
         <div className="min-w-0 flex-1">{tagSelection.toolbar}</div>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <StyleGalleryCuration locale={locale} />
-          <StyleGalleryMerge locale={locale} />
+          {tagSelection.mergeButton}
         </div>
       </div>
       {visibleItems.length ? (
         <>
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(92px,1fr))] gap-2.5 md:grid-cols-[repeat(auto-fill,minmax(76px,1fr))] md:gap-2">
+          <div
+            data-gallery-marquee-area
+            className="grid grid-cols-[repeat(auto-fill,minmax(92px,1fr))] gap-2.5 md:grid-cols-[repeat(auto-fill,minmax(76px,1fr))] md:gap-2"
+          >
             {renderedItems.map((item, index) => (
               <div
                 key={item.slug}
+                data-gallery-selection-id={item.slug}
+                data-selected={tagSelection.selected.has(item.slug)}
                 id={getStyleGalleryLightboxElementId('index-source', item.slug)}
                 tabIndex={-1}
                 className="group relative aspect-square min-w-0 overflow-hidden rounded-md border border-border bg-muted shadow-sm transition focus-within:z-10 focus-within:ring-2 focus-within:ring-primary hover:z-10 hover:-translate-y-0.5 hover:border-primary/60 hover:shadow-md"

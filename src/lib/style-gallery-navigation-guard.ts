@@ -16,6 +16,10 @@ export function guardGalleryNavigation(message: string): () => void {
       return;
     const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>('a[href]') : null;
     if (!link || link.hasAttribute('download') || (link.target && link.target !== '_self')) return;
+    // Selection-mode card clicks are consumed by the grid instead of navigating.
+    if (link.closest('[data-gallery-selecting="true"] [data-gallery-selection-id]')) return;
+    const marqueeRoot = link.closest<HTMLElement>('[data-gallery-marquee-until]');
+    if (link.closest('[data-gallery-marquee-area]') && Number(marqueeRoot?.dataset.galleryMarqueeUntil) > Date.now()) return;
     const url = new URL(link.href, location.href);
     if (!['http:', 'https:'].includes(url.protocol) || sameDocumentAnchor(url)) return;
     if (!confirm()) {

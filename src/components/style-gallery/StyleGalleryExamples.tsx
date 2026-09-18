@@ -1,3 +1,4 @@
+import { useGalleryMarquee } from '@hooks/useGalleryMarquee';
 import { Icon } from '@iconify/react';
 import { downloadStyleGalleryImages } from '@lib/style-gallery-batch-download';
 import { getReusableStyleGalleryImageUrl } from '@lib/style-gallery-image-client';
@@ -32,6 +33,7 @@ import type { StyleGalleryVisualFeature } from '@lib/style-gallery-visual-types'
 import { openModal } from '@store/modal';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { StyleGalleryExample, StyleGalleryExampleView, StyleGalleryImageDimensions } from '@/types/style-gallery';
+import GallerySelectionDock from './GallerySelectionDock';
 import {
   createStyleGalleryLightboxLikeAction,
   StyleGalleryLikeButton,
@@ -114,10 +116,20 @@ export default function StyleGalleryExamples({
   const [uploading, setUploading] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [fileProgress, setFileProgress] = useState<FileProgress[]>([]);
+  const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkPlatform, setBulkPlatform] = useState<string>(STYLE_GALLERY_PLATFORMS[0].slug);
   const [mutating, setMutating] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const marquee = useGalleryMarquee({
+    enabled: selectionMode && !mutating && !downloading,
+    selected: selectedIds,
+    onChange: setSelectedIds,
+  });
+  const exitSelection = () => {
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+  };
   const activePrompt = useRef(prompt);
   // 记录浏览器已经解码成功的高清示例，Lightbox 可复用同一 URL；ref 更新不会扰动图片网格。
   const loadedExampleSources = useRef(new Set<string>());
@@ -551,8 +563,82 @@ export default function StyleGalleryExamples({
     }
   }
 
+  const selectionActions = (
+    <>
+      <button
+        type="button"
+        disabled={mutating || downloading}
+        onClick={() => setSelectedIds(new Set(examples.map((example) => example.id)))}
+        className="h-9 rounded-lg border border-border px-3 text-sm"
+      >
+        Select all
+      </button>
+      <button
+        type="button"
+        disabled={mutating || downloading || !selectedIds.size}
+        onClick={() => setSelectedIds(new Set())}
+        className="h-9 rounded-lg border border-border px-3 text-sm"
+      >
+        Clear selection
+      </button>
+      <span className="mr-auto font-bold text-sm tabular-nums">{selectedIds.size} selected</span>
+      {uploadsEnabled && (
+        <>
+          <select
+            value={bulkPlatform}
+            disabled={!selectedIds.size || mutating}
+            onChange={(event) => setBulkPlatform(event.currentTarget.value)}
+            aria-label="Destination platform"
+            className="h-9 rounded-md border border-gray-200 bg-white px-3 text-sm outline-none disabled:opacity-50 dark:border-gray-700 dark:bg-gray-950"
+          >
+            {STYLE_GALLERY_PLATFORMS.map((item) => (
+              <option key={item.slug} value={item.slug}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            disabled={!selectedIds.size || mutating || downloading}
+            onClick={updateSelectedPlatform}
+            className="inline-flex h-9 items-center gap-2 rounded-md bg-gray-950 px-3 font-bold text-sm text-white disabled:opacity-50 dark:bg-white dark:text-gray-950"
+          >
+            <Icon icon="ri:swap-2-line" className="size-4" />
+            Change platform
+          </button>
+        </>
+      )}
+      <button
+        type="button"
+        disabled={!selectedIds.size || mutating || downloading}
+        onClick={() => void downloadSelectedExamples()}
+        className="inline-flex h-9 items-center gap-2 rounded-md border border-sky-200 px-3 font-bold text-sky-600 text-sm disabled:opacity-50 dark:border-sky-900 dark:text-sky-300"
+      >
+        <Icon
+          icon={downloading ? 'ri:loader-4-line' : 'ri:download-2-line'}
+          className={`size-4 ${downloading ? 'animate-spin' : ''}`}
+        />
+        {downloading ? 'Downloading' : 'Download'}
+      </button>
+      {uploadsEnabled && (
+        <button
+          type="button"
+          disabled={!selectedIds.size || mutating || downloading}
+          onClick={deleteSelectedExamples}
+          className="inline-flex h-9 items-center gap-2 rounded-md border border-red-200 px-3 font-bold text-red-500 text-sm disabled:opacity-50 dark:border-red-950"
+        >
+          <Icon icon="ri:delete-bin-line" className="size-4" />
+          Delete
+        </button>
+      )}
+    </>
+  );
   return (
-    <section className="rounded-lg border border-rose-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-950">
+    <section
+      ref={marquee.rootRef}
+      className="rounded-lg border border-rose-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-950"
+    >
+      {marquee.overlay}
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
           <p className="font-bold text-rose-500 text-sm">Generated examples</p>
@@ -664,57 +750,29 @@ export default function StyleGalleryExamples({
       {examples.length ? (
         <div className="space-y-6">
           <div className="sticky top-3 z-10 flex flex-wrap items-center gap-2 rounded-lg border border-rose-200 bg-white/95 p-3 shadow-md backdrop-blur dark:border-rose-900 dark:bg-gray-950/95">
-            <span className="mr-auto font-bold text-sm tabular-nums">{selectedIds.size} selected</span>
-            {uploadsEnabled && (
-              <>
-                <select
-                  value={bulkPlatform}
-                  disabled={!selectedIds.size || mutating}
-                  onChange={(event) => setBulkPlatform(event.currentTarget.value)}
-                  aria-label="Destination platform"
-                  className="h-9 rounded-md border border-gray-200 bg-white px-3 text-sm outline-none disabled:opacity-50 dark:border-gray-700 dark:bg-gray-950"
-                >
-                  {STYLE_GALLERY_PLATFORMS.map((item) => (
-                    <option key={item.slug} value={item.slug}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  disabled={!selectedIds.size || mutating || downloading}
-                  onClick={updateSelectedPlatform}
-                  className="inline-flex h-9 items-center gap-2 rounded-md bg-gray-950 px-3 font-bold text-sm text-white disabled:opacity-50 dark:bg-white dark:text-gray-950"
-                >
-                  <Icon icon="ri:swap-2-line" className="size-4" />
-                  Change platform
-                </button>
-              </>
-            )}
             <button
               type="button"
-              disabled={!selectedIds.size || mutating || downloading}
-              onClick={() => void downloadSelectedExamples()}
-              className="inline-flex h-9 items-center gap-2 rounded-md border border-sky-200 px-3 font-bold text-sky-600 text-sm disabled:opacity-50 dark:border-sky-900 dark:text-sky-300"
+              onClick={() => (selectionMode ? exitSelection() : setSelectionMode(true))}
+              disabled={mutating || downloading}
+              className="h-9 rounded-lg border border-border px-3 text-sm"
             >
-              <Icon
-                icon={downloading ? 'ri:loader-4-line' : 'ri:download-2-line'}
-                className={`size-4 ${downloading ? 'animate-spin' : ''}`}
-              />
-              {downloading ? 'Downloading' : 'Download'}
+              {selectionMode ? 'Exit selection' : 'Select images'}
             </button>
-            {uploadsEnabled && (
+            {selectionMode && selectionActions}
+          </div>
+          {selectionMode && (
+            <GallerySelectionDock count={selectedIds.size}>
+              {selectionActions}
               <button
                 type="button"
-                disabled={!selectedIds.size || mutating || downloading}
-                onClick={deleteSelectedExamples}
-                className="inline-flex h-9 items-center gap-2 rounded-md border border-red-200 px-3 font-bold text-red-500 text-sm disabled:opacity-50 dark:border-red-950"
+                disabled={mutating || downloading}
+                onClick={exitSelection}
+                className="h-9 rounded-lg border border-border px-3 text-sm"
               >
-                <Icon icon="ri:delete-bin-line" className="size-4" />
-                Delete
+                Exit selection
               </button>
-            )}
-          </div>
+            </GallerySelectionDock>
+          )}
           {exampleGroups.map(([platformName, platformExamples]) => (
             <section className="space-y-3" key={platformName}>
               <div className="flex items-center justify-between gap-3 border-rose-100 border-b pb-2 dark:border-gray-800">
@@ -724,7 +782,10 @@ export default function StyleGalleryExamples({
                     <input
                       type="checkbox"
                       checked={platformExamples.every((example) => selectedIds.has(example.id))}
-                      onChange={() => toggleGroup(platformExamples)}
+                      onChange={() => {
+                        setSelectionMode(true);
+                        toggleGroup(platformExamples);
+                      }}
                       className="size-4 accent-rose-500"
                     />
                     Select group
@@ -734,11 +795,16 @@ export default function StyleGalleryExamples({
                   </span>
                 </div>
               </div>
-              <div className="grid grid-cols-4 gap-3 md:grid-cols-2 [@media(min-width:769px)_and_(max-width:1279px)]:grid-cols-3">
+              <div
+                data-gallery-marquee-area
+                className="grid grid-cols-4 gap-3 md:grid-cols-2 [@media(min-width:769px)_and_(max-width:1279px)]:grid-cols-3"
+              >
                 {platformExamples.map((example) => {
                   return (
                     <figure
                       key={example.src}
+                      data-gallery-selection-id={example.id}
+                      data-selected={selectedIds.has(example.id)}
                       id={getStyleGalleryLightboxElementId('detail-example', example.id)}
                       tabIndex={-1}
                       className="w-full min-w-0 overflow-hidden rounded-lg border border-gray-100 bg-gray-50 [contain-intrinsic-size:auto_420px] [content-visibility:auto] dark:border-gray-800 dark:bg-gray-900"
@@ -767,7 +833,10 @@ export default function StyleGalleryExamples({
                             type="checkbox"
                             checked={selectedIds.has(example.id)}
                             disabled={mutating}
-                            onChange={() => toggleExample(example.id)}
+                            onChange={() => {
+                              setSelectionMode(true);
+                              toggleExample(example.id);
+                            }}
                             aria-label={`Select ${example.alt ?? 'generated example'}`}
                             className="size-4 accent-rose-500"
                           />

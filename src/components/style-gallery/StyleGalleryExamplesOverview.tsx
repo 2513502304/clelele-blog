@@ -335,7 +335,8 @@ function StyleGalleryExamplesOverviewContent({
   );
 
   return (
-    <section className="space-y-5" aria-label="Generated example overview">
+    <section ref={tagSelection.rootRef} className="space-y-5" aria-label="Generated example overview">
+      {tagSelection.overlays}
       <GalleryTagEditor locale={locale} />
       <div className="glass-surface glass-toolbar p-4">
         <label className="relative block w-full">
@@ -477,6 +478,8 @@ function StyleGalleryExamplesOverviewContent({
             {visibleItems.map(({ example, stack }, index) => (
               <figure
                 key={example.id}
+                data-gallery-selection-id={example.sourceSlug}
+                data-selected={tagSelection.selected.has(example.sourceSlug)}
                 id={getStyleGalleryLightboxElementId('overview-example', example.id)}
                 data-source-slug={example.sourceSlug}
                 data-source-stack={stack ? 'true' : undefined}

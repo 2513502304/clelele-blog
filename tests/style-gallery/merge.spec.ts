@@ -46,10 +46,14 @@ for (const path of ['', '/index']) {
     let posted: { selection: GalleryMergeSelection } | undefined;
     let fail = true;
     await page.route('**/*', async (route) => {
+      if (route.request().url().includes('/api/live2d')) return route.abort();
       if (route.request().resourceType() === 'image') return route.fulfill({ contentType: 'image/svg+xml', body: svg });
       if (route.request().url().endsWith('/api/style-gallery/merge')) {
         const body = route.request().postDataJSON();
-        if (body.action === 'preview') return route.fulfill({ json: { cards } });
+        if (body.action === 'preview')
+          return route.fulfill({
+            json: { cards: cards.map((card, side) => ({ ...card, item: { ...card.item, imageHash: body.hashes[side] } })) },
+          });
         saves++;
         posted = body;
         return fail ? route.fulfill({ status: 409 }) : route.fulfill({ json: { slug: cards[0].item.slug } });
@@ -68,8 +72,14 @@ for (const path of ['', '/index']) {
     expect(collectBox && mergeBox && mergeBox.x >= collectBox.x + collectBox.width).toBeTruthy();
     await trigger.click();
     const dialog = page.getByRole('dialog', { name: '合并两张卡片', exact: true });
-    await dialog.getByLabel('卡片 1 的 hash').fill('a'.repeat(12));
-    await dialog.getByLabel('卡片 2 的 hash').fill('b'.repeat(12));
+    await expect(dialog).not.toBeVisible();
+    const choices = page.getByRole('checkbox', { name: /^选择来源 / });
+    await choices.nth(0).check();
+    await choices.nth(1).check();
+    await expect(choices.nth(2)).toBeDisabled();
+    const dock = page.locator('[data-gallery-selection-dock]');
+    if (path) await dock.getByRole('button', { name: /^已选择/ }).click();
+    await dock.getByRole('button', { name: '确认两张并比较' }).click();
     await dialog.getByLabel('管理 token').fill('test-token');
     await dialog.getByRole('button', { name: '加载对比', exact: true }).click();
     const right = dialog.getByRole('region', { name: '卡片 2', exact: true });
