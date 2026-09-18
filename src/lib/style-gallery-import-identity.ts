@@ -169,6 +169,7 @@ export type ImportImageReplacement = {
   hashes: string[];
 };
 
+/** Single-card adapter sharing the batch transaction and its same-target retry guarantees. */
 export async function replaceImportImages(
   slug: string,
   expectedRevision: string,

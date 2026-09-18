@@ -1,5 +1,5 @@
 import { combineGallerySelection, intersectsSelection, type SelectionRect } from '@lib/style-gallery-selection';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 /** Desktop rubber-band selection in document coordinates, including wheel scrolling and newly mounted cards.
  * Form controls retain their own gestures. Touch users keep the existing checkboxes; no global touch lock.
@@ -19,7 +19,10 @@ export function useGalleryMarquee({
 }) {
   const rootRef = useRef<HTMLElement>(null);
   const latest = useRef({ selected, onChange, limit });
-  latest.current = { selected, onChange, limit };
+  // Native listeners must not observe state from a concurrent render that never commits.
+  useLayoutEffect(() => {
+    latest.current = { selected, onChange, limit };
+  }, [selected, onChange, limit]);
   const [box, setBox] = useState<SelectionRect | null>(null);
   useEffect(() => {
     const root = rootRef.current;

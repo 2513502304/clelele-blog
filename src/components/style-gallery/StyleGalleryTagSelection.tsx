@@ -77,6 +77,7 @@ export function useGalleryTagSelection(
   const controlClass =
     'inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-border bg-background px-3 text-sm disabled:opacity-50';
   const zh = locale.startsWith('zh');
+  const ja = locale.startsWith('ja');
   const exit = () => {
     setMode(null);
     setSelection(new Set());
@@ -110,7 +111,7 @@ export function useGalleryTagSelection(
         onClick={mode === 'merge' ? confirmMerge : () => $galleryTagEditor.set(selected)}
       >
         <Icon icon={mode === 'merge' ? 'ri:merge-cells-horizontal' : 'ri:price-tag-3-line'} className="size-4" />
-        {mode === 'merge' ? (zh ? '确认两张并比较' : 'Compare selected pair') : text.edit}
+        {mode === 'merge' ? (zh ? '确认两张并比较' : ja ? '選んだ2枚を比較' : 'Compare selected pair') : text.edit}
       </button>
     </>
   );
@@ -138,7 +139,7 @@ export function useGalleryTagSelection(
                       key={slug}
                       onClick={() => toggle(slug)}
                       className="flex items-center gap-2 rounded-lg border border-border p-2 text-xs"
-                      aria-label={`${zh ? '取消选择' : 'Deselect'} ${item.imageHash.slice(0, 12)}`}
+                      aria-label={`${zh ? '取消选择' : ja ? '選択を解除' : 'Deselect'} ${item.imageHash.slice(0, 12)}`}
                     >
                       <img
                         src={getStyleGallerySourceThumbnail(item.sourceImage)}
@@ -156,7 +157,9 @@ export function useGalleryTagSelection(
             <p className="text-muted-foreground text-xs">
               {zh
                 ? '拖动框选；Ctrl / Shift / ⌘ 追加选择。可滚轮浏览。'
-                : 'Drag to select. Ctrl / Shift / ⌘ adds to selection; scroll while dragging.'}
+                : ja
+                  ? 'ドラッグで範囲選択。Ctrl / Shift / ⌘ で追加選択。ドラッグ中もスクロールできます。'
+                  : 'Drag to select. Ctrl / Shift / ⌘ adds to selection; scroll while dragging.'}
             </p>
           </GallerySelectionDock>
         )}
@@ -181,7 +184,7 @@ export function useGalleryTagSelection(
         }}
       >
         <Icon icon="ri:merge-cells-horizontal" />
-        {zh ? '合并卡片' : 'Merge cards'}
+        {zh ? '合并卡片' : ja ? 'カードを統合' : 'Merge cards'}
       </button>
     ) : null,
     toolbar: (
@@ -206,7 +209,9 @@ export function useGalleryTagSelection(
           <p className="basis-full text-muted-foreground text-xs">
             {zh
               ? '选择两张卡片；可以继续搜索、筛选或以图搜图，已选卡片会保留。最多选择 2 张。'
-              : 'Choose exactly two cards. Search and filters keep your selected pair.'}
+              : ja
+                ? 'カードを2枚選んでください。検索・絞り込み・画像検索を続けても選択は保持されます。'
+                : 'Choose exactly two cards. Search and filters keep your selected pair.'}
           </p>
         )}
       </div>

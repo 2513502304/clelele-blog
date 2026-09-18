@@ -41,6 +41,18 @@ for (const path of ['', '/index', '/examples']) {
     const cards = page.locator('[data-gallery-selection-id]');
     const selected = page.locator('[data-gallery-selection-id][data-selected="true"]');
     const dock = page.locator('[data-gallery-selection-dock]');
+    if (!path) {
+      const collapse = dock.getByRole('button', { name: /^已选择/ });
+      await page.setViewportSize({ width: 390, height: 844 });
+      await expect(collapse).toHaveAttribute('aria-expanded', 'false');
+      await page.setViewportSize({ width: 1512, height: 870 });
+      await expect(collapse).toHaveAttribute('aria-expanded', 'true');
+      await collapse.click();
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.setViewportSize({ width: 1512, height: 870 });
+      await expect(collapse).toHaveAttribute('aria-expanded', 'false');
+      await collapse.click();
+    }
     await dragInside(page, cards.nth(0));
     await expect(selected).toHaveCount(1);
     await dragInside(page, cards.nth(1), 'Control');
