@@ -103,8 +103,15 @@ it('authenticates alias resolution, preserves merged cards and transactionally r
     ),
   );
   put('metadata/tags-v1.json', { version: 1, items: { [item.slug]: ['插画'] } });
-  put('examples/index-v2.json', { groups: [{ sourceSlug: item.slug, examples: [{ likedBy: [1, 2] }] }] });
-  const untouched = [objects.get('metadata/tags-v1.json'), objects.get('examples/index-v2.json')];
+  const example = {
+    id: 'example',
+    src: `/api/style-gallery/image/examples/images/${'a'.repeat(64)}.png`,
+    model: 'GPT-Image',
+    uploadedAt: item.date,
+    likedBy: [1, 2],
+  };
+  put('examples/index-v2.json', { version: 2, updatedAt: item.date, groups: [{ sourceSlug: item.slug, examples: [example] }] });
+  const nextSlug = item.slug.slice(0, -12) + replacement.imageHash.slice(0, 12);
   const oldFetch = globalThis.fetch;
   let failKey = '';
   let lostKey = '';
@@ -197,6 +204,8 @@ it('authenticates alias resolution, preserves merged cards and transactionally r
       'metadata/visual-index-v1.json',
       IMPORT_IDENTITY_KEY,
       'metadata/catalog-v5.json',
+      'metadata/tags-v1.json',
+      'examples/index-v2.json',
     ];
     const before = keys.map((key) => objects.get(key));
     failKey = 'metadata/catalog-v5.json';
@@ -213,7 +222,7 @@ it('authenticates alias resolution, preserves merged cards and transactionally r
     assert.ok(backup.identitySnapshot.etag);
     assert.equal(read('metadata/catalog-v5.json').items[0].imageHash, item.imageHash);
     const result = await replaceImportImages(item.slug, resolved.revision, replacement, records, [item.imageHash]);
-    assert.equal(result.item.slug, item.slug);
+    assert.equal(result.item.slug, nextSlug);
     assert.equal(result.item.imageHash, replacement.imageHash);
     assert.equal(
       (await replaceImportImages(item.slug, resolved.revision, replacement, records, [item.imageHash])).changed,
@@ -221,8 +230,13 @@ it('authenticates alias resolution, preserves merged cards and transactionally r
     );
     assert.deepEqual(result.item.prompts, item.prompts);
     assert.equal(result.item.date, item.date);
-    assert.deepEqual([objects.get('metadata/tags-v1.json'), objects.get('examples/index-v2.json')], untouched);
-    assert.equal(read(IMPORT_IDENTITY_KEY).hashes[item.imageHash], item.slug);
+    assert.deepEqual(read('metadata/tags-v1.json').items, { [nextSlug]: ['插画'] });
+    assert.deepEqual(read('examples/index-v2.json').groups, [{ sourceSlug: nextSlug, examples: [example] }]);
+    assert.equal(read(IMPORT_IDENTITY_KEY).hashes[item.imageHash], nextSlug);
+    assert.equal(read('metadata/prompt-search-index.json').entries[item.slug], undefined);
+    assert.ok(read('metadata/prompt-search-index.json').entries[nextSlug]);
+    assert.equal(read(`items/${item.slug}.json`).mergedInto, nextSlug);
+    assert.equal(read('metadata/visual-index-v1.json').records[0].sourceSlug, nextSlug);
     const [after] = await resolveImportIdentities([{ hashes: [item.imageHash, replacement.imageHash], legacySlug: item.slug }]);
     assert.ok(after);
     assert.equal(after.item.imageHash, replacement.imageHash);
@@ -264,6 +278,32 @@ it('authenticates alias resolution, preserves merged cards and transactionally r
       /separate cards/,
     );
     await assert.rejects(rememberImportIdentities([{ hashes: [item.imageHash], slug: other.slug }]), /another card/);
+    // Repair a historical URL even when its image is already the correct original.
+    const historical = { ...other, slug: '2026-09-02-cccccccccccc' };
+    put(`items/${historical.slug}.json`, historical);
+    const currentCatalog = read('metadata/catalog-v5.json');
+    currentCatalog.items = currentCatalog.items.filter((entry: { slug: string }) => entry.slug !== other.slug);
+    currentCatalog.items.push(toStyleGalleryCatalogItem(historical));
+    put('metadata/catalog-v5.json', currentCatalog);
+    objects.delete(`items/${other.slug}.json`);
+    const repaired = await replaceImportImages(
+      historical.slug,
+      hash(objects.get(`items/${historical.slug}.json`) ?? ''),
+      historical,
+      [
+        {
+          ...records[0],
+          sourceSlug: historical.slug,
+          imageId: other.imageHash,
+          feature: { ...feature, imageHash: other.imageHash },
+        },
+      ],
+      [other.imageHash],
+    );
+    assert.equal(repaired.item.slug, other.slug);
+    assert.equal(repaired.item.imageHash, historical.imageHash);
+    assert.deepEqual(repaired.item.images, historical.images);
+    assert.deepEqual(repaired.item.prompts, JSON.parse(JSON.stringify(historical.prompts)));
   } finally {
     globalThis.fetch = oldFetch;
     for (const [key, value] of Object.entries(previous)) {

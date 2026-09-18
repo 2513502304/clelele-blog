@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { invalidateByTag } from '@vercel/functions';
 import { z } from 'zod';
 import type { StoredStyleGalleryItem } from '@/types/style-gallery';
 import {
@@ -13,6 +14,7 @@ import { StyleGalleryClientError } from './style-gallery-errors';
 import { invalidateStyleGalleryPublicCache } from './style-gallery-public-cache';
 import {
   styleGalleryCatalogSchema,
+  styleGalleryExampleIndexSchema,
   styleGalleryItemSchema,
   styleGalleryPromptSearchIndexSchema,
   styleGalleryVisualIndexSchema,
@@ -23,9 +25,11 @@ import {
   getStyleGalleryItemKey,
   invalidateStyleGalleryStoreCache,
   STYLE_GALLERY_CATALOG_KEY,
+  STYLE_GALLERY_EXAMPLE_INDEX_KEY,
   STYLE_GALLERY_PROMPT_SEARCH_INDEX_KEY,
   STYLE_GALLERY_VISUAL_INDEX_KEY,
 } from './style-gallery-store';
+import { galleryTagsSchema, STYLE_GALLERY_TAG_CACHE_TAG, STYLE_GALLERY_TAG_KEY } from './style-gallery-tag-store';
 import { compactStyleGalleryVisualIndex, replaceStyleGallerySourceVisualRecords } from './style-gallery-visual-index';
 import type { StyleGalleryVisualRecordInput } from './style-gallery-visual-types';
 import { serializeStyleGalleryWrite } from './style-gallery-write';
@@ -153,8 +157,8 @@ export async function rememberImportIdentities(bindings: { hashes: string[]; slu
 }
 
 /**
- * Replace source bytes explicitly while retaining the stable URL and all independently edited data.
- * Catalog hash/title/images change, but tags, example IDs/votes and per-variant original prompts stay intact.
+ * Replace source bytes explicitly and keep the public URL suffix equal to the new image hash.
+ * Move every slug-keyed index together; tags, example IDs/votes and independently edited prompts survive.
  * Every object uses CAS; catalog publishes last. Old assets remain for shared references and recovery.
  */
 export type ImportImageReplacement = {
@@ -189,17 +193,20 @@ export async function replaceImportImageBatch(jobs: ImportImageReplacement[]) {
     const changes = await mapWithConcurrency(jobs, 5, async (job) => {
       const { slug, revision: expectedRevision, item: replacement, visualRecords: records } = job;
       const current = await readIdentity(slug);
-      if (!current || current.item.slug !== slug) throw conflict('Card changed. Rerun to review current image identity.');
+      if (!current) throw conflict('Card changed. Rerun to review current image identity.');
+      const targetSlug = `${current.item.slug.slice(0, -12)}${replacement.imageHash.slice(0, 12)}`;
+      if (current.item.imageHash === replacement.imageHash && current.item.slug === targetSlug)
+        return { previous: current.item, item: current.item, snapshot: current.snapshot, job, changed: false };
+      if (current.item.slug !== slug) throw conflict('Card changed. Rerun to review current image identity.');
       // A whole-request response may be lost after catalog publication. Same-target retries are read-only.
-      if (current.item.imageHash !== replacement.imageHash && revision(current.snapshot.text) !== expectedRevision)
+      if (revision(current.snapshot.text) !== expectedRevision)
         throw conflict('Card changed. Rerun to review current image identity.');
       const previous = current.item;
       if (previous.images.length !== replacement.images.length)
         throw conflict('Replacement must preserve image count and order.');
-      if (previous.imageHash === replacement.imageHash)
-        return { previous, item: previous, snapshot: current.snapshot, job, changed: false };
       const item = styleGalleryItemSchema.parse({
         ...previous,
+        slug: targetSlug,
         imageHash: replacement.imageHash,
         images: replacement.images,
         sourceImage: replacement.sourceImage,
@@ -230,14 +237,23 @@ export async function replaceImportImageBatch(jobs: ImportImageReplacement[]) {
     });
     const changed = changes.filter((change) => change.changed);
     if (!changed.length) return { items: changes.map((change) => change.item), changed: 0 };
-    const [catalogSnapshot, searchSnapshot, visualSnapshot, aliases] = await Promise.all([
+    const [catalogSnapshot, searchSnapshot, visualSnapshot, aliases, tagsSnapshot, exampleSnapshot] = await Promise.all([
       getStyleGalleryObjectTextSnapshot(STYLE_GALLERY_CATALOG_KEY),
       getStyleGalleryObjectTextSnapshot(STYLE_GALLERY_PROMPT_SEARCH_INDEX_KEY),
       getStyleGalleryObjectTextSnapshot(STYLE_GALLERY_VISUAL_INDEX_KEY, 60_000),
       readAliases(),
+      getStyleGalleryObjectTextSnapshot(STYLE_GALLERY_TAG_KEY),
+      getStyleGalleryObjectTextSnapshot(STYLE_GALLERY_EXAMPLE_INDEX_KEY),
     ]);
     const catalog = styleGalleryCatalogSchema.parse(JSON.parse(catalogSnapshot.text ?? 'null'));
     const search = styleGalleryPromptSearchIndexSchema.parse(JSON.parse(searchSnapshot.text ?? 'null'));
+    const tags = z
+      .object({ version: z.literal(1), items: z.record(z.string(), galleryTagsSchema) })
+      .parse(JSON.parse(tagsSnapshot.text ?? '{"version":1,"items":{}}'));
+    const examples = styleGalleryExampleIndexSchema.parse(
+      JSON.parse(exampleSnapshot.text ?? '{"version":2,"updatedAt":"1970-01-01T00:00:00.000Z","groups":[]}'),
+    );
+    const renamed = new Map(changed.map(({ previous, item }) => [previous.slug, item.slug]));
     for (const {
       previous,
       item,
@@ -245,22 +261,56 @@ export async function replaceImportImageBatch(jobs: ImportImageReplacement[]) {
     } of changed) {
       if (!catalog.items.some((entry) => entry.slug === slug && entry.imageHash === previous.imageHash))
         throw conflict('Card is no longer active.');
-      if (catalog.items.some((entry) => entry.slug !== slug && entry.imageHash === item.imageHash))
+      if (
+        catalog.items.some((entry) => entry.slug !== slug && (entry.imageHash === item.imageHash || entry.slug === item.slug))
+      )
         throw conflict('Original image already has a card. Merge the cards before retrying.');
       for (const hash of [...hashes, previous.imageHash, item.imageHash]) {
         const bound = aliases.value.hashes[hash];
         const boundItem = bound && bound !== slug ? await readIdentity(bound) : null;
         if (boundItem && boundItem.item.slug !== slug) throw conflict('Image alias belongs to another card.');
-        aliases.value.hashes[hash] = slug;
+        aliases.value.hashes[hash] = item.slug;
       }
-      search.entries[slug] = toStyleGalleryPromptSearchEntry(item);
+      delete search.entries[slug];
+      search.entries[item.slug] = toStyleGalleryPromptSearchEntry(item);
+      if (tags.items[slug]) {
+        tags.items[item.slug] = tags.items[slug];
+        delete tags.items[slug];
+      }
       search.updatedAt = item.updated ?? item.date;
       catalog.items = catalog.items.map((entry) => (entry.slug === slug ? toStyleGalleryCatalogItem(item) : entry));
       catalog.updatedAt = item.updated ?? item.date;
     }
+    for (const [hash, slug] of Object.entries(aliases.value.hashes)) aliases.value.hashes[hash] = renamed.get(slug) ?? slug;
+    examples.groups = examples.groups.map((group) => ({
+      ...group,
+      sourceSlug: renamed.get(group.sourceSlug) ?? group.sourceSlug,
+    }));
+    examples.updatedAt = catalog.updatedAt;
     const visual = styleGalleryVisualIndexSchema.parse(JSON.parse(visualSnapshot.text ?? 'null'));
+    visual.records = visual.records.map((record) => ({
+      ...record,
+      sourceSlug: renamed.get(record.sourceSlug) ?? record.sourceSlug,
+    }));
+    const detailWrites = await mapWithConcurrency(changed, 5, async ({ previous, item, snapshot }) => {
+      const target = await getStyleGalleryObjectTextSnapshot(getStyleGalleryItemKey(item.slug));
+      // A rolled-back attempt may have left a redirect to the old identity. Never overwrite another detail.
+      if (target.text && JSON.parse(target.text).mergedInto !== previous.slug)
+        throw conflict('Replacement URL already exists.');
+      return [
+        { key: getStyleGalleryItemKey(item.slug), before: target, value: item, empty: { mergedInto: previous.slug } },
+        { key: getStyleGalleryItemKey(previous.slug), before: snapshot, value: { mergedInto: item.slug } },
+      ];
+    });
     const writes: { key: string; before: Snapshot; value: unknown; empty?: unknown }[] = [
-      ...changed.map(({ item, snapshot }) => ({ key: getStyleGalleryItemKey(item.slug), before: snapshot, value: item })),
+      ...detailWrites.flat(),
+      { key: STYLE_GALLERY_TAG_KEY, before: tagsSnapshot, value: tags, empty: { version: 1, items: {} } },
+      {
+        key: STYLE_GALLERY_EXAMPLE_INDEX_KEY,
+        before: exampleSnapshot,
+        value: examples,
+        empty: { version: 2, updatedAt: new Date(0).toISOString(), groups: [] },
+      },
       { key: STYLE_GALLERY_PROMPT_SEARCH_INDEX_KEY, before: searchSnapshot, value: search },
       {
         key: STYLE_GALLERY_VISUAL_INDEX_KEY,
@@ -269,7 +319,7 @@ export async function replaceImportImageBatch(jobs: ImportImageReplacement[]) {
           replaceStyleGallerySourceVisualRecords(
             visual,
             new Set(changed.map(({ item }) => item.slug)),
-            changed.flatMap(({ job }) => job.visualRecords),
+            changed.flatMap(({ job, item }) => job.visualRecords.map((record) => ({ ...record, sourceSlug: item.slug }))),
           ),
         ),
       },
@@ -282,6 +332,7 @@ export async function replaceImportImageBatch(jobs: ImportImageReplacement[]) {
       new TextEncoder().encode(
         JSON.stringify({
           identitySnapshot: aliases.snapshot,
+          snapshots: writes.map(({ key, before }) => ({ key, ...before })),
           changes: changed.map(({ previous, item, job }) => ({ item: previous, replacement: item, aliases: job.hashes })),
         }),
       ),
@@ -330,7 +381,12 @@ export async function replaceImportImageBatch(jobs: ImportImageReplacement[]) {
     } finally {
       invalidateStyleGalleryStoreCache();
     }
-    await invalidateStyleGalleryPublicCache(changed.map(({ item }) => item.slug));
+    await invalidateStyleGalleryPublicCache(changed.flatMap(({ previous, item }) => [previous.slug, item.slug]));
+    try {
+      await invalidateByTag(STYLE_GALLERY_TAG_CACHE_TAG);
+    } catch {
+      /* Local CLI has no Vercel runtime. */
+    }
     return { items: changes.map(({ item }) => item), changed: changed.length, recoveryId };
   });
 }
