@@ -93,6 +93,7 @@ export default function StyleGalleryGrid({ children, masonry = false }: { childr
   return (
     <div
       ref={gridRef}
+      data-gallery-marquee-area
       data-gallery-layout={masonry ? 'masonry' : 'grid'}
       className="relative grid grid-cols-4 items-start gap-4 md:grid-cols-1 [@media(min-width:769px)_and_(max-width:992px)]:grid-cols-2 [@media(min-width:993px)_and_(max-width:1279px)]:grid-cols-3"
     >

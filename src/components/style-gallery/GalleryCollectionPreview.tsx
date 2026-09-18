@@ -113,7 +113,8 @@ export default function GalleryCollectionPreview({
   if (!urls.length) return null;
   return (
     <div className="space-y-3">
-      <div className="mx-auto w-full max-w-sm overflow-hidden rounded-2xl border border-border">
+      {/* Fill the form/comparison column; the owning dialog scrolls vertically instead of shrinking previews. */}
+      <div className="w-full overflow-hidden rounded-2xl border border-border">
         <GalleryImageStack
           onOpen={() => preview(0)}
           label={zh ? `预览 ${urls.length} 张${label ?? '参考图片'}` : `Preview ${urls.length} ${label ?? 'reference images'}`}

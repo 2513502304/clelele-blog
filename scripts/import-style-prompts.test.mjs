@@ -15,12 +15,42 @@ import {
   getImportDate,
   parseArgs,
   planImageMigrations,
+  requestWithRetries,
   resolveOriginalImages,
   uniqueImagesByHash,
   writeImportedTags,
 } from './import-style-prompts.mjs';
 
 const PLACEHOLDER = '[在此处替换为您想要生成的主体内容]';
+
+it('retries a failed image response body but does not retry an authorization rejection', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  try {
+    globalThis.fetch = async () => {
+      calls++;
+      return new Response('image bytes');
+    };
+    const bytes = await requestWithRetries('https://example.test/image', {}, 1000, async (response) => {
+      if (calls === 1) throw new Error('Body stream interrupted after successful headers');
+      return response.text();
+    });
+    assert.equal(bytes, 'image bytes');
+    assert.equal(calls, 2);
+    calls = 0;
+    globalThis.fetch = async () => {
+      calls++;
+      return new Response('Unauthorized', { status: 401 });
+    };
+    await assert.rejects(
+      requestWithRetries('https://example.test/image', {}, 1000, (r) => r.text()),
+      /Unauthorized/,
+    );
+    assert.equal(calls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
 it('requires stable session dates before identity lookup or writes', () => {
   for (const timestamp of [undefined, null, '', 'invalid'])

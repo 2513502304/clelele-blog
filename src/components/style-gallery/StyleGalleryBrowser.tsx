@@ -39,7 +39,6 @@ import type { StyleGalleryImageDimensions } from '@/types/style-gallery';
 import { Dialog, DialogContent } from '../ui/dialog';
 import StyleGalleryCuration from './StyleGalleryCuration';
 import StyleGalleryGrid, { StyleGalleryLayoutToggle, useStyleGalleryLayout } from './StyleGalleryGrid';
-import StyleGalleryMerge from './StyleGalleryMerge';
 import { StyleGalleryPromptChooser } from './StyleGalleryPromptChooser';
 import StyleGallerySharedImage from './StyleGallerySharedImage';
 import { useGalleryTagSelection } from './StyleGalleryTagSelection';
@@ -357,10 +356,12 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
       ((!tagQuery && (promptSearchStatus === 'idle' || promptSearchStatus === 'loading')) ||
         (tagQuery && tagStatus !== 'ready'))) ||
       (Boolean(tag) && tagStatus !== 'ready'),
+    items,
   );
 
   return (
-    <section className="space-y-6" aria-label="Image style prompt gallery browser">
+    <section ref={tagSelection.rootRef} className="space-y-6" aria-label="Image style prompt gallery browser">
+      {tagSelection.overlays}
       <GalleryTagEditor locale={locale} />
       <div className="glass-surface glass-toolbar p-4">
         <div>
@@ -457,13 +458,15 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
         <div className="min-w-0 flex-1">{tagSelection.toolbar}</div>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <StyleGalleryCuration locale={locale} />
-          <StyleGalleryMerge locale={locale} />
+          {tagSelection.mergeButton}
         </div>
       </div>
       <StyleGalleryGrid masonry={masonry}>
         {visibleItems.map((item, index) => (
           <article
             key={item.slug}
+            data-gallery-selection-id={item.slug}
+            data-selected={tagSelection.selected.has(item.slug)}
             id={getStyleGalleryLightboxElementId('preview-source', item.slug)}
             tabIndex={-1}
             onPointerEnter={() => prefetchPromptChoices(item)}

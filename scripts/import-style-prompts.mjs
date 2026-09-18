@@ -549,11 +549,16 @@ function uniqueImagesByHash(images) {
 }
 
 async function requestJson(url, options, timeoutMs = REQUEST_TIMEOUT_MS) {
+  return requestWithRetries(url, options, timeoutMs, (response) => response.json());
+}
+
+/** Retry both transport and response-body failures; image reads can fail after a redirect/header succeeds. */
+async function requestWithRetries(url, options, timeoutMs, read) {
   let lastError;
   for (let attempt = 1; attempt <= REQUEST_ATTEMPTS; attempt += 1) {
     try {
       const response = await fetch(url, { ...options, signal: AbortSignal.timeout(timeoutMs) });
-      if (response.ok) return response.json();
+      if (response.ok) return await read(response);
       const message = await response.text();
       if (![408, 429].includes(response.status) && response.status < 500) {
         throw new NonRetryableRequestError(message || `HTTP ${response.status}`);
@@ -744,13 +749,13 @@ async function main() {
         hashes: queryFor(migration.extracted).hashes,
       });
       console.log(
-        `Prepared replacement ${replacement.slug}: ${migration.match.item.imageHash.slice(0, 12)} -> ${replacement.imageHash.slice(0, 12)} (URL, prompts, tags and examples preserved).`,
+        `Prepared replacement ${replacement.slug}: ${migration.match.item.imageHash.slice(0, 12)} -> ${replacement.imageHash.slice(0, 12)} (URL hash follows image; prompts, tags and examples preserved).`,
       );
     }
     for (const batch of chunks(replacements, 100)) {
       const result = await identityRequest({ action: 'replace', replacements: batch });
       console.log(
-        `Published ${result.changed} image replacement(s) with one shared-index update; recovery ${result.recoveryId ?? 'not needed'}.`,
+        `Published ${result.changed} image/URL migration(s) with one shared-index update; recovery ${result.recoveryId ?? 'not needed'}.`,
       );
     }
     matches.splice(0, matches.length, ...(await resolve(extractedItems)));
@@ -782,9 +787,9 @@ async function main() {
   const pendingByHash = new Map(prepared.items.map((item) => [item.imageHash, item]));
   const readCanonicalBytes = async (image) => {
     if (!prepared.imageBytesByHash.has(image.imageHash)) {
-      const response = await fetch(new URL(image.sourceImage, apiBaseUrl), { signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS) });
-      if (!response.ok) throw new Error(`Cannot read canonical source ${image.imageHash.slice(0, 12)}.`);
-      const bytes = Buffer.from(await response.arrayBuffer());
+      const bytes = await requestWithRetries(new URL(image.sourceImage, apiBaseUrl), {}, UPLOAD_TIMEOUT_MS, async (response) =>
+        Buffer.from(await response.arrayBuffer()),
+      );
       if (crypto.createHash('sha256').update(bytes).digest('hex') !== image.imageHash)
         throw new Error(`Canonical source hash mismatch ${image.imageHash.slice(0, 12)}.`);
       prepared.imageBytesByHash.set(image.imageHash, bytes);
@@ -897,7 +902,12 @@ function planImageMigrations(items, matches, overwriteImages) {
   for (const [index, extracted] of items.entries()) {
     const match = matches[index];
     const recoveredHash = getExtractedItemHash(extracted);
-    if (!match || extracted.originalsVerified !== extracted.images.length || recoveredHash === match.item.imageHash) continue;
+    if (
+      !match ||
+      extracted.originalsVerified !== extracted.images.length ||
+      (recoveredHash === match.item.imageHash && match.item.slug.endsWith(`-${recoveredHash.slice(0, 12)}`))
+    )
+      continue;
     // A clipboard temp file may itself be a derivative. Never replace a larger published original
     // with a smaller decoded raster merely because both hashes are known aliases.
     if (
@@ -966,6 +976,7 @@ export {
   extractItems,
   parseArgs,
   uniqueImagesByHash,
+  requestWithRetries,
 };
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
@@ -981,7 +992,7 @@ npm run import:style-prompts -- <session.jsonl> --prompt-model='gpt-5.6-sol'
 npm run import:style-prompts -- <session.jsonl> --tag "溶图" --tag "现实"
 npm run import:style-prompts -- <session.jsonl> --tag "溶图" --tag "现实" --overwrite-tag
 
-# 默认保留已发布图片身份；--overwrite-images 才会迁移可恢复的原始附件，并保留 URL、Prompt、标签、示例和点赞。
+# 默认保留已发布图片身份；--overwrite-images 才会迁移可恢复的原始附件，URL 尾缀同步更新为新 hash，保留导入日期、Prompt、标签、示例和点赞。
 # npm run import:style-prompts -- <session.jsonl> --tag "插画" --overwrite-images
 # Codex 新版会缩放/重编码，旧版未处理；此选项用于修复跨版本导入，而不是无条件重传全部资产。
 # 内嵌图哈希别名只记录已经确认的来源；手动合并的跳转也会被尊重，不按视觉相似度自动合并。

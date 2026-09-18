@@ -195,10 +195,12 @@ for (const path of ['', '/index', '/examples']) {
     await page.goto(`/image-style-prompt-gallery${path}?q=4eaf44ebd787`);
     await expect(page.locator('[data-gallery-selection]').locator('xpath=ancestor::astro-island')).not.toHaveAttribute('ssr');
     await page.getByRole('button', { name: '批量标签', exact: true }).click();
-    await expect(page.getByRole('button', { name: '全选筛选结果', exact: true })).toBeEnabled();
-    await page.getByRole('button', { name: '全选筛选结果', exact: true }).click();
+    await expect(
+      page.locator('[data-gallery-selection]').getByRole('button', { name: '全选筛选结果', exact: true }),
+    ).toBeEnabled();
+    await page.locator('[data-gallery-selection]').getByRole('button', { name: '全选筛选结果', exact: true }).click();
     await expect(page.locator('[data-gallery-selection] output')).toHaveText('1 / 1 个来源');
-    await page.getByRole('button', { name: '批量编辑标签', exact: true }).click();
+    await page.locator('[data-gallery-selection]').getByRole('button', { name: '批量编辑标签', exact: true }).click();
     await expect(page.getByRole('dialog').getByRole('combobox')).toBeFocused();
   });
 
@@ -217,12 +219,12 @@ test('batch select-all includes unmounted sources and only submits sources in th
   await page.goto('/image-style-prompt-gallery');
   await expect(page.locator('[data-gallery-selection]').locator('xpath=ancestor::astro-island')).not.toHaveAttribute('ssr');
   await page.getByRole('button', { name: '批量标签', exact: true }).click();
-  await page.getByRole('button', { name: '全选筛选结果', exact: true }).click();
+  await page.locator('[data-gallery-selection]').getByRole('button', { name: '全选筛选结果', exact: true }).click();
   const selectedCount = Number((await page.locator('[data-gallery-selection] output').innerText()).split(' / ')[0]);
   expect(selectedCount).toBeGreaterThan(await page.locator('input[type="checkbox"]').count());
   await page.getByRole('combobox', { name: '标签', exact: true }).selectOption('溶图');
   await expect(page.locator('[data-gallery-selection] output')).toHaveText('2 / 2 个来源');
-  await page.getByRole('button', { name: '批量编辑标签', exact: true }).click();
+  await page.locator('[data-gallery-selection]').getByRole('button', { name: '批量编辑标签', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByRole('combobox')).toBeFocused();
   await dialog.getByRole('combobox').fill('插画');
@@ -245,7 +247,7 @@ test('mobile index selection reuses the zoom slot without covering count badges'
   const counts = await card.locator('span.absolute.bottom-6').boundingBox();
   if (!selection || !counts) throw new Error('Index selection controls are missing');
   expect(selection.y + selection.height).toBeLessThanOrEqual(counts.y);
-  await page.getByRole('button', { name: '退出多选', exact: true }).click();
+  await page.locator('[data-gallery-selection]').getByRole('button', { name: '退出多选', exact: true }).click();
   await expect(card.getByRole('button')).toHaveCount(1);
   await expect(card.getByRole('checkbox')).toHaveCount(0);
 });
@@ -376,7 +378,7 @@ test('bulk selection cancels link exits, preserves filters, and confirms an acce
   await page.goto('/image-style-prompt-gallery');
   await expect(page.locator('[data-gallery-selection]').locator('xpath=ancestor::astro-island')).not.toHaveAttribute('ssr');
   await page.getByRole('button', { name: '批量标签', exact: true }).click();
-  await page.getByRole('button', { name: '全选筛选结果', exact: true }).click();
+  await page.locator('[data-gallery-selection]').getByRole('button', { name: '全选筛选结果', exact: true }).click();
   await page.getByRole('combobox', { name: '标签', exact: true }).selectOption('溶图');
   const output = page.locator('[data-gallery-selection] output');
   await expect(output).toHaveText('2 / 2 个来源');
@@ -407,7 +409,7 @@ test('bulk selection cancels and then permits browser Back without losing histor
   await expect(page).toHaveURL(/\/image-style-prompt-gallery$/, { timeout: 60_000 });
   await expect(page.locator('[data-gallery-selection]').locator('xpath=ancestor::astro-island')).not.toHaveAttribute('ssr');
   await page.getByRole('button', { name: '批量标签', exact: true }).click();
-  await page.getByRole('button', { name: '全选筛选结果', exact: true }).click();
+  await page.locator('[data-gallery-selection]').getByRole('button', { name: '全选筛选结果', exact: true }).click();
   const output = page.locator('[data-gallery-selection] output');
   const count = await output.textContent();
   const url = page.url();
@@ -436,7 +438,7 @@ test('bulk selection uses native confirmation for refresh and removes it after e
   await page.goto('/image-style-prompt-gallery');
   await expect(page.locator('[data-gallery-selection]').locator('xpath=ancestor::astro-island')).not.toHaveAttribute('ssr');
   await page.getByRole('button', { name: '批量标签', exact: true }).click();
-  await page.getByRole('button', { name: '全选筛选结果', exact: true }).click();
+  await page.locator('[data-gallery-selection]').getByRole('button', { name: '全选筛选结果', exact: true }).click();
   let dialogs = 0;
   page.on('dialog', async (dialog) => {
     dialogs++;
@@ -445,8 +447,8 @@ test('bulk selection uses native confirmation for refresh and removes it after e
   });
   await page.evaluate(() => location.reload());
   await expect.poll(() => dialogs).toBe(1);
-  await expect(page.getByRole('button', { name: '退出多选', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: '退出多选', exact: true }).click();
+  await expect(page.locator('[data-gallery-selection]').getByRole('button', { name: '退出多选', exact: true })).toBeVisible();
+  await page.locator('[data-gallery-selection]').getByRole('button', { name: '退出多选', exact: true }).click();
   await page.reload();
   expect(dialogs).toBe(1);
 });
@@ -459,7 +461,7 @@ test('bulk selection guards Forward and leaves new tabs and same-page anchors al
   await page.goBack();
   await expect(page.locator('[data-gallery-selection]').locator('xpath=ancestor::astro-island')).not.toHaveAttribute('ssr');
   await page.getByRole('button', { name: '批量标签', exact: true }).click();
-  await page.getByRole('button', { name: '全选筛选结果', exact: true }).click();
+  await page.locator('[data-gallery-selection]').getByRole('button', { name: '全选筛选结果', exact: true }).click();
   const output = page.locator('[data-gallery-selection] output');
   const count = await output.textContent();
   const url = page.url();
@@ -514,8 +516,8 @@ for (const path of ['', '/index', '/examples']) {
     await page.goto(`/image-style-prompt-gallery${path}?q=${encodeURIComponent('#溶图')}`);
     await expect(page.locator('[data-gallery-selection]').locator('xpath=ancestor::astro-island')).not.toHaveAttribute('ssr');
     await page.getByRole('button', { name: '批量标签', exact: true }).click();
-    await page.getByRole('button', { name: '全选筛选结果', exact: true }).click();
-    const edit = page.getByRole('button', { name: '批量编辑标签', exact: true });
+    await page.locator('[data-gallery-selection]').getByRole('button', { name: '全选筛选结果', exact: true }).click();
+    const edit = page.locator('[data-gallery-selection]').getByRole('button', { name: '批量编辑标签', exact: true });
     await edit.click();
     const dialog = page.getByRole('dialog', { name: /编辑标签/ });
     await expect(dialog.getByRole('radio', { name: '添加', exact: true })).toBeChecked();

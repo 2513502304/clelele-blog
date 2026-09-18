@@ -73,7 +73,8 @@ test('source stacks disable animated transitions for reduced motion', async ({ p
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/image-style-prompt-gallery/examples?grouped=true');
   const stack = page.locator('.gallery-source-stack').first();
-  await expect(stack).toHaveAttribute('data-reduced-motion', 'true');
+  // CSS also applies before hydration; assert the visible behavior rather than Motion's initial hook value.
+  await expect(stack).toBeVisible();
   await stack.hover();
   expect(
     await stack

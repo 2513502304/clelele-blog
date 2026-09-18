@@ -60,3 +60,9 @@
 @utility scroll-gutter-stable {
   scrollbar-gutter: stable;
 }
+
+/* Selected cards share a visible outline in dense, masonry and example grids. */
+[data-gallery-selection-id][data-selected="true"] {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}

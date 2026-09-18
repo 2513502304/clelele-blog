@@ -242,7 +242,7 @@ for (const mobile of [false, true]) {
     await expect(dialog.getByRole('list', { name: '已选图片' })).toHaveCount(0);
     const stack = dialog.getByRole('button', { name: '预览 4 张参考图片' });
     await expect(stack.locator('img')).toHaveCount(3);
-    expect((await stack.boundingBox())?.width).toBeGreaterThan(mobile ? 250 : 300);
+    expect((await stack.boundingBox())?.width).toBeGreaterThan(mobile ? 250 : 500);
     await dialog.getByLabel('模型反推 Prompt').fill('Keep this draft');
     const pageY = await page.evaluate(() => window.scrollY);
     await stack.click();
