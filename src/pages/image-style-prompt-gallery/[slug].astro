@@ -113,6 +113,7 @@ setStyleGalleryPublicCacheHeaders(Astro.response.headers, [getStyleGalleryItemCa
       </article>
 
       <StyleGalleryExamples
+        locale={locale}
         client:load
         slug={item.slug}
         title={data.title}

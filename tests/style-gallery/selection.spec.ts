@@ -53,6 +53,32 @@ for (const path of ['', '/index', '/examples']) {
       await expect(collapse).toHaveAttribute('aria-expanded', 'false');
       await collapse.click();
     }
+    // Real users begin in the empty margin above the grid, not necessarily on an image.
+    await cards.first().scrollIntoViewIfNeeded();
+    const firstBox = await cards.first().boundingBox();
+    if (!firstBox) throw new Error('Missing card');
+    await page.mouse.move(firstBox.x + 15, firstBox.y - 12);
+    await page.mouse.down();
+    await page.mouse.move(firstBox.x + 60, firstBox.y + 60, { steps: 8 });
+    await expect(page.locator('[data-gallery-marquee]')).toBeVisible();
+    await page.mouse.up();
+    await expect(selected).toHaveCount(1);
+    expect(await page.evaluate(() => getSelection()?.toString() ?? '')).toBe('');
+    const handle = dock.getByRole('button', { name: '拖动多选工具栏' });
+    const oldDock = await dock.boundingBox();
+    const handleBox = await handle.boundingBox();
+    if (!oldDock || !handleBox) throw new Error('Missing dock');
+    await page.mouse.move(handleBox.x + 10, handleBox.y + 10);
+    await page.mouse.down();
+    await page.mouse.move(handleBox.x - 150, handleBox.y - 70, { steps: 6 });
+    await page.mouse.up();
+    expect((await dock.boundingBox())?.x).toBeLessThan(oldDock.x - 100);
+    await handle.focus();
+    await page.keyboard.press('ArrowRight');
+    await page.setViewportSize({ width: 1100, height: 700 });
+    const fitted = await dock.boundingBox();
+    expect((fitted?.x ?? 0) + (fitted?.width ?? 0)).toBeLessThanOrEqual(1100);
+    await page.setViewportSize({ width: 1512, height: 870 });
     await dragInside(page, cards.nth(0));
     await expect(selected).toHaveCount(1);
     await dragInside(page, cards.nth(1), 'Control');
@@ -126,18 +152,17 @@ test('detail sub-images share marquee, floating platform/download/delete actions
     return route.continue();
   });
   await page.goto('/image-style-prompt-gallery/2026-08-18-4a3484f05086');
-  const toggle = page.getByRole('button', { name: 'Select images', exact: true });
+  const toggle = page.getByRole('button', { name: '选择图片', exact: true });
   await expect.poll(() => toggle.evaluate((el) => !el.closest('astro-island')?.hasAttribute('ssr'))).toBe(true);
   await toggle.click();
   const cards = page.locator('[data-gallery-selection-id]');
   await dragInside(page, cards.first());
   const dock = page.locator('[data-gallery-selection-dock]');
-  await expect(dock.getByRole('button', { name: '1 selected', exact: true })).toBeVisible();
-  for (const name of ['Download', 'Delete', 'Change platform'])
-    await expect(dock.getByRole('button', { name, exact: true })).toBeEnabled();
-  await dock.getByRole('button', { name: 'Select all', exact: true }).click();
+  await expect(dock.getByRole('button', { name: '已选择 1 项', exact: true })).toBeVisible();
+  for (const name of ['下载', '删除', '更改平台']) await expect(dock.getByRole('button', { name, exact: true })).toBeEnabled();
+  await dock.getByRole('button', { name: '全选图片', exact: true }).click();
   await expect(page.locator('[data-gallery-selection-id][data-selected="true"]')).toHaveCount(await cards.count());
-  await dock.getByRole('button', { name: 'Exit selection', exact: true }).click();
+  await dock.getByRole('button', { name: '退出多选', exact: true }).click();
   await expect(dock).toHaveCount(0);
   await expect(page.locator('[data-gallery-selection-id][data-selected="true"]')).toHaveCount(0);
 });

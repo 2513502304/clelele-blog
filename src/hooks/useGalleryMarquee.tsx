@@ -29,6 +29,7 @@ export function useGalleryMarquee({
     if (!root || !enabled) return;
     // Only merge mode turns ordinary card clicks into selection; bulk modes retain their links/lightboxes.
     if (selectOnClick) root.dataset.gallerySelecting = 'true';
+    root.dataset.galleryMarqueeActive = 'true';
     let gesture: {
       id: number;
       x: number;
@@ -47,10 +48,17 @@ export function useGalleryMarquee({
       root.dataset.galleryMarqueeUntil = String(suppressUntil);
     };
     const allowed = (target: EventTarget | null) => {
-      if (!(target instanceof Element) || !root.contains(target) || !target.closest('[data-gallery-marquee-area]'))
+      // The drag can begin in card-grid margins; selectstart can target a Text node.
+      // Limit form/tool gestures instead of requiring the pointer to start inside a card grid.
+      const element = target instanceof Element ? target : target instanceof Node ? target.parentElement : null;
+      if (!element || !root.contains(element)) return false;
+      if (
+        element.closest(
+          'input,textarea,select,label,form,[contenteditable=true],[data-gallery-management],[data-gallery-selection-dock],[role=dialog],[data-no-marquee]',
+        )
+      )
         return false;
-      if (target.closest('input,textarea,select,label,[data-no-marquee]')) return false;
-      const button = target.closest('button');
+      const button = element.closest('button');
       return !button || Boolean(button.querySelector('img'));
     };
     const render = () => {
@@ -93,6 +101,7 @@ export function useGalleryMarquee({
     };
     const down = (event: PointerEvent) => {
       if (event.button !== 0 || event.pointerType !== 'mouse' || !allowed(event.target)) return;
+      event.preventDefault();
       gesture = {
         id: event.pointerId,
         x: event.pageX,
@@ -159,7 +168,7 @@ export function useGalleryMarquee({
     const preventNative = (event: Event) => {
       if (allowed(event.target)) event.preventDefault();
     };
-    root.addEventListener('pointerdown', down);
+    root.addEventListener('pointerdown', down, true);
     root.addEventListener('click', click, true);
     root.addEventListener('dragstart', preventNative);
     root.addEventListener('selectstart', preventNative);
@@ -175,9 +184,10 @@ export function useGalleryMarquee({
       cancelAnimationFrame(frame);
       setBox(null);
       delete root.dataset.gallerySelecting;
+      delete root.dataset.galleryMarqueeActive;
       delete root.dataset.galleryMarqueeUntil;
       observer.disconnect();
-      root.removeEventListener('pointerdown', down);
+      root.removeEventListener('pointerdown', down, true);
       root.removeEventListener('click', click, true);
       root.removeEventListener('dragstart', preventNative);
       root.removeEventListener('selectstart', preventNative);

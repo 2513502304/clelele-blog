@@ -1,6 +1,6 @@
 import { useIsMobile } from '@hooks/useMediaQuery';
 import { Icon } from '@iconify/react';
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 
 /** Only mount during selection. Controls reuse the top toolbar's state without moving the page. */
 export default function GallerySelectionDock({
@@ -13,6 +13,32 @@ export default function GallerySelectionDock({
   locale?: string;
 }) {
   const isMobile = useIsMobile();
+  const dockRef = useRef<HTMLElement>(null);
+  const drag = useRef<{ id: number; dx: number; dy: number } | null>(null);
+  const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
+  const clamp = useCallback((x: number, y: number) => {
+    const box = dockRef.current?.getBoundingClientRect();
+    return {
+      x: Math.max(8, Math.min(x, window.innerWidth - (box?.width ?? 240) - 8)),
+      y: Math.max(8, Math.min(y, window.innerHeight - (box?.height ?? 40) - 8)),
+    };
+  }, []);
+  useEffect(() => {
+    // Expanding or resizing must not leave a manually positioned dock outside the viewport.
+    const fit = () =>
+      setPosition((current) => {
+        if (!current) return current;
+        const next = clamp(current.x, current.y);
+        return next.x === current.x && next.y === current.y ? current : next;
+      });
+    const observer = new ResizeObserver(fit);
+    if (dockRef.current) observer.observe(dockRef.current);
+    window.addEventListener('resize', fit);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', fit);
+    };
+  }, [clamp]);
   const [collapsedOverride, setCollapsedOverride] = useState<boolean | null>(null);
   // Follow viewport changes until the user explicitly chooses their preferred state.
   const collapsed = collapsedOverride ?? isMobile;
@@ -20,20 +46,64 @@ export default function GallerySelectionDock({
   const ja = locale.startsWith('ja');
   return (
     <aside
+      ref={dockRef}
+      style={
+        position
+          ? { left: position.x, top: position.y, right: 'auto', bottom: 'auto', transform: 'none', translate: 'none' }
+          : undefined
+      }
       data-gallery-selection-dock
       aria-label={zh ? '多选操作' : ja ? '選択操作' : 'Selection actions'}
       className="glass-surface fixed top-1/2 right-20 z-40 max-h-[70dvh] w-60 max-w-[calc(100vw-6rem)] -translate-y-1/2 overflow-y-auto rounded-2xl border border-border p-3 shadow-xl max-[768px]:top-auto max-[768px]:right-16 max-[768px]:bottom-6 max-[768px]:max-h-[50dvh] max-[768px]:translate-y-0"
     >
-      <button
-        type="button"
-        aria-expanded={!collapsed}
-        onClick={() => setCollapsedOverride(!collapsed)}
-        className="flex min-h-10 w-full items-center gap-2 font-semibold text-sm"
-      >
-        <Icon icon="ri:checkbox-multiple-line" className="size-4 text-primary" />
-        <span className="flex-1 text-left">{zh ? `已选择 ${count} 项` : ja ? `${count} 件選択中` : `${count} selected`}</span>
-        <Icon icon={collapsed ? 'ri:arrow-down-s-line' : 'ri:arrow-up-s-line'} />
-      </button>
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          aria-label={zh ? '拖动多选工具栏' : ja ? '選択ツールバーを移動' : 'Move selection toolbar'}
+          title={zh ? '拖动调整位置，也可使用方向键' : ja ? 'ドラッグまたは矢印キーで移動' : 'Drag or use arrow keys to move'}
+          className="flex size-8 shrink-0 cursor-grab touch-none select-none items-center justify-center rounded-lg text-muted-foreground hover:bg-muted active:cursor-grabbing"
+          onPointerDown={(event) => {
+            if (event.button !== 0) return;
+            const box = dockRef.current?.getBoundingClientRect();
+            if (!box) return;
+            event.preventDefault();
+            drag.current = { id: event.pointerId, dx: event.clientX - box.left, dy: event.clientY - box.top };
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }}
+          onPointerMove={(event) => {
+            if (drag.current?.id !== event.pointerId) return;
+            setPosition(clamp(event.clientX - drag.current.dx, event.clientY - drag.current.dy));
+          }}
+          onPointerUp={() => {
+            drag.current = null;
+          }}
+          onPointerCancel={() => {
+            drag.current = null;
+          }}
+          onLostPointerCapture={() => {
+            drag.current = null;
+          }}
+          onKeyDown={(event) => {
+            const delta = { ArrowLeft: [-20, 0], ArrowRight: [20, 0], ArrowUp: [0, -20], ArrowDown: [0, 20] }[event.key];
+            const box = dockRef.current?.getBoundingClientRect();
+            if (!delta || !box) return;
+            event.preventDefault();
+            setPosition(clamp(box.left + delta[0], box.top + delta[1]));
+          }}
+        >
+          <Icon icon="ri:draggable" className="size-5" />
+        </button>
+        <button
+          type="button"
+          aria-expanded={!collapsed}
+          onClick={() => setCollapsedOverride(!collapsed)}
+          className="flex min-h-10 w-full items-center gap-2 font-semibold text-sm"
+        >
+          <Icon icon="ri:checkbox-multiple-line" className="size-4 text-primary" />
+          <span className="flex-1 text-left">{zh ? `已选择 ${count} 项` : ja ? `${count} 件選択中` : `${count} selected`}</span>
+          <Icon icon={collapsed ? 'ri:arrow-down-s-line' : 'ri:arrow-up-s-line'} />
+        </button>
+      </div>
       {!collapsed && (
         <div className="flex flex-col gap-2 border-border border-t pt-3 [&_button]:w-full [&_select]:w-full">{children}</div>
       )}

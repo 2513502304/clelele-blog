@@ -133,6 +133,7 @@ export default function StyleGalleryMerge({
     <Dialog open={open} onOpenChange={changeOpen}>
       <DialogContent
         ref={dialogRef}
+        animated={false}
         stableScroll
         showClose={!busy}
         className="flex h-[90dvh] max-h-[64rem] w-[calc(100%-2rem)] max-w-6xl flex-col gap-0 overflow-hidden rounded-2xl p-0"
