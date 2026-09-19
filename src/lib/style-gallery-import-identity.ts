@@ -237,7 +237,7 @@ export async function replaceImportImageBatch(jobs: ImportImageReplacement[]) {
       return { previous, item, snapshot: current.snapshot, job, changed: true };
     });
     const changed = changes.filter((change) => change.changed);
-    if (!changed.length) return { items: changes.map((change) => change.item), changed: 0 };
+    if (!changed.length) return { items: changes.map((change) => change.item), changed: 0, changedSlugs: [] as string[] };
     const [catalogSnapshot, searchSnapshot, visualSnapshot, aliases, tagsSnapshot, exampleSnapshot] = await Promise.all([
       getStyleGalleryObjectTextSnapshot(STYLE_GALLERY_CATALOG_KEY),
       getStyleGalleryObjectTextSnapshot(STYLE_GALLERY_PROMPT_SEARCH_INDEX_KEY),
@@ -388,6 +388,11 @@ export async function replaceImportImageBatch(jobs: ImportImageReplacement[]) {
     } catch {
       /* Local CLI has no Vercel runtime. */
     }
-    return { items: changes.map(({ item }) => item), changed: changed.length, recoveryId };
+    return {
+      items: changes.map(({ item }) => item),
+      changed: changed.length,
+      changedSlugs: changed.map(({ item }) => item.slug),
+      recoveryId,
+    };
   });
 }

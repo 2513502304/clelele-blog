@@ -74,4 +74,6 @@
 [data-gallery-marquee-active] [data-gallery-selection-id] {
   user-select: none;
   -webkit-user-select: none;
+  /* Hover lift would move hit targets under a stationary marquee pointer. */
+  translate: none;
 }
