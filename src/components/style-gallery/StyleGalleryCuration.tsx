@@ -245,6 +245,7 @@ export default function StyleGalleryCuration({
       </button>
       <Dialog open={open} onOpenChange={changeOpen}>
         <DialogContent
+          animated={false}
           stableScroll
           ref={dialogRef}
           onPaste={(event) => {

@@ -24,7 +24,7 @@
 import { animation } from '@constants/design-tokens';
 import { cn } from '@lib/utils';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import type React from 'react';
 import { createContext, forwardRef, useCallback, useContext, useState } from 'react';
 
@@ -85,6 +85,8 @@ DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 // Content with animation
 interface DialogContentProps extends React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> {
   showClose?: boolean;
+  /** Large image management forms can skip composited opacity layers during opening/closing. */
+  animated?: boolean;
   overlayClassName?: string;
   /**
    * 长文本等内部滚动场景使用稳定坐标与淡入动画。默认的缩放动画会让 Dialog 在动画结束后仍处于
@@ -94,9 +96,11 @@ interface DialogContentProps extends React.ComponentPropsWithoutRef<typeof Dialo
 }
 
 const DialogContent = forwardRef<React.ComponentRef<typeof DialogPrimitive.Content>, DialogContentProps>(
-  ({ className, children, showClose = true, overlayClassName, stableScroll = false, ...props }, ref) => {
+  ({ className, children, showClose = true, overlayClassName, stableScroll = false, animated = true, ...props }, ref) => {
     const context = useContext(DialogContext);
     const isOpen = context?.isOpen ?? false;
+    const reducedMotion = useReducedMotion();
+    const shouldAnimate = animated && !reducedMotion;
 
     return (
       <DialogPortal forceMount>
@@ -104,10 +108,10 @@ const DialogContent = forwardRef<React.ComponentRef<typeof DialogPrimitive.Conte
           {isOpen && (
             <motion.div
               key="dialog-overlay"
-              initial={{ opacity: 0 }}
+              initial={shouldAnimate ? { opacity: 0 } : false}
               animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: animation.duration.fast / 1000 }}
+              exit={shouldAnimate ? { opacity: 0 } : undefined}
+              transition={{ duration: shouldAnimate ? animation.duration.fast / 1000 : 0 }}
               onAnimationStart={() => context?.setIsAnimating(true)}
               onAnimationComplete={() => context?.setIsAnimating(false)}
             >
@@ -127,10 +131,20 @@ const DialogContent = forwardRef<React.ComponentRef<typeof DialogPrimitive.Conte
                   stableScroll && '[translate:-50%_-50%]',
                   className,
                 )}
-                initial={stableScroll ? { opacity: 0 } : { opacity: 0, scale: 0.95, x: '-50%', y: '-48%' }}
+                initial={
+                  !shouldAnimate ? false : stableScroll ? { opacity: 0 } : { opacity: 0, scale: 0.95, x: '-50%', y: '-48%' }
+                }
                 animate={stableScroll ? { opacity: 1 } : { opacity: 1, scale: 1, x: '-50%', y: '-50%' }}
-                exit={stableScroll ? { opacity: 0 } : { opacity: 0, scale: 0.95, x: '-50%', y: '-48%' }}
-                transition={stableScroll ? { duration: animation.duration.fast / 1000 } : animation.spring.default}
+                exit={
+                  !shouldAnimate ? undefined : stableScroll ? { opacity: 0 } : { opacity: 0, scale: 0.95, x: '-50%', y: '-48%' }
+                }
+                transition={
+                  !shouldAnimate
+                    ? { duration: 0 }
+                    : stableScroll
+                      ? { duration: animation.duration.fast / 1000 }
+                      : animation.spring.default
+                }
               >
                 {children}
                 {showClose && (

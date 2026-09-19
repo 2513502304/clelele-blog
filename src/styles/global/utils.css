@@ -65,4 +65,13 @@
 [data-gallery-selection-id][data-selected="true"] {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--primary) 16%, transparent),
+    0 0 18px color-mix(in srgb, var(--primary) 24%, transparent);
+}
+
+/* Disable native text/image dragging only while gallery selection owns pointer gestures. */
+[data-gallery-marquee-active] [data-gallery-selection-id] {
+  user-select: none;
+  -webkit-user-select: none;
 }

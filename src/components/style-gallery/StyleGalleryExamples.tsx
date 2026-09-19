@@ -43,6 +43,7 @@ import {
 import StyleGallerySharedImage from './StyleGallerySharedImage';
 
 interface StyleGalleryExamplesProps {
+  locale: string;
   slug: string;
   title: string;
   prompt: string;
@@ -97,6 +98,7 @@ const UPLOAD_CONCURRENCY = 5;
  * 支持小文件直传、大文件分块、并发文件任务、逐文件失败隔离，以及带令牌的批量改平台/删除操作。
  */
 export default function StyleGalleryExamples({
+  locale,
   slug,
   title,
   prompt,
@@ -107,6 +109,25 @@ export default function StyleGalleryExamples({
   likeLabels,
   lightboxActionLabels,
 }: StyleGalleryExamplesProps) {
+  const zh = locale.startsWith('zh');
+  const ja = locale.startsWith('ja');
+  const selectionText = {
+    start: zh ? '选择图片' : ja ? '画像を選択' : 'Select images',
+    exit: zh ? '退出多选' : ja ? '選択を終了' : 'Exit selection',
+    all: zh ? '全选图片' : ja ? 'すべて選択' : 'Select all',
+    clear: zh ? '清空选择' : ja ? '選択をクリア' : 'Clear selection',
+    platform: zh ? '目标平台' : ja ? '移動先プラットフォーム' : 'Destination platform',
+    change: zh ? '更改平台' : ja ? 'プラットフォーム変更' : 'Change platform',
+    download: zh ? '下载' : ja ? 'ダウンロード' : 'Download',
+    downloading: zh ? '正在下载' : ja ? 'ダウンロード中' : 'Downloading',
+    remove: zh ? '删除' : ja ? '削除' : 'Delete',
+    group: zh ? '选择此组' : ja ? 'グループを選択' : 'Select group',
+    hint: zh
+      ? '拖动框选；Ctrl / Shift / ⌘ 追加选择。可滚轮浏览。'
+      : ja
+        ? 'ドラッグで選択。Ctrl / Shift / ⌘ で追加。スクロール可。'
+        : 'Drag to select; Ctrl / Shift / ⌘ adds. Scroll while dragging.',
+  };
   const [examples, setExamples] = useState<StyleGalleryExample[]>(initialExamples);
   const likes = useStyleGalleryLikes(Object.fromEntries(initialExamples.map((example) => [example.id, example.likeCount])));
   const [platform, setPlatform] = useState<string>(STYLE_GALLERY_PLATFORMS[0].slug);
@@ -270,10 +291,16 @@ export default function StyleGalleryExamples({
   async function updateSelectedPlatform() {
     if (!selectedIds.size || mutating) return;
     setMutating(true);
-    setStatus(`Moving ${selectedIds.size} selected example${selectedIds.size === 1 ? '' : 's'}`);
+    setStatus(
+      zh
+        ? `正在更改 ${selectedIds.size} 张图片的平台`
+        : ja
+          ? `${selectedIds.size} 件のプラットフォームを変更中`
+          : `Moving ${selectedIds.size} selected examples`,
+    );
     try {
       await mutateSelectedExamples('PATCH', [...selectedIds], bulkPlatform);
-      setStatus('Selected examples updated');
+      setStatus(zh ? '已更改所选图片的平台' : ja ? '選択した画像を更新しました' : 'Selected examples updated');
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Failed to update examples');
     } finally {
@@ -285,14 +312,26 @@ export default function StyleGalleryExamples({
     if (
       !selectedIds.size ||
       mutating ||
-      !window.confirm(`Delete ${selectedIds.size} selected example${selectedIds.size === 1 ? '' : 's'} permanently?`)
+      !window.confirm(
+        zh
+          ? `永久删除选中的 ${selectedIds.size} 张图片？`
+          : ja
+            ? `選択した ${selectedIds.size} 件を完全に削除しますか？`
+            : `Permanently delete ${selectedIds.size} selected examples?`,
+      )
     )
       return;
     setMutating(true);
-    setStatus(`Deleting ${selectedIds.size} selected example${selectedIds.size === 1 ? '' : 's'}`);
+    setStatus(
+      zh
+        ? `正在删除 ${selectedIds.size} 张图片`
+        : ja
+          ? `${selectedIds.size} 件を削除中`
+          : `Deleting ${selectedIds.size} selected examples`,
+    );
     try {
       await mutateSelectedExamples('DELETE', [...selectedIds]);
-      setStatus('Selected examples deleted');
+      setStatus(zh ? '已删除所选图片' : ja ? '選択した画像を削除しました' : 'Selected examples deleted');
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Failed to delete examples');
     } finally {
@@ -304,16 +343,28 @@ export default function StyleGalleryExamples({
     if (!selectedIds.size || downloading || mutating) return;
     const selected = examples.filter((example) => selectedIds.has(example.id));
     setDownloading(true);
-    setStatus(`Downloading 0 / ${selected.length} selected examples`);
+    setStatus(`${selectionText.downloading} 0 / ${selected.length}`);
     try {
       const result = await downloadStyleGalleryImages(selected, {
-        onProgress: (completed, total) => setStatus(`Downloading ${completed} / ${total} selected examples`),
+        onProgress: (completed, total) => setStatus(`${selectionText.downloading} ${completed} / ${total}`),
       });
-      setStatus(
-        result.failed.length
-          ? `Downloaded ${result.downloaded}; ${result.failed.length} failed and can be retried`
-          : `Downloaded ${result.downloaded} selected example${result.downloaded === 1 ? '' : 's'}`,
-      );
+      if (result.failed.length) {
+        setStatus(
+          zh
+            ? `已下载 ${result.downloaded} 张；${result.failed.length} 张失败，可重试`
+            : ja
+              ? `${result.downloaded} 件ダウンロード、${result.failed.length} 件失敗（再試行可）`
+              : `Downloaded ${result.downloaded}; ${result.failed.length} failed and can be retried`,
+        );
+      } else {
+        setStatus(
+          zh
+            ? `已下载 ${result.downloaded} 张图片`
+            : ja
+              ? `${result.downloaded} 件ダウンロードしました`
+              : `Downloaded ${result.downloaded} selected examples`,
+        );
+      }
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Failed to download selected examples');
     } finally {
@@ -571,7 +622,7 @@ export default function StyleGalleryExamples({
         onClick={() => setSelectedIds(new Set(examples.map((example) => example.id)))}
         className="h-9 rounded-lg border border-border px-3 text-sm"
       >
-        Select all
+        {selectionText.all}
       </button>
       <button
         type="button"
@@ -579,16 +630,18 @@ export default function StyleGalleryExamples({
         onClick={() => setSelectedIds(new Set())}
         className="h-9 rounded-lg border border-border px-3 text-sm"
       >
-        Clear selection
+        {selectionText.clear}
       </button>
-      <span className="mr-auto font-bold text-sm tabular-nums">{selectedIds.size} selected</span>
+      <span className="mr-auto font-bold text-sm tabular-nums">
+        {zh ? `已选择 ${selectedIds.size} 项` : ja ? `${selectedIds.size} 件選択中` : `${selectedIds.size} selected`}
+      </span>
       {uploadsEnabled && (
         <>
           <select
             value={bulkPlatform}
             disabled={!selectedIds.size || mutating}
             onChange={(event) => setBulkPlatform(event.currentTarget.value)}
-            aria-label="Destination platform"
+            aria-label={selectionText.platform}
             className="h-9 rounded-md border border-gray-200 bg-white px-3 text-sm outline-none disabled:opacity-50 dark:border-gray-700 dark:bg-gray-950"
           >
             {STYLE_GALLERY_PLATFORMS.map((item) => (
@@ -604,7 +657,7 @@ export default function StyleGalleryExamples({
             className="inline-flex h-9 items-center gap-2 rounded-md bg-gray-950 px-3 font-bold text-sm text-white disabled:opacity-50 dark:bg-white dark:text-gray-950"
           >
             <Icon icon="ri:swap-2-line" className="size-4" />
-            Change platform
+            {selectionText.change}
           </button>
         </>
       )}
@@ -618,7 +671,7 @@ export default function StyleGalleryExamples({
           icon={downloading ? 'ri:loader-4-line' : 'ri:download-2-line'}
           className={`size-4 ${downloading ? 'animate-spin' : ''}`}
         />
-        {downloading ? 'Downloading' : 'Download'}
+        {downloading ? selectionText.downloading : selectionText.download}
       </button>
       {uploadsEnabled && (
         <button
@@ -628,7 +681,7 @@ export default function StyleGalleryExamples({
           className="inline-flex h-9 items-center gap-2 rounded-md border border-red-200 px-3 font-bold text-red-500 text-sm disabled:opacity-50 dark:border-red-950"
         >
           <Icon icon="ri:delete-bin-line" className="size-4" />
-          Delete
+          {selectionText.remove}
         </button>
       )}
     </>
@@ -749,27 +802,31 @@ export default function StyleGalleryExamples({
 
       {examples.length ? (
         <div className="space-y-6">
-          <div className="sticky top-3 z-10 flex flex-wrap items-center gap-2 rounded-lg border border-rose-200 bg-white/95 p-3 shadow-md backdrop-blur dark:border-rose-900 dark:bg-gray-950/95">
+          <div
+            data-gallery-management
+            className="sticky top-3 z-10 flex flex-wrap items-center gap-2 rounded-lg border border-rose-200 bg-white/95 p-3 shadow-md backdrop-blur dark:border-rose-900 dark:bg-gray-950/95"
+          >
             <button
               type="button"
               onClick={() => (selectionMode ? exitSelection() : setSelectionMode(true))}
               disabled={mutating || downloading}
               className="h-9 rounded-lg border border-border px-3 text-sm"
             >
-              {selectionMode ? 'Exit selection' : 'Select images'}
+              {selectionMode ? selectionText.exit : selectionText.start}
             </button>
             {selectionMode && selectionActions}
           </div>
           {selectionMode && (
-            <GallerySelectionDock count={selectedIds.size}>
+            <GallerySelectionDock count={selectedIds.size} locale={locale}>
               {selectionActions}
+              <p className="text-muted-foreground text-xs">{selectionText.hint}</p>
               <button
                 type="button"
                 disabled={mutating || downloading}
                 onClick={exitSelection}
                 className="h-9 rounded-lg border border-border px-3 text-sm"
               >
-                Exit selection
+                {selectionText.exit}
               </button>
             </GallerySelectionDock>
           )}
@@ -788,7 +845,7 @@ export default function StyleGalleryExamples({
                       }}
                       className="size-4 accent-rose-500"
                     />
-                    Select group
+                    {selectionText.group}
                   </label>
                   <span className="rounded-full bg-sky-50 px-3 py-1 font-bold text-sky-600 text-xs dark:bg-sky-950/50 dark:text-sky-200">
                     {platformExamples.length}

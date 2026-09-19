@@ -15,6 +15,7 @@ import {
   getImportDate,
   parseArgs,
   planImageMigrations,
+  readSessionItems,
   requestWithRetries,
   resolveOriginalImages,
   uniqueImagesByHash,
@@ -427,6 +428,7 @@ describe('style prompt import variants', () => {
       [
         { ...common, sourceLine: 2, prompt: firstPrompt },
         { ...common, sourceLine: 8, prompt: secondPrompt },
+        { ...common, sourceLine: 12, prompt: firstPrompt },
       ],
       '/tmp/session.jsonl',
       new Map(),
@@ -440,6 +442,16 @@ describe('style prompt import variants', () => {
       [firstPrompt, secondPrompt],
     );
     assert.notEqual(prepared.items[0].prompts[0].id, prepared.items[0].prompts[1].id);
+    assert.equal(prepared.skippedDuplicates, 1);
+    assert.deepEqual(
+      prepared.recordDetails.map(({ kind, sourceLine, previousLine }) => ({ kind, sourceLine, previousLine })),
+      [
+        { kind: 'variant', sourceLine: 8, previousLine: 2 },
+        { kind: 'duplicate', sourceLine: 12, previousLine: 2 },
+      ],
+    );
+    assert.equal([...prepared.assets.keys()].filter((key) => key.startsWith('source/')).length, 1);
+    assert.equal([...prepared.assets.keys()].filter((key) => key.startsWith('thumb/')).length, 1);
   });
 
   it('deduplicates repeated image references before creating visual index records', () => {
@@ -652,4 +664,29 @@ it('clipboard containers share exact decoded identity, but resized/edited pixels
   assert.notEqual(getExtractedItemHash(item(jpeg, 'jpeg')), getExtractedItemHash(item(png, 'png')));
   assert.equal(await getDecodedItemHash(item(jpeg, 'jpeg')), await getDecodedItemHash(item(png, 'png')));
   assert.notEqual(await getDecodedItemHash(item(jpeg, 'jpeg')), await getDecodedItemHash(item(resized, 'png')));
+});
+
+it('streams records across chunks, preserves physical lines, and reports corrupt JSON precisely', async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'gallery-stream-'));
+  const file = path.join(directory, 'session.jsonl');
+  const records = [
+    {
+      type: 'event_msg',
+      timestamp: '2026-09-17T00:00:00Z',
+      payload: { type: 'user_message', images: ['data:image/png;base64,YQ=='], message: '原始请求' },
+    },
+    { type: 'event_msg', payload: { type: 'agent_message', message: PLACEHOLDER + '中文段落\n'.repeat(20000) } },
+  ];
+  try {
+    await fs.writeFile(file, `\r\n${records.map((r) => JSON.stringify(r)).join('\r\n\r\n')}`);
+    const result = await readSessionItems(file);
+    assert.deepEqual(result, extractItems(records.map((record, i) => ({ record, index: 2 + i * 2 }))));
+    assert.equal(result[0].sourceLine, 2);
+    assert.equal(result[0].promptLine, 4);
+    await fs.appendFile(file, '\n\ninvalid json');
+    await assert.rejects(readSessionItems(file), /Failed to parse JSONL line 6/);
+    await assert.rejects(readSessionItems(path.join(directory, 'missing')), /ENOENT/);
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
 });

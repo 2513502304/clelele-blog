@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 import crypto from 'node:crypto';
+import { createReadStream } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
 import sharp from 'sharp';
 import { readStyleGalleryImageDimensions } from '../src/lib/style-gallery-image-dimensions.ts';
@@ -172,18 +174,32 @@ function apiImagePath(kind, fileName) {
   return `/api/style-gallery/image/${kind}/${fileName}`;
 }
 
-async function readRecords(sessionPath) {
-  const text = await fs.readFile(sessionPath, 'utf8');
-  return text
-    .split(/\r?\n/)
-    .filter(Boolean)
-    .map((line, index) => {
+/** Stream the JSONL rather than allocating one V8 string for the whole session.
+ * Only paired images/prompts survive extraction; tool output, replayed UI payloads and other
+ * unrelated records are released after each line. Physical line numbers include blank lines.
+ */
+async function readSessionItems(sessionPath) {
+  const extractor = createItemExtractor();
+  const input = createReadStream(sessionPath, { encoding: 'utf8' });
+  const lines = createInterface({ input, crlfDelay: Infinity });
+  let index = 0;
+  try {
+    for await (const line of lines) {
+      index++;
+      if (!line.trim()) continue;
+      let record;
       try {
-        return { index: index + 1, record: JSON.parse(line) };
+        record = JSON.parse(line);
       } catch (error) {
-        throw new Error(`Failed to parse JSONL line ${index + 1}: ${error.message}`);
+        throw new Error(`Failed to parse JSONL line ${index}: ${error.message}`);
       }
-    });
+      extractor.consume({ index, record });
+    }
+    return extractor.items;
+  } finally {
+    lines.close();
+    input.destroy();
+  }
 }
 
 /**
@@ -246,24 +262,31 @@ function responseItemOutput(payload) {
  * 图片被错误关联到下一轮回复。
  */
 function extractItems(records) {
+  const extractor = createItemExtractor();
+  for (const record of records) extractor.consume(record);
+  return extractor.items;
+}
+
+/** Share the exact turn/attachment pairing state machine between streams and in-memory fixtures. */
+function createItemExtractor() {
   const items = [];
   let pendingInput = null;
   let currentModel = null;
-  for (const { index, record } of records) {
+  function consume({ index, record }) {
     const payload = record?.payload;
-    if (!payload || typeof payload !== 'object') continue;
+    if (!payload || typeof payload !== 'object') return;
     if (record.type === 'event_msg' && payload.type === 'task_started') {
       pendingInput = null;
       currentModel = null;
-      continue;
+      return;
     }
     if (record.type === 'event_msg' && payload.type === 'task_complete') {
       pendingInput = null;
-      continue;
+      return;
     }
     if (record.type === 'turn_context' && typeof payload.model === 'string' && payload.model.trim()) {
       currentModel = payload.model.trim();
-      continue;
+      return;
     }
     if (record.type === 'event_msg' && payload.type === 'user_message' && Array.isArray(payload.images)) {
       const images = payload.images.filter((value) => typeof value === 'string' && value.startsWith('data:image/'));
@@ -276,7 +299,7 @@ function extractItems(records) {
           model: currentModel,
         };
       }
-      continue;
+      return;
     }
     if (record.type === 'response_item') {
       const input = responseItemInput(payload);
@@ -290,7 +313,7 @@ function extractItems(records) {
           timestamp: record.timestamp,
           model: currentModel,
         };
-        continue;
+        return;
       }
     }
     // UI projections never create another item. Associate originals only when both the turn
@@ -312,7 +335,7 @@ function extractItems(records) {
       ) {
         pendingInput.localImagePaths = paths;
       }
-      continue;
+      return;
     }
     const message =
       record.type === 'event_msg' && payload.type === 'agent_message'
@@ -327,7 +350,7 @@ function extractItems(records) {
       pendingInput = null;
     }
   }
-  return items;
+  return { items, consume };
 }
 
 /** Restore exact original bytes before identity lookup. Missing archived attachments fall back
@@ -406,6 +429,7 @@ async function buildImportData(extractedItems, sessionPath, existingByHash, meta
   const imageBytesByHash = new Map();
   const itemsByHash = new Map();
   const sourceSlugs = new Map();
+  const recordDetails = [];
   let skippedDuplicates = 0;
   let skippedNewMetadata = 0;
 
@@ -429,6 +453,13 @@ async function buildImportData(extractedItems, sessionPath, existingByHash, meta
     const existingPrompts = existing?.prompts ?? [];
     if (existing && !metadataOnly && existingPrompts.some((prompt) => normalizePrompt(prompt) === normalizedPrompt)) {
       skippedDuplicates += 1;
+      recordDetails.push({
+        kind: 'duplicate',
+        slug,
+        sourceLine: extracted.sourceLine,
+        promptLine: extracted.promptLine,
+        previousLine: null,
+      });
       continue;
     }
 
@@ -483,11 +514,33 @@ async function buildImportData(extractedItems, sessionPath, existingByHash, meta
     if (pending) {
       if (pending.prompts.some((prompt) => normalizePrompt(prompt.prompt) === normalizedPrompt)) {
         skippedDuplicates += 1;
+        recordDetails.push({
+          kind: 'duplicate',
+          slug,
+          sourceLine: extracted.sourceLine,
+          promptLine: extracted.promptLine,
+          previousLine: pending.prompts.find((prompt) => normalizePrompt(prompt.prompt) === normalizedPrompt)?.sourceLine,
+        });
       } else {
+        recordDetails.push({
+          kind: 'variant',
+          slug,
+          sourceLine: extracted.sourceLine,
+          promptLine: extracted.promptLine,
+          previousLine: pending.prompts[0].sourceLine,
+        });
         pending.prompts.push(variant);
       }
       continue;
     }
+    if (existing)
+      recordDetails.push({
+        kind: 'variant',
+        slug,
+        sourceLine: extracted.sourceLine,
+        promptLine: extracted.promptLine,
+        previousLine: null,
+      });
     itemsByHash.set(itemHash, {
       version: 4,
       slug,
@@ -506,6 +559,7 @@ async function buildImportData(extractedItems, sessionPath, existingByHash, meta
     imageBytesByHash,
     items: [...itemsByHash.values()],
     sourceSlugs: [...sourceSlugs.values()],
+    recordDetails,
     skippedDuplicates,
     skippedNewMetadata,
   };
@@ -678,8 +732,8 @@ async function main() {
   const token = process.env.STYLE_GALLERY_UPLOAD_TOKEN;
   if (!token) throw new Error('STYLE_GALLERY_UPLOAD_TOKEN is required, including read-only identity planning.');
   const absoluteSessionPath = path.resolve(sessionPath);
-  const records = await readRecords(absoluteSessionPath);
-  const rawItems = extractItems(records).map((item) => ({
+  console.log(`\nReading session: ${path.basename(absoluteSessionPath)} (streaming JSONL)...`);
+  const rawItems = (await readSessionItems(absoluteSessionPath)).map((item) => ({
     ...item,
     embeddedHash: getExtractedItemHash(item),
     embeddedPixelHash: '',
@@ -725,7 +779,7 @@ async function main() {
   const matches = await resolve(extractedItems);
   const migrations = planImageMigrations(extractedItems, matches, overwriteImages);
   console.log(
-    `Found ${extractedItems.length} image/prompt records; ${matches.filter(Boolean).length} already associated with published cards.`,
+    `\n[Identity] ${extractedItems.length} image/prompt records; ${matches.filter(Boolean).length} already associated with published cards.`,
   );
   console.log(
     `Recovered ${originals.restored} different original image(s); ${originals.fallback} unavailable attachment(s). ${migrations.length} card image replacement(s) ${dryRun ? 'planned' : 'requested'}.`,
@@ -769,7 +823,15 @@ async function main() {
 
   const prepared = await buildImportData(extractedItems, absoluteSessionPath, existingByHash, metadataOnly, promptModel);
 
-  console.log(`Found ${extractedItems.length} image/prompt items.`);
+  console.log(
+    `\n[Plan] ${prepared.sourceSlugs.length} distinct card(s); ${prepared.items.reduce((sum, item) => sum + item.prompts.length, 0)} candidate prompt(s); ${prepared.skippedDuplicates} duplicate record(s).`,
+  );
+  for (const detail of prepared.recordDetails) {
+    const previous = detail.previousLine ? `session image line ${detail.previousLine}` : 'published card';
+    console.log(
+      `  ${detail.kind === 'duplicate' ? 'Duplicate skipped' : 'Additional prompt'}: ${detail.slug}; image line ${detail.sourceLine ?? '?'}, prompt line ${detail.promptLine ?? '?'}; matches ${previous}.`,
+    );
+  }
   if (dryRun) {
     const updates = prepared.items.filter((item) => existingByHash.has(item.imageHash)).length;
     console.log(
@@ -810,7 +872,7 @@ async function main() {
   for (const batch of chunks(bindings, 100)) await identityRequest({ action: 'remember', bindings: batch });
   let uploadedKeys = [];
   try {
-    console.log(`Computing visual features for ${prepared.items.length} metadata item(s)...`);
+    console.log(`\n[Prepare] Computing visual features for ${prepared.items.length} metadata item(s)...`);
     // Reuse verified canonical bytes for visual inference when an alias hit appends a prompt.
     for (const item of prepared.items) for (const image of item.images) await readCanonicalBytes(image);
     const visualRecords = await buildSourceVisualRecords(prepared.items, prepared.imageBytesByHash);
@@ -830,7 +892,7 @@ async function main() {
     for (let index = 0; index < itemChunks.length; index += 1) {
       const itemChunk = itemChunks[index];
       const batchVisualRecords = itemChunk.flatMap((item) => visualRecordsBySlug.get(item.slug) ?? []);
-      console.log(`Writing metadata batch ${index + 1}/${itemChunks.length} (${itemChunk.length} item(s))...`);
+      console.log(`\n[Metadata] Writing batch ${index + 1}/${itemChunks.length} (${itemChunk.length} item(s))...`);
       const result = await requestJson(
         `${apiBaseUrl}/api/style-gallery/items`,
         {
@@ -856,7 +918,11 @@ async function main() {
         `Completed metadata batch ${index + 1}/${itemChunks.length}: ${result.created ?? 0} new item(s), ${result.updated ?? 0} existing item(s) updated, ${result.addedPrompts ?? 0} prompt(s) added, ${result.skippedDuplicates ?? 0} duplicate prompt(s).`,
       );
     }
-    console.log(`Uploaded ${uploadedKeys.length} missing image assets with concurrency ${UPLOAD_CONCURRENCY}.`);
+    const originalsUploaded = uploadedKeys.filter((key) => key.startsWith('source/')).length;
+    const thumbnailsUploaded = uploadedKeys.filter((key) => key.startsWith('thumb/')).length;
+    console.log(
+      `\n[Result] Uploaded ${uploadedKeys.length} missing asset file(s): ${originalsUploaded} original image(s) + ${thumbnailsUploaded} thumbnail(s); concurrency ${UPLOAD_CONCURRENCY}.`,
+    );
     console.log(
       `${metadataOnly ? 'Updated' : 'Wrote'} ${written} gallery metadata item(s): ${created} created, ${updated} updated, ${addedPrompts} prompt variant(s) added.`,
     );
@@ -883,7 +949,7 @@ async function main() {
     const tagResult = await writeImportedTags(apiBaseUrl, token, prepared.sourceSlugs, tags, overwriteTag);
     if (tags.length)
       console.log(
-        `Tags ${tags.map((tag) => `#${tag}`).join(' ')}: ${tagResult.processed} source(s) processed; ${tagResult.changed === null ? 'change count unavailable from this server' : `${tagResult.changed} changed, ${tagResult.processed - tagResult.changed} unchanged`}.`,
+        `\n[Tags] ${tags.map((tag) => `#${tag}`).join(' ')}: ${tagResult.processed} source(s) processed; ${tagResult.changed === null ? 'change count unavailable from this server' : `${tagResult.changed} changed, ${tagResult.processed - tagResult.changed} unchanged`}.`,
       );
   } catch (error) {
     throw new Error(
@@ -974,6 +1040,7 @@ export {
   writeImportedTags,
   buildImportData,
   extractItems,
+  readSessionItems,
   parseArgs,
   uniqueImagesByHash,
   requestWithRetries,
@@ -998,6 +1065,9 @@ npm run import:style-prompts -- <session.jsonl> --tag "溶图" --tag "现实" --
 # 内嵌图哈希别名只记录已经确认的来源；手动合并的跳转也会被尊重，不按视觉相似度自动合并。
 # 原始附件优先：仅使用同一 turn 中结构化 local_image 与图片包装路径一致的本地文件；不可用时警告并回退内嵌图。
 # Codex 可能缩放/重编码内嵌图；导入器不会改写 source 字节。请在临时附件仍存在时导入。
+# JSONL 逐行读取；诊断行号对应真实物理行（包括空行），不再把 GB 级会话整体拼成字符串。
+# 记录、卡片、Prompt 与资产文件分别计数；source 原图与 thumb 缩略图各算一个文件，重复/新变体列出对应 hash 和行号。
+# npm 入口只屏蔽 tsx 当前触发的 DEP0205 弃用警告，保留其他警告。
 # 标签输出区分 processed / changed / unchanged；重复图片也参与标签修复，但不会虚报为新增。
 # --tag 可重复传入，向本次来源（包括已导入的重复图）追加标签，保留已有标签；省略则不读写标签。
 # --overwrite-tag 必须配合 --tag：以本次标签完整替换来源标签，适用于同图不同 Prompt 和完全重复的记录。
