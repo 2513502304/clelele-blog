@@ -10,7 +10,7 @@ import { mapWithConcurrency } from '@lib/map-with-concurrency';
 import { assertStyleGalleryItemConsistency, getStyleGalleryItemAssetKeys } from '@lib/style-gallery-assets';
 import { StyleGalleryClientError } from '@lib/style-gallery-errors';
 import { toStyleGalleryExampleIndexGroup } from '@lib/style-gallery-examples';
-import { mergeStyleGalleryPromptVariants } from '@lib/style-gallery-prompts';
+import { getStyleGalleryPromptRevision, mergeStyleGalleryPromptVariants } from '@lib/style-gallery-prompts';
 import { invalidateStyleGalleryPublicCache } from '@lib/style-gallery-public-cache';
 import { styleGalleryItemSchema, toStyleGalleryCatalogItem, toStyleGalleryPromptSearchEntry } from '@lib/style-gallery-schema';
 import {
@@ -50,6 +50,8 @@ interface WriteItemsResult {
   updated: number;
   addedPrompts: number;
   skippedDuplicates: number;
+  /** Existing cards whose public prompt revision changed, excluding metadata-only upserts. */
+  promptChangedHashes: string[];
 }
 
 interface UpdateExamplesResult {
@@ -248,6 +250,9 @@ export async function writeStyleGalleryItems(
         updated,
         addedPrompts,
         skippedDuplicates,
+        promptChangedHashes: writeOutcomes.flatMap((outcome) =>
+          outcome.item && outcome.promptsChanged ? [outcome.item.imageHash] : [],
+        ),
       };
     } catch (error) {
       const rollbackErrors = await rollbackMetadata(
@@ -283,6 +288,7 @@ interface ItemWriteOutcome {
   created: boolean;
   addedPrompts: number;
   skippedPrompts: number;
+  promptsChanged: boolean;
 }
 
 /**
@@ -321,6 +327,7 @@ async function writeItemCandidate(candidate: ItemWriteCandidate): Promise<ItemWr
           created: false,
           addedPrompts: 0,
           skippedPrompts: merged.skipped,
+          promptsChanged: false,
         };
       }
       item = styleGalleryItemSchema.parse(
@@ -347,6 +354,10 @@ async function writeItemCandidate(candidate: ItemWriteCandidate): Promise<ItemWr
         created: !existingItem,
         addedPrompts: existingItem ? merged.added : item.prompts.length,
         skippedPrompts: merged.skipped,
+        // Compare the committed candidate to its fresh snapshot, including model metadata.
+        promptsChanged: Boolean(
+          existingItem && getStyleGalleryPromptRevision(existingItem.prompts) !== getStyleGalleryPromptRevision(item.prompts),
+        ),
       };
     } catch (error) {
       if (error instanceof StyleGalleryObjectConflictError && attempt < ITEM_WRITE_ATTEMPTS) {
@@ -361,6 +372,7 @@ async function writeItemCandidate(candidate: ItemWriteCandidate): Promise<ItemWr
         created: false,
         addedPrompts: 0,
         skippedPrompts: 0,
+        promptsChanged: false,
       };
     }
   }
@@ -372,6 +384,7 @@ async function writeItemCandidate(candidate: ItemWriteCandidate): Promise<ItemWr
     created: false,
     addedPrompts: 0,
     skippedPrompts: 0,
+    promptsChanged: false,
   };
 }
 

@@ -66,7 +66,7 @@ setStyleGalleryPublicCacheHeaders(Astro.response.headers, [STYLE_GALLERY_LIST_CA
   <TwoColumnLayout>
     <Cover slot="cover" title={t(locale, 'gallery.title')} />
     <HomeSider slot="sider" />
-    <div class={`bg-gradient-start shadow-box tablet:shadow-none flex flex-col gap-6 overflow-hidden ${CONTENT_PADDING.standard}`}>
+    <div data-gallery-selection-surface class={`bg-gradient-start shadow-box tablet:shadow-none flex flex-col gap-6 overflow-hidden ${CONTENT_PADDING.standard}`}>
       <header class="relative overflow-hidden rounded-lg border border-rose-100 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-950">
         <div class="absolute top-0 right-0 h-32 w-32 rounded-bl-full bg-rose-100/60 dark:bg-rose-950/30"></div>
         <div class="relative grid grid-cols-[1fr_auto] gap-6 md:grid-cols-1">

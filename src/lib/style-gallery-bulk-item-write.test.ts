@@ -226,6 +226,7 @@ describe('style gallery bulk item writes', () => {
         addedPrompts: 1,
         skippedDuplicates: 0,
         visualIndexUpdated: true,
+        promptChangedHashes: [items[0].imageHash],
       });
       const appendedItem = JSON.parse(objects.get(`items/${items[0].slug}.json`) ?? '{}') as StoredStyleGalleryItem;
       assert.equal(appendedItem.prompts.length, 2);
@@ -282,6 +283,24 @@ describe('style gallery bulk item writes', () => {
       assert.equal(catalogPutCount, 3);
       assert.equal(promptSearchIndexPutCount, 3);
       assert.equal(exampleIndexPutCount, 0);
+
+      // Upserts may write metadata while leaving all public prompt fields unchanged.
+      const upsert = async (model?: string) => {
+        const item = { ...editedItem, examples: [], title: 'Changed metadata title' };
+        if (model)
+          item.prompts = item.prompts.map((prompt: StoredStyleGalleryItem['prompts'][number]) => ({ ...prompt, model }));
+        const response = await writeItems({
+          request: new Request('https://example.test/api/style-gallery/items', {
+            method: 'POST',
+            headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+            body: JSON.stringify({ mode: 'upsert', items: [item], visualRecords: createVisualRecords([item]) }),
+          }),
+        } as never);
+        assert.equal(response.status, 200);
+        return response.json();
+      };
+      assert.deepEqual((await upsert()).promptChangedHashes, []);
+      assert.deepEqual((await upsert('new-model')).promptChangedHashes, [items[0].imageHash]);
     } finally {
       globalThis.fetch = previousFetch;
       for (const [name, value] of Object.entries({

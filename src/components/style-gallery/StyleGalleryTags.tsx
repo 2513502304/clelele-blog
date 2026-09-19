@@ -10,7 +10,14 @@ import {
   normalizeGalleryTag,
 } from '@lib/style-gallery-tags';
 import { useStore } from '@nanostores/react';
-import { $galleryTagEditor, loadGalleryTags, publishGalleryTags, useGalleryTags } from '@store/gallery-tags';
+import {
+  $galleryTagEditor,
+  getGalleryTagEditorSnapshot,
+  invalidateGalleryTagEditorSnapshot,
+  loadGalleryTags,
+  publishGalleryTags,
+  useGalleryTags,
+} from '@store/gallery-tags';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog';
 import '@/styles/components/gallery-tags.css';
@@ -310,7 +317,7 @@ export function GalleryTagFilter({
   );
 }
 
-/** One editor host per gallery page. Fresh snapshots plus base-tag comparison prevent lost edits. */
+/** Open from the already-loaded tag index; conditional authenticated writes prevent lost edits. */
 export function GalleryTagEditor({ locale = 'zh' }: { locale?: string }) {
   const target = useStore($galleryTagEditor);
   const bulk = Array.isArray(target);
@@ -356,6 +363,14 @@ export function GalleryTagEditor({ locale = 'zh' }: { locale?: string }) {
     setMessage('');
     setQuery('');
     setActive(0);
+    const cached = getGalleryTagEditorSnapshot();
+    if (cached) {
+      setTags(slug ? (cached.items[slug] ?? []) : []);
+      setBase(slug ? (cached.items[slug] ?? []) : []);
+      setBaseBySlug(Object.fromEntries((Array.isArray(target) ? target : []).map((id) => [id, cached.items[id] ?? []])));
+      setStatus('ready');
+      return () => controller.abort();
+    }
     void fetch(`/api/style-gallery/tags?edit=1&attempt=${attempt}`, {
       cache: 'no-store',
       headers: { Authorization: `Bearer ${tokenRef.current}` },
@@ -485,10 +500,12 @@ export function GalleryTagEditor({ locale = 'zh' }: { locale?: string }) {
         return;
       }
       if (!response.ok) {
+        if (response.status === 409) invalidateGalleryTagEditorSnapshot();
         setMessage(response.status === 409 ? text.conflict : response.status === 400 ? await response.text() : text.failed);
         setStatus('ready');
         return;
       }
+      rememberStyleGalleryManagementToken(tokenRef.current);
       publishGalleryTags(await response.json());
       $galleryTagEditor.set(null);
     } catch {

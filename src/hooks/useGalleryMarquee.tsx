@@ -1,5 +1,5 @@
 import { combineGallerySelection, intersectsSelection, type SelectionRect } from '@lib/style-gallery-selection';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 
 /** Desktop rubber-band selection in document coordinates, including wheel scrolling and newly mounted cards.
  * Form controls retain their own gestures. Touch users keep the existing checkboxes; no global touch lock.
@@ -23,10 +23,37 @@ export function useGalleryMarquee({
   useLayoutEffect(() => {
     latest.current = { selected, onChange, limit };
   }, [selected, onChange, limit]);
-  const [box, setBox] = useState<SelectionRect | null>(null);
+
   useEffect(() => {
     const root = rootRef.current;
     if (!root || !enabled) return;
+    // The Astro content surface includes its horizontal padding, but never the sidebar/header.
+    const surface = root.closest<HTMLElement>('[data-gallery-selection-surface]') ?? root;
+    // Paint outside transformed/clipped ancestors. Imperative RAF updates avoid a gallery-wide
+    // React render for every pixel of pointer motion; selection state still belongs to React.
+    const overlay = document.createElement('div');
+    overlay.setAttribute('aria-hidden', 'true');
+    overlay.dataset.galleryMarquee = '';
+    overlay.className = 'pointer-events-none fixed z-40 border border-primary bg-primary/15';
+    overlay.style.display = 'none';
+    document.body.append(overlay);
+    let boundsDirty = true;
+    let cards: { id: string; rect: SelectionRect }[] = [];
+    const measure = () => {
+      cards = [...root.querySelectorAll<HTMLElement>('[data-gallery-selection-id]')].map((element) => {
+        const box = element.getBoundingClientRect();
+        return {
+          id: element.dataset.gallerySelectionId ?? '',
+          rect: {
+            left: box.left + window.scrollX,
+            right: box.right + window.scrollX,
+            top: box.top + window.scrollY,
+            bottom: box.bottom + window.scrollY,
+          },
+        };
+      });
+      boundsDirty = false;
+    };
     // Only merge mode turns ordinary card clicks into selection; bulk modes retain their links/lightboxes.
     if (selectOnClick) root.dataset.gallerySelecting = 'true';
     root.dataset.galleryMarqueeActive = 'true';
@@ -51,7 +78,7 @@ export function useGalleryMarquee({
       // The drag can begin in card-grid margins; selectstart can target a Text node.
       // Limit form/tool gestures instead of requiring the pointer to start inside a card grid.
       const element = target instanceof Element ? target : target instanceof Node ? target.parentElement : null;
-      if (!element || !root.contains(element)) return false;
+      if (!element || !surface.contains(element)) return false;
       if (
         element.closest(
           'input,textarea,select,label,form,[contenteditable=true],[data-gallery-management],[data-gallery-selection-dock],[role=dialog],[data-no-marquee]',
@@ -72,28 +99,18 @@ export function useGalleryMarquee({
         right: Math.max(gesture.x, endX),
         bottom: Math.max(gesture.y, endY),
       };
-      const hits: string[] = [];
-      for (const element of root.querySelectorAll<HTMLElement>('[data-gallery-selection-id]')) {
-        const bounds = element.getBoundingClientRect();
-        if (
-          intersectsSelection(rect, {
-            left: bounds.left + window.scrollX,
-            right: bounds.right + window.scrollX,
-            top: bounds.top + window.scrollY,
-            bottom: bounds.bottom + window.scrollY,
-          })
-        )
-          hits.push(element.dataset.gallerySelectionId ?? '');
-      }
+      if (boundsDirty) measure();
+      const hits = cards.filter((card) => intersectsSelection(rect, card.rect)).map((card) => card.id);
       const next = combineGallerySelection(gesture.base, hits, gesture.append, latest.current.limit);
       // Pointer motion within the same cards must not rerender the entire gallery every frame.
       if (next.size !== latest.current.selected.size || [...next].some((id) => !latest.current.selected.has(id)))
         latest.current.onChange(next);
-      setBox({
-        left: rect.left - window.scrollX,
-        right: rect.right - window.scrollX,
-        top: rect.top - window.scrollY,
-        bottom: rect.bottom - window.scrollY,
+      Object.assign(overlay.style, {
+        display: 'block',
+        left: `${rect.left - window.scrollX}px`,
+        top: `${rect.top - window.scrollY}px`,
+        width: `${rect.right - rect.left}px`,
+        height: `${rect.bottom - rect.top}px`,
       });
     };
     const schedule = () => {
@@ -101,7 +118,13 @@ export function useGalleryMarquee({
     };
     const down = (event: PointerEvent) => {
       if (event.button !== 0 || event.pointerType !== 'mouse' || !allowed(event.target)) return;
+      // Include the outer gutter only alongside this selection section, below the filter panel.
+      const area = root.getBoundingClientRect();
+      const management = root.querySelector<HTMLElement>('[data-gallery-management]');
+      const top = management?.getBoundingClientRect().top ?? area.top;
+      if (event.clientY < top || event.clientY > area.bottom) return;
       event.preventDefault();
+      boundsDirty = true;
       gesture = {
         id: event.pointerId,
         x: event.pageX,
@@ -132,7 +155,7 @@ export function useGalleryMarquee({
       gesture = null;
       cancelAnimationFrame(frame);
       frame = 0;
-      setBox(null);
+      overlay.style.display = 'none';
     };
     const cancel = () => {
       if (gesture?.dragging) suppressClick();
@@ -140,7 +163,7 @@ export function useGalleryMarquee({
       gesture = null;
       cancelAnimationFrame(frame);
       frame = 0;
-      setBox(null);
+      overlay.style.display = 'none';
     };
     const key = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && gesture) {
@@ -166,31 +189,53 @@ export function useGalleryMarquee({
       latest.current.onChange(next);
     };
     const preventNative = (event: Event) => {
-      if (allowed(event.target)) event.preventDefault();
+      // Only a pointerdown accepted inside the active section owns native selection/dragging.
+      // selectstart has no pointer coordinates, so reuse that validated gesture.
+      if (gesture && allowed(event.target)) event.preventDefault();
     };
-    root.addEventListener('pointerdown', down, true);
+    surface.addEventListener('pointerdown', down, true);
     root.addEventListener('click', click, true);
-    root.addEventListener('dragstart', preventNative);
-    root.addEventListener('selectstart', preventNative);
+    surface.addEventListener('dragstart', preventNative);
+    surface.addEventListener('selectstart', preventNative);
     window.addEventListener('pointermove', move, { passive: false });
     window.addEventListener('pointerup', finish);
     window.addEventListener('pointercancel', cancel);
     window.addEventListener('blur', cancel);
     window.addEventListener('keydown', key);
     window.addEventListener('scroll', schedule, true);
-    const observer = new MutationObserver(schedule);
+    const invalidate = () => {
+      boundsDirty = true;
+      schedule();
+    };
+    // Document-space bounds survive scrolling. Refresh only after layout/content changes,
+    // including lazy image sizing and progressive mounting, not on every pointer event.
+    const resize = new ResizeObserver(invalidate);
+    const observeCards = () => {
+      resize.disconnect();
+      resize.observe(root);
+      for (const card of root.querySelectorAll('[data-gallery-selection-id]')) resize.observe(card);
+      invalidate();
+    };
+    const observer = new MutationObserver(observeCards);
+    observeCards();
+    window.addEventListener('resize', invalidate);
+    root.addEventListener('load', invalidate, true);
     observer.observe(root, { childList: true, subtree: true });
     return () => {
       cancelAnimationFrame(frame);
-      setBox(null);
+      overlay.style.display = 'none';
       delete root.dataset.gallerySelecting;
       delete root.dataset.galleryMarqueeActive;
       delete root.dataset.galleryMarqueeUntil;
       observer.disconnect();
-      root.removeEventListener('pointerdown', down, true);
+      resize.disconnect();
+      overlay.remove();
+      window.removeEventListener('resize', invalidate);
+      root.removeEventListener('load', invalidate, true);
+      surface.removeEventListener('pointerdown', down, true);
       root.removeEventListener('click', click, true);
-      root.removeEventListener('dragstart', preventNative);
-      root.removeEventListener('selectstart', preventNative);
+      surface.removeEventListener('dragstart', preventNative);
+      surface.removeEventListener('selectstart', preventNative);
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', finish);
       window.removeEventListener('pointercancel', cancel);
@@ -199,15 +244,5 @@ export function useGalleryMarquee({
       window.removeEventListener('scroll', schedule, true);
     };
   }, [enabled, selectOnClick]);
-  return {
-    rootRef,
-    overlay: box && (
-      <div
-        aria-hidden="true"
-        data-gallery-marquee
-        className="pointer-events-none fixed z-40 border border-primary bg-primary/15"
-        style={{ left: box.left, top: box.top, width: box.right - box.left, height: box.bottom - box.top }}
-      />
-    ),
-  };
+  return { rootRef, overlay: null };
 }

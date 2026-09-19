@@ -690,3 +690,47 @@ it('streams records across chunks, preserves physical lines, and reports corrupt
     await fs.rm(directory, { recursive: true, force: true });
   }
 });
+
+it('import diagnostics separate new-card prompts, additional prompts and numbered skipped duplicates', async () => {
+  const { describeImportPlan, describeMetadataWrite } = await import('./lib/style-prompt-import-diagnostics.mjs');
+  const result = describeImportPlan(
+    {
+      sourceSlugs: ['new', 'old', 'duplicate'],
+      items: [
+        { imageHash: 'new', prompts: ['a', 'b'] },
+        { imageHash: 'old', prompts: ['c'] },
+      ],
+      skippedDuplicates: 2,
+      recordDetails: [
+        { kind: 'duplicate', slug: 'duplicate', sourceLine: 10, promptLine: 11 },
+        { kind: 'variant', slug: 'new', sourceLine: 20, promptLine: 21, previousLine: 1 },
+        { kind: 'duplicate', slug: 'duplicate', sourceLine: 30, promptLine: 31 },
+        { kind: 'variant', slug: 'old', sourceLine: 40, promptLine: 41 },
+      ],
+    },
+    new Map([['old', {}]]),
+  );
+  assert.match(result, /New cards: 1, with 2 prompt\(s\). Existing cards: 1, with 1 additional/);
+  assert.match(result, /Duplicate skipped \[1\]: duplicate; image line 10/);
+  assert.match(result, /Duplicate skipped \[2\]: duplicate; image line 30/);
+  assert.match(result, /Additional prompt \[2\]: old; image line 40/);
+  assert.match(
+    describeMetadataWrite(
+      { created: 98, updated: 2, addedPrompts: 100, promptChangedHashes: ['old', 'other'] },
+      new Set(['old']),
+    ),
+    /1 prompt-only, 1 also image-replaced earlier/,
+  );
+  assert.match(
+    describeMetadataWrite({ updated: 2, promptChangedHashes: ['a', 'b'] }),
+    /2 prompt-only, 0 also image-replaced earlier/,
+  );
+});
+
+it('metadata-only upserts do not count as prompt mutations', async () => {
+  const { describeMetadataWrite } = await import('./lib/style-prompt-import-diagnostics.mjs');
+  assert.match(
+    describeMetadataWrite({ updated: 1, items: [{ imageHash: 'old' }], promptChangedHashes: [] }, new Set(['old'])),
+    /0 existing card\(s\) with prompt changes \(0 prompt-only, 0 also image-replaced earlier\)/,
+  );
+});

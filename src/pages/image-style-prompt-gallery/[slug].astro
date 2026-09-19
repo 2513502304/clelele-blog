@@ -45,7 +45,7 @@ setStyleGalleryPublicCacheHeaders(Astro.response.headers, [getStyleGalleryItemCa
   <TwoColumnLayout>
     <Cover slot="cover" title={data.title} />
     <HomeSider slot="sider" />
-    <div class={`bg-gradient-start shadow-box tablet:shadow-none flex flex-col gap-6 overflow-clip ${CONTENT_PADDING.standard}`}>
+    <div data-gallery-selection-surface class={`bg-gradient-start shadow-box tablet:shadow-none flex flex-col gap-6 overflow-clip ${CONTENT_PADDING.standard}`}>
       <nav class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
         <Icon name="fa6-solid:house-chimney" class="size-4" />
         <a href={localizedPath('/', locale)} class="hover:text-rose-500">{t(locale, 'breadcrumb.home')}</a>

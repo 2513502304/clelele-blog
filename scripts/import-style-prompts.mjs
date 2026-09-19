@@ -11,6 +11,7 @@ import { sanitizeImportedOriginalPrompt, sanitizeImportedPrompt } from '../src/l
 import { isValidGalleryTag, MAX_GALLERY_TAGS_PER_ITEM, normalizeGalleryTag } from '../src/lib/style-gallery-tags.ts';
 import { computeStyleGalleryVisualFeaturesFromBytes } from '../src/lib/style-gallery-visual-feature-node.ts';
 import { configureEnvironmentProxy } from './lib/environment-proxy.mjs';
+import { describeImportPlan, describeMetadataWrite } from './lib/style-prompt-import-diagnostics.mjs';
 
 const PLACEHOLDER = '[在此处替换为您想要生成的主体内容]';
 const DEFAULT_API_BASE_URL = process.env.STYLE_GALLERY_API_BASE_URL ?? 'https://clelele-blog.vercel.app';
@@ -291,6 +292,8 @@ function createItemExtractor() {
     if (record.type === 'event_msg' && payload.type === 'user_message' && Array.isArray(payload.images)) {
       const images = payload.images.filter((value) => typeof value === 'string' && value.startsWith('data:image/'));
       if (images.length) {
+        // UI images can retain more pixels than the model-facing response_item projection.
+        // Preserve this legacy import source; model preprocessing audits must inspect both.
         pendingInput = {
           images,
           originalPrompt: sanitizeOriginalPrompt(typeof payload.message === 'string' ? payload.message : ''),
@@ -782,10 +785,12 @@ async function main() {
     `\n[Identity] ${extractedItems.length} image/prompt records; ${matches.filter(Boolean).length} already associated with published cards.`,
   );
   console.log(
-    `Recovered ${originals.restored} different original image(s); ${originals.fallback} unavailable attachment(s). ${migrations.length} card image replacement(s) ${dryRun ? 'planned' : 'requested'}.`,
+    `Recovered original attachment bytes for ${originals.restored} image(s) whose session bytes differ (local recovery only, not a published overwrite); ${originals.fallback} unavailable attachment(s). ${migrations.length} card image replacement(s) ${dryRun ? 'planned' : 'requested'}.`,
   );
   if (!overwriteImages)
     console.log('Existing image identities are preserved. Use --overwrite-images to explicitly migrate recoverable originals.');
+  const migratedHashes = new Set();
+  const promptUpdatedHashes = new Set();
   if (migrations.length && !dryRun) {
     const replacements = [];
     for (const migration of migrations) {
@@ -808,6 +813,8 @@ async function main() {
     }
     for (const batch of chunks(replacements, 100)) {
       const result = await identityRequest({ action: 'replace', replacements: batch });
+      const changedSlugs = new Set(result.changedSlugs ?? []);
+      for (const item of result.items ?? []) if (changedSlugs.has(item.slug)) migratedHashes.add(item.imageHash);
       console.log(
         `Published ${result.changed} image/URL migration(s) with one shared-index update; recovery ${result.recoveryId ?? 'not needed'}.`,
       );
@@ -823,15 +830,7 @@ async function main() {
 
   const prepared = await buildImportData(extractedItems, absoluteSessionPath, existingByHash, metadataOnly, promptModel);
 
-  console.log(
-    `\n[Plan] ${prepared.sourceSlugs.length} distinct card(s); ${prepared.items.reduce((sum, item) => sum + item.prompts.length, 0)} candidate prompt(s); ${prepared.skippedDuplicates} duplicate record(s).`,
-  );
-  for (const detail of prepared.recordDetails) {
-    const previous = detail.previousLine ? `session image line ${detail.previousLine}` : 'published card';
-    console.log(
-      `  ${detail.kind === 'duplicate' ? 'Duplicate skipped' : 'Additional prompt'}: ${detail.slug}; image line ${detail.sourceLine ?? '?'}, prompt line ${detail.promptLine ?? '?'}; matches ${previous}.`,
-    );
-  }
+  console.log(describeImportPlan(prepared, existingByHash, metadataOnly));
   if (dryRun) {
     const updates = prepared.items.filter((item) => existingByHash.has(item.imageHash)).length;
     console.log(
@@ -906,6 +905,7 @@ async function main() {
         },
         UPLOAD_TIMEOUT_MS,
       );
+      for (const hash of result.promptChangedHashes ?? []) promptUpdatedHashes.add(hash);
       written += result.written ?? 0;
       created += result.created ?? 0;
       updated += result.updated ?? 0;
@@ -915,7 +915,7 @@ async function main() {
         console.warn('Warning: metadata was saved but the derived visual index needs to be rebuilt.');
       }
       console.log(
-        `Completed metadata batch ${index + 1}/${itemChunks.length}: ${result.created ?? 0} new item(s), ${result.updated ?? 0} existing item(s) updated, ${result.addedPrompts ?? 0} prompt(s) added, ${result.skippedDuplicates ?? 0} duplicate prompt(s).`,
+        `Completed metadata batch ${index + 1}/${itemChunks.length}: ${describeMetadataWrite(result, migratedHashes)}`,
       );
     }
     const originalsUploaded = uploadedKeys.filter((key) => key.startsWith('source/')).length;
@@ -924,7 +924,11 @@ async function main() {
       `\n[Result] Uploaded ${uploadedKeys.length} missing asset file(s): ${originalsUploaded} original image(s) + ${thumbnailsUploaded} thumbnail(s); concurrency ${UPLOAD_CONCURRENCY}.`,
     );
     console.log(
-      `${metadataOnly ? 'Updated' : 'Wrote'} ${written} gallery metadata item(s): ${created} created, ${updated} updated, ${addedPrompts} prompt variant(s) added.`,
+      `${metadataOnly ? 'Updated' : 'Wrote'} ${written} gallery metadata item(s): ${created} created, ${updated} with prompt changes, ${addedPrompts} prompt variant(s) added.`,
+    );
+    const both = [...migratedHashes].filter((hash) => promptUpdatedHashes.has(hash)).length;
+    console.log(
+      `Existing-card changes: ${promptUpdatedHashes.size - both} prompt-only; ${migratedHashes.size - both} image/URL-only; ${both} both image/URL and prompt. Tags are reported separately.`,
     );
     console.log(`Skipped ${prepared.skippedDuplicates + apiDuplicates} duplicate image/prompt records.`);
     if (metadataOnly) console.log(`Skipped ${prepared.skippedNewMetadata} new records because --metadata-only was set.`);
@@ -1066,6 +1070,8 @@ npm run import:style-prompts -- <session.jsonl> --tag "溶图" --tag "现实" --
 # 原始附件优先：仅使用同一 turn 中结构化 local_image 与图片包装路径一致的本地文件；不可用时警告并回退内嵌图。
 # Codex 可能缩放/重编码内嵌图；导入器不会改写 source 字节。请在临时附件仍存在时导入。
 # JSONL 逐行读取；诊断行号对应真实物理行（包括空行），不再把 GB 级会话整体拼成字符串。
+# Recovered 表示本机恢复了不同字节的原附件，不代表覆盖线上图；线上替换只发生在显式 --overwrite-images 阶段。
+# 元数据批次只改 Prompt；结果另列仅图片/URL、仅 Prompt、两者都变更，重复明细从 1 编号。
 # 记录、卡片、Prompt 与资产文件分别计数；source 原图与 thumb 缩略图各算一个文件，重复/新变体列出对应 hash 和行号。
 # npm 入口只屏蔽 tsx 当前触发的 DEP0205 弃用警告，保留其他警告。
 # 标签输出区分 processed / changed / unchanged；重复图片也参与标签修复，但不会虚报为新增。
