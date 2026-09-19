@@ -1,7 +1,8 @@
 import { expect, test } from '@playwright/test';
 
-for (const mode of ['collection', 'merge']) {
+for (const mode of ['collection', 'merge', 'reduced-motion tags']) {
   test(`${mode} opens at stable opacity without remounting the management dialog`, async ({ page }) => {
+    if (mode === 'reduced-motion tags') await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.route('**/*', (route) => {
       if (route.request().url().includes('/api/live2d')) return route.abort();
       if (route.request().resourceType() === 'image')
@@ -25,11 +26,13 @@ for (const mode of ['collection', 'merge']) {
         .nth(1)
         .check();
     }
-    const title = mode === 'collection' ? '收藏图片' : '合并两张卡片';
+    const title = mode === 'collection' ? '收藏图片' : mode === 'merge' ? '合并两张卡片' : '编辑标签';
     const trigger =
       mode === 'collection'
         ? start
-        : page.locator('[data-gallery-selection-dock]').getByRole('button', { name: '确认两张并比较' });
+        : mode === 'merge'
+          ? page.locator('[data-gallery-selection-dock]').getByRole('button', { name: '确认两张并比较' })
+          : page.getByRole('button', { name: '编辑标签', exact: true }).first();
     const sampling = page.evaluate(async (title) => {
       const frames: { opacity: number; x: number; y: number; sameNode: boolean }[] = [];
       let first: Element | undefined;
@@ -54,7 +57,8 @@ for (const mode of ['collection', 'merge']) {
     const dialog = page.getByRole('dialog', { name: title, exact: true });
     await expect(dialog).toBeVisible();
     if (mode === 'merge') page.once('dialog', (confirmation) => confirmation.accept());
-    await dialog.getByRole('button', { name: '取消', exact: true }).click();
+    if (mode === 'reduced-motion tags') await page.keyboard.press('Escape');
+    else await dialog.getByRole('button', { name: '取消', exact: true }).click();
     await expect(dialog).not.toBeVisible();
   });
 }

@@ -24,7 +24,7 @@
 import { animation } from '@constants/design-tokens';
 import { cn } from '@lib/utils';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import type React from 'react';
 import { createContext, forwardRef, useCallback, useContext, useState } from 'react';
 
@@ -99,6 +99,8 @@ const DialogContent = forwardRef<React.ComponentRef<typeof DialogPrimitive.Conte
   ({ className, children, showClose = true, overlayClassName, stableScroll = false, animated = true, ...props }, ref) => {
     const context = useContext(DialogContext);
     const isOpen = context?.isOpen ?? false;
+    const reducedMotion = useReducedMotion();
+    const shouldAnimate = animated && !reducedMotion;
 
     return (
       <DialogPortal forceMount>
@@ -106,10 +108,10 @@ const DialogContent = forwardRef<React.ComponentRef<typeof DialogPrimitive.Conte
           {isOpen && (
             <motion.div
               key="dialog-overlay"
-              initial={animated ? { opacity: 0 } : false}
+              initial={shouldAnimate ? { opacity: 0 } : false}
               animate={{ opacity: 1 }}
-              exit={animated ? { opacity: 0 } : undefined}
-              transition={{ duration: animated ? animation.duration.fast / 1000 : 0 }}
+              exit={shouldAnimate ? { opacity: 0 } : undefined}
+              transition={{ duration: shouldAnimate ? animation.duration.fast / 1000 : 0 }}
               onAnimationStart={() => context?.setIsAnimating(true)}
               onAnimationComplete={() => context?.setIsAnimating(false)}
             >
@@ -129,11 +131,15 @@ const DialogContent = forwardRef<React.ComponentRef<typeof DialogPrimitive.Conte
                   stableScroll && '[translate:-50%_-50%]',
                   className,
                 )}
-                initial={!animated ? false : stableScroll ? { opacity: 0 } : { opacity: 0, scale: 0.95, x: '-50%', y: '-48%' }}
+                initial={
+                  !shouldAnimate ? false : stableScroll ? { opacity: 0 } : { opacity: 0, scale: 0.95, x: '-50%', y: '-48%' }
+                }
                 animate={stableScroll ? { opacity: 1 } : { opacity: 1, scale: 1, x: '-50%', y: '-50%' }}
-                exit={!animated ? undefined : stableScroll ? { opacity: 0 } : { opacity: 0, scale: 0.95, x: '-50%', y: '-48%' }}
+                exit={
+                  !shouldAnimate ? undefined : stableScroll ? { opacity: 0 } : { opacity: 0, scale: 0.95, x: '-50%', y: '-48%' }
+                }
                 transition={
-                  !animated
+                  !shouldAnimate
                     ? { duration: 0 }
                     : stableScroll
                       ? { duration: animation.duration.fast / 1000 }

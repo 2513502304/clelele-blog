@@ -802,7 +802,10 @@ export default function StyleGalleryExamples({
 
       {examples.length ? (
         <div className="space-y-6">
-          <div className="sticky top-3 z-10 flex flex-wrap items-center gap-2 rounded-lg border border-rose-200 bg-white/95 p-3 shadow-md backdrop-blur dark:border-rose-900 dark:bg-gray-950/95">
+          <div
+            data-gallery-management
+            className="sticky top-3 z-10 flex flex-wrap items-center gap-2 rounded-lg border border-rose-200 bg-white/95 p-3 shadow-md backdrop-blur dark:border-rose-900 dark:bg-gray-950/95"
+          >
             <button
               type="button"
               onClick={() => (selectionMode ? exitSelection() : setSelectionMode(true))}

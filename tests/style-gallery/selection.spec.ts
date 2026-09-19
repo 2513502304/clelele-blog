@@ -156,6 +156,16 @@ test('detail sub-images share marquee, floating platform/download/delete actions
   await expect.poll(() => toggle.evaluate((el) => !el.closest('astro-island')?.hasAttribute('ssr'))).toBe(true);
   await toggle.click();
   const cards = page.locator('[data-gallery-selection-id]');
+  const toolbar = page.locator('[data-gallery-management].sticky');
+  await toolbar.scrollIntoViewIfNeeded();
+  const toolbarBox = await toolbar.boundingBox();
+  if (!toolbarBox) throw new Error('Missing selection toolbar');
+  await page.mouse.move(toolbarBox.x + 3, toolbarBox.y + 3);
+  await page.mouse.down();
+  await page.mouse.move(toolbarBox.x + 80, toolbarBox.y + 100, { steps: 5 });
+  await expect(page.locator('[data-gallery-marquee]')).toHaveCount(0);
+  await page.mouse.up();
+  await expect(page.locator('[data-gallery-selection-id][data-selected="true"]')).toHaveCount(0);
   await dragInside(page, cards.first());
   const dock = page.locator('[data-gallery-selection-dock]');
   await expect(dock.getByRole('button', { name: '已选择 1 项', exact: true })).toBeVisible();
