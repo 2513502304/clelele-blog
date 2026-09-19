@@ -189,7 +189,9 @@ export function useGalleryMarquee({
       latest.current.onChange(next);
     };
     const preventNative = (event: Event) => {
-      if (allowed(event.target)) event.preventDefault();
+      // Only a pointerdown accepted inside the active section owns native selection/dragging.
+      // selectstart has no pointer coordinates, so reuse that validated gesture.
+      if (gesture && allowed(event.target)) event.preventDefault();
     };
     surface.addEventListener('pointerdown', down, true);
     root.addEventListener('click', click, true);

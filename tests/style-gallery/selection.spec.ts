@@ -38,6 +38,21 @@ for (const path of ['', '/index', '/examples']) {
       accidentalDialogs++;
       await dialog.dismiss();
     });
+    // Native selection above the gallery remains available while multi-select is enabled.
+    const heading = page.locator('h1').first();
+    await heading.scrollIntoViewIfNeeded();
+    const headingBox = await heading.boundingBox();
+    if (!headingBox) throw new Error('Missing heading');
+    await page.mouse.move(headingBox.x + 20, headingBox.y + 10);
+    await page.mouse.down();
+    expect(
+      await heading.evaluate((el) => {
+        const event = new Event('selectstart', { bubbles: true, cancelable: true });
+        el.dispatchEvent(event);
+        return event.defaultPrevented;
+      }),
+    ).toBe(false);
+    await page.mouse.up();
     const cards = page.locator('[data-gallery-selection-id]');
     const selected = page.locator('[data-gallery-selection-id][data-selected="true"]');
     const dock = page.locator('[data-gallery-selection-dock]');
@@ -90,6 +105,13 @@ for (const path of ['', '/index', '/examples']) {
     const fitted = await dock.boundingBox();
     expect((fitted?.x ?? 0) + (fitted?.width ?? 0)).toBeLessThanOrEqual(1100);
     await page.setViewportSize({ width: 1512, height: 870 });
+    // Park the movable dock in the sidebar before exercising cards underneath its prior position.
+    const parkedHandle = await handle.boundingBox();
+    if (!parkedHandle) throw new Error('Missing handle');
+    await page.mouse.move(parkedHandle.x + 10, parkedHandle.y + 10);
+    await page.mouse.down();
+    await page.mouse.move(30, 160, { steps: 8 });
+    await page.mouse.up();
     await dragInside(page, cards.nth(0));
     await expect(selected).toHaveCount(1);
     await dragInside(page, cards.nth(1), 'Control');

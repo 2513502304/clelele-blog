@@ -905,9 +905,7 @@ async function main() {
         },
         UPLOAD_TIMEOUT_MS,
       );
-      for (const item of result.items ?? []) {
-        if (existingByHash.has(item.imageHash)) promptUpdatedHashes.add(item.imageHash);
-      }
+      for (const hash of result.promptChangedHashes ?? []) promptUpdatedHashes.add(hash);
       written += result.written ?? 0;
       created += result.created ?? 0;
       updated += result.updated ?? 0;

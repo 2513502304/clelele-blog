@@ -715,8 +715,22 @@ it('import diagnostics separate new-card prompts, additional prompts and numbere
   assert.match(result, /Duplicate skipped \[2\]: duplicate; image line 30/);
   assert.match(result, /Additional prompt \[2\]: old; image line 40/);
   assert.match(
-    describeMetadataWrite({ created: 98, updated: 2, addedPrompts: 100, items: [{ imageHash: 'old' }] }, new Set(['old'])),
+    describeMetadataWrite(
+      { created: 98, updated: 2, addedPrompts: 100, promptChangedHashes: ['old', 'other'] },
+      new Set(['old']),
+    ),
     /1 prompt-only, 1 also image-replaced earlier/,
   );
-  assert.match(describeMetadataWrite({ updated: 2 }), /2 prompt-only, 0 also image-replaced earlier/);
+  assert.match(
+    describeMetadataWrite({ updated: 2, promptChangedHashes: ['a', 'b'] }),
+    /2 prompt-only, 0 also image-replaced earlier/,
+  );
+});
+
+it('metadata-only upserts do not count as prompt mutations', async () => {
+  const { describeMetadataWrite } = await import('./lib/style-prompt-import-diagnostics.mjs');
+  assert.match(
+    describeMetadataWrite({ updated: 1, items: [{ imageHash: 'old' }], promptChangedHashes: [] }, new Set(['old'])),
+    /0 existing card\(s\) with prompt changes \(0 prompt-only, 0 also image-replaced earlier\)/,
+  );
 });

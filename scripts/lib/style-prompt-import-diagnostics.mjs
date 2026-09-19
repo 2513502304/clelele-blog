@@ -23,6 +23,7 @@ export function describeImportPlan(prepared, existingByHash, metadataOnly = fals
 
 /** The metadata endpoint preserves existing images; image migration is a separate preceding stage. */
 export function describeMetadataWrite(result, migratedHashes = new Set()) {
-  const both = (result.items ?? []).filter((item) => migratedHashes.has(item.imageHash)).length;
-  return `${result.created ?? 0} new card(s); ${result.updated ?? 0} existing card(s) with prompt changes (${(result.updated ?? 0) - both} prompt-only, ${both} also image-replaced earlier); ${result.addedPrompts ?? 0} prompt(s) added; ${result.skippedDuplicates ?? 0} duplicate prompt(s) skipped. Image replacements in this metadata batch: 0.`;
+  const changed = result.promptChangedHashes ?? [];
+  const both = changed.filter((hash) => migratedHashes.has(hash)).length;
+  return `${result.created ?? 0} new card(s); ${changed.length} existing card(s) with prompt changes (${changed.length - both} prompt-only, ${both} also image-replaced earlier); ${result.addedPrompts ?? 0} prompt(s) added; ${result.skippedDuplicates ?? 0} duplicate prompt(s) skipped. Image replacements in this metadata batch: 0.`;
 }
