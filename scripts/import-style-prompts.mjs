@@ -1065,7 +1065,7 @@ npm run import:style-prompts -- <session.jsonl> --tag "溶图" --tag "现实" --
 
 # 默认保留已发布图片身份；--overwrite-images 才会迁移可恢复的原始附件，URL 尾缀同步更新为新 hash，保留导入日期、Prompt、标签、示例和点赞。
 # npm run import:style-prompts -- <session.jsonl> --tag "插画" --overwrite-images
-# Codex 新版会缩放/重编码，旧版未处理；此选项用于修复跨版本导入，而不是无条件重传全部资产。
+# 不要按 Codex 新旧版本推断图片质量：UI/模型投影及客户端输入路径可能不同；此选项仅迁移已验证的原附件，不无条件重传。
 # 内嵌图哈希别名只记录已经确认的来源；手动合并的跳转也会被尊重，不按视觉相似度自动合并。
 # 原始附件优先：仅使用同一 turn 中结构化 local_image 与图片包装路径一致的本地文件；不可用时警告并回退内嵌图。
 # Codex 可能缩放/重编码内嵌图；导入器不会改写 source 字节。请在临时附件仍存在时导入。
