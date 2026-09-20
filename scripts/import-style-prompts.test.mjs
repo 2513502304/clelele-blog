@@ -734,3 +734,50 @@ it('metadata-only upserts do not count as prompt mutations', async () => {
     /0 existing card\(s\) with prompt changes \(0 prompt-only, 0 also image-replaced earlier\)/,
   );
 });
+
+it('matches user_message local_images and preserves attachment context across a UI projection', () => {
+  const model = {
+    type: 'response_item',
+    payload: {
+      type: 'message',
+      role: 'user',
+      internal_chat_message_metadata_passthrough: { turn_id: 'a' },
+      content: [
+        { type: 'input_text', text: 'request' },
+        { type: 'input_text', text: '<image name=[Image #1] path="/original.jpg">' },
+        { type: 'input_image', image_url: 'data:image/jpeg;base64,AA==' },
+        { type: 'input_text', text: '</image>' },
+      ],
+    },
+  };
+  const ui = {
+    type: 'event_msg',
+    payload: { type: 'user_message', message: 'request', images: [], local_images: ['/original.jpg'] },
+  };
+  const completed = {
+    type: 'event_msg',
+    payload: {
+      type: 'item_completed',
+      turn_id: 'a',
+      item: { type: 'UserMessage', content: [{ type: 'local_image', path: '/original.jpg' }] },
+    },
+  };
+  const final = { type: 'event_msg', payload: { type: 'agent_message', message: `${PLACEHOLDER} style` } };
+  const extract = (...records) => extractItems(records.map((record, index) => ({ record, index: index + 1 })));
+  assert.deepEqual(extract(model, ui, final)[0].localImagePaths, ['/original.jpg']);
+  const projection = { ...ui, payload: { ...ui.payload, images: ['data:image/jpeg;base64,AQ=='], local_images: [] } };
+  assert.deepEqual(extract(model, projection, completed, final)[0].localImagePaths, ['/original.jpg']);
+  assert.deepEqual(extract(model, completed, projection, final)[0].localImagePaths, ['/original.jpg']);
+  assert.equal(extract(model, projection, completed, final)[0].images[0], 'data:image/jpeg;base64,AQ==');
+  for (const local_images of [['/wrong.jpg'], ['/original.jpg', '/extra.jpg'], ['relative.jpg'], null]) {
+    assert.equal(extract(model, { ...ui, payload: { ...ui.payload, local_images } }, final)[0].localImagePaths, undefined);
+  }
+  assert.equal(extract(model, { ...ui, payload: { ...ui.payload, turn_id: 'other' } }, final).length, 0);
+  assert.equal(extract(model, { ...ui, payload: { ...ui.payload, message: 'another request' } }, final).length, 0);
+  assert.equal(extract(model, { type: 'event_msg', payload: { type: 'task_started' } }, ui, final).length, 0);
+  assert.equal(extract(ui, final).length, 0);
+  const unwrapped = structuredClone(model);
+  unwrapped.payload.content.splice(1, 1);
+  unwrapped.payload.content.pop();
+  assert.equal(extract(unwrapped, ui, final)[0].localImagePaths, undefined);
+});

@@ -257,15 +257,25 @@ function responseItemOutput(payload) {
 /**
  * 从 Codex JSONL 中提取每个 task 的图片与最终 prompt 配对。
  *
- * Codex 目前存在两种会话格式：旧格式把用户图片和最终回复写入 `event_msg`；新格式只在
- * `response_item:message` 中保存 `input_image` / `output_text`。`item_completed` 只补充经过路径和 turn
- * 双重校验的原始附件，不再创建配对；task_complete 和压缩副本也不重复导入。task 边界会清空未完成配对，避免上一轮
- * 图片被错误关联到下一轮回复。
+ * 同一输入可能同时写入 `event_msg` 的 UI 图片和 `response_item:message` 的模型图片。
+ * 有 UI 内嵌图时优先保留其字节，否则使用模型图片。`item_completed` 与 `user_message.local_images`
+ * 只补充经过同一输入和路径双重校验的原始附件，不创建额外配对。task_complete 和压缩副本也不重复导入；
+ * task 边界会清空未完成配对，避免上一轮图片被错误关联到下一轮回复。
  */
 function extractItems(records) {
   const extractor = createItemExtractor();
   for (const record of records) extractor.consume(record);
   return extractor.items;
+}
+
+/** Both supported UI event shapes must corroborate every image's renderer-generated path. */
+function matchingAttachmentPaths(paths, input) {
+  return (
+    Array.isArray(paths) &&
+    paths.length === input.images.length &&
+    paths.length > 0 &&
+    paths.every((value, i) => typeof value === 'string' && path.isAbsolute(value) && value === input.attachmentPaths?.[i])
+  );
 }
 
 /** Share the exact turn/attachment pairing state machine between streams and in-memory fixtures. */
@@ -291,16 +301,33 @@ function createItemExtractor() {
     }
     if (record.type === 'event_msg' && payload.type === 'user_message' && Array.isArray(payload.images)) {
       const images = payload.images.filter((value) => typeof value === 'string' && value.startsWith('data:image/'));
+      const originalPrompt = sanitizeOriginalPrompt(typeof payload.message === 'string' ? payload.message : '');
+      // A UI projection has no turn_id in current Desktop JSONL. Bind it only once to the
+      // pending model message in this task, with matching request text and image count.
+      const sameInput =
+        pendingInput?.turnId &&
+        !pendingInput.uiProjectionSeen &&
+        originalPrompt === pendingInput.originalPrompt &&
+        (!payload.turn_id || payload.turn_id === pendingInput.turnId) &&
+        (!images.length || images.length === pendingInput.images.length);
       if (images.length) {
-        // UI images can retain more pixels than the model-facing response_item projection.
-        // Preserve this legacy import source; model preprocessing audits must inspect both.
         pendingInput = {
+          ...(sameInput ? pendingInput : {}),
           images,
-          originalPrompt: sanitizeOriginalPrompt(typeof payload.message === 'string' ? payload.message : ''),
+          originalPrompt,
           sourceLine: index,
           timestamp: record.timestamp,
           model: currentModel,
         };
+      } else if (!sameInput) {
+        pendingInput = null;
+      }
+      if (pendingInput) {
+        pendingInput.uiProjectionSeen = true;
+        // Plain file mentions are not enough: require the exact ordered renderer wrapper paths.
+        // Actual file contents are still checked by resolveOriginalImages before any migration.
+        if (sameInput && matchingAttachmentPaths(payload.local_images, pendingInput))
+          pendingInput.localImagePaths = [...payload.local_images];
       }
       return;
     }
@@ -330,12 +357,7 @@ function createItemExtractor() {
     ) {
       const content = Array.isArray(payload.item.content) ? payload.item.content : [];
       const paths = content.filter((part) => part?.type === 'local_image').map((part) => part.path);
-      if (
-        paths.length === pendingInput.images.length &&
-        paths.every(
-          (value, i) => typeof value === 'string' && path.isAbsolute(value) && value === pendingInput.attachmentPaths?.[i],
-        )
-      ) {
+      if (matchingAttachmentPaths(paths, pendingInput)) {
         pendingInput.localImagePaths = paths;
       }
       return;
@@ -1067,7 +1089,7 @@ npm run import:style-prompts -- <session.jsonl> --tag "溶图" --tag "现实" --
 # npm run import:style-prompts -- <session.jsonl> --tag "插画" --overwrite-images
 # 不要按 Codex 新旧版本推断图片质量：UI/模型投影及客户端输入路径可能不同；此选项仅迁移已验证的原附件，不无条件重传。
 # 内嵌图哈希别名只记录已经确认的来源；手动合并的跳转也会被尊重，不按视觉相似度自动合并。
-# 原始附件优先：仅使用同一 turn 中结构化 local_image 与图片包装路径一致的本地文件；不可用时警告并回退内嵌图。
+# 原始附件优先：支持同一输入的 user_message.local_images 和 item_completed.local_image，均须与图片包装路径一致；不可用时警告并回退内嵌图。
 # Codex 可能缩放/重编码内嵌图；导入器不会改写 source 字节。请在临时附件仍存在时导入。
 # JSONL 逐行读取；诊断行号对应真实物理行（包括空行），不再把 GB 级会话整体拼成字符串。
 # Recovered 表示本机恢复了不同字节的原附件，不代表覆盖线上图；线上替换只发生在显式 --overwrite-images 阶段。
