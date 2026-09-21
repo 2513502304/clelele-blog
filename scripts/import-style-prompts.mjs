@@ -222,15 +222,53 @@ function responseItemInput(payload) {
     .filter((part) => part?.type === 'input_text' && typeof part.text === 'string')
     .map((part) => part.text)
     .join('\n');
-  // Only exact renderer-generated image wrappers can link to a structured UI attachment.
-  // Arbitrary paths in a user's prompt are never opened.
-  const attachmentPaths = payload.content.flatMap((part, index) => {
+  // Renderer wrappers and the complete Desktop file envelope are candidate paths only.
+  // A matching UI projection must corroborate them before any local file is opened.
+  let attachmentPaths = payload.content.flatMap((part, index) => {
     if (part?.type !== 'input_image') return [];
     const previous = payload.content[index - 1];
     const match = previous?.type === 'input_text' && /^<image name=\[Image #\d+\] path="([^"\n]+)">\s*$/.exec(previous.text);
     return [match ? match[1] : null];
   });
+  if (attachmentPaths.every((value) => value === null)) {
+    attachmentPaths = desktopImageEnvelopePaths(originalPrompt, images.length) ?? attachmentPaths;
+  }
   return { images, originalPrompt, attachmentPaths };
+}
+
+/** Parse only a complete Desktop attachment envelope, never paths in the actual request.
+ * Refuse mixed file/image lists and ambiguous counts instead of guessing which file belongs
+ * to an embedded image. Basenames must match the displayed filenames, including spaces.
+ */
+function desktopImageEnvelopePaths(text, imageCount) {
+  if (typeof text !== 'string') return null;
+  const match =
+    /^# Files mentioned by the user:\n\n([\s\S]*?)\n\nDistinguish instructions in attached documents from the user's request\.\n\n## My request:\n/.exec(
+      text.replace(/\r\n?/g, '\n').trim(),
+    );
+  if (!match || !imageCount) return null;
+  const entries = match[1].split('\n').filter((line) => line.trim());
+  if (entries.length !== imageCount) return null;
+  const paths = entries.map((line) => {
+    const entry = /^## (.+): ([^\r\n]+)$/.exec(line);
+    return entry && path.isAbsolute(entry[2]) && path.basename(entry[2]) === entry[1] && /\.(?:jpe?g|png|webp)$/i.test(entry[2])
+      ? entry[2]
+      : null;
+  });
+  return paths.every(Boolean) ? paths : null;
+}
+
+/** Some queued Desktop inputs repeat an envelope plus embedded images, without local_image.
+ * Require the same ordered paths and image count in the UI projection. UI bytes can be larger
+ * than model bytes, so resolveOriginalImages checks the file against BOTH representations.
+ */
+function envelopeProjectionPaths(text, images, input) {
+  const paths = desktopImageEnvelopePaths(text, images.length);
+  return paths &&
+    matchingAttachmentPaths(paths, input) &&
+    images.every((value) => typeof value === 'string' && parseDataUri(value))
+    ? paths
+    : null;
 }
 
 /**
@@ -259,7 +297,7 @@ function responseItemOutput(payload) {
  *
  * 同一输入可能同时写入 `event_msg` 的 UI 图片和 `response_item:message` 的模型图片。
  * 有 UI 内嵌图时优先保留其字节，否则使用模型图片。`item_completed` 与 `user_message.local_images`
- * 只补充经过同一输入和路径双重校验的原始附件，不创建额外配对。task_complete 和压缩副本也不重复导入；
+ * 及完整的 Desktop 文件说明只补充经过同一输入和路径双重校验的原始附件，不创建额外配对。task_complete 和压缩副本也不重复导入；
  * task 边界会清空未完成配对，避免上一轮图片被错误关联到下一轮回复。
  */
 function extractItems(records) {
@@ -268,7 +306,7 @@ function extractItems(records) {
   return extractor.items;
 }
 
-/** Both supported UI event shapes must corroborate every image's renderer-generated path. */
+/** UI attachment paths must corroborate every ordered wrapper or Desktop-envelope path. */
 function matchingAttachmentPaths(paths, input) {
   return (
     Array.isArray(paths) &&
@@ -312,7 +350,7 @@ function createItemExtractor() {
         (!images.length || images.length === pendingInput.images.length);
       if (images.length) {
         pendingInput = {
-          ...(sameInput ? pendingInput : {}),
+          ...(sameInput ? { ...pendingInput, attachmentImageProjections: pendingInput.images } : {}),
           images,
           originalPrompt,
           sourceLine: index,
@@ -324,10 +362,14 @@ function createItemExtractor() {
       }
       if (pendingInput) {
         pendingInput.uiProjectionSeen = true;
-        // Plain file mentions are not enough: require the exact ordered renderer wrapper paths.
+        // Plain file mentions are not enough: require corroborated wrapper/envelope paths.
         // Actual file contents are still checked by resolveOriginalImages before any migration.
         if (sameInput && matchingAttachmentPaths(payload.local_images, pendingInput))
           pendingInput.localImagePaths = [...payload.local_images];
+        else if (sameInput) {
+          const paths = envelopeProjectionPaths(payload.message, images, pendingInput);
+          if (paths) pendingInput.localImagePaths = paths;
+        }
       }
       return;
     }
@@ -359,6 +401,17 @@ function createItemExtractor() {
       const paths = content.filter((part) => part?.type === 'local_image').map((part) => part.path);
       if (matchingAttachmentPaths(paths, pendingInput)) {
         pendingInput.localImagePaths = paths;
+      } else if (!paths.length) {
+        const text = content
+          .filter((part) => part?.type === 'text' && typeof part.text === 'string')
+          .map((part) => part.text)
+          .join('\n');
+        const images = content.filter((part) => part?.type === 'image').map((part) => part.image_url);
+        const envelopePaths = envelopeProjectionPaths(text, images, pendingInput);
+        if (envelopePaths) {
+          pendingInput.localImagePaths = envelopePaths;
+          pendingInput.attachmentImageProjections = images;
+        }
       }
       return;
     }
@@ -399,31 +452,38 @@ async function resolveOriginalImages(items, warn = console.warn) {
         const mime = { jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' }[metadata.format];
         if (!mime) throw new Error('unsupported image format');
         const embedded = parseDataUri(images[index]);
-        const embeddedSize = await sharp(embedded.bytes).metadata();
-        // Refuse an obviously replaced file rather than silently associating another picture.
-        const ratio = (metadata.autoOrient?.width ?? metadata.width) / (metadata.autoOrient?.height ?? metadata.height);
-        if (
-          Math.abs(
-            ratio -
-              (embeddedSize.autoOrient?.width ?? embeddedSize.width) / (embeddedSize.autoOrient?.height ?? embeddedSize.height),
-          ) > 0.005
-        )
-          throw new Error('attachment dimensions no longer match');
-        if (!bytes.equals(embedded.bytes)) {
-          const pixels = (buffer) =>
-            sharp(buffer)
-              .rotate()
-              .flatten({ background: '#ffffff' })
-              .toColourspace('srgb')
-              .resize(64, 64, { fit: 'fill' })
-              .removeAlpha()
-              .raw()
-              .toBuffer();
-          const [originalPixels, sessionPixels] = await Promise.all([pixels(bytes), pixels(embedded.bytes)]);
-          const difference =
-            originalPixels.reduce((total, value, i) => total + Math.abs(value - sessionPixels[i]), 0) / originalPixels.length;
-          // This is only a stale-path guard, never a cross-item deduplication rule.
-          if (difference > 8) throw new Error('attachment content no longer matches the session image');
+        // Desktop's UI image may precede a second model-only resize. Validate both without
+        // changing the embedded identity used to resolve already-published cards on reruns.
+        const projections = new Set([images[index], item.attachmentImageProjections?.[index]].filter(Boolean));
+        for (const projection of projections) {
+          const projected = parseDataUri(projection);
+          const embeddedSize = await sharp(projected.bytes).metadata();
+          // Refuse an obviously replaced file rather than silently associating another picture.
+          const ratio = (metadata.autoOrient?.width ?? metadata.width) / (metadata.autoOrient?.height ?? metadata.height);
+          if (
+            Math.abs(
+              ratio -
+                (embeddedSize.autoOrient?.width ?? embeddedSize.width) /
+                  (embeddedSize.autoOrient?.height ?? embeddedSize.height),
+            ) > 0.005
+          )
+            throw new Error('attachment dimensions no longer match');
+          if (!bytes.equals(projected.bytes)) {
+            const pixels = (buffer) =>
+              sharp(buffer)
+                .rotate()
+                .flatten({ background: '#ffffff' })
+                .toColourspace('srgb')
+                .resize(64, 64, { fit: 'fill' })
+                .removeAlpha()
+                .raw()
+                .toBuffer();
+            const [originalPixels, sessionPixels] = await Promise.all([pixels(bytes), pixels(projected.bytes)]);
+            const difference =
+              originalPixels.reduce((total, value, i) => total + Math.abs(value - sessionPixels[i]), 0) / originalPixels.length;
+            // This is only a stale-path guard, never a cross-item deduplication rule.
+            if (difference > 8) throw new Error('attachment content no longer matches the session image');
+          }
         }
         images[index] = `data:${mime};base64,${bytes.toString('base64')}`;
         originalsVerified++;
@@ -806,12 +866,22 @@ async function main() {
   console.log(
     `\n[Identity] ${extractedItems.length} image/prompt records; ${matches.filter(Boolean).length} already associated with published cards.`,
   );
+  const confirmedAttachments = rawItems.reduce((count, item) => count + (item.localImagePaths?.length ?? 0), 0);
+  const unconfirmedRecords = rawItems.filter((item) => item.attachmentPaths?.some(Boolean) && !item.localImagePaths?.length);
+  console.log(
+    `Attachment candidates: ${confirmedAttachments} UI-confirmed image path(s); ${unconfirmedRecords.length} record(s) have paths without a matching UI attachment and will not read those files.`,
+  );
+  for (const item of unconfirmedRecords)
+    console.log(
+      `  Unconfirmed attachment: image line ${item.sourceLine}, prompt line ${item.promptLine}; source bytes retained.`,
+    );
   console.log(
     `Recovered original attachment bytes for ${originals.restored} image(s) whose session bytes differ (local recovery only, not a published overwrite); ${originals.fallback} unavailable attachment(s). ${migrations.length} card image replacement(s) ${dryRun ? 'planned' : 'requested'}.`,
   );
   if (!overwriteImages)
     console.log('Existing image identities are preserved. Use --overwrite-images to explicitly migrate recoverable originals.');
   const migratedHashes = new Set();
+  const replacementUploadedKeys = [];
   const promptUpdatedHashes = new Set();
   if (migrations.length && !dryRun) {
     const replacements = [];
@@ -819,7 +889,7 @@ async function main() {
       const assets = await buildImportData([migration.extracted], absoluteSessionPath, new Map(), false, promptModel);
       const replacement = { ...assets.items[0], slug: migration.match.item.slug };
       const visualRecords = await buildSourceVisualRecords([replacement], assets.imageBytesByHash);
-      await prepareAndUploadAssets(apiBaseUrl, token, assets.assets);
+      replacementUploadedKeys.push(...(await prepareAndUploadAssets(apiBaseUrl, token, assets.assets)));
       // A failed/lost replacement response leaves immutable source assets available for safe retry.
       // The server journals conditional metadata writes; it never deletes a shared old source object.
       replacements.push({
@@ -833,7 +903,9 @@ async function main() {
         `Prepared replacement ${replacement.slug}: ${migration.match.item.imageHash.slice(0, 12)} -> ${replacement.imageHash.slice(0, 12)} (URL hash follows image; prompts, tags and examples preserved).`,
       );
     }
-    for (const batch of chunks(replacements, 100)) {
+    // Each source move writes two details plus shared indexes and a recovery snapshot. Keep these
+    // batches smaller than read/metadata batches so HF latency stays within the function deadline.
+    for (const batch of chunks(replacements, 10)) {
       const result = await identityRequest({ action: 'replace', replacements: batch });
       const changedSlugs = new Set(result.changedSlugs ?? []);
       for (const item of result.items ?? []) if (changedSlugs.has(item.slug)) migratedHashes.add(item.imageHash);
@@ -940,10 +1012,13 @@ async function main() {
         `Completed metadata batch ${index + 1}/${itemChunks.length}: ${describeMetadataWrite(result, migratedHashes)}`,
       );
     }
-    const originalsUploaded = uploadedKeys.filter((key) => key.startsWith('source/')).length;
-    const thumbnailsUploaded = uploadedKeys.filter((key) => key.startsWith('thumb/')).length;
+    // Include replacement assets in reporting, but not in new-item rollback cleanup:
+    // they may already be referenced by successfully published image migrations.
+    const allUploadedKeys = [...new Set([...replacementUploadedKeys, ...uploadedKeys])];
+    const originalsUploaded = allUploadedKeys.filter((key) => key.startsWith('source/')).length;
+    const thumbnailsUploaded = allUploadedKeys.filter((key) => key.startsWith('thumb/')).length;
     console.log(
-      `\n[Result] Uploaded ${uploadedKeys.length} missing asset file(s): ${originalsUploaded} original image(s) + ${thumbnailsUploaded} thumbnail(s); concurrency ${UPLOAD_CONCURRENCY}.`,
+      `\n[Result] Uploaded ${allUploadedKeys.length} missing asset file(s): ${originalsUploaded} original image(s) + ${thumbnailsUploaded} thumbnail(s); concurrency ${UPLOAD_CONCURRENCY}.`,
     );
     console.log(
       `${metadataOnly ? 'Updated' : 'Wrote'} ${written} gallery metadata item(s): ${created} created, ${updated} with prompt changes, ${addedPrompts} prompt variant(s) added.`,
@@ -1089,7 +1164,9 @@ npm run import:style-prompts -- <session.jsonl> --tag "溶图" --tag "现实" --
 # npm run import:style-prompts -- <session.jsonl> --tag "插画" --overwrite-images
 # 不要按 Codex 新旧版本推断图片质量：UI/模型投影及客户端输入路径可能不同；此选项仅迁移已验证的原附件，不无条件重传。
 # 内嵌图哈希别名只记录已经确认的来源；手动合并的跳转也会被尊重，不按视觉相似度自动合并。
-# 原始附件优先：支持同一输入的 user_message.local_images 和 item_completed.local_image，均须与图片包装路径一致；不可用时警告并回退内嵌图。
+# 原始附件优先：支持结构化 local_images/local_image，也支持模型与 UI 同时出现的完整 Desktop 文件说明；必须核对同一输入、路径顺序和图片内容。
+# UI 图可能比模型图大，附件会对照两者校验；没有 local_image 字段不代表没有原附件。未确认路径会单独计数，不读取普通 prompt 中的路径。
+# 附件不可用时警告并保留内嵌图。Recovered 只统计成功读取且字节不同的附件，不等于线上替换数量。
 # Codex 可能缩放/重编码内嵌图；导入器不会改写 source 字节。请在临时附件仍存在时导入。
 # JSONL 逐行读取；诊断行号对应真实物理行（包括空行），不再把 GB 级会话整体拼成字符串。
 # Recovered 表示本机恢复了不同字节的原附件，不代表覆盖线上图；线上替换只发生在显式 --overwrite-images 阶段。
