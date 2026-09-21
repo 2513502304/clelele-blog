@@ -903,7 +903,9 @@ async function main() {
         `Prepared replacement ${replacement.slug}: ${migration.match.item.imageHash.slice(0, 12)} -> ${replacement.imageHash.slice(0, 12)} (URL hash follows image; prompts, tags and examples preserved).`,
       );
     }
-    for (const batch of chunks(replacements, 100)) {
+    // Each source move writes two details plus shared indexes and a recovery snapshot. Keep these
+    // batches smaller than read/metadata batches so HF latency stays within the function deadline.
+    for (const batch of chunks(replacements, 10)) {
       const result = await identityRequest({ action: 'replace', replacements: batch });
       const changedSlugs = new Set(result.changedSlugs ?? []);
       for (const item of result.items ?? []) if (changedSlugs.has(item.slug)) migratedHashes.add(item.imageHash);
