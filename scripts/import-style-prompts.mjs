@@ -250,7 +250,7 @@ function desktopImageEnvelopePaths(text, imageCount) {
   const entries = match[1].split('\n').filter((line) => line.trim());
   if (entries.length !== imageCount) return null;
   const paths = entries.map((line) => {
-    const entry = /^## (.+): (\/[^\r\n]+)$/.exec(line);
+    const entry = /^## (.+): ([^\r\n]+)$/.exec(line);
     return entry && path.isAbsolute(entry[2]) && path.basename(entry[2]) === entry[1] && /\.(?:jpe?g|png|webp)$/i.test(entry[2])
       ? entry[2]
       : null;
