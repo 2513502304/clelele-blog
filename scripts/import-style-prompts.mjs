@@ -881,6 +881,7 @@ async function main() {
   if (!overwriteImages)
     console.log('Existing image identities are preserved. Use --overwrite-images to explicitly migrate recoverable originals.');
   const migratedHashes = new Set();
+  const replacementUploadedKeys = [];
   const promptUpdatedHashes = new Set();
   if (migrations.length && !dryRun) {
     const replacements = [];
@@ -888,7 +889,7 @@ async function main() {
       const assets = await buildImportData([migration.extracted], absoluteSessionPath, new Map(), false, promptModel);
       const replacement = { ...assets.items[0], slug: migration.match.item.slug };
       const visualRecords = await buildSourceVisualRecords([replacement], assets.imageBytesByHash);
-      await prepareAndUploadAssets(apiBaseUrl, token, assets.assets);
+      replacementUploadedKeys.push(...(await prepareAndUploadAssets(apiBaseUrl, token, assets.assets)));
       // A failed/lost replacement response leaves immutable source assets available for safe retry.
       // The server journals conditional metadata writes; it never deletes a shared old source object.
       replacements.push({
@@ -1009,10 +1010,13 @@ async function main() {
         `Completed metadata batch ${index + 1}/${itemChunks.length}: ${describeMetadataWrite(result, migratedHashes)}`,
       );
     }
-    const originalsUploaded = uploadedKeys.filter((key) => key.startsWith('source/')).length;
-    const thumbnailsUploaded = uploadedKeys.filter((key) => key.startsWith('thumb/')).length;
+    // Include replacement assets in reporting, but not in new-item rollback cleanup:
+    // they may already be referenced by successfully published image migrations.
+    const allUploadedKeys = [...new Set([...replacementUploadedKeys, ...uploadedKeys])];
+    const originalsUploaded = allUploadedKeys.filter((key) => key.startsWith('source/')).length;
+    const thumbnailsUploaded = allUploadedKeys.filter((key) => key.startsWith('thumb/')).length;
     console.log(
-      `\n[Result] Uploaded ${uploadedKeys.length} missing asset file(s): ${originalsUploaded} original image(s) + ${thumbnailsUploaded} thumbnail(s); concurrency ${UPLOAD_CONCURRENCY}.`,
+      `\n[Result] Uploaded ${allUploadedKeys.length} missing asset file(s): ${originalsUploaded} original image(s) + ${thumbnailsUploaded} thumbnail(s); concurrency ${UPLOAD_CONCURRENCY}.`,
     );
     console.log(
       `${metadataOnly ? 'Updated' : 'Wrote'} ${written} gallery metadata item(s): ${created} created, ${updated} with prompt changes, ${addedPrompts} prompt variant(s) added.`,
