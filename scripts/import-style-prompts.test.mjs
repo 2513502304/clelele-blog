@@ -1041,7 +1041,17 @@ it('confirms empty or malformed successful replacement responses by readback', a
   const { publishReplacementBatch } = await import('./lib/style-prompt-import-publication.mjs');
   const hash = 'b'.repeat(64);
   const jobs = [{ slug: '2026-09-01-aaaaaaaaaaaa', hashes: [hash], item: { imageHash: hash } }];
-  for (const response of [null, undefined, '', 1, []]) {
+  for (const response of [
+    null,
+    undefined,
+    '',
+    1,
+    [],
+    {},
+    { items: [] },
+    { items: [], changed: 0 },
+    { items: [], changed: 0, changedSlugs: [] },
+  ]) {
     let writes = 0;
     const result = await publishReplacementBatch(
       async (body) => {
@@ -1058,6 +1068,16 @@ it('confirms empty or malformed successful replacement responses by readback', a
     assert.equal(result.readback, true);
     assert.equal(result.changed, 1);
   }
+  const confirmed = { items: [{ imageHash: hash, slug: `2026-09-01-${hash.slice(0, 12)}` }], changed: 0, changedSlugs: [] };
+  let calls = 0;
+  assert.equal(
+    await publishReplacementBatch(async () => {
+      calls++;
+      return confirmed;
+    }, jobs),
+    confirmed,
+  );
+  assert.equal(calls, 1);
 });
 
 it('does not retry rejected or unconfirmed replacement writes and checks the entire batch', async () => {

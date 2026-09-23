@@ -18,8 +18,24 @@ export async function publishReplacementBatch(
   try {
     const result = await send({ action: 'replace', replacements });
     // A fulfilled request with no response object still cannot confirm publication.
-    if (!result || typeof result !== 'object' || Array.isArray(result))
-      throw new Error('Replacement response did not contain a result object.');
+    if (
+      !result ||
+      !Array.isArray(result.items) ||
+      result.items.length !== replacements.length ||
+      !result.items.every((item, index) => {
+        const job = replacements[index];
+        return (
+          item?.imageHash === job.item.imageHash && item.slug === `${job.slug.slice(0, -12)}${job.item.imageHash.slice(0, 12)}`
+        );
+      }) ||
+      !Number.isInteger(result.changed) ||
+      result.changed < 0 ||
+      !Array.isArray(result.changedSlugs) ||
+      new Set(result.changedSlugs).size !== result.changed ||
+      result.changedSlugs.length !== result.changed ||
+      !result.changedSlugs.every((slug) => result.items.some((item) => item.slug === slug))
+    )
+      throw new Error('Replacement response did not contain a complete result.');
     return result;
   } catch (error) {
     if (error.status && error.status !== 409) throw error;
