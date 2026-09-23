@@ -8,6 +8,7 @@ import sharp from 'sharp';
 import { assertStyleGalleryItemConsistency } from '../src/lib/style-gallery-assets.ts';
 import {
   buildCanonicalIdentityBinding,
+  buildIdentityQuery,
   buildImportData,
   extractItems,
   getDecodedItemHash,
@@ -829,7 +830,7 @@ it('recovers Desktop file-envelope images corroborated by a same-turn UI image p
     assert.equal(extracted[0].originalPrompt, 'request');
     const largerUi = structuredClone(ui);
     largerUi.payload.item.content[1].image_url = `data:image/jpeg;base64,${bytes.toString('base64')}`;
-    assert.equal((await resolveOriginalImages(extract(model, largerUi, final))).restored, 1);
+    assert.equal((await resolveOriginalImages(extract(model, largerUi, final))).restored, 0);
     const wrongUi = structuredClone(ui);
     const wrongBytes = await sharp({ create: { width: 90, height: 120, channels: 3, background: '#ff0000' } })
       .jpeg()
@@ -1131,4 +1132,131 @@ it('does not retry rejected or unconfirmed replacement writes and checks the ent
     if (status === 401) assert.equal(reads, 0);
     if (status === 409) assert.equal(reads, 1);
   }
+});
+
+it('uses same-turn completed UI bytes without attachments and resolves both historical byte identities', async () => {
+  const uri = async (width, height) =>
+    `data:image/jpeg;base64,${(
+      await sharp({ create: { width, height, channels: 3, background: '#123456' } })
+        .jpeg()
+        .toBuffer()
+    ).toString('base64')}`;
+  const modelImage = await uri(32, 48),
+    uiImage = await uri(64, 96);
+  const model = {
+    type: 'response_item',
+    timestamp: '2026-09-20T10:00:00Z',
+    payload: {
+      type: 'message',
+      role: 'user',
+      internal_chat_message_metadata_passthrough: { turn_id: 'a' },
+      content: [
+        { type: 'input_text', text: 'request' },
+        { type: 'input_image', image_url: modelImage },
+      ],
+    },
+  };
+  const completed = {
+    type: 'event_msg',
+    payload: {
+      type: 'item_completed',
+      turn_id: 'a',
+      item: {
+        type: 'UserMessage',
+        content: [
+          { type: 'text', text: 'request' },
+          { type: 'image', image_url: uiImage },
+        ],
+      },
+    },
+  };
+  const final = {
+    type: 'response_item',
+    payload: {
+      type: 'message',
+      role: 'assistant',
+      phase: 'final_answer',
+      content: [{ type: 'output_text', text: `${PLACEHOLDER} style` }],
+    },
+  };
+  const extract = (...records) => extractItems(records.map((record, index) => ({ record, index: index + 1 })));
+  const [item] = extract(model, completed, final, final);
+  assert.deepEqual(item.images, [uiImage]);
+  assert.equal(item.localImagePaths, undefined);
+  const modelHash = getExtractedItemHash({ images: [modelImage] });
+  const uiHash = getExtractedItemHash(item);
+  assert.deepEqual(buildIdentityQuery(item).hashes, [modelHash, uiHash]);
+  // Either historical importer choice must find the existing card, even after attachments disappear.
+  for (const canonicalHash of [modelHash, uiHash]) {
+    assert.ok(buildIdentityQuery(item).hashes.includes(canonicalHash));
+    const existing = new Map([[canonicalHash, { slug: `2026-09-20-${canonicalHash.slice(0, 12)}`, prompts: [item.prompt] }]]);
+    const plan = await buildImportData([{ ...item, canonicalHash }], '/tmp/test.jsonl', existing, false);
+    assert.equal(plan.items.length, 0);
+    assert.equal(plan.assets.size, 0);
+    assert.equal(plan.skippedDuplicates, 1);
+  }
+  for (const mutate of [
+    (x) => {
+      x.payload.turn_id = 'different';
+    },
+    (x) => {
+      x.payload.item.content[0].text = 'different request';
+    },
+    (x) => {
+      x.payload.item.content.push({ type: 'image', image_url: uiImage });
+    },
+    (x) => {
+      x.payload.item.content[1].image_url = 'https://example.test/image.jpg';
+    },
+  ]) {
+    const bad = structuredClone(completed);
+    mutate(bad);
+    const [unpaired] = extract(model, bad, final);
+    assert.deepEqual(unpaired.images, [modelImage]);
+    assert.deepEqual(buildIdentityQuery(unpaired).hashes, [modelHash]);
+  }
+  assert.equal(extract(model, { type: 'event_msg', payload: { type: 'task_started' } }, completed, final).length, 0);
+  const next = structuredClone(model);
+  next.payload.internal_chat_message_metadata_passthrough.turn_id = 'b';
+  // Repeated generic instructions do not associate a previous turn's UI with the next input.
+  assert.deepEqual(extract(next, completed, final)[0].images, [modelImage]);
+});
+
+it('keeps ordered multi-image projection hashes distinct from individual image identities', () => {
+  const modelImages = ['data:image/jpeg;base64,AA==', 'data:image/jpeg;base64,AQ=='];
+  const uiImages = ['data:image/jpeg;base64,Ag==', 'data:image/jpeg;base64,Aw=='];
+  const records = [
+    {
+      type: 'response_item',
+      timestamp: '2026-09-20T00:00:00Z',
+      payload: {
+        type: 'message',
+        role: 'user',
+        internal_chat_message_metadata_passthrough: { turn_id: 'a' },
+        content: [
+          { type: 'input_text', text: 'request' },
+          ...modelImages.map((image_url) => ({ type: 'input_image', image_url })),
+        ],
+      },
+    },
+    {
+      type: 'event_msg',
+      payload: {
+        type: 'item_completed',
+        turn_id: 'a',
+        item: {
+          type: 'UserMessage',
+          content: [{ type: 'text', text: 'request' }, ...uiImages.map((image_url) => ({ type: 'image', image_url }))],
+        },
+      },
+    },
+    { type: 'event_msg', payload: { type: 'agent_message', message: `${PLACEHOLDER} style` } },
+  ];
+  const [item] = extractItems(records.map((record, index) => ({ record, index: index + 1 })));
+  assert.deepEqual(item.images, uiImages);
+  assert.deepEqual(buildIdentityQuery(item).hashes, [
+    getExtractedItemHash({ images: modelImages }),
+    getExtractedItemHash({ images: uiImages }),
+  ]);
+  assert.ok(!buildIdentityQuery(item).hashes.includes(getExtractedItemHash({ images: [uiImages[0]] })));
 });

@@ -326,6 +326,40 @@ function matchingAttachmentPaths(paths, input) {
   );
 }
 
+/** UI/model projections of one verified input are aliases, not additional gallery cards.
+ * Keep only ordered byte fingerprints here; no extra image payload enters public metadata.
+ */
+function withUiImages(input, images) {
+  return {
+    ...input,
+    imageIdentityHashes: [
+      ...new Set([...(input.imageIdentityHashes ?? []), getExtractedItemHash(input), getExtractedItemHash({ images })]),
+    ],
+    attachmentImageProjections: input.attachmentImageProjections ?? input.images,
+    images,
+  };
+}
+
+/** Include every corroborated representation before deciding whether to create a card.
+ * Two active matches remain a conflict; a shared prompt alone never establishes identity.
+ */
+function buildIdentityQuery(item) {
+  return {
+    hashes: [
+      ...new Set(
+        [
+          ...(item.imageIdentityHashes ?? []),
+          item.embeddedHash,
+          getExtractedItemHash(item),
+          item.embeddedPixelHash,
+          item.preferredPixelHash,
+        ].filter(Boolean),
+      ),
+    ],
+    legacySlug: `${getImportDate(item)}-${(item.embeddedHash || getExtractedItemHash(item)).slice(0, 12)}`,
+  };
+}
+
 /** Share the exact turn/attachment pairing state machine between streams and in-memory fixtures. */
 function createItemExtractor() {
   const items = [];
@@ -360,7 +394,7 @@ function createItemExtractor() {
         (!images.length || images.length === pendingInput.images.length);
       if (images.length) {
         pendingInput = {
-          ...(sameInput ? { ...pendingInput, attachmentImageProjections: pendingInput.images } : {}),
+          ...(sameInput ? withUiImages(pendingInput, images) : {}),
           images,
           originalPrompt,
           sourceLine: index,
@@ -408,19 +442,30 @@ function createItemExtractor() {
       payload.turn_id === pendingInput.turnId
     ) {
       const content = Array.isArray(payload.item.content) ? payload.item.content : [];
+      const text = content
+        .filter((part) => part?.type === 'text' && typeof part.text === 'string')
+        .map((part) => part.text)
+        .join('\n');
+      const images = content.filter((part) => part?.type === 'image').map((part) => part.image_url);
+      // Current rollouts can use item_completed instead of user_message for UI bytes.
+      // Match the explicit turn, request and ordered count, and consume this projection once.
+      // The UI image remains usable even when no attachment exists or its file was removed.
+      if (
+        !pendingInput.completedProjectionSeen &&
+        sanitizeOriginalPrompt(text) === pendingInput.originalPrompt &&
+        images.length === pendingInput.images.length &&
+        images.every((image) => typeof image === 'string' && image.startsWith('data:image/'))
+      ) {
+        pendingInput = withUiImages(pendingInput, images);
+        pendingInput.completedProjectionSeen = true;
+      }
       const paths = content.filter((part) => part?.type === 'local_image').map((part) => part.path);
       if (matchingAttachmentPaths(paths, pendingInput)) {
         pendingInput.localImagePaths = paths;
       } else if (!paths.length) {
-        const text = content
-          .filter((part) => part?.type === 'text' && typeof part.text === 'string')
-          .map((part) => part.text)
-          .join('\n');
-        const images = content.filter((part) => part?.type === 'image').map((part) => part.image_url);
         const envelopePaths = envelopeProjectionPaths(text, images, pendingInput);
         if (envelopePaths) {
           pendingInput.localImagePaths = envelopePaths;
-          pendingInput.attachmentImageProjections = images;
         }
       }
       return;
@@ -855,21 +900,14 @@ async function main() {
       // A disconnected write can still be running remotely. Poll its outcome before any new write.
       body.action === 'replace' ? 1 : REQUEST_ATTEMPTS,
     );
-  const queryFor = (item) => ({
-    hashes: [
-      ...new Set(
-        [item.embeddedHash, getExtractedItemHash(item), item.embeddedPixelHash, item.preferredPixelHash].filter(Boolean),
-      ),
-    ],
-    legacySlug: `${getImportDate(item)}-${item.embeddedHash.slice(0, 12)}`,
-  });
+  const queryFor = buildIdentityQuery;
   const resolve = async (items) => {
     const matches = [];
     for (const batch of chunks(items, 100))
       matches.push(...(await identityRequest({ action: 'resolve', queries: batch.map(queryFor) })));
     return matches;
   };
-  // Resolve model-facing bytes first. A newer Codex attachment recovery policy must never silently
+  // Resolve UI bytes AND their corroborated model projections first. A recovery policy must never silently
   // create a second card, undo a manual merge, or replace an already published image on a normal rerun.
   const initialMatches = await resolve(rawItems);
   const originals = await resolveOriginalImages(
@@ -1184,6 +1222,7 @@ async function writeImportedTags(apiBaseUrl, token, slugs, tags, overwriteTag = 
 }
 
 export {
+  buildIdentityQuery,
   getExtractedItemHash,
   getDecodedItemHash,
   getImportDate,
