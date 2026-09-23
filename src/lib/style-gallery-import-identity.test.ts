@@ -165,6 +165,26 @@ it('authenticates alias resolution, preserves merged cards and transactionally r
       } as never);
     assert.equal((await request('{')).status, 400);
     assert.equal((await request('{}')).status, 400);
+    const projectionHashes = Array.from({ length: 7 }, (_, i) => hash(`projection-${i}`));
+    const projectionResponse = await request(
+      JSON.stringify({
+        action: 'resolve',
+        queries: [{ hashes: [...projectionHashes, item.imageHash], legacySlug: item.slug }],
+      }),
+    );
+    assert.equal(projectionResponse.status, 200);
+    assert.equal((await projectionResponse.json())[0].item.slug, item.slug);
+    assert.equal(
+      (
+        await request(
+          JSON.stringify({
+            action: 'resolve',
+            queries: [{ hashes: [...projectionHashes, item.imageHash, hash('overflow')], legacySlug: item.slug }],
+          }),
+        )
+      ).status,
+      400,
+    );
     const originalCatalog = objects.get('metadata/catalog-v5.json');
     assert.ok(originalCatalog);
     for (const invalid of ['{', '{}']) {

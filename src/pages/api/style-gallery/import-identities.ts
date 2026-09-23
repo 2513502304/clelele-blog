@@ -8,7 +8,8 @@ import { z } from 'zod';
 export const prerender = false;
 const hash = z.string().regex(/^[a-f0-9]{64}$/);
 const slug = z.string().regex(/^[a-z0-9-]{1,160}$/i);
-const hashes = z.array(hash).min(1).max(4);
+// Ordered UI/model/original byte identities plus local pixel fingerprints. Private CLI data only.
+const hashes = z.array(hash).min(1).max(8);
 const schema = z.discriminatedUnion('action', [
   z
     .object({
