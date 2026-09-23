@@ -16,7 +16,11 @@ export async function publishReplacementBatch(
 ) {
   const deadline = now() + timeoutMs + intervalMs;
   try {
-    return await send({ action: 'replace', replacements });
+    const result = await send({ action: 'replace', replacements });
+    // A fulfilled request with no response object still cannot confirm publication.
+    if (!result || typeof result !== 'object' || Array.isArray(result))
+      throw new Error('Replacement response did not contain a result object.');
+    return result;
   } catch (error) {
     if (error.status && error.status !== 409) throw error;
     warn('替换请求未能正常返回，正在回读线上结果；此时不会重复发送写入请求。');

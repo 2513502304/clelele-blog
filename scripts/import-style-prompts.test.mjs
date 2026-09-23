@@ -1037,6 +1037,29 @@ it('confirms a disconnected replacement by readback without replaying the write'
   assert.equal(result.readback, true);
 });
 
+it('confirms empty or malformed successful replacement responses by readback', async () => {
+  const { publishReplacementBatch } = await import('./lib/style-prompt-import-publication.mjs');
+  const hash = 'b'.repeat(64);
+  const jobs = [{ slug: '2026-09-01-aaaaaaaaaaaa', hashes: [hash], item: { imageHash: hash } }];
+  for (const response of [null, undefined, '', 1, []]) {
+    let writes = 0;
+    const result = await publishReplacementBatch(
+      async (body) => {
+        if (body.action === 'replace') {
+          writes++;
+          return response;
+        }
+        return [{ item: { imageHash: hash, slug: `2026-09-01-${hash.slice(0, 12)}` } }];
+      },
+      jobs,
+      { warn() {} },
+    );
+    assert.equal(writes, 1);
+    assert.equal(result.readback, true);
+    assert.equal(result.changed, 1);
+  }
+});
+
 it('does not retry rejected or unconfirmed replacement writes and checks the entire batch', async () => {
   const { publishReplacementBatch } = await import('./lib/style-prompt-import-publication.mjs');
   const hash = 'b'.repeat(64),
