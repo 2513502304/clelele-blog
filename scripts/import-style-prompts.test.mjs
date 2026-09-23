@@ -914,3 +914,221 @@ it('requires ordered image and filename pairing for multi-image Desktop envelope
   );
   assert.equal(extract().localImagePaths, undefined);
 });
+
+it('explains image sources, modes and every CLI option without misleading overwrite wording', async () => {
+  const { describeImportContext, describeImportHelp, describeOriginalRecovery } = await import(
+    './lib/style-prompt-import-diagnostics.mjs'
+  );
+  const context = describeImportContext({ overwriteImages: true, tags: ['插画'], overwriteTag: true });
+  for (const term of [
+    'UI images',
+    '会话内嵌图',
+    '本地附件',
+    '同图不同 Prompt',
+    '76 个文件',
+    '已开启 --overwrite-images',
+    '旧标签会被移除',
+  ])
+    assert.ok(context.includes(term));
+  const help = describeImportHelp();
+  for (const option of [
+    '--dry-run',
+    '--overwrite-images',
+    '--tag',
+    '--overwrite-tag',
+    '--prompt-model=',
+    '--metadata-only',
+    '--update-metadata-only',
+    '--api-base-url=',
+    '--help',
+  ])
+    assert.ok(help.includes(option));
+  assert.match(help, /--help 不需要 token、JSONL 文件或网络访问/);
+  const items = [
+    ...Array.from({ length: 248 }, (_, i) => ({ restoredImages: 1, reason: 'replace', slug: `card-${i}` })),
+    ...Array.from({ length: 23 }, () => ({ restoredImages: 1, reason: 'current', slug: 'already-original' })),
+  ];
+  const result = describeOriginalRecovery({ items, fallback: 1, migrations: 248, overwriteImages: true });
+  assert.match(result, /271 张.*271 条/);
+  assert.match(result, /线上已是这份原图.*23 张图片/);
+  assert.match(result, /即将替换：248 张/);
+  assert.doesNotMatch(result, /local recovery only|not a published overwrite/);
+  assert.match(
+    describeOriginalRecovery({ items, fallback: 1, migrations: 248, overwriteImages: true, dryRun: true }),
+    /--dry-run，不执行写入/,
+  );
+  assert.match(describeImportContext({}), /默认模式.*保留已发布图片/);
+});
+
+it('reconciles recovered image occurrences with duplicate cards, groups and URL-only corrections', async () => {
+  const { describeOriginalRecovery } = await import('./lib/style-prompt-import-diagnostics.mjs');
+  const result = describeOriginalRecovery({
+    items: [
+      { restoredImages: 2, reason: 'replace', slug: 'group' },
+      { restoredImages: 2, reason: 'replace', slug: 'group' },
+      { restoredImages: 0, reason: 'replace', slug: 'url-only' },
+      { restoredImages: 1, reason: 'larger', slug: 'larger' },
+      { restoredImages: 1, reason: 'incomplete', slug: 'partial' },
+      { restoredImages: 1, reason: 'new' },
+    ],
+    fallback: 1,
+    migrations: 2,
+    overwriteImages: true,
+  });
+  assert.match(result, /7 张.*5 条/);
+  assert.match(result, /3 条待替换记录对应 2 张不同卡片/);
+  assert.match(result, /另有 1 张卡片需要校正/);
+  assert.match(result, /线上图片分辨率更高.*1 张/);
+  assert.match(result, /整张卡片暂不替换.*1 张/);
+  assert.match(result, /对应新卡片.*1 张/);
+});
+
+it('shares replacement eligibility with diagnostics, including already-original and larger published images', async () => {
+  const { imageMigrationDecision } = await import('./import-style-prompts.mjs');
+  const image = `data:image/png;base64,${(
+    await sharp({ create: { width: 2, height: 2, channels: 3, background: '#fff' } })
+      .png()
+      .toBuffer()
+  ).toString('base64')}`;
+  const item = { images: [image], originalsVerified: 1, originalDimensions: [{ width: 2, height: 2 }] };
+  const hash = getExtractedItemHash(item);
+  const match = {
+    item: { imageHash: hash, slug: `2026-09-01-${hash.slice(0, 12)}`, images: [{ dimensions: { width: 2, height: 2 } }] },
+  };
+  assert.equal(imageMigrationDecision(item, null, true), 'new');
+  assert.equal(imageMigrationDecision(item, match, false), 'preserved');
+  assert.equal(imageMigrationDecision(item, match, true), 'current');
+  assert.equal(imageMigrationDecision({ ...item, originalsVerified: 0 }, match, true), 'incomplete');
+  const other = { item: { ...match.item, imageHash: 'a'.repeat(64), images: [{ dimensions: { width: 4, height: 4 } }] } };
+  assert.equal(imageMigrationDecision(item, other, true), 'larger');
+  assert.equal(imageMigrationDecision(item, { item: { ...other.item, images: match.item.images } }, true), 'replace');
+});
+
+it('counts confirmed creations and prompt additions even when a retry reported duplicates', async () => {
+  const { summarizePublishedImport } = await import('./lib/style-prompt-import-diagnostics.mjs');
+  const records = [{ prompt: 'new' }, { prompt: 'new' }, { prompt: 'added' }, { prompt: 'old' }];
+  const newItem = { item: { imageHash: 'new-card', prompts: [{ prompt: 'new' }] } };
+  const oldItem = { item: { imageHash: 'old-card', prompts: [{ prompt: 'old' }, { prompt: 'added' }] } };
+  const before = new Map([['old-card', { prompts: ['old'] }]]);
+  assert.deepEqual(summarizePublishedImport(records, [newItem, newItem, oldItem, oldItem], before), {
+    written: 2,
+    created: 1,
+    updated: 1,
+    addedPrompts: 2,
+    skippedDuplicates: 2,
+    promptChangedHashes: ['old-card'],
+  });
+  assert.throws(() => summarizePublishedImport(records, [], before), /readback is missing/);
+});
+
+it('confirms a disconnected replacement by readback without replaying the write', async () => {
+  const { publishReplacementBatch } = await import('./lib/style-prompt-import-publication.mjs');
+  const hash = 'b'.repeat(64),
+    jobs = [{ slug: '2026-09-01-aaaaaaaaaaaa', hashes: [hash], item: { imageHash: hash } }];
+  let writes = 0,
+    reads = 0,
+    clock = 0;
+  const result = await publishReplacementBatch(
+    async (body) => {
+      if (body.action === 'replace') {
+        writes++;
+        throw new Error('connection closed');
+      }
+      reads++;
+      return reads === 1 ? [null] : [{ item: { imageHash: hash, slug: `2026-09-01-${hash.slice(0, 12)}` } }];
+    },
+    jobs,
+    {
+      timeoutMs: 10,
+      intervalMs: 1,
+      now: () => clock,
+      wait: async (ms) => {
+        clock += ms;
+      },
+      warn() {},
+    },
+  );
+  assert.equal(writes, 1);
+  assert.equal(reads, 2);
+  assert.equal(result.changed, 1);
+  assert.equal(result.readback, true);
+});
+
+it('confirms empty or malformed successful replacement responses by readback', async () => {
+  const { publishReplacementBatch } = await import('./lib/style-prompt-import-publication.mjs');
+  const hash = 'b'.repeat(64);
+  const jobs = [{ slug: '2026-09-01-aaaaaaaaaaaa', hashes: [hash], item: { imageHash: hash } }];
+  for (const response of [
+    null,
+    undefined,
+    '',
+    1,
+    [],
+    {},
+    { items: [] },
+    { items: [], changed: 0 },
+    { items: [], changed: 0, changedSlugs: [] },
+  ]) {
+    let writes = 0;
+    const result = await publishReplacementBatch(
+      async (body) => {
+        if (body.action === 'replace') {
+          writes++;
+          return response;
+        }
+        return [{ item: { imageHash: hash, slug: `2026-09-01-${hash.slice(0, 12)}` } }];
+      },
+      jobs,
+      { warn() {} },
+    );
+    assert.equal(writes, 1);
+    assert.equal(result.readback, true);
+    assert.equal(result.changed, 1);
+  }
+  const confirmed = { items: [{ imageHash: hash, slug: `2026-09-01-${hash.slice(0, 12)}` }], changed: 0, changedSlugs: [] };
+  let calls = 0;
+  assert.equal(
+    await publishReplacementBatch(async () => {
+      calls++;
+      return confirmed;
+    }, jobs),
+    confirmed,
+  );
+  assert.equal(calls, 1);
+});
+
+it('does not retry rejected or unconfirmed replacement writes and checks the entire batch', async () => {
+  const { publishReplacementBatch } = await import('./lib/style-prompt-import-publication.mjs');
+  const hash = 'b'.repeat(64),
+    job = { slug: '2026-09-01-aaaaaaaaaaaa', hashes: [hash], item: { imageHash: hash } };
+  for (const status of [undefined, 409, 401]) {
+    let writes = 0,
+      reads = 0,
+      clock = 0;
+    await assert.rejects(
+      publishReplacementBatch(
+        async (body) => {
+          if (body.action === 'replace') {
+            writes++;
+            throw Object.assign(new Error('failed'), { status });
+          }
+          reads++;
+          return [{ item: { imageHash: hash, slug: `2026-09-01-${hash.slice(0, 12)}` } }, null];
+        },
+        [job, { ...job, slug: '2026-09-02-aaaaaaaaaaaa' }],
+        {
+          timeoutMs: 2,
+          intervalMs: 1,
+          now: () => clock,
+          wait: async (ms) => {
+            clock += ms;
+          },
+          warn() {},
+        },
+      ),
+    );
+    assert.equal(writes, 1);
+    if (status === 401) assert.equal(reads, 0);
+    if (status === 409) assert.equal(reads, 1);
+  }
+});

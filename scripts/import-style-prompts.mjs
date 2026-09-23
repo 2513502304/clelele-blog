@@ -11,7 +11,15 @@ import { sanitizeImportedOriginalPrompt, sanitizeImportedPrompt } from '../src/l
 import { isValidGalleryTag, MAX_GALLERY_TAGS_PER_ITEM, normalizeGalleryTag } from '../src/lib/style-gallery-tags.ts';
 import { computeStyleGalleryVisualFeaturesFromBytes } from '../src/lib/style-gallery-visual-feature-node.ts';
 import { configureEnvironmentProxy } from './lib/environment-proxy.mjs';
-import { describeImportPlan, describeMetadataWrite } from './lib/style-prompt-import-diagnostics.mjs';
+import {
+  describeImportContext,
+  describeImportHelp,
+  describeImportPlan,
+  describeMetadataWrite,
+  describeOriginalRecovery,
+  summarizePublishedImport,
+} from './lib/style-prompt-import-diagnostics.mjs';
+import { publishReplacementBatch } from './lib/style-prompt-import-publication.mjs';
 
 const PLACEHOLDER = '[在此处替换为您想要生成的主体内容]';
 const DEFAULT_API_BASE_URL = process.env.STYLE_GALLERY_API_BASE_URL ?? 'https://clelele-blog.vercel.app';
@@ -23,13 +31,15 @@ const UPLOAD_CONCURRENCY = positiveInteger(process.env.STYLE_GALLERY_IMPORT_UPLO
 const ITEM_BATCH_SIZE = Math.min(positiveInteger(process.env.STYLE_GALLERY_IMPORT_ITEM_BATCH_SIZE, 100), 100);
 const VISUAL_INFERENCE_BATCH_SIZE = Math.min(positiveInteger(process.env.STYLE_GALLERY_VISUAL_INFERENCE_BATCH_SIZE, 8), 16);
 
-class NonRetryableRequestError extends Error {}
+class NonRetryableRequestError extends Error {
+  constructor(message, status) {
+    super(message);
+    this.status = status;
+  }
+}
 
 function usage() {
-  console.error(
-    'Usage: node scripts/import-style-prompts.mjs <codex-session.jsonl> [--dry-run] [--metadata-only] [--prompt-model=<name>] [--tag <label>]... [--overwrite-tag] [--overwrite-images] [--api-base-url=<url>]',
-  );
-  console.error('Required for imports and identity-aware dry runs: STYLE_GALLERY_UPLOAD_TOKEN');
+  return describeImportHelp();
 }
 
 function parseArgs(argv) {
@@ -442,6 +452,8 @@ async function resolveOriginalImages(items, warn = console.warn) {
   for (const item of items) {
     const images = [...item.images];
     let originalsVerified = 0;
+    // Extraction-only accounting: group/duplicate records need image-occurrence counts, not card counts.
+    let restoredImageCount = 0;
     const originalDimensions = [];
     for (const [index, originalPath] of (item.localImagePaths ?? []).entries()) {
       try {
@@ -492,7 +504,10 @@ async function resolveOriginalImages(items, warn = console.warn) {
           height: metadata.autoOrient?.height ?? metadata.height,
         };
         // Count byte replacements; an already-original embedded image needs no restoration.
-        if (!bytes.equals(embedded.bytes)) restored++;
+        if (!bytes.equals(embedded.bytes)) {
+          restored++;
+          restoredImageCount++;
+        }
       } catch (error) {
         fallback++;
         warn(
@@ -500,7 +515,7 @@ async function resolveOriginalImages(items, warn = console.warn) {
         );
       }
     }
-    resolved.push({ ...item, images, originalsVerified, originalDimensions });
+    resolved.push({ ...item, images, originalsVerified, originalDimensions, restoredImageCount });
   }
   return { items: resolved, restored, fallback };
 }
@@ -687,33 +702,33 @@ function uniqueImagesByHash(images) {
   return [...unique.values()];
 }
 
-async function requestJson(url, options, timeoutMs = REQUEST_TIMEOUT_MS) {
-  return requestWithRetries(url, options, timeoutMs, (response) => response.json());
+async function requestJson(url, options, timeoutMs = REQUEST_TIMEOUT_MS, attempts = REQUEST_ATTEMPTS) {
+  return requestWithRetries(url, options, timeoutMs, (response) => response.json(), attempts);
 }
 
 /** Retry both transport and response-body failures; image reads can fail after a redirect/header succeeds. */
-async function requestWithRetries(url, options, timeoutMs, read) {
+async function requestWithRetries(url, options, timeoutMs, read, attempts = REQUEST_ATTEMPTS) {
   let lastError;
-  for (let attempt = 1; attempt <= REQUEST_ATTEMPTS; attempt += 1) {
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
       const response = await fetch(url, { ...options, signal: AbortSignal.timeout(timeoutMs) });
       if (response.ok) return await read(response);
       const message = await response.text();
       if (![408, 429].includes(response.status) && response.status < 500) {
-        throw new NonRetryableRequestError(message || `HTTP ${response.status}`);
+        throw new NonRetryableRequestError(message || `HTTP ${response.status}`, response.status);
       }
       lastError = new Error(message || `HTTP ${response.status}`);
     } catch (error) {
       if (error instanceof NonRetryableRequestError) throw error;
       lastError = error;
       if (error?.name === 'TimeoutError') {
-        console.warn(`Request timed out after ${timeoutMs}ms (${attempt}/${REQUEST_ATTEMPTS}): ${url}`);
+        console.warn(`Request timed out after ${timeoutMs}ms (${attempt}/${attempts}): ${url}`);
       }
-      if (attempt === REQUEST_ATTEMPTS) break;
+      if (attempt === attempts) break;
     }
     await sleep(400 * 2 ** (attempt - 1) + Math.floor(Math.random() * 200));
   }
-  throw new Error(`Request failed after ${REQUEST_ATTEMPTS} attempts (${timeoutMs}ms per attempt): ${url}`, {
+  throw new Error(`Request failed after ${attempts} attempts (${timeoutMs}ms per attempt): ${url}`, {
     cause: lastError,
   });
 }
@@ -806,17 +821,18 @@ function sleep(ms) {
 }
 
 async function main() {
-  configureEnvironmentProxy();
   const { apiBaseUrl, dryRun, help, metadataOnly, overwriteTag, overwriteImages, promptModel, sessionPath, tags } = parseArgs(
     process.argv.slice(2),
   );
   if (help || !sessionPath) {
-    usage();
+    (help ? console.log : console.error)(usage());
     process.exit(help ? 0 : 1);
   }
+  configureEnvironmentProxy();
   const token = process.env.STYLE_GALLERY_UPLOAD_TOKEN;
   if (!token) throw new Error('STYLE_GALLERY_UPLOAD_TOKEN is required, including read-only identity planning.');
   const absoluteSessionPath = path.resolve(sessionPath);
+  console.log(describeImportContext({ overwriteImages, dryRun, metadataOnly, overwriteTag, tags, apiBaseUrl }));
   console.log(`\nReading session: ${path.basename(absoluteSessionPath)} (streaming JSONL)...`);
   const rawItems = (await readSessionItems(absoluteSessionPath)).map((item) => ({
     ...item,
@@ -836,6 +852,8 @@ async function main() {
         body: JSON.stringify(body),
       },
       UPLOAD_TIMEOUT_MS,
+      // A disconnected write can still be running remotely. Poll its outcome before any new write.
+      body.action === 'replace' ? 1 : REQUEST_ATTEMPTS,
     );
   const queryFor = (item) => ({
     hashes: [
@@ -869,17 +887,25 @@ async function main() {
   const confirmedAttachments = rawItems.reduce((count, item) => count + (item.localImagePaths?.length ?? 0), 0);
   const unconfirmedRecords = rawItems.filter((item) => item.attachmentPaths?.some(Boolean) && !item.localImagePaths?.length);
   console.log(
-    `Attachment candidates: ${confirmedAttachments} UI-confirmed image path(s); ${unconfirmedRecords.length} record(s) have paths without a matching UI attachment and will not read those files.`,
+    `附件路径：${confirmedAttachments} 张图片的路径已与同一条输入核对；${unconfirmedRecords.length} 条记录的路径无法确认归属，不读取对应文件。路径确认后仍需校验实际文件内容。`,
   );
   for (const item of unconfirmedRecords)
     console.log(
       `  Unconfirmed attachment: image line ${item.sourceLine}, prompt line ${item.promptLine}; source bytes retained.`,
     );
   console.log(
-    `Recovered original attachment bytes for ${originals.restored} image(s) whose session bytes differ (local recovery only, not a published overwrite); ${originals.fallback} unavailable attachment(s). ${migrations.length} card image replacement(s) ${dryRun ? 'planned' : 'requested'}.`,
+    describeOriginalRecovery({
+      items: extractedItems.map((item, index) => ({
+        restoredImages: item.restoredImageCount,
+        reason: imageMigrationDecision(item, matches[index], overwriteImages),
+        slug: matches[index]?.item.slug,
+      })),
+      fallback: originals.fallback,
+      migrations: migrations.length,
+      overwriteImages,
+      dryRun,
+    }),
   );
-  if (!overwriteImages)
-    console.log('Existing image identities are preserved. Use --overwrite-images to explicitly migrate recoverable originals.');
   const migratedHashes = new Set();
   const replacementUploadedKeys = [];
   const promptUpdatedHashes = new Set();
@@ -906,11 +932,15 @@ async function main() {
     // Each source move writes two details plus shared indexes and a recovery snapshot. Keep these
     // batches smaller than read/metadata batches so HF latency stays within the function deadline.
     for (const batch of chunks(replacements, 10)) {
-      const result = await identityRequest({ action: 'replace', replacements: batch });
+      const result = await publishReplacementBatch(identityRequest, batch, { timeoutMs: UPLOAD_TIMEOUT_MS });
       const changedSlugs = new Set(result.changedSlugs ?? []);
       for (const item of result.items ?? []) if (changedSlugs.has(item.slug)) migratedHashes.add(item.imageHash);
       console.log(
-        `Published ${result.changed} image/URL migration(s) with one shared-index update; recovery ${result.recoveryId ?? 'not needed'}.`,
+        result.readback
+          ? `回读确认 ${result.changed} 张卡片已换为目标原图及 URL；发布响应丢失后确认成功，没有重复发送替换请求。`
+          : result.changed
+            ? `Published ${result.changed} image/URL migration(s) with one shared-index update; recovery ${result.recoveryId ?? 'not needed'}.`
+            : `本批 ${batch.length} 张卡片已是目标原图及 URL，无需再次替换。`,
       );
     }
     matches.splice(0, matches.length, ...(await resolve(extractedItems)));
@@ -964,6 +994,11 @@ async function main() {
   bindings.push(...canonicalBindings.values());
   for (const batch of chunks(bindings, 100)) await identityRequest({ action: 'remember', bindings: batch });
   let uploadedKeys = [];
+  let written = 0,
+    created = 0,
+    updated = 0,
+    addedPrompts = 0,
+    apiDuplicates = 0;
   try {
     console.log(`\n[Prepare] Computing visual features for ${prepared.items.length} metadata item(s)...`);
     // Reuse verified canonical bytes for visual inference when an alias hit appends a prompt.
@@ -976,11 +1011,6 @@ async function main() {
       visualRecordsBySlug.set(record.sourceSlug, current);
     }
     uploadedKeys = await prepareAndUploadAssets(apiBaseUrl, token, prepared.assets);
-    let written = 0;
-    let created = 0;
-    let updated = 0;
-    let addedPrompts = 0;
-    let apiDuplicates = 0;
     const itemChunks = chunks(prepared.items, ITEM_BATCH_SIZE);
     for (let index = 0; index < itemChunks.length; index += 1) {
       const itemChunk = itemChunks[index];
@@ -1009,26 +1039,9 @@ async function main() {
         console.warn('Warning: metadata was saved but the derived visual index needs to be rebuilt.');
       }
       console.log(
-        `Completed metadata batch ${index + 1}/${itemChunks.length}: ${describeMetadataWrite(result, migratedHashes)}`,
+        `Metadata batch response ${index + 1}/${itemChunks.length}: ${describeMetadataWrite(result, migratedHashes)}`,
       );
     }
-    // Include replacement assets in reporting, but not in new-item rollback cleanup:
-    // they may already be referenced by successfully published image migrations.
-    const allUploadedKeys = [...new Set([...replacementUploadedKeys, ...uploadedKeys])];
-    const originalsUploaded = allUploadedKeys.filter((key) => key.startsWith('source/')).length;
-    const thumbnailsUploaded = allUploadedKeys.filter((key) => key.startsWith('thumb/')).length;
-    console.log(
-      `\n[Result] Uploaded ${allUploadedKeys.length} missing asset file(s): ${originalsUploaded} original image(s) + ${thumbnailsUploaded} thumbnail(s); concurrency ${UPLOAD_CONCURRENCY}.`,
-    );
-    console.log(
-      `${metadataOnly ? 'Updated' : 'Wrote'} ${written} gallery metadata item(s): ${created} created, ${updated} with prompt changes, ${addedPrompts} prompt variant(s) added.`,
-    );
-    const both = [...migratedHashes].filter((hash) => promptUpdatedHashes.has(hash)).length;
-    console.log(
-      `Existing-card changes: ${promptUpdatedHashes.size - both} prompt-only; ${migratedHashes.size - both} image/URL-only; ${both} both image/URL and prompt. Tags are reported separately.`,
-    );
-    console.log(`Skipped ${prepared.skippedDuplicates + apiDuplicates} duplicate image/prompt records.`);
-    if (metadataOnly) console.log(`Skipped ${prepared.skippedNewMetadata} new records because --metadata-only was set.`);
   } catch (error) {
     // 元数据未完成时只清理由本轮新增且未被 catalog 引用的资产，既有 HF 对象不会进入该列表。
     await cleanupAssets(apiBaseUrl, token, uploadedKeys);
@@ -1037,6 +1050,37 @@ async function main() {
   // Persist only after item publication. Exact transformed-byte aliases make later clipboard/session
   // repeats stable without adding fields to the public catalog or using visual similarity as identity.
   const published = await resolve(extractedItems);
+  // A retry can return duplicate counts after the first request committed. Reuse the existing
+  // readback to reconcile this run; no additional public metadata fields or HTTP reads are needed.
+  if (!metadataOnly) {
+    const confirmed = summarizePublishedImport(
+      extractedItems.map((item) => ({ prompt: normalizePrompt(item.prompt) })),
+      published,
+      existingByHash,
+    );
+    ({ written, created, updated, addedPrompts } = confirmed);
+    apiDuplicates = confirmed.skippedDuplicates - prepared.skippedDuplicates;
+    promptUpdatedHashes.clear();
+    for (const hash of confirmed.promptChangedHashes) promptUpdatedHashes.add(hash);
+    console.log('\n[回读] 已确认图片与 Prompt；以下普通导入汇总按本轮开始前后的差异统计。');
+  }
+  // Include replacement assets in reporting, but not in new-item rollback cleanup:
+  // they may already be referenced by successfully published image migrations.
+  const allUploadedKeys = [...new Set([...replacementUploadedKeys, ...uploadedKeys])];
+  const originalsUploaded = allUploadedKeys.filter((key) => key.startsWith('source/')).length;
+  const thumbnailsUploaded = allUploadedKeys.filter((key) => key.startsWith('thumb/')).length;
+  console.log(
+    `\n[Result] Uploaded ${allUploadedKeys.length} missing asset file(s): ${originalsUploaded} original image(s) + ${thumbnailsUploaded} thumbnail(s); concurrency ${UPLOAD_CONCURRENCY}.`,
+  );
+  console.log(
+    `${metadataOnly ? 'Updated' : 'Wrote'} ${written} gallery metadata item(s): ${created} created, ${updated} with prompt changes, ${addedPrompts} prompt variant(s) added.`,
+  );
+  const both = [...migratedHashes].filter((hash) => promptUpdatedHashes.has(hash)).length;
+  console.log(
+    `Existing-card changes: ${promptUpdatedHashes.size - both} prompt-only; ${migratedHashes.size - both} image/URL-only; ${both} both image/URL and prompt. Tags are reported separately.`,
+  );
+  console.log(`Skipped ${prepared.skippedDuplicates + apiDuplicates} duplicate image/prompt records.`);
+  if (metadataOnly) console.log(`Skipped ${prepared.skippedNewMetadata} new records because --metadata-only was set.`);
   for (const batch of chunks(
     extractedItems
       .map((item, index) => (published[index] ? { hashes: queryFor(item).hashes, slug: published[index].item.slug } : null))
@@ -1063,31 +1107,39 @@ async function main() {
 }
 
 /** Only proven original recovery can replace an existing card; missing attachments never downgrade it. */
+function imageMigrationDecision(extracted, match, overwriteImages) {
+  if (!match) return 'new';
+  if (!overwriteImages) return 'preserved';
+  if (extracted.originalsVerified !== extracted.images.length) return 'incomplete';
+  const recoveredHash = getExtractedItemHash(extracted);
+  if (recoveredHash === match.item.imageHash && match.item.slug.endsWith(`-${recoveredHash.slice(0, 12)}`)) return 'current';
+  if (
+    match.item.images.some((image, index) => {
+      const candidate = extracted.originalDimensions?.[index];
+      return (
+        candidate && image.dimensions && candidate.width * candidate.height < image.dimensions.width * image.dimensions.height
+      );
+    })
+  )
+    return 'larger';
+  return 'replace';
+}
+
+/** Share the same decision with diagnostics so skip explanations cannot drift from write eligibility. */
 function planImageMigrations(items, matches, overwriteImages) {
   if (!overwriteImages) return [];
   const bySlug = new Map();
   for (const [index, extracted] of items.entries()) {
     const match = matches[index];
     const recoveredHash = getExtractedItemHash(extracted);
-    if (
-      !match ||
-      extracted.originalsVerified !== extracted.images.length ||
-      (recoveredHash === match.item.imageHash && match.item.slug.endsWith(`-${recoveredHash.slice(0, 12)}`))
-    )
-      continue;
+    const decision = imageMigrationDecision(extracted, match, overwriteImages);
     // A clipboard temp file may itself be a derivative. Never replace a larger published original
     // with a smaller decoded raster merely because both hashes are known aliases.
-    if (
-      match.item.images.some((image, imageIndex) => {
-        const candidate = extracted.originalDimensions?.[imageIndex];
-        return (
-          candidate && image.dimensions && candidate.width * candidate.height < image.dimensions.width * image.dimensions.height
-        );
-      })
-    ) {
+    if (decision === 'larger') {
       console.warn(`Keeping higher-resolution published image for ${match.item.slug}; recovered attachment is smaller.`);
       continue;
     }
+    if (decision !== 'replace') continue;
     const previous = bySlug.get(match.item.slug);
     if (previous && getExtractedItemHash(previous.extracted) !== recoveredHash)
       throw new Error(`Conflicting originals for ${match.item.slug}; inspect the session before replacing images.`);
@@ -1137,6 +1189,7 @@ export {
   getImportDate,
   buildCanonicalIdentityBinding,
   planImageMigrations,
+  imageMigrationDecision,
   resolveOriginalImages,
   writeImportedTags,
   buildImportData,
@@ -1156,6 +1209,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 }
 
 /*
+npm run import:style-prompts -- --help
+# 首次导入或补回原图前可先加 --dry-run 查看来源、去重和覆盖计划；它需要管理 token，但不会写入。
 npm run import:style-prompts -- <session.jsonl> --prompt-model='gpt-5.6-sol'
 npm run import:style-prompts -- <session.jsonl> --tag "溶图" --tag "现实"
 npm run import:style-prompts -- <session.jsonl> --tag "溶图" --tag "现实" --overwrite-tag
