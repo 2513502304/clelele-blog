@@ -17,6 +17,7 @@ import {
   describeImportPlan,
   describeMetadataWrite,
   describeOriginalRecovery,
+  summarizePublishedImport,
 } from './lib/style-prompt-import-diagnostics.mjs';
 import { publishReplacementBatch } from './lib/style-prompt-import-publication.mjs';
 
@@ -993,6 +994,11 @@ async function main() {
   bindings.push(...canonicalBindings.values());
   for (const batch of chunks(bindings, 100)) await identityRequest({ action: 'remember', bindings: batch });
   let uploadedKeys = [];
+  let written = 0,
+    created = 0,
+    updated = 0,
+    addedPrompts = 0,
+    apiDuplicates = 0;
   try {
     console.log(`\n[Prepare] Computing visual features for ${prepared.items.length} metadata item(s)...`);
     // Reuse verified canonical bytes for visual inference when an alias hit appends a prompt.
@@ -1005,11 +1011,6 @@ async function main() {
       visualRecordsBySlug.set(record.sourceSlug, current);
     }
     uploadedKeys = await prepareAndUploadAssets(apiBaseUrl, token, prepared.assets);
-    let written = 0;
-    let created = 0;
-    let updated = 0;
-    let addedPrompts = 0;
-    let apiDuplicates = 0;
     const itemChunks = chunks(prepared.items, ITEM_BATCH_SIZE);
     for (let index = 0; index < itemChunks.length; index += 1) {
       const itemChunk = itemChunks[index];
@@ -1038,26 +1039,9 @@ async function main() {
         console.warn('Warning: metadata was saved but the derived visual index needs to be rebuilt.');
       }
       console.log(
-        `Completed metadata batch ${index + 1}/${itemChunks.length}: ${describeMetadataWrite(result, migratedHashes)}`,
+        `Metadata batch response ${index + 1}/${itemChunks.length}: ${describeMetadataWrite(result, migratedHashes)}`,
       );
     }
-    // Include replacement assets in reporting, but not in new-item rollback cleanup:
-    // they may already be referenced by successfully published image migrations.
-    const allUploadedKeys = [...new Set([...replacementUploadedKeys, ...uploadedKeys])];
-    const originalsUploaded = allUploadedKeys.filter((key) => key.startsWith('source/')).length;
-    const thumbnailsUploaded = allUploadedKeys.filter((key) => key.startsWith('thumb/')).length;
-    console.log(
-      `\n[Result] Uploaded ${allUploadedKeys.length} missing asset file(s): ${originalsUploaded} original image(s) + ${thumbnailsUploaded} thumbnail(s); concurrency ${UPLOAD_CONCURRENCY}.`,
-    );
-    console.log(
-      `${metadataOnly ? 'Updated' : 'Wrote'} ${written} gallery metadata item(s): ${created} created, ${updated} with prompt changes, ${addedPrompts} prompt variant(s) added.`,
-    );
-    const both = [...migratedHashes].filter((hash) => promptUpdatedHashes.has(hash)).length;
-    console.log(
-      `Existing-card changes: ${promptUpdatedHashes.size - both} prompt-only; ${migratedHashes.size - both} image/URL-only; ${both} both image/URL and prompt. Tags are reported separately.`,
-    );
-    console.log(`Skipped ${prepared.skippedDuplicates + apiDuplicates} duplicate image/prompt records.`);
-    if (metadataOnly) console.log(`Skipped ${prepared.skippedNewMetadata} new records because --metadata-only was set.`);
   } catch (error) {
     // 元数据未完成时只清理由本轮新增且未被 catalog 引用的资产，既有 HF 对象不会进入该列表。
     await cleanupAssets(apiBaseUrl, token, uploadedKeys);
@@ -1066,6 +1050,37 @@ async function main() {
   // Persist only after item publication. Exact transformed-byte aliases make later clipboard/session
   // repeats stable without adding fields to the public catalog or using visual similarity as identity.
   const published = await resolve(extractedItems);
+  // A retry can return duplicate counts after the first request committed. Reuse the existing
+  // readback to reconcile this run; no additional public metadata fields or HTTP reads are needed.
+  if (!metadataOnly) {
+    const confirmed = summarizePublishedImport(
+      extractedItems.map((item) => ({ prompt: normalizePrompt(item.prompt) })),
+      published,
+      existingByHash,
+    );
+    ({ written, created, updated, addedPrompts } = confirmed);
+    apiDuplicates = confirmed.skippedDuplicates - prepared.skippedDuplicates;
+    promptUpdatedHashes.clear();
+    for (const hash of confirmed.promptChangedHashes) promptUpdatedHashes.add(hash);
+    console.log('\n[回读] 已确认图片与 Prompt；以下普通导入汇总按本轮开始前后的差异统计。');
+  }
+  // Include replacement assets in reporting, but not in new-item rollback cleanup:
+  // they may already be referenced by successfully published image migrations.
+  const allUploadedKeys = [...new Set([...replacementUploadedKeys, ...uploadedKeys])];
+  const originalsUploaded = allUploadedKeys.filter((key) => key.startsWith('source/')).length;
+  const thumbnailsUploaded = allUploadedKeys.filter((key) => key.startsWith('thumb/')).length;
+  console.log(
+    `\n[Result] Uploaded ${allUploadedKeys.length} missing asset file(s): ${originalsUploaded} original image(s) + ${thumbnailsUploaded} thumbnail(s); concurrency ${UPLOAD_CONCURRENCY}.`,
+  );
+  console.log(
+    `${metadataOnly ? 'Updated' : 'Wrote'} ${written} gallery metadata item(s): ${created} created, ${updated} with prompt changes, ${addedPrompts} prompt variant(s) added.`,
+  );
+  const both = [...migratedHashes].filter((hash) => promptUpdatedHashes.has(hash)).length;
+  console.log(
+    `Existing-card changes: ${promptUpdatedHashes.size - both} prompt-only; ${migratedHashes.size - both} image/URL-only; ${both} both image/URL and prompt. Tags are reported separately.`,
+  );
+  console.log(`Skipped ${prepared.skippedDuplicates + apiDuplicates} duplicate image/prompt records.`);
+  if (metadataOnly) console.log(`Skipped ${prepared.skippedNewMetadata} new records because --metadata-only was set.`);
   for (const batch of chunks(
     extractedItems
       .map((item, index) => (published[index] ? { hashes: queryFor(item).hashes, slug: published[index].item.slug } : null))

@@ -1004,6 +1004,23 @@ it('shares replacement eligibility with diagnostics, including already-original 
   assert.equal(imageMigrationDecision(item, { item: { ...other.item, images: match.item.images } }, true), 'replace');
 });
 
+it('counts confirmed creations and prompt additions even when a retry reported duplicates', async () => {
+  const { summarizePublishedImport } = await import('./lib/style-prompt-import-diagnostics.mjs');
+  const records = [{ prompt: 'new' }, { prompt: 'new' }, { prompt: 'added' }, { prompt: 'old' }];
+  const newItem = { item: { imageHash: 'new-card', prompts: [{ prompt: 'new' }] } };
+  const oldItem = { item: { imageHash: 'old-card', prompts: [{ prompt: 'old' }, { prompt: 'added' }] } };
+  const before = new Map([['old-card', { prompts: ['old'] }]]);
+  assert.deepEqual(summarizePublishedImport(records, [newItem, newItem, oldItem, oldItem], before), {
+    written: 2,
+    created: 1,
+    updated: 1,
+    addedPrompts: 2,
+    skippedDuplicates: 2,
+    promptChangedHashes: ['old-card'],
+  });
+  assert.throws(() => summarizePublishedImport(records, [], before), /readback is missing/);
+});
+
 it('confirms a disconnected replacement by readback without replaying the write', async () => {
   const { publishReplacementBatch } = await import('./lib/style-prompt-import-publication.mjs');
   const hash = 'b'.repeat(64),

@@ -1,4 +1,28 @@
-/** Explain the two image copies before warnings refer to them; an attachment icon is not quality evidence. */
+/** Compare the initial prompt snapshot with confirmed publication, not the last response after a retry. */
+export function summarizePublishedImport(records, published, beforeByHash) {
+  const created = new Set();
+  const updated = new Set();
+  const added = new Set();
+  for (const [index, record] of records.entries()) {
+    const item = published[index]?.item;
+    if (!item || !item.prompts.some((entry) => entry.prompt === record.prompt))
+      throw new Error(`Publication readback is missing an imported prompt at record ${index + 1}.`);
+    const before = beforeByHash.get(item.imageHash);
+    if (before?.prompts.includes(record.prompt)) continue;
+    added.add(`${item.imageHash}\n${record.prompt}`);
+    (before ? updated : created).add(item.imageHash);
+  }
+  return {
+    written: created.size + updated.size,
+    created: created.size,
+    updated: updated.size,
+    addedPrompts: added.size,
+    skippedDuplicates: records.length - added.size,
+    promptChangedHashes: [...updated],
+  };
+}
+
+/** Explain image sources and counts before diagnostics use those terms. */
 export function describeImportContext({ overwriteImages, dryRun, metadataOnly, overwriteTag, tags = [], apiBaseUrl } = {}) {
   return [
     '\n[导入说明] 本脚本从 Codex 会话 JSONL 中提取图片和对应的 Prompt。',
@@ -26,6 +50,7 @@ export function describeImportContext({ overwriteImages, dryRun, metadataOnly, o
       : '  未提供 --tag：不读取或修改标签。--overwrite-images 与标签覆盖是两个独立选项。',
     '  先检查来源与去重，再上传缺失文件、分批发布卡片，最后处理标签。检查计划不是成功数量，请以发布/回读结果为准。',
     '  中断后可以重跑，但发布响应丢失时应先回读确认，不能把网络报错当作“没有写入”。脚本不会用覆盖图片来覆盖你独立编辑的 Prompt。',
+    '  普通导入的最终数量按导入前后回读差异汇总；重试响应中的“重复”可能表示前一次请求已经保存成功，不代表本轮没有新增。',
   ].join('\n');
 }
 
