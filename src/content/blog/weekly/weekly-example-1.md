@@ -34,7 +34,7 @@ featuredSeries:
   label: 我的周刊          # 显示标签
   fullName: 我的技术周刊
   description: 周刊描述...
-  cover: /img/weekly_header.webp
+  cover: /api/site-assets/weekly
   enabled: true            # 设为 false 可关闭
 ```
 

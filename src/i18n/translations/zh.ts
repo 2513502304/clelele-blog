@@ -117,6 +117,10 @@ export const uiStrings = {
   'friends.hint': '提示: 复制上方代码并在下方评论区粘贴发送即可，我会收到的～',
 
   // ── Image Style Prompt Gallery ──────────────────────────────
+  'gallery.generationPromptCopyFailed': '复制失败，请选择全文手动复制。',
+  'gallery.generationPrompt': '生成图片 prompt',
+  'gallery.generationPromptExpand': '展开全部生成图片 prompt',
+  'gallery.generationPromptCopy': '复制全部生成图片 prompt',
   'gallery.title': 'Image Style Prompt Gallery',
   'gallery.kicker': 'Reference image to reusable prompt',
   'gallery.description':

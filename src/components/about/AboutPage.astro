@@ -1,8 +1,13 @@
 ---
+import { SiteProfileView } from '@components/site-profile/SiteProfileView';
 import PageLayout from '@layouts/PageLayout.astro';
 import { fetchCharacterQuote } from '@lib/character-quote';
+import { publicSiteProfile } from '@lib/site-profile/public';
+import AboutBlog from './AboutBlog.md';
 import AboutContent from './AboutContent.md';
 import CharacterQuote from './CharacterQuote.astro';
+
+const profile = await publicSiteProfile();
 
 const DEFAULT_CHARACTER = 'Yukino Yukinoshita';
 const FALLBACK_QUOTE = "People who don't work hard don't have the right to be envious of the people with talent.";
@@ -32,4 +37,7 @@ const frontmatter = {
   <h2>你好，这里是 clelele</h2>
   <CharacterQuote character={displayedCharacter} quote={quote} />
   <AboutContent />
+  <h3>找到我</h3>
+  <SiteProfileView initial={profile} contactsOnly client:load />
+  <AboutBlog />
 </PageLayout>

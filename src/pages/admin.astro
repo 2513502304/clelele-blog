@@ -1,0 +1,18 @@
+---
+import SiteProfileAdmin from '@components/site-profile/SiteProfileAdmin';
+import Layout from '@layouts/Layout.astro';
+import { getSiteAdminGitHubId, isSiteAdminLoginConfigured } from '@lib/site-admin-auth';
+import { getSiteProfile } from '@lib/site-profile/store';
+import { getStyleGalleryViewer } from '@lib/style-gallery-github-auth';
+export const prerender = false;
+if (!isSiteAdminLoginConfigured()) return new Response('Login unavailable.', { status: 503 });
+const viewer = getStyleGalleryViewer(Astro.cookies);
+if (!viewer)
+  return Astro.redirect(
+    `/api/style-gallery/auth/github/login?returnTo=${encodeURIComponent(Astro.url.pathname + Astro.url.search)}`,
+  );
+if (viewer.id !== getSiteAdminGitHubId()) return new Response('Not found.', { status: 404 });
+Astro.response.headers.set('Cache-Control', 'private, no-store');
+const profile = await getSiteProfile(true);
+---
+<Layout title="站点管理" description="个人资料与图片管理"><meta slot="head" name="robots" content="noindex,nofollow"/><SiteProfileAdmin initial={profile} client:load /></Layout>

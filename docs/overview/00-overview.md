@@ -66,7 +66,6 @@ astro-koharu/
 ├── public/                     # 静态资源（直接复制到构建目录）
 │   ├── favicon.ico
 │   ├── img/                    # 图片资源
-│   │   ├── avatar.webp        # 头像
 │   │   └── cover/             # 文章封面
 │   └── js/                     # 第三方脚本
 │
@@ -236,7 +235,7 @@ export const siteConfig = {
   description: 'FE / ACG / 手工 / 深色模式强迫症...',
 
   // 资源
-  avatar: '/img/avatar.webp',
+  avatar: '/api/site-assets/avatar',
   site: 'https://blog.cosine.ren/',
   startYear: 2020,
 

@@ -118,6 +118,10 @@ export const uiStrings: UIStrings = {
   'friends.hint': '説明: 上記のコードをコピーして、下のコメントセクションに貼り付けてください。',
 
   // ── Image Style Prompt Gallery ──────────────────────────────
+  'gallery.generationPromptCopyFailed': 'コピーできませんでした。テキストを選択してコピーしてください。',
+  'gallery.generationPrompt': '生成プロンプト',
+  'gallery.generationPromptExpand': '生成プロンプトをすべて表示',
+  'gallery.generationPromptCopy': '生成プロンプトをコピー',
   'gallery.title': 'Image Style Prompt Gallery',
   'gallery.kicker': 'Reference image to reusable prompt',
   'gallery.description':

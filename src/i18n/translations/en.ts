@@ -118,6 +118,10 @@ export const uiStrings: UIStrings = {
   'friends.hint': 'Tip: Copy the code above and paste it in the comment section below.',
 
   // ── Image Style Prompt Gallery ──────────────────────────────
+  'gallery.generationPromptCopyFailed': 'Copy failed. Select the text to copy manually.',
+  'gallery.generationPrompt': 'Generation prompt',
+  'gallery.generationPromptExpand': 'Expand full generation prompt',
+  'gallery.generationPromptCopy': 'Copy full generation prompt',
   'gallery.title': 'Image Style Prompt Gallery',
   'gallery.kicker': 'Reference image to reusable prompt',
   'gallery.description':

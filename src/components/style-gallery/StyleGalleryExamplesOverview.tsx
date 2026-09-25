@@ -249,6 +249,7 @@ function StyleGalleryExamplesOverviewContent({
     const lightboxImages = navigation.map((candidate) => ({
       id: candidate.id,
       gallerySourceSlug: candidate.sourceSlug,
+      generationPrompt: candidate.note,
       src: candidate.src,
       dimensions: candidate.dimensions,
       resolvedSrc: getReusableStyleGalleryImageUrl(candidate.src, loadedExampleSources.current.has(candidate.src)),
@@ -555,7 +556,7 @@ function StyleGalleryExamplesOverviewContent({
                       </time>
                     )}
                   </div>
-                  {example.note && <p className="line-clamp-2 text-muted-foreground text-xs leading-5">{example.note}</p>}
+                  {example.note && <p className="line-clamp-3 text-muted-foreground text-xs leading-5">{example.note}</p>}
                   <a
                     href={`${galleryBasePath}/${example.sourceSlug}`}
                     data-astro-prefetch="false"

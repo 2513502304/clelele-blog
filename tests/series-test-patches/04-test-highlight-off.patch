@@ -2,7 +2,7 @@ diff --git a/config/site.yaml b/config/site.yaml
 --- a/config/site.yaml
 +++ b/config/site.yaml
 @@ -105,6 +105,7 @@ featuredSeries:
-     cover: /img/weekly_header.webp # 系列页面头图
+     cover: /api/site-assets/weekly # 系列页面头图
      enabled: true # 启用此系列
      icon: ri:newspaper-line # 导航图标
 +    highlightOnHome: false # 测试：关闭首页高亮显示

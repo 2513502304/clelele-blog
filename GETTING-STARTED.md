@@ -57,9 +57,9 @@ site:
   description: 博客简介            # 一句话介绍
   author: 你的名字                # 文章作者
   url: https://your-domain.com/   # 部署后的域名
-  defaultOgImage: /img/avatar.webp # 默认 Open Graph 图片
+  defaultOgImage: /api/site-assets/avatar # 默认 Open Graph 图片
   startYear: 2024                 # 建站年份
-  avatar: /img/avatar.webp        # 头像路径
+  avatar: /api/site-assets/avatar        # 头像路径
   showLogo: true                  # 是否显示 logo
   keywords:                       # SEO 关键词
     - 博客
@@ -68,7 +68,7 @@ site:
 
 ### 替换头像
 
-将你的头像图片替换到 `public/img/avatar.webp`
+将你的头像图片替换到 `public/api/site-assets/avatar`
 
 ### 社交链接
 
@@ -200,7 +200,7 @@ featuredSeries:
   label: 我的周刊
   fullName: 我的技术周刊
   description: 每周技术分享
-  cover: /img/weekly_header.webp
+  cover: /api/site-assets/weekly
   enabled: true
   links:
     github: https://github.com/your-username/your-repo
