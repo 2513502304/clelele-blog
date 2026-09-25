@@ -28,7 +28,8 @@ Generated images use a content-addressed path independent of their platform. Pla
 An example's optional `note` can store its complete generation prompt. Browser uploads and the
 `upload:style-examples --note` CLI preserve internal line breaks and accept prompts beyond 500
 characters. The prepare API follows the existing stored-example schema without a separate
-per-note length cap. CLI notes apply to every image in that invocation; submit images generated
+per-note length cap. Long captions retain the full text in a bounded, keyboard-scrollable area.
+CLI notes apply to every image in that invocation; submit images generated
 from different prompts separately. Existing notes are unchanged.
 
 ## Image dimensions and masonry

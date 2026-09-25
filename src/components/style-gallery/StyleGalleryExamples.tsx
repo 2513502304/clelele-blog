@@ -907,7 +907,11 @@ export default function StyleGalleryExamples({
                         />
                       </div>
                       {example.note && (
-                        <figcaption className="whitespace-pre-wrap break-words p-3 text-gray-500 text-xs dark:text-gray-300">
+                        <figcaption
+                          // biome-ignore lint/a11y/noNoninteractiveTabindex: Long prompt captions need keyboard access to their scroll area.
+                          tabIndex={0}
+                          className="max-h-64 overflow-y-auto overscroll-contain whitespace-pre-wrap break-words p-3 text-gray-500 text-xs dark:text-gray-300"
+                        >
                           {example.note}
                         </figcaption>
                       )}
