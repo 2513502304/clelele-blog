@@ -25,6 +25,13 @@ Like counts are not copied into the catalog or item documents. A missing user ID
 
 Generated images use a content-addressed path independent of their platform. Platform changes update metadata only; they never copy or rename image objects. Physical deletion of both the original and its thumbnail happens only after no entry in the global example index references the image URL.
 
+An example's optional `note` can store its complete generation prompt. Browser uploads and the
+`upload:style-examples --note` CLI preserve internal line breaks and accept prompts beyond 500
+characters. The prepare API follows the existing stored-example schema without a separate
+per-note length cap. Long captions retain the full text in a bounded, keyboard-scrollable area.
+CLI notes apply to every image in that invocation; submit images generated
+from different prompts separately. Existing notes are unchanged.
+
 ## Image dimensions and masonry
 
 Reference-image records, catalog cards, generated examples, and example-index entries carry optional `dimensions: { width, height }`, measured after EXIF orientation. The source catalog uses the first reference image's dimensions. Existing record versions and URLs remain compatible; dimensions are optional only during migration and for older API clients.

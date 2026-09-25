@@ -77,12 +77,26 @@ describe('style gallery example upload CLI', () => {
     const parseWith = (...args: string[]) => parseStyleGalleryExampleUploadArgs([...requiredArgs, ...args, './image.webp']);
 
     assert.throws(() => parseWith('--api-base-url', 'ftp://example.com'), /must use HTTP or HTTPS/);
-    assert.throws(() => parseWith('--note', 'x'.repeat(501)), /at most 500 characters/);
     assert.throws(() => parseWith('--attempts', '0'), /--attempts must be a positive integer/);
     assert.throws(() => parseWith('--attempts', '5x'), /--attempts must be a positive integer/);
     assert.throws(() => parseWith('--concurrency=-1'), /--concurrency must be a positive integer/);
     assert.throws(() => parseWith('--concurrency', 'many'), /--concurrency must be a positive integer/);
     assert.throws(() => parseWith('--timeout-ms', '0'), /--timeout-ms must be a positive integer/);
     assert.throws(() => parseWith('--timeout-ms', '12000ms'), /--timeout-ms must be a positive integer/);
+  });
+
+  it('preserves complete multilingual prompts and paragraph breaks beyond 500 characters', () => {
+    const prompt = `${'玫红色长发，黄绿色眼睛，天空与云层。'.repeat(100)}\n\n${'Soft light and fine linework. '.repeat(50)}\nFin.`;
+    const options = parseStyleGalleryExampleUploadArgs([
+      '--item',
+      'aaaaaa',
+      '--platform',
+      'PixAI',
+      '--note',
+      prompt,
+      './image.webp',
+    ]);
+    assert.ok(prompt.length > 500);
+    assert.equal(options.note, prompt);
   });
 });
