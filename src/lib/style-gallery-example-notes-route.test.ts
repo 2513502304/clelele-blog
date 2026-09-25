@@ -60,7 +60,7 @@ it('prepares full generation prompts without truncation while retaining token an
     assert.ok(note.length > 500);
     const response = await prepare(note);
     assert.equal(response.status, 200);
-    const result = await response.json();
+    const result: { uploads: Array<{ example: { note?: string } }> } = await response.json();
     assert.equal(result.uploads[0].example.note, note);
     assert.equal((await prepare(note, false)).status, 401);
     assert.equal((await prepare(42)).status, 400);
