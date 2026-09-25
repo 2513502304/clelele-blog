@@ -35,6 +35,7 @@ function createVisualFeature(imageHash: string): StyleGalleryVisualFeature {
 
 describe('style gallery example upload CLI integration', () => {
   it('uploads image bytes directly to HF and commits successful files when a sibling fails', async () => {
+    const note = `${'保留原角色特征与清晰的赛璐璐阴影。'.repeat(80)}\n\nSoft daylight.\nEND`;
     const directory = await mkdtemp(path.join(tmpdir(), 'style-gallery-cli-'));
     const goodBytes = await sharp({ create: { width: 120, height: 80, channels: 3, background: 'red' } })
       .webp()
@@ -89,6 +90,7 @@ describe('style gallery example upload CLI integration', () => {
         assert.equal(request.headers.authorization, 'Bearer test-upload-token');
         const body = JSON.parse((await readBody(request)).toString('utf8'));
         if (body.action === 'prepare') {
+          assert.equal(body.note, note);
           assert.deepEqual(body.files[0].dimensions, { width: 120, height: 80 });
           sendJson(response, {
             uploads: body.files.map(
@@ -101,6 +103,7 @@ describe('style gallery example upload CLI integration', () => {
                   src: `/api/style-gallery/image/examples/images/${file.imageHash}.webp`,
                   alt: 'PixAI example',
                   model: 'PixAI',
+                  note: body.note,
                   uploadedAt: '2026-07-26T00:01:00.000Z',
                   imageHash: file.imageHash,
                   dimensions: file.dimensions,
@@ -111,6 +114,7 @@ describe('style gallery example upload CLI integration', () => {
           return;
         }
         if (body.action === 'merge') {
+          assert.equal(body.examples[0].note, note);
           assert.deepEqual(body.examples[0].dimensions, { width: 120, height: 80 });
           assert.deepEqual(
             body.visualRecords.map((record: { feature: { imageHash: string }; imageId: string }) => ({
@@ -202,7 +206,7 @@ describe('style gallery example upload CLI integration', () => {
         NO_PROXY: '127.0.0.1,localhost',
       });
       const code = await runStyleGalleryExampleUpload(
-        ['--item', '2a256d37220e', '--platform', 'PixAI', '--attempts', '2', goodPath, failedPath],
+        ['--item', '2a256d37220e', '--platform', 'PixAI', '--note', note, '--attempts', '2', goodPath, failedPath],
         { computeVisualFeature: async (_bytes, imageHash) => createVisualFeature(imageHash) },
       );
 

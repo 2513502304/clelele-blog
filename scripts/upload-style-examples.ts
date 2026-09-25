@@ -100,7 +100,7 @@ Required:
   -p, --platform <value>   GPT-Image | Nano Banana | PixAI | Midjourney | NovelAI | Flux
 
 Options:
-  -n, --note <text>        Shared note stored on every uploaded example (max 500 chars)
+  -n, --note <text>        Full generation prompt or note stored on every uploaded example
   -c, --concurrency <n>    Concurrent HF uploads (default: 5)
       --attempts <n>       Attempts for each API request and each file (default: 3)
       --timeout-ms <n>     Independent timeout for every attempt (default: 120000)

@@ -742,10 +742,11 @@ export default function StyleGalleryExamples({
         </label>
         <label className="space-y-1 font-bold text-gray-500 text-xs dark:text-gray-300">
           <span>Note</span>
-          <input
+          <textarea
             value={note}
             onChange={(event) => setNote(event.currentTarget.value)}
-            className="h-10 w-full rounded-lg border border-sky-100 bg-white px-3 text-gray-900 text-sm outline-none dark:border-gray-800 dark:bg-gray-900 dark:text-white"
+            rows={3}
+            className="max-h-64 min-h-24 w-full resize-y overflow-y-auto rounded-lg border border-sky-100 bg-white px-3 py-2 text-gray-900 text-sm outline-none dark:border-gray-800 dark:bg-gray-900 dark:text-white"
           />
         </label>
 
@@ -906,7 +907,9 @@ export default function StyleGalleryExamples({
                         />
                       </div>
                       {example.note && (
-                        <figcaption className="p-3 text-gray-500 text-xs dark:text-gray-300">{example.note}</figcaption>
+                        <figcaption className="whitespace-pre-wrap break-words p-3 text-gray-500 text-xs dark:text-gray-300">
+                          {example.note}
+                        </figcaption>
                       )}
                     </figure>
                   );

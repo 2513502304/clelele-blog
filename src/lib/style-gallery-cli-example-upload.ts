@@ -69,7 +69,6 @@ export function parseStyleGalleryExampleUploadArgs(
       throw new Error('--platform must be one of GPT-Image, Nano Banana, PixAI, Midjourney, NovelAI, or Flux.');
     }
     if (!positionals.length) throw new Error('At least one local image path is required.');
-    if (note && note.length > 500) throw new Error('--note must contain at most 500 characters.');
   }
 
   return {

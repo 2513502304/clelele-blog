@@ -43,7 +43,8 @@ const prepareSchema = z.object({
   token: z.string().optional(),
   action: z.literal('prepare'),
   platform: z.string(),
-  note: z.string().max(500).optional(),
+  // Notes can contain complete generation prompts, matching the stored example schema.
+  note: z.string().optional(),
   files: z
     .array(
       z.object({
