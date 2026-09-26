@@ -1,16 +1,18 @@
 ---
 import ChristmasHat from '@components/christmas/ChristmasHat.astro';
 import ButtonLink from '@components/control/ButtonLink.astro';
+import { SiteProfileView } from '@components/site-profile/SiteProfileView';
 import type { HomeSiderType } from '@constants/enum';
 import { RESERVED_ROUTES } from '@constants/router';
-import { christmasConfig, configuredSeriesSlugs, enabledSeriesSlugs, routers, siteConfig } from '@constants/site-config';
+import { christmasConfig, configuredSeriesSlugs, enabledSeriesSlugs, routers } from '@constants/site-config';
 import { getAllTags, getCategoryList, getPostCount, getSortedPosts } from '@lib/content';
-import { getLqipStyle } from '@lib/lqip';
+import { publicSiteProfile } from '@lib/site-profile/public';
 import { cn, filterNavItems } from '@lib/utils';
 import { Icon } from 'astro-icon/components';
 import { getLocaleFromUrl, localizedPath, resolveNavName, stripLocaleFromPath, t } from '@/i18n';
 import type { BlogSchema } from '@/types/blog';
-import Social from './Social.astro';
+
+const profile = await publicSiteProfile();
 
 interface Props {
   type?: HomeSiderType;
@@ -37,21 +39,12 @@ const strippedPath = stripLocaleFromPath(Astro.url.pathname);
 ---
 
 <div class={cn('flex flex-col items-center md:py-2', className)} data-home-info-container={uniqueId}>
-  <div class="relative h-40 w-40 rounded-full" style={getLqipStyle(siteConfig.avatar ?? '/img/avatar.webp')}>
-    <img
-      transition:persist="page-home-info-avatar"
-      class="shadow-card-darker hover:animate-shake h-full w-full rounded-full transition"
-      src={siteConfig.avatar ?? '/img/avatar.webp'}
-      alt={`${siteConfig.name ?? ''} avatar`}
-      loading="eager"
-      fetchpriority="high"
-    />
-    {christmasConfig.enabled && christmasConfig.features.christmasHat && <ChristmasHat />}
+  <div class="relative flex flex-col items-center">
+    <SiteProfileView initial={profile} client:load />
+    {christmasConfig.enabled && christmasConfig.features.christmasHat && (
+      <div class="pointer-events-none absolute top-0 h-40 w-40"><ChristmasHat /></div>
+    )}
   </div>
-
-  <p class="mt-2">{siteConfig?.name}</p>
-  <p class="text-muted-foreground mt-3 text-center">{siteConfig?.description}</p>
-  <Social />
   <div
     class="text-muted-foreground mt-3 flex justify-center text-center text-sm/4 whitespace-nowrap select-none dark:text-white/80"
   >

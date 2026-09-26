@@ -1,19 +1,25 @@
-import { siteConfig, socialConfig } from '@constants/site-config';
+import { siteConfig } from '@constants/site-config';
+import { publicSiteProfile } from '@lib/site-profile/public';
 import type { APIContext } from 'astro';
-import { capitalize } from 'es-toolkit';
+
+export const prerender = false;
+const escapeXml = (value: string) =>
+  value.replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[char] ?? char);
+
+// XSLT treats braces in literal attributes as expressions; editable values must remain literal.
+const escapeAttribute = (value: string) => escapeXml(value).replaceAll('{', '{{').replaceAll('}', '}}');
 
 // Convert icon format: ri:github-fill -> ri-github-fill (Remix Icon CDN uses dash)
 const toRemixIconClass = (icon: string) => icon.replace(':', '-');
 
 export async function GET(_context: APIContext) {
-  const socialLinks = Object.entries(socialConfig)
+  const profile = await publicSiteProfile();
+  const socialLinks = profile.links
     .map(
-      ([key, config]) =>
-        `<a href="${config.url}" target="_blank" class="social-btn ${key}" title="${capitalize(key)}">
-                                                        <i class="${toRemixIconClass(config.icon)}"></i>
-                                                    </a>`,
+      (link) =>
+        `<a href="${escapeAttribute(link.url)}" target="_blank" class="social-btn" title="${escapeAttribute(link.label)}"><i class="${toRemixIconClass(link.icon)}"></i></a>`,
     )
-    .join('\n                                                    ');
+    .join('\n');
 
   const xsl = `<?xml version="1.0" encoding="utf-8"?>
 <xsl:stylesheet version="3.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
@@ -47,7 +53,7 @@ export async function GET(_context: APIContext) {
                         <div class="profile-card">
                             <div class="avatar-wrapper">
                                 <div class="avatar-container">
-                                    <img src="${siteConfig.avatar}" alt="${siteConfig.name}" class="avatar" />
+                                    <img src="${siteConfig.avatar}" alt="${escapeAttribute(profile.name)}" class="avatar" />
                                     <div class="cat-ear left"></div>
                                     <div class="cat-ear right"></div>
                                 </div>
@@ -56,7 +62,7 @@ export async function GET(_context: APIContext) {
                             <div class="profile-info">
                                 <h1 class="site-title">${siteConfig.title}</h1>
                                 <p class="site-subtitle">${siteConfig.subtitle}</p>
-                                <p class="site-bio">${siteConfig.description}</p>
+                                <p class="site-bio">${escapeXml(profile.signature)}</p>
 
                                 <div class="social-links">
                                                     ${socialLinks}
@@ -156,6 +162,7 @@ export async function GET(_context: APIContext) {
 
   return new Response(xsl, {
     headers: {
+      'Cache-Control': 'public, max-age=0, s-maxage=60',
       'Content-Type': 'application/xslt+xml; charset=utf-8',
     },
   });

@@ -1,3 +1,4 @@
+import { StyleGalleryExampleNote } from '@components/style-gallery/StyleGalleryExampleNote';
 import { useGalleryMarquee } from '@hooks/useGalleryMarquee';
 import { Icon } from '@iconify/react';
 import { downloadStyleGalleryImages } from '@lib/style-gallery-batch-download';
@@ -195,7 +196,7 @@ export default function StyleGalleryExamples({
     setFileProgress((current) => current.map((item) => (item.id === id ? { ...item, ...update } : item)));
   }
 
-  function openExampleLightbox(example: StyleGalleryExample, platformExamples: StyleGalleryExample[]) {
+  function openExampleLightbox(example: StyleGalleryExample, platformExamples: StyleGalleryExample[], revealPrompt = false) {
     // 导航数组只包含当前视觉分组；平台内部仍保持上传顺序。
     const sourceThumbnail = [...document.querySelectorAll<HTMLImageElement>('main img')].find(
       (image) => image.complete && image.naturalWidth > 0 && /\/(source|thumb)\//.test(image.currentSrc || image.src),
@@ -208,6 +209,8 @@ export default function StyleGalleryExamples({
     const lightboxImages = platformExamples.map((candidate) => ({
       id: candidate.id,
       gallerySourceSlug: slug,
+      generationPrompt: candidate.note,
+      generationPromptInitiallyExpanded: revealPrompt && candidate.id === example.id,
       src: candidate.src,
       resolvedSrc: getReusableStyleGalleryImageUrl(candidate.src, loadedExampleSources.current.has(candidate.src)),
       alt: candidate.alt ?? candidate.model ?? 'Generated example',
@@ -907,12 +910,13 @@ export default function StyleGalleryExamples({
                         />
                       </div>
                       {example.note && (
-                        <figcaption
-                          // biome-ignore lint/a11y/noNoninteractiveTabindex: Long prompt captions need keyboard access to their scroll area.
-                          tabIndex={0}
-                          className="max-h-64 overflow-y-auto overscroll-contain whitespace-pre-wrap break-words p-3 text-gray-500 text-xs dark:text-gray-300"
-                        >
-                          {example.note}
+                        <figcaption className="border-border/60 border-t bg-background/80 p-3">
+                          <StyleGalleryExampleNote
+                            note={example.note}
+                            locale={locale}
+                            rows={5}
+                            onOpen={() => openExampleLightbox(example, platformExamples, true)}
+                          />
                         </figcaption>
                       )}
                     </figure>

@@ -57,9 +57,9 @@ site:
   description: 博客简介            # 一句话介绍
   author: 你的名字                # 文章作者
   url: https://your-domain.com/   # 部署后的域名
-  defaultOgImage: /img/avatar.webp # 默认 Open Graph 图片
+  defaultOgImage: /api/site-assets/avatar # 默认 Open Graph 图片
   startYear: 2024                 # 建站年份
-  avatar: /img/avatar.webp        # 头像路径
+  avatar: /api/site-assets/avatar        # 头像路径
   showLogo: true                  # 是否显示 logo
   keywords:                       # SEO 关键词
     - 博客
@@ -68,11 +68,11 @@ site:
 
 ### 替换头像
 
-将你的头像图片替换到 `public/img/avatar.webp`
+初始化 HF 站点资料后，以管理员身份打开 `/admin`，上传或粘贴头像并确认发布。`/api/site-assets/avatar` 是读取 HF 资料的动态地址，不要在 `public/` 中创建同名文件。初始化与权限配置见 [站点资料管理](docs/site-profile-admin.md)。
 
 ### 社交链接
 
-在 `config/site.yaml` 中配置社交媒体链接：
+HF 资料启用后，联系方式在 `/admin` 中添加、删除和排序。`config/site.yaml` 中的配置仅作为初始化或未配置 HF 时的默认值：
 
 ```yaml
 social:
@@ -200,7 +200,7 @@ featuredSeries:
   label: 我的周刊
   fullName: 我的技术周刊
   description: 每周技术分享
-  cover: /img/weekly_header.webp
+  cover: /api/site-assets/weekly
   enabled: true
   links:
     github: https://github.com/your-username/your-repo

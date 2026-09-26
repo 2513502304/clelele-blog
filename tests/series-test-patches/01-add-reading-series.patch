@@ -21,7 +21,7 @@ diff --git a/config/site.yaml b/config/site.yaml
 -  #   label: 读书笔记
 -  #   fullName: 我的读书笔记
 -  #   description: 阅读记录与读后感
--  #   cover: /img/weekly_header.webp # 记得添加，我这里就是个示例
+-  #   cover: /api/site-assets/weekly # 记得添加，我这里就是个示例
 -  #   enabled: true
 -  #   icon: ri:book-read-line
 +  - slug: reading
@@ -29,7 +29,7 @@ diff --git a/config/site.yaml b/config/site.yaml
 +    label: 读书笔记
 +    fullName: 我的读书笔记
 +    description: 阅读记录与读后感
-+    cover: /img/weekly_header.webp
++    cover: /api/site-assets/weekly
 +    enabled: true
 +    icon: ri:book-read-line
  

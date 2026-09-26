@@ -46,6 +46,7 @@ import { StyleGalleryPromptChooser } from '../style-gallery/StyleGalleryPromptCh
 import { GalleryLightboxTags } from '../style-gallery/StyleGalleryTags';
 import { Dialog, DialogContent } from '../ui/dialog';
 import { LightboxLikeButton, NavButton, ToolbarButton, ToolbarLink, ZoomHint } from './ImageLightboxControls';
+import { LightboxGenerationPrompt } from './LightboxGenerationPrompt';
 
 const ZOOM_SENSITIVITY_STORAGE_KEY = 'image-lightbox-zoom-sensitivity';
 const DEFAULT_ZOOM_SENSITIVITY = 0.55;
@@ -933,6 +934,13 @@ export default function ImageLightbox() {
                       />
                     </ErrorBoundary>
                   </div>
+                )}
+                {currentImage.generationPrompt && (
+                  <LightboxGenerationPrompt
+                    key={currentImageKey}
+                    prompt={currentImage.generationPrompt}
+                    initiallyExpanded={currentImage.generationPromptInitiallyExpanded}
+                  />
                 )}
                 {/* Navigation bar */}
                 {data.images.length > 1 && (

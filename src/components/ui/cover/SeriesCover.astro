@@ -1,8 +1,9 @@
 ---
+import { ProfileQuickEdit } from '@components/site-profile/ProfileQuickEdit';
 import type { FeaturedSeriesItem } from '@lib/config/types';
 import { translateSeriesField } from '@lib/content';
-import { getLqipStyle } from '@lib/lqip';
 import { getSanitizeHtml } from '@lib/sanitize';
+import { SITE_ASSET_SLOTS, siteAssetUrl } from '@lib/site-profile/schema';
 import { Icon } from 'astro-icon/components';
 import { marked } from 'marked';
 import { MAX_WIDTH } from '@/constants/layout';
@@ -14,6 +15,8 @@ interface Props {
 }
 
 const { series } = Astro.props;
+// Custom series keep their configured cover; only an actual slot enables HF quick editing.
+const assetSlot = SITE_ASSET_SLOTS.find((slot) => slot !== 'avatar' && slot === series.slug);
 const locale = getLocaleFromUrl(Astro.url.pathname);
 
 // Translate series fields with fallback to YAML values
@@ -29,20 +32,16 @@ const descriptionHtml = getSanitizeHtml(rawHtml);
 <div class="relative flex z-0 max-h-200 min-h-[70dvh] items-center justify-center overflow-hidden pb-6">
   <div class="absolute inset-0 h-full bg-black/40"></div>
   <!-- Series cover image -->
-  {
-    series.cover && (
-      <div class="absolute inset-0 -z-10 h-full w-full" style={getLqipStyle(series.cover)}>
-        <img
-          src={series.cover}
-          alt={seriesTitle}
-          class="h-full w-full object-cover"
-          loading="eager"
-          fetchpriority="high"
-          decoding="async"
-        />
-      </div>
-    )
-  }
+  <div class="absolute inset-0 -z-10 h-full w-full">
+    <img
+      src={assetSlot ? siteAssetUrl(assetSlot) : series.cover || siteAssetUrl('home')}
+      alt={seriesTitle}
+      class="h-full w-full object-cover"
+      loading="eager"
+      fetchpriority="high"
+      decoding="async"
+    />
+  </div>
 
   <!-- Main content area -->
   <div class={`relative z-10 flex flex-col items-center justify-center px-5 py-4 text-white ${MAX_WIDTH.content}`}>
@@ -110,5 +109,6 @@ const descriptionHtml = getSanitizeHtml(rawHtml);
     }
   </div>
 
+  {assetSlot && <ProfileQuickEdit slot={assetSlot} client:idle />}
   <WaveSvg />
 </div>

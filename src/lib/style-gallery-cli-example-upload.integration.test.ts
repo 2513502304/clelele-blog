@@ -216,6 +216,20 @@ describe('style gallery example upload CLI integration', () => {
       assert.equal(catalogRequests, 2);
       assert.deepEqual(mergedHashes, [goodHash]);
       assert.deepEqual(cleanedHashes, [failedHash]);
+      // Simulate replacement after the receipt was checked but before the publisher inspects files.
+      await writeFile(goodPath, failedBytes);
+      const mismatched = await runStyleGalleryExampleUpload(
+        ['--item', '2a256d37220e', '--platform', 'PixAI', goodPath],
+        {
+          computeVisualFeature: async () => {
+            throw new Error('Must fail before image computation.');
+          },
+        },
+        new Map([[goodPath, goodHash]]),
+      );
+      assert.equal(mismatched, 1);
+      assert.deepEqual(mergedHashes, [goodHash]);
+      assert.deepEqual(uploaded.get(`${goodHash}.webp`), goodBytes);
     } finally {
       globalThis.fetch = previousFetch;
       for (const name of envNames) {

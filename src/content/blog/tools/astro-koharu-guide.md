@@ -90,7 +90,7 @@ site:
   subtitle: WA 的一声就哭了 # 副标题
   name: cos # 站点作者简称
   description: FE / ACG / 手工 / 深色模式强迫症 / INFP # 站点简介
-  avatar: /img/avatar.webp # 头像路径
+  avatar: /api/site-assets/avatar # 头像路径
   showLogo: true # 是否显示 logo
   author: cos # 文章作者
   url: https://blog.cosine.ren/ # 站点域名
@@ -190,7 +190,7 @@ featuredSeries:
     description: | # 描述（支持多行）
       之前在自己的频道进行一些输出，于是有了这个周刊！
       更新时间期望是在每周天
-    cover: /img/weekly_header.webp # 封面图
+    cover: /api/site-assets/weekly # 封面图
     enabled: true # 是否启用
     icon: ri:newspaper-line # 导航图标（可选）
     highlightOnHome: true # 是否在首页高亮最新文章（可选，默认 true）

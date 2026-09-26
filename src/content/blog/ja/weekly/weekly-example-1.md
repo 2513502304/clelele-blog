@@ -31,7 +31,7 @@ featuredSeries:
   label: 週間ダイジェスト    # 表示ラベル
   fullName: テック週間ダイジェスト
   description: 週間の説明...
-  cover: /img/weekly_header.webp
+  cover: /api/site-assets/weekly
   enabled: true            # false で無効化
 ```
 

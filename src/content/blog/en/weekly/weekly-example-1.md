@@ -31,7 +31,7 @@ featuredSeries:
   label: My Weekly          # Display label
   fullName: My Tech Weekly
   description: Weekly description...
-  cover: /img/weekly_header.webp
+  cover: /api/site-assets/weekly
   enabled: true            # Set false to disable
 ```
 

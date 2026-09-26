@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "id": "example-autumn",
+  "charactersFile": "characters.json",
+  "profilesFile": "profiles.json",
+  "rewrite": {
+    "baseUrl": "https://api.deepseek.com",
+    "model": "deepseek-flash",
+    "keyEnv": "DEEPSEEK_API_KEY"
+  },
+  "selections": [
+    {
+      "id": "chosen",
+      "select": {
+        "hashes": ["e109a23b4126"]
+      },
+      "runs": [
+        {
+          "id": "elaina-landscape",
+          "character": "elaina",
+          "profile": "landscape",
+          "tasksPerHash": 2
+        },
+        {
+          "id": "kita-portrait",
+          "character": "kita",
+          "profile": "portrait",
+          "tasksPerHash": 1
+        }
+      ]
+    },
+    {
+      "id": "date-range",
+      "select": {
+        "range": {
+          "dateFrom": "2026-09-20",
+          "dateThrough": "2026-09-25",
+          "positions": [1, 2],
+          "order": "date-desc"
+        },
+        "excludeHashes": ["e109a23b4126"]
+      },
+      "runs": [
+        {
+          "id": "each-once",
+          "character": "elaina",
+          "profile": "portrait",
+          "tasksPerHash": 1
+        }
+      ]
+    }
+  ]
+}

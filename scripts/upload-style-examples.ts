@@ -363,6 +363,7 @@ function sleep(ms: number): Promise<void> {
 export async function runStyleGalleryExampleUpload(
   args = process.argv.slice(2),
   dependencies: UploadDependencies = defaultDependencies,
+  expectedHashes?: ReadonlyMap<string, string>,
 ): Promise<number> {
   configureEnvironmentProxy();
   const options = parseStyleGalleryExampleUploadArgs(args);
@@ -393,7 +394,12 @@ export async function runStyleGalleryExampleUpload(
 
   const inspectionResults = await mapWithConcurrency(options.filePaths, options.concurrency, async (filePath) => {
     try {
-      return { image: await inspectLocalImage(filePath) };
+      const image = await inspectLocalImage(filePath);
+      // Bind provenance to the hash used by every later byte check and upload, not an earlier read.
+      if (expectedHashes && image.imageHash !== expectedHashes.get(path.resolve(filePath))) {
+        throw new Error('Local image no longer matches its generation receipt. Restore the recorded original.');
+      }
+      return { image };
     } catch (error) {
       return { failure: { path: filePath, error: error instanceof Error ? error : new Error('File validation failed.') } };
     }
