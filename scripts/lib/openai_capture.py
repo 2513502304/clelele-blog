@@ -26,7 +26,7 @@ def capture(response):
     target = Path(destination)
     temporary = target.with_suffix('.tmp')
     fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, 'w') as stream:
+    with os.fdopen(fd, 'w', encoding='utf-8') as stream:
         json.dump(exchanges, stream, ensure_ascii=False)
     os.replace(temporary, target)
 
