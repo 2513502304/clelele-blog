@@ -48,15 +48,19 @@ export async function uploadGeneratedExamples(manifestPath: string, apply = fals
     if (!verified || !gunzipSync(verified, { maxOutputLength: 64 * 1024 * 1024 }).equals(encoded))
       throw new Error('Receipt verification failed.');
   }
-  const result = await runStyleGalleryExampleUpload([
-    '--item',
-    manifest.source.slug,
-    '--platform',
-    manifest.generation.provider === 'pixai' ? 'PixAI' : 'GPT-Image',
-    '--note',
-    manifest.generation.prompt,
-    ...files,
-  ]);
+  const result = await runStyleGalleryExampleUpload(
+    [
+      '--item',
+      manifest.source.slug,
+      '--platform',
+      manifest.generation.provider === 'pixai' ? 'PixAI' : 'GPT-Image',
+      '--note',
+      manifest.generation.prompt,
+      ...files,
+    ],
+    undefined,
+    new Map(files.map((file, index) => [file, manifest.outputs[index].sha256])),
+  );
   if (result !== 0) throw new Error('Some images failed to publish. Rerun this receipt; generation is not repeated.');
   console.log(`Archived full request/response metadata in private HF object ${key}.`);
 }

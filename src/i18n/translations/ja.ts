@@ -121,6 +121,8 @@ export const uiStrings: UIStrings = {
   'gallery.generationPromptCopyFailed': 'コピーできませんでした。テキストを選択してコピーしてください。',
   'gallery.generationPrompt': '生成プロンプト',
   'gallery.generationPromptExpand': '生成プロンプトをすべて表示',
+  'gallery.generationPromptShow': '全文を表示',
+  'gallery.generationPromptCollapse': '折りたたむ',
   'gallery.generationPromptCopy': '生成プロンプトをコピー',
   'gallery.title': 'Image Style Prompt Gallery',
   'gallery.kicker': 'Reference image to reusable prompt',

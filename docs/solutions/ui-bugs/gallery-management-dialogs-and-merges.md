@@ -11,6 +11,8 @@ tags: [gallery, scrolling, lightbox, merging, conditional-writes]
 
 Read this before changing collection, prompt editing, bulk tags or card merging. Storage contracts and recovery details live in [style-gallery-storage.md](../../style-gallery-storage.md).
 
+Generated example notes have three distinct presentations: overview cards reserve/clamp three lines, detail sub-image cards show at most five lines with their own keyboard-accessible scroll area, and Lightbox has a full-text scroll area and a separate copy-generation-prompt action. Image clicks start collapsed; the shared card note's explicit prompt action opens the reader expanded. Both overview and detail launchers must pass the complete note into Lightbox; copying a source template must not substitute for copying the actual generation input. Test the real card launchers, scrolling, and full-text clipboard content, not only injected modal data. A preview-only PR does not change production, even when example data has already been uploaded to HF.
+
 ## Modal geometry and input
 
 - Bound the outer dialog to the viewport (`90dvh` plus a maximum height). Keep header/footer nonshrinking and place the form body in a `min-height: 0`, flexing, vertically scrollable container. The scroll container must wrap the disabled fieldset: a fieldset is not a reliable flex-shrinking scroll root.

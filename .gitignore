@@ -39,3 +39,9 @@ test-results/
 
 # Backup files
 backups/
+
+# Generated images and private provider receipts
+output/gallery-generation/
+
+# Python pipeline bytecode
+__pycache__/

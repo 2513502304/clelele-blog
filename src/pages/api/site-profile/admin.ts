@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { HfS3ConflictError } from '../../../lib/hf-s3';
 import { RequestTooLargeError, readBoundedBody } from '../../../lib/read-bounded-body';
 import { isSiteAdmin, rejectCrossOriginMutation } from '../../../lib/site-admin-auth';
-import { assetKeySchema, assetSlotSchema, profileFieldsSchema } from '../../../lib/site-profile/schema';
+import { appendSiteAssetHistory, assetKeySchema, assetSlotSchema, profileFieldsSchema } from '../../../lib/site-profile/schema';
 import { getSiteProfile, saveSiteProfile, uploadSiteAsset } from '../../../lib/site-profile/store';
 export const prerender = false;
 const saveSchema = z.object({
@@ -37,7 +37,7 @@ export const POST: APIRoute = async ({ cookies, request, url }) => {
       const asset = await uploadSiteAsset(new Uint8Array(await file.arrayBuffer()), file.name);
       const result = await saveSiteProfile(revision, (current) => {
         if (!current) throw new Error('Profile unavailable.');
-        return { ...current, history: [...current.history.filter((entry) => entry.key !== asset.key), asset] };
+        return { ...current, history: appendSiteAssetHistory(current, asset) };
       });
       return Response.json({ profile: result, asset }, { headers: privateHeaders });
     }

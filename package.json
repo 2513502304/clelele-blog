@@ -16,6 +16,8 @@
     "generate:all": "npm run generate:lqips && npm run generate:summaries && npm run generate:similarities",
     "import:style-prompts": "node --disable-warning=DEP0205 --use-env-proxy --env-file-if-exists=.env.local --import tsx scripts/import-style-prompts.mjs",
     "upload:generated-examples": "node --disable-warning=DEP0205 --use-env-proxy --env-file-if-exists=.env.local --import tsx scripts/upload-generated-examples.ts",
+    "generate:style-examples": "python3 scripts/generate-style-examples.py",
+    "test:gallery-generation": "python3 -m unittest discover -s scripts/tests -p 'test_gallery_generation*.py'",
     "upload:style-examples": "node --use-env-proxy --env-file-if-exists=.env.local --import tsx scripts/upload-style-examples.ts",
     "publish:live2d-models": "node --use-env-proxy --env-file-if-exists=.env.local --import tsx scripts/live2d/publish-models.ts",
     "publish:live2d-bootstrap": "node --use-env-proxy --env-file-if-exists=.env.local --import tsx scripts/live2d/publish-bootstrap-metadata.ts",

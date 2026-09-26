@@ -68,11 +68,11 @@ site:
 
 ### 替换头像
 
-将你的头像图片替换到 `public/api/site-assets/avatar`
+初始化 HF 站点资料后，以管理员身份打开 `/admin`，上传或粘贴头像并确认发布。`/api/site-assets/avatar` 是读取 HF 资料的动态地址，不要在 `public/` 中创建同名文件。初始化与权限配置见 [站点资料管理](docs/site-profile-admin.md)。
 
 ### 社交链接
 
-在 `config/site.yaml` 中配置社交媒体链接：
+HF 资料启用后，联系方式在 `/admin` 中添加、删除和排序。`config/site.yaml` 中的配置仅作为初始化或未配置 HF 时的默认值：
 
 ```yaml
 social:

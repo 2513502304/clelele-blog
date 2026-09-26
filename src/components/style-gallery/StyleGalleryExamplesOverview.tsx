@@ -1,5 +1,6 @@
 import { ErrorBoundary, InlineErrorFallback } from '@components/common';
 import StyleGalleryDateRangeFilter from '@components/style-gallery/StyleGalleryDateRangeFilter';
+import { StyleGalleryExampleNote } from '@components/style-gallery/StyleGalleryExampleNote';
 import StyleGalleryVisualFilter, {
   type StyleGalleryVisualFilterLabels,
 } from '@components/style-gallery/StyleGalleryVisualFilter';
@@ -244,12 +245,13 @@ function StyleGalleryExamplesOverviewContent({
   function rememberSourceThumbnail(slug: string, image: HTMLImageElement | null) {
     if (image?.complete && image.naturalWidth > 0) sourceThumbnails.current.set(slug, image.currentSrc || image.src);
   }
-  function openLightbox(example: StyleGalleryExampleOverviewItem, navigation = filtered) {
+  function openLightbox(example: StyleGalleryExampleOverviewItem, navigation = filtered, revealPrompt = false) {
     // 仅在用户打开 popup 时构造导航动作；点赞状态更新不再重复映射数千个未打开的示例。
     const lightboxImages = navigation.map((candidate) => ({
       id: candidate.id,
       gallerySourceSlug: candidate.sourceSlug,
       generationPrompt: candidate.note,
+      generationPromptInitiallyExpanded: revealPrompt && candidate.id === example.id,
       src: candidate.src,
       dimensions: candidate.dimensions,
       resolvedSrc: getReusableStyleGalleryImageUrl(candidate.src, loadedExampleSources.current.has(candidate.src)),
@@ -556,7 +558,14 @@ function StyleGalleryExamplesOverviewContent({
                       </time>
                     )}
                   </div>
-                  {example.note && <p className="line-clamp-3 text-muted-foreground text-xs leading-5">{example.note}</p>}
+                  {example.note && (
+                    <StyleGalleryExampleNote
+                      note={example.note}
+                      locale={locale}
+                      rows={3}
+                      onOpen={() => openLightbox(example, grouped ? stack : filtered, true)}
+                    />
+                  )}
                   <a
                     href={`${galleryBasePath}/${example.sourceSlug}`}
                     data-astro-prefetch="false"

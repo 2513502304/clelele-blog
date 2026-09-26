@@ -121,6 +121,8 @@ export const uiStrings: UIStrings = {
   'gallery.generationPromptCopyFailed': 'Copy failed. Select the text to copy manually.',
   'gallery.generationPrompt': 'Generation prompt',
   'gallery.generationPromptExpand': 'Expand full generation prompt',
+  'gallery.generationPromptShow': 'Read more',
+  'gallery.generationPromptCollapse': 'Collapse',
   'gallery.generationPromptCopy': 'Copy full generation prompt',
   'gallery.title': 'Image Style Prompt Gallery',
   'gallery.kicker': 'Reference image to reusable prompt',

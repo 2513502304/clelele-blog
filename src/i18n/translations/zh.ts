@@ -120,6 +120,8 @@ export const uiStrings = {
   'gallery.generationPromptCopyFailed': '复制失败，请选择全文手动复制。',
   'gallery.generationPrompt': '生成图片 prompt',
   'gallery.generationPromptExpand': '展开全部生成图片 prompt',
+  'gallery.generationPromptShow': '展开全文',
+  'gallery.generationPromptCollapse': '收起全文',
   'gallery.generationPromptCopy': '复制全部生成图片 prompt',
   'gallery.title': 'Image Style Prompt Gallery',
   'gallery.kicker': 'Reference image to reusable prompt',

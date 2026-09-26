@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "id": "example-prompts-only",
+  "charactersFile": "characters.json",
+  "selections": [
+    {
+      "id": "chosen",
+      "select": {
+        "hashes": ["e109a23b4126"]
+      },
+      "runs": [
+        {
+          "id": "elaina-text",
+          "character": "elaina"
+        },
+        {
+          "id": "kita-text",
+          "character": "kita"
+        }
+      ]
+    }
+  ]
+}

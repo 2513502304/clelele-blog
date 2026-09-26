@@ -3,7 +3,7 @@ import { ProfileQuickEdit } from '@components/site-profile/ProfileQuickEdit';
 import type { FeaturedSeriesItem } from '@lib/config/types';
 import { translateSeriesField } from '@lib/content';
 import { getSanitizeHtml } from '@lib/sanitize';
-import { bannerSlot, siteAssetUrl } from '@lib/site-profile/schema';
+import { SITE_ASSET_SLOTS, siteAssetUrl } from '@lib/site-profile/schema';
 import { Icon } from 'astro-icon/components';
 import { marked } from 'marked';
 import { MAX_WIDTH } from '@/constants/layout';
@@ -15,7 +15,8 @@ interface Props {
 }
 
 const { series } = Astro.props;
-const assetSlot = bannerSlot(Astro.url.pathname);
+// Custom series keep their configured cover; only an actual slot enables HF quick editing.
+const assetSlot = SITE_ASSET_SLOTS.find((slot) => slot !== 'avatar' && slot === series.slug);
 const locale = getLocaleFromUrl(Astro.url.pathname);
 
 // Translate series fields with fallback to YAML values
@@ -33,7 +34,7 @@ const descriptionHtml = getSanitizeHtml(rawHtml);
   <!-- Series cover image -->
   <div class="absolute inset-0 -z-10 h-full w-full">
     <img
-      src={siteAssetUrl(assetSlot)}
+      src={assetSlot ? siteAssetUrl(assetSlot) : series.cover || siteAssetUrl('home')}
       alt={seriesTitle}
       class="h-full w-full object-cover"
       loading="eager"
@@ -108,6 +109,6 @@ const descriptionHtml = getSanitizeHtml(rawHtml);
     }
   </div>
 
-  <ProfileQuickEdit slot={assetSlot} client:idle />
+  {assetSlot && <ProfileQuickEdit slot={assetSlot} client:idle />}
   <WaveSvg />
 </div>

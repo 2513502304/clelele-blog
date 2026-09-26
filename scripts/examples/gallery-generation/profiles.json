@@ -1,0 +1,16 @@
+{
+  "portrait": {
+    "provider": "pixai",
+    "model": "2024383379556065549",
+    "ratio": "3:4",
+    "size": "1.5k",
+    "quality": "ultra",
+    "batch_size": 4,
+    "seed": null
+  },
+  "landscape": {
+    "provider": "pixai",
+    "ratio": "3:2",
+    "batch_size": 4
+  }
+}

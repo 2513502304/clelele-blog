@@ -98,6 +98,8 @@ export interface ImageLightboxImage {
   gallerySourceSlug?: string;
   /** Full generation prompt for this example, distinct from the source template. */
   generationPrompt?: string;
+  /** Only a deliberate "read prompt" action expands it; opening an image stays collapsed. */
+  generationPromptInitiallyExpanded?: boolean;
   id?: string;
   src: string;
   /** 当前实际加载地址：通常是 HF 签名直连，也可暂存页面已加载的 canonical src 以复用浏览器缓存。 */

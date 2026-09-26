@@ -70,6 +70,19 @@ export const siteProfileSchema = profileFieldsSchema
 export type SiteProfile = z.infer<typeof siteProfileSchema>;
 export type SiteAsset = z.infer<typeof assetSchema>;
 
+/** Bound the selectable history while preserving every active slot and the just-uploaded asset. */
+export function appendSiteAssetHistory(profile: SiteProfile, asset: SiteAsset): SiteAsset[] {
+  const protectedKeys = new Set([...Object.values(profile.assets), asset.key]);
+  const history = [...profile.history.filter((entry) => entry.key !== asset.key), asset];
+  while (history.length > 500) {
+    const index = history.findIndex((entry) => !protectedKeys.has(entry.key));
+    if (index < 0) throw new Error('No inactive image history entry can be retired.');
+    history.splice(index, 1);
+  }
+  // This removes history references only. Original HF objects remain available for recovery.
+  return history;
+}
+
 /** Localized subpages share a banner slot; a source detail never becomes an arbitrary storage key. */
 export function bannerSlot(path: string): SiteAssetSlot {
   const first =

@@ -936,7 +936,11 @@ export default function ImageLightbox() {
                   </div>
                 )}
                 {currentImage.generationPrompt && (
-                  <LightboxGenerationPrompt key={currentImageKey} prompt={currentImage.generationPrompt} />
+                  <LightboxGenerationPrompt
+                    key={currentImageKey}
+                    prompt={currentImage.generationPrompt}
+                    initiallyExpanded={currentImage.generationPromptInitiallyExpanded}
+                  />
                 )}
                 {/* Navigation bar */}
                 {data.images.length > 1 && (
