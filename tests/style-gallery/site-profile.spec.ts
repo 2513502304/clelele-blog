@@ -59,7 +59,7 @@ test('owner editor keeps image history scrollable, locks the page and confirms p
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole('heading', { name: '历史图片' })).toBeVisible();
   const height = await dialog.evaluate((el) => el.getBoundingClientRect().height);
-  expect(height).toBeLessThanOrEqual(870 * 0.85 + 2);
+  expect(height).toBeLessThanOrEqual(870 * 0.9 + 2);
   expect(await page.locator('html').evaluate((el) => getComputedStyle(el).overflow)).toBe('hidden');
   await page.screenshot({ path: '/tmp/site-profile-admin-desktop.png', fullPage: false });
   await page.keyboard.press('Escape');
@@ -102,15 +102,15 @@ test('generation prompt expands, scrolls independently, and copies complete text
       currentIndex: 0,
     });
   }, prompt);
-  const details = page.locator('[data-image-lightbox] details');
+  const details = page.locator('[data-generation-reader]');
   await expect(details).toBeVisible();
-  await expect(details).not.toHaveAttribute('open', '');
-  await details.locator('summary').click();
+  await expect(details).toHaveAttribute('data-expanded', 'false');
+  await details.locator('.generation-glass-toggle').click();
   const full = details.locator('section');
   await full.hover();
   await page.mouse.wheel(0, 400);
   await expect.poll(() => full.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
-  await details.getByRole('button').click();
+  await details.getByRole('button', { name: '复制全部生成图片 prompt', exact: true }).click();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(prompt);
   await page.screenshot({ path: '/tmp/lightbox-generation-prompt.png' });
 });

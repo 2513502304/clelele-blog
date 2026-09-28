@@ -1,0 +1,350 @@
+/* Atelier: a centered canvas, glass identity card, and an edge-to-edge photographic hero. */
+[data-theme="atelier"] {
+  --paper: #eff5f0;
+  --ink: #24433c;
+  --muted: #758e84;
+  --accent: #407860;
+  --line: #ceded5;
+  background: radial-gradient(ellipse at 85% 20%, #d8e9df, transparent 50%), var(--paper);
+}
+[data-theme="atelier"] .site-header {
+  margin: 25px auto 0;
+  height: 64px;
+  padding: 0 28px;
+  border: 1px solid #ffffffc9;
+  border-radius: 60px;
+  background: #ffffff85;
+  box-shadow: 0 4px 30px #254b3610;
+}
+[data-theme="atelier"] .design-inner {
+  padding-top: 1px;
+}
+[data-theme="atelier"] .workspace {
+  display: block;
+  position: relative;
+}
+[data-theme="atelier"] .profile {
+  position: absolute;
+  z-index: 2;
+  right: 24px;
+  top: 348px;
+  width: 310px;
+  padding: 18px;
+  display: grid;
+  grid-template-columns: 54px 1fr;
+  gap: 16px;
+  border: 1px solid #fff9;
+  border-radius: 22px;
+  background: #ffffffc4;
+  backdrop-filter: blur(20px);
+  box-shadow: 0 10px 32px #244d3614;
+}
+[data-theme="atelier"] .profile > img {
+  width: 54px;
+  height: 54px;
+  margin: 0;
+}
+[data-theme="atelier"] .profile h2 {
+  margin: 2px 0 6px;
+  font-size: 13px;
+}
+[data-theme="atelier"] .profile p {
+  font-size: 10px;
+  margin: 0;
+}
+[data-theme="atelier"] .profile .overline,
+[data-theme="atelier"] .profile-links,
+[data-theme="atelier"] .profile-footnote {
+  display: none;
+}
+[data-theme="atelier"] .hero {
+  min-height: 480px;
+  border-radius: 28px;
+  overflow: hidden;
+  padding: 50px;
+  margin-bottom: 70px;
+}
+[data-theme="atelier"] .hero-copy {
+  position: relative;
+  z-index: 1;
+  color: white;
+}
+[data-theme="atelier"] .hero-copy .overline,
+[data-theme="atelier"] .hero-copy p,
+[data-theme="atelier"] .hero em {
+  color: #ffffffb8;
+}
+[data-theme="atelier"] .hero-image {
+  position: absolute;
+  inset: 0;
+  padding: 0;
+  transform: none;
+  z-index: 0;
+  background: #183a36;
+}
+[data-theme="atelier"] .hero-image img {
+  height: 100%;
+  opacity: 0.6;
+  object-position: center 28%;
+}
+[data-theme="atelier"] .hero-image::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, #102d33b3, transparent);
+}
+[data-theme="atelier"] .hero-image figcaption {
+  display: none;
+}
+[data-theme="atelier"] .hero-link {
+  background: #ffffffdc;
+  color: #214539;
+  border-radius: 40px;
+}
+[data-theme="atelier"] .journal {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+[data-theme="atelier"] .section-heading {
+  grid-column: 1 / -1;
+}
+[data-theme="atelier"] .journal-row {
+  border: 1px solid #fff;
+  padding: 22px;
+  border-radius: 18px;
+  background: #ffffff8a;
+}
+[data-theme="atelier"] .journal-number {
+  display: none;
+}
+[data-theme="atelier"] .image-card > button {
+  border-radius: 18px;
+}
+/* Folio: typography and ruled columns carry the hierarchy, with warm paper instead of floating cards. */
+[data-theme="folio"] {
+  --paper: #f2eee3;
+  --surface: #e7e1d4;
+  --ink: #2e3028;
+  --muted: #878677;
+  --accent: #a34529;
+  --line: #c9c4b7;
+  font-family: "Songti SC", "Noto Serif CJK SC", "Times New Roman", serif;
+}
+[data-theme="folio"] .site-header {
+  height: 120px;
+  border-bottom: 3px double var(--ink);
+}
+[data-theme="folio"] .wordmark {
+  font-size: 48px;
+  font-style: normal;
+}
+[data-theme="folio"] .wordmark span {
+  display: none;
+}
+[data-theme="folio"] .workspace {
+  display: flex;
+  flex-direction: column;
+  padding-top: 28px;
+}
+[data-theme="folio"] .profile {
+  display: flex;
+  position: static;
+  align-items: center;
+  gap: 20px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 24px;
+}
+[data-theme="folio"] .profile > img {
+  width: 48px;
+  height: 48px;
+  margin: 0;
+  filter: grayscale(1);
+}
+[data-theme="folio"] .profile h2 {
+  margin: 0;
+}
+[data-theme="folio"] .profile p,
+[data-theme="folio"] .profile .overline {
+  display: none;
+}
+[data-theme="folio"] .profile-links {
+  margin: 0 0 0 auto;
+}
+[data-theme="folio"] .profile-footnote {
+  margin: 0;
+}
+[data-theme="folio"] .hero {
+  padding: 28px 0;
+  grid-template-columns: 0.9fr 1.3fr;
+  gap: 60px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 30px;
+}
+[data-theme="folio"] .hero h1 {
+  font-size: 56px;
+  letter-spacing: -0.04em;
+}
+[data-theme="folio"] .hero-image {
+  transform: none;
+  background: none;
+  padding: 0 0 0 28px;
+  border-left: 1px solid var(--line);
+  box-shadow: none;
+}
+[data-theme="folio"] .hero-image img {
+  height: 350px;
+}
+[data-theme="folio"] .hero-link {
+  background: none;
+  color: var(--accent);
+  padding-left: 0;
+  border-bottom: 1px solid var(--accent);
+  border-radius: 0;
+}
+[data-theme="folio"] .journal {
+  margin-bottom: 40px;
+}
+[data-theme="folio"] .section-heading h2 {
+  font-size: 25px;
+}
+[data-theme="folio"] .image-grid {
+  gap: 30px;
+}
+[data-theme="folio"] .image-card:nth-child(2) {
+  padding-top: 36px;
+}
+[data-theme="folio"] .image-caption {
+  border-bottom: 1px solid var(--line);
+}
+/* Cinema: a dark, wide image stage and a quiet compact identity strip. */
+[data-theme="cinema"] {
+  --paper: #161a1c;
+  --surface: #252b2d;
+  --ink: #e6e9e4;
+  --muted: #909891;
+  --accent: #d8bb83;
+  --line: #363d3d;
+}
+[data-theme="cinema"] .design-inner {
+  padding: 0 4%;
+}
+[data-theme="cinema"] .site-header {
+  height: 78px;
+}
+[data-theme="cinema"] .wordmark {
+  font-style: normal;
+  font-size: 25px;
+}
+[data-theme="cinema"] .workspace {
+  display: flex;
+  flex-direction: column;
+  padding-top: 30px;
+}
+[data-theme="cinema"] .profile {
+  order: 2;
+  position: static;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 26px 0;
+  border-top: 1px solid var(--line);
+  margin-top: 42px;
+}
+[data-theme="cinema"] .profile > img {
+  width: 52px;
+  height: 52px;
+  margin: 0;
+}
+[data-theme="cinema"] .profile p {
+  margin: 0;
+}
+[data-theme="cinema"] .profile .overline,
+[data-theme="cinema"] .profile-footnote {
+  display: none;
+}
+[data-theme="cinema"] .profile-links {
+  margin-left: auto;
+}
+[data-theme="cinema"] .hero {
+  height: 560px;
+  display: block;
+  margin-bottom: 50px;
+  overflow: hidden;
+  padding: 0;
+}
+[data-theme="cinema"] .hero-image {
+  position: absolute;
+  inset: 0;
+  transform: none;
+  padding: 0;
+  box-shadow: none;
+}
+[data-theme="cinema"] .hero-image img {
+  height: 100%;
+  object-position: 50% 28%;
+  opacity: 0.7;
+}
+[data-theme="cinema"] .hero-image::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(0deg, #0e141bf0, transparent 90%);
+}
+[data-theme="cinema"] .hero-image figcaption {
+  display: none;
+}
+[data-theme="cinema"] .hero-copy {
+  position: absolute;
+  z-index: 1;
+  left: 42px;
+  bottom: 36px;
+}
+[data-theme="cinema"] .hero h1 {
+  font-size: 54px;
+  line-height: 1.25;
+  margin: 16px 0;
+}
+[data-theme="cinema"] .hero p {
+  display: none;
+}
+[data-theme="cinema"] .hero em {
+  color: var(--ink);
+}
+[data-theme="cinema"] .hero-link {
+  padding: 0;
+  background: none;
+  color: var(--accent);
+  margin-top: 8px;
+}
+[data-theme="cinema"] .hero-index {
+  display: block;
+  position: absolute;
+  right: 28px;
+  bottom: 30px;
+  font:
+    12px ui-monospace,
+    monospace;
+  color: var(--accent);
+}
+[data-theme="cinema"] .main-content {
+  display: flex;
+  flex-direction: column;
+}
+[data-theme="cinema"] .collection {
+  order: 1;
+}
+[data-theme="cinema"] .journal {
+  order: 2;
+  margin-top: 55px;
+  margin-bottom: 0;
+}
+[data-theme="cinema"] .image-grid {
+  gap: 12px;
+}
+[data-theme="cinema"] .image-card img {
+  height: 330px;
+}
+[data-theme="cinema"] .site-footer {
+  margin-top: 5px;
+}

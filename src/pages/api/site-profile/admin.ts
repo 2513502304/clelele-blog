@@ -3,7 +3,13 @@ import { z } from 'zod';
 import { HfS3ConflictError } from '../../../lib/hf-s3';
 import { RequestTooLargeError, readBoundedBody } from '../../../lib/read-bounded-body';
 import { isSiteAdmin, rejectCrossOriginMutation } from '../../../lib/site-admin-auth';
-import { appendSiteAssetHistory, assetKeySchema, assetSlotSchema, profileFieldsSchema } from '../../../lib/site-profile/schema';
+import {
+  appendSiteAssetHistory,
+  assetKeySchema,
+  assetSlotSchema,
+  profileFieldsSchema,
+  removeSiteAssetHistory,
+} from '../../../lib/site-profile/schema';
 import { getSiteProfile, saveSiteProfile, uploadSiteAsset } from '../../../lib/site-profile/store';
 export const prerender = false;
 const saveSchema = z.object({
@@ -56,6 +62,37 @@ export const POST: APIRoute = async ({ cookies, request, url }) => {
           ? 413
           : error instanceof HfS3ConflictError
             ? 409
+            : error instanceof z.ZodError || error instanceof SyntaxError
+              ? 400
+              : 500,
+      headers: privateHeaders,
+    });
+  }
+};
+
+/** Delete the history reference under the same revision lock as publishing; active images are protected. */
+export const DELETE: APIRoute = async ({ cookies, request, url }) => {
+  if (!isSiteAdmin(cookies)) return new Response('Not found.', { status: 404, headers: privateHeaders });
+  const rejected = rejectCrossOriginMutation(request, url);
+  if (rejected) return rejected;
+  try {
+    const input = z
+      .object({ revision: z.string().uuid(), key: assetKeySchema })
+      .parse(JSON.parse(new TextDecoder().decode(await readBoundedBody(request, 2048))));
+    const result = await saveSiteProfile(input.revision, (current) => {
+      if (!current) throw new Error('Profile unavailable.');
+      if (Object.values(current.assets).includes(input.key))
+        throw new HfS3ConflictError('请先更换并发布正在使用这张图片的页面。');
+      return { ...current, history: removeSiteAssetHistory(current, input.key) };
+    });
+    return Response.json(result, { headers: privateHeaders });
+  } catch (error) {
+    return new Response(error instanceof HfS3ConflictError ? error.message : '删除失败，请刷新后重试。', {
+      status:
+        error instanceof HfS3ConflictError
+          ? 409
+          : error instanceof RequestTooLargeError
+            ? 413
             : error instanceof z.ZodError || error instanceof SyntaxError
               ? 400
               : 500,

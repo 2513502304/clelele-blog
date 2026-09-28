@@ -11,7 +11,7 @@ tags: [gallery, scrolling, lightbox, merging, conditional-writes]
 
 Read this before changing collection, prompt editing, bulk tags or card merging. Storage contracts and recovery details live in [style-gallery-storage.md](../../style-gallery-storage.md).
 
-Generated example notes have three distinct presentations: overview cards reserve/clamp three lines, detail sub-image cards show at most five lines with their own keyboard-accessible scroll area, and Lightbox has a full-text scroll area and a separate copy-generation-prompt action. Image clicks start collapsed; the shared card note's explicit prompt action opens the reader expanded. Both overview and detail launchers must pass the complete note into Lightbox; copying a source template must not substitute for copying the actual generation input. Test the real card launchers, scrolling, and full-text clipboard content, not only injected modal data. A preview-only PR does not change production, even when example data has already been uploaded to HF.
+Grouped overview cards do not summarize the first image's note: different images can have different prompts. Detail sub-image cards show at most five lines with their own keyboard-accessible scroll area, and Lightbox has a full-text scroll area and a separate copy-generation-prompt action. Image clicks start collapsed; the shared card note's explicit prompt action opens the reader expanded. Both overview and detail launchers must pass the complete note into Lightbox; copying a source template must not substitute for copying the actual generation input. Test the real card launchers, scrolling, and full-text clipboard content, not only injected modal data. A preview-only PR does not change production, even when example data has already been uploaded to HF.
 
 ## Modal geometry and input
 
@@ -73,3 +73,12 @@ Exercise long generated/original prompts, visible tag suggestions, multiple imag
 ### Embedded UI images and historical identities
 
 Treat `user_message.images` and same-turn `item_completed.UserMessage` image content as UI representations, independent of attachment paths. Selecting better source bytes must retain the displaced model group hash for private identity resolution. A byte-integrity check and an idempotent rerun do not prove that there is no second active card: also resolve every corroborated representation and check that they converge to one identity. If they resolve to two active cards, stop before publication and report the conflict. Keep group order, require matching input identity, and never infer a relationship from the generic reverse-prompt request alone.
+
+## Profile image editing and Lightbox follow-ups
+
+- Keep crop geometry and cover dimensions in `site-profile/image-crop.ts`. Quick-edit links capture the actual displayed aspect ratio. Avatar masks are circular but output pixels remain square; never mistake a circle mask for transparent exported corners.
+- A crop is an explicit new WebP image. Direct history reuse keeps existing bytes. Do not claim cropping is lossless or preserves GIF animation. The client may read 20 MB locally but must export within the 3 MB request limit.
+- Retiring history is a conditional profile-reference update, not an uncoordinated HF object deletion. Protect all published slots on the server, protect draft references in the UI, and retain immutable HF bytes for recovery. Publishing and retirement share the same revision/ETag rules.
+- The global textarea reset uses `field-sizing: content`. A bounded input must explicitly set `field-sizing: fixed`, min/max height and `overflow-y: auto`; `rows` alone does not constrain it.
+- The generation reader carries the platform and note for the current image, including platform-only images. Drag gestures must suppress their own click without breaking ordinary button clicks, scrollbar use, or keyboard activation. Clamp width independently of width animation when the viewport shrinks.
+- Respect reduced motion, transparency and contrast preferences. Limit backdrop blur to the panel, never to a full-screen animated layer. Experimental design pages stay isolated from production styles until the user chooses a direction.

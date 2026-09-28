@@ -16,11 +16,11 @@ async function imagesOnlyFixture(page: Page) {
 }
 
 async function checkPromptViewer(page: Page, prompt: string) {
-  const details = page.locator('[data-image-lightbox] details');
+  const details = page.locator('[data-generation-reader]');
   await expect(details).toBeVisible();
-  await expect(details).not.toHaveAttribute('open', '');
-  await details.locator('summary').click();
-  const full = details.locator('section');
+  await expect(details).toHaveAttribute('data-expanded', 'false');
+  await details.locator('.generation-glass-toggle').click();
+  const full = details.locator('[data-prompt-text]');
   expect(await full.textContent()).toBe(prompt);
   const pageScroll = await page.evaluate(() => scrollY);
   await full.hover();
@@ -31,36 +31,44 @@ async function checkPromptViewer(page: Page, prompt: string) {
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(prompt);
 }
 
-test('sub-gallery keeps three note rows and opens its complete generation prompt', async ({ page, context }) => {
+test('group overview has no misleading note excerpt; each image opens its own complete prompt and platform', async ({
+  page,
+  context,
+}) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await imagesOnlyFixture(page);
   await page.goto('/image-style-prompt-gallery/examples', { waitUntil: 'domcontentloaded' });
-  const note = page.locator('[data-example-note]').first();
-  await expect(note).toBeVisible();
-  const rows = await note.evaluate((el) => {
-    const style = getComputedStyle(el);
-    return { clamp: style.webkitLineClamp, rows: el.clientHeight / Number.parseFloat(style.lineHeight) };
-  });
-  expect(rows.clamp).toBe('3');
-  expect(rows.rows).toBeCloseTo(3, 1);
-  await note.scrollIntoViewIfNeeded();
-  const prompt = (await note.textContent()) ?? '';
-  expect(prompt).not.toBe('');
-  await page.screenshot({ path: '/tmp/gallery-overview-three-rows.png' });
-  const card = note.locator('xpath=ancestor::figure');
-  await expect(card.locator('xpath=ancestor::astro-island')).not.toHaveAttribute('ssr');
-  await card.locator('.gallery-source-stack').click();
+  await expect(page.locator('[data-example-note]')).toHaveCount(0);
+  const stack = page.locator('.gallery-source-stack').first();
+  await stack.scrollIntoViewIfNeeded();
+  await expect(stack.locator('xpath=ancestor::astro-island')).not.toHaveAttribute('ssr');
+  await stack.click();
+  const prompt = Array.from({ length: 40 }, (_, i) => `第 ${i + 1} 行：保留角色特征、花瓣、水彩笔触和完整换行。`).join('\n');
   await checkPromptViewer(page, prompt);
-  await page.screenshot({ path: '/tmp/gallery-overview-generation-note.png' });
-  await page.keyboard.press('Escape');
-  await card.getByRole('button', { name: '展开全部生成图片 prompt', exact: true }).click();
-  await expect(page.locator('[data-image-lightbox] details')).toHaveAttribute('open', '');
+  await expect(page.locator('[data-generation-platform]')).toHaveText('PixAI');
+  const panel = page.locator('[data-generation-reader]');
+  const before = await panel.boundingBox();
+  if (!before) throw new Error('Missing prompt reader');
+  // Drag from prompt text, not a dedicated handle; releasing must not toggle or copy.
+  await page.mouse.move(before.x + 80, before.y + 150);
+  await page.mouse.down();
+  await page.mouse.move(before.x + 230, before.y + 90, { steps: 12 });
+  await page.mouse.up();
+  await expect.poll(async () => (await panel.boundingBox())?.x).toBeGreaterThan(before.x + 100);
+  await expect(panel).toHaveAttribute('data-expanded', 'true');
+  await page.screenshot({ path: '/tmp/gallery-glass-reader.png' });
 });
 
 test('detail note is five scrollable rows and opens its complete generation prompt', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await imagesOnlyFixture(page);
   await page.goto('/image-style-prompt-gallery/2026-09-23-35dc5191ccad', { waitUntil: 'domcontentloaded' });
+  const input = page.locator('[data-example-note-input]');
+  await input.fill('多行输入\n'.repeat(100));
+  expect(await input.evaluate((el) => ({ height: el.clientHeight, scroll: el.scrollHeight > el.clientHeight }))).toEqual({
+    height: 38,
+    scroll: true,
+  });
   const note = page.locator('[data-example-note]').first();
   await note.scrollIntoViewIfNeeded();
   const box = await note.evaluate((el) => ({
@@ -87,11 +95,30 @@ test('detail note is five scrollable rows and opens its complete generation prom
   await checkPromptViewer(page, prompt);
   await page.screenshot({ path: '/tmp/gallery-detail-generation-note.png' });
   await page.setViewportSize({ width: 390, height: 844 });
-  const panel = page.locator('[data-image-lightbox] details');
+  const panel = page.locator('[data-generation-reader]');
   const bounds = await panel.boundingBox();
   expect(bounds).not.toBeNull();
   expect(bounds?.x).toBeGreaterThanOrEqual(0);
   expect((bounds?.x ?? 0) + (bounds?.width ?? 0)).toBeLessThanOrEqual(390);
   expect(bounds?.y).toBeGreaterThanOrEqual(0);
   await page.screenshot({ path: '/tmp/gallery-prompt-mobile.png' });
+});
+
+test('platform remains visible without a note, and does not leak the previous image prompt', async ({ page }) => {
+  await imagesOnlyFixture(page);
+  await page.goto('/image-style-prompt-gallery/examples', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('.gallery-source-stack').first().locator('xpath=ancestor::astro-island')).not.toHaveAttribute(
+    'ssr',
+  );
+  await page.evaluate(async () => {
+    const path = '/src/store/modal.ts';
+    const { openModal } = await import(path);
+    openModal('imageLightbox', {
+      images: [{ src: '/api/site-assets/home', alt: 'Platform-only output', generationPlatform: 'GPT-Image' }],
+      currentIndex: 0,
+    });
+  });
+  await expect(page.locator('[data-generation-platform]')).toHaveText('GPT-Image');
+  await expect(page.locator('[data-generation-reader]')).toHaveAttribute('data-expanded', 'false');
+  await expect(page.locator('.generation-glass-toggle')).toBeDisabled();
 });

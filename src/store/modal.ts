@@ -98,6 +98,8 @@ export interface ImageLightboxImage {
   gallerySourceSlug?: string;
   /** Full generation prompt for this example, distinct from the source template. */
   generationPrompt?: string;
+  /** The platform of this individual output, independent of its optional prompt. */
+  generationPlatform?: string;
   /** Only a deliberate "read prompt" action expands it; opening an image stays collapsed. */
   generationPromptInitiallyExpanded?: boolean;
   id?: string;

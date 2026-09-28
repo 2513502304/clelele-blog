@@ -1,8 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
-import { useGalleryDialogScrollLock } from '@/hooks/useGalleryDialogScrollLock';
+import { useEffect, useState } from 'react';
 import { SITE_ASSET_SLOTS, type SiteAssetSlot, type SiteProfile, siteAssetUrl } from '@/lib/site-profile/schema';
 import { guardGalleryNavigation } from '@/lib/style-gallery-navigation-guard';
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog';
+import SiteAssetPicker from './SiteAssetPicker';
 
 const labels: Record<SiteAssetSlot, string> = {
   avatar: '头像',
@@ -28,47 +27,26 @@ export default function SiteProfileAdmin({ initial }: { initial: SiteProfile }) 
   const [saved, setSaved] = useState(initial);
   const [draft, setDraft] = useState(initial);
   const [slot, setSlot] = useState<SiteAssetSlot | null>(null);
-  const [file, setFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState('');
+  const [imageDirty, setImageDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
-  const picker = useRef<HTMLInputElement>(null);
   const dirty =
     JSON.stringify({ name: draft.name, signature: draft.signature, links: draft.links, assets: draft.assets }) !==
     JSON.stringify({ name: saved.name, signature: saved.signature, links: saved.links, assets: saved.assets });
-  const dialogRef = useGalleryDialogScrollLock(Boolean(slot));
   useEffect(() => {
     const value = new URLSearchParams(location.search).get('asset');
     if (SITE_ASSET_SLOTS.includes(value as SiteAssetSlot)) setSlot(value as SiteAssetSlot);
   }, []);
   useEffect(() => {
-    if (!file) {
-      setPreview('');
-      return;
-    }
-    const url = URL.createObjectURL(file);
-    setPreview(url);
-    return () => URL.revokeObjectURL(url);
-  }, [file]);
-  useEffect(() => {
-    if (dirty || file) return guardGalleryNavigation('放弃尚未保存的资料修改？');
-  }, [dirty, file]);
+    if (dirty || imageDirty) return guardGalleryNavigation('放弃尚未保存的资料修改？');
+  }, [dirty, imageDirty]);
   async function request(body: BodyInit, headers?: HeadersInit) {
     const response = await fetch('/api/site-profile/admin', { method: 'POST', body, headers });
     if (!response.ok) throw new Error(await response.text());
     return response;
   }
-  function choose(next: File | undefined) {
-    if (!next) return;
-    if (!/^image\/(jpeg|png|webp|gif)$/.test(next.type) || next.size > 3_000_000) {
-      setMessage('请选择 3 MB 以内的 JPEG、PNG、WebP 或 GIF 图片。');
-      return;
-    }
-    setFile(next);
-    setMessage('');
-  }
-  async function upload() {
-    if (!file || !slot || busy) return;
+  async function upload(file: File) {
+    if (!slot || busy) return;
     if (!window.confirm('上传这张图片到历史记录，并设为待保存的图片？')) return;
     const selectedSlot = slot;
     setBusy(true);
@@ -84,11 +62,8 @@ export default function SiteProfileAdmin({ initial }: { initial: SiteProfile }) 
         history: result.profile.history,
         assets: { ...current.assets, [selectedSlot]: result.asset.key },
       }));
-      setFile(null);
       setSlot(null);
       setMessage('图片已加入历史。请保存资料以发布更换。');
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : '上传失败。');
     } finally {
       setBusy(false);
     }
@@ -138,7 +113,7 @@ export default function SiteProfileAdmin({ initial }: { initial: SiteProfile }) 
           <label>
             个人签名
             <textarea
-              className={`${inputClass} h-24 resize-none overflow-y-auto overscroll-contain`}
+              className={`${inputClass} h-24 resize-none overflow-y-auto overscroll-contain [field-sizing:fixed]`}
               value={draft.signature}
               maxLength={500}
               onChange={(e) => setDraft({ ...draft, signature: e.target.value })}
@@ -270,84 +245,42 @@ export default function SiteProfileAdmin({ initial }: { initial: SiteProfile }) 
           {busy ? '处理中…' : '保存并发布'}
         </button>
       </footer>
-      <Dialog
-        open={Boolean(slot)}
-        onOpenChange={(open) => {
-          if (!open && !busy && (!file || window.confirm('放弃当前尚未上传的图片？'))) {
+      {slot && (
+        <SiteAssetPicker
+          key={slot}
+          slot={slot}
+          label={labels[slot]}
+          history={draft.history}
+          protectedKeys={[...Object.values(saved.assets), ...Object.values(draft.assets)].filter((key): key is string =>
+            Boolean(key),
+          )}
+          busy={busy}
+          onDirty={setImageDirty}
+          onClose={() => setSlot(null)}
+          onUpload={upload}
+          onReuse={(key) => {
+            setDraft((current) => ({ ...current, assets: { ...current.assets, [slot]: key } }));
             setSlot(null);
-            setFile(null);
-          }
-        }}
-      >
-        <DialogContent
-          ref={dialogRef}
-          animated={false}
-          className="flex max-h-[85dvh] max-w-4xl flex-col gap-0 overflow-hidden p-0"
-          onPaste={(event) => {
-            const image = [...event.clipboardData.files].find((entry) => entry.type.startsWith('image/'));
-            if (image) {
-              event.preventDefault();
-              choose(image);
+          }}
+          onDelete={async (key) => {
+            setBusy(true);
+            try {
+              const response = await fetch('/api/site-profile/admin', {
+                method: 'DELETE',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ revision: saved.revision, key }),
+              });
+              if (!response.ok) throw new Error(await response.text());
+              const profile = (await response.json()) as SiteProfile;
+              setSaved(profile);
+              // Keep unsaved profile fields and asset choices while advancing the shared revision.
+              setDraft((current) => ({ ...current, revision: profile.revision, history: profile.history }));
+            } finally {
+              setBusy(false);
             }
           }}
-        >
-          <div className="border-b p-5">
-            <DialogTitle>更换{slot ? labels[slot] : ''}</DialogTitle>
-            <DialogDescription>选择文件，或在窗口中粘贴图片。历史图片可直接复用。</DialogDescription>
-          </div>
-          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain p-5">
-            <input
-              ref={picker}
-              type="file"
-              accept="image/jpeg,image/png,image/webp,image/gif"
-              className="hidden"
-              onChange={(e) => {
-                choose(e.target.files?.[0]);
-                e.target.value = '';
-              }}
-            />
-            <button
-              type="button"
-              disabled={busy}
-              className="w-full rounded-xl border-2 border-dashed p-6 text-center"
-              onClick={() => picker.current?.click()}
-            >
-              {preview ? (
-                <img src={preview} alt="待上传图片" className="mx-auto max-h-72 object-contain" />
-              ) : (
-                '点击上传图片 / Ctrl+V 粘贴（最大 3 MB）'
-              )}
-            </button>
-            {message && <output className="block rounded-xl border p-3 text-sm">{message}</output>}
-            <h3>历史图片</h3>
-            <div className="grid grid-cols-3 gap-3 md:grid-cols-2">
-              {[...draft.history].reverse().map((asset) => (
-                <button
-                  type="button"
-                  disabled={busy}
-                  className="overflow-hidden rounded-xl border hover:border-primary"
-                  key={asset.key}
-                  onClick={() => {
-                    if (!slot) return;
-                    if (file && !window.confirm('放弃当前文件，改用历史图片？')) return;
-                    setDraft({ ...draft, assets: { ...draft.assets, [slot]: asset.key } });
-                    setFile(null);
-                    setSlot(null);
-                  }}
-                >
-                  <img src={assetUrl(asset.key)} alt={asset.name} className="h-32 w-full object-cover" loading="lazy" />
-                  <span className="block truncate p-2 text-xs">{asset.name}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="flex justify-end gap-3 border-t p-4">
-            <button type="button" className={buttonClass} disabled={!file || busy} onClick={() => void upload()}>
-              {busy ? '上传中…' : '使用这张图片'}
-            </button>
-          </div>
-        </DialogContent>
-      </Dialog>
+        />
+      )}
     </div>
   );
 }

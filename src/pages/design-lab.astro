@@ -1,0 +1,102 @@
+---
+// An isolated proposal surface: none of these styles or controls are loaded by the actual blog.
+import '../styles/design-lab.css';
+const concepts = [
+  ['sakura', '01', '花间手记', '保留粉色与个人侧栏，减轻边框，突出文章层次。'],
+  ['atelier', '02', '浮光工作室', '收起常驻侧栏，用浮动导航与玻璃资料卡，让图像获得更多空间。'],
+  ['folio', '03', '纸上画廊', '米白、墨色与衬线标题；以杂志式网格组织文字和收藏。'],
+  ['cinema', '04', '夜间放映室', '深色大幅图像与暖色标记，适合长时间浏览画廊。'],
+];
+const images = [
+  ['e109a23b4126.png', '日落之后', '像素 / 光影', 'e109a23b4126'],
+  ['4f418ed8123e.jpg', '留白的形状', '拼贴 / 构成', '4f418ed8123e'],
+  ['35dc5191ccad.jpg', '花与手写信', '水彩 / 插画', '35dc5191ccad'],
+];
+const imageUrl = (file: string) => `https://clelele-blog.vercel.app/api/style-gallery/image/source/${file}`;
+---
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex,nofollow" /><title>clelele · 四种设计方向</title>
+  </head>
+  <body>
+    <div class="lab-controls" data-concepts={JSON.stringify(concepts)}>
+      <div class="lab-brand"><strong>DESIGN STUDIES</strong><span>clelele / 交互预览 · 未应用</span></div>
+      <nav aria-label="选择设计方案">{concepts.map(([key, number, title, description]) => <button type="button" data-concept={key} title={description}><small>{number}</small> {title}</button>)}</nav>
+      <button type="button" id="viewport-toggle" aria-pressed="false">手机预览</button>
+    </div>
+    <div class="lab-context" aria-live="polite"><span id="concept-description">{concepts[0][3]}</span><span>同一组内容 · 点击图片可预览</span></div>
+    <main class="design-canvas" data-theme="sakura">
+      <div class="design-inner">
+        <header class="site-header"><a href="#" class="wordmark">clelele<span>✳</span></a>
+          <nav aria-label="预览导航"><button type="button" data-view="home" aria-pressed="true">手记</button><button type="button" data-view="gallery">图像收藏</button><a href="#journal">周刊</a><a href="#profile">关于</a></nav>
+          <span class="header-caption">NOTES ON THINGS I LOVE</span>
+        </header>
+        <div class="workspace">
+          <aside class="profile" id="profile"><img src="/api/site-assets/avatar" alt="clelele 的头像" /><div><span class="overline">THE AUTHOR</span><h2>你好，我是 clelele。</h2><p>记录技术、AIGC、ACG，<br />也收集生活里的小小心动。</p></div><div class="profile-links"><a href="https://github.com/2513502304">GitHub ↗</a><a href="https://pixai.art/@clelele">PixAI ↗</a></div><span class="profile-footnote">A SMALL CORNER OF THE INTERNET</span></aside>
+          <div class="main-content">
+            <section class="hero">
+              <div class="hero-copy"><span class="overline">PERSONAL JOURNAL / VOL. 09</span><h1>把喜欢的事，<br /><em>慢慢记下来。</em></h1><p>一些关于代码、图像和日常的记录。<br />在好奇心停留的地方，多看一会儿。</p><button type="button" data-view="gallery" class="hero-link">探索图像收藏 <span>↗</span></button></div>
+              <figure class="hero-image"><img src={imageUrl(images[0][0])} alt="夕阳中的像素画场景" fetchpriority="high" /><figcaption><span>光落在城市边缘</span><span>SELECTED IMAGE — 01</span></figcaption></figure>
+              <span class="hero-index" aria-hidden="true">01—03</span>
+            </section>
+            <section class="journal" id="journal"><div class="section-heading"><h2>最近的手记<span> / Journal</span></h2><span>2026 · SEPTEMBER</span></div>
+              <a href="/weekly" class="journal-row"><span class="journal-number">01</span><div><small>周刊 · 生活碎片</small><h3>在日常里，找到值得停留的瞬间</h3><p>最近读到的文章、想做的小项目，以及一些轻松的灵感。</p></div><span>09.26 ↗</span></a>
+              <a href="/image-style-prompt-gallery" class="journal-row"><span class="journal-number">02</span><div><small>AIGC · 图像实验</small><h3>从一张参考图，开始新的创作</h3><p>把喜欢的画面整理成可复用的提示词，与生成结果放在一起。</p></div><span>09.23 ↗</span></a>
+            </section>
+            <section class="collection"><div class="section-heading"><h2>视觉收藏<span> / Selected images</span></h2><span class="collection-label">按感觉分类，慢慢发现</span></div>
+              <div class="collection-tools"><label><span>⌕</span><input type="search" placeholder="搜索标题或风格…" aria-label="搜索预览图片" /></label><button type="button" class="filter active" data-filter="全部">全部</button><button type="button" class="filter" data-filter="像素">像素</button><button type="button" class="filter" data-filter="水彩">水彩</button></div>
+              <div class="image-grid">{images.map(([file, title, style, hash], index) => <article class="image-card" data-search={`${title} ${style}`}>
+                <button type="button" data-preview={imageUrl(file)} data-title={title}><img src={imageUrl(file)} alt={title} loading="eager" /><span class="image-open">查看大图 ↗</span></button>
+                <div class="image-caption"><span class="image-number">0{index + 1}</span><div><h3>{title}</h3><span>{style}</span></div><code>{hash.slice(0, 6)}</code></div>
+              </article>)}</div>
+              <p class="no-results" hidden>这个预览样本中没有匹配的图片。</p>
+            </section>
+          </div>
+        </div>
+        <footer class="site-footer"><span>clelele © 2026</span><span>Made for the things worth keeping.</span><a href="#">回到顶部 ↑</a></footer>
+      </div>
+    </main>
+    <dialog class="preview-modal"><form method="dialog"><button aria-label="关闭图片预览">×</button></form><img alt="" /><p></p></dialog>
+    <script is:inline>
+      const concepts = JSON.parse(document.querySelector('.lab-controls').dataset.concepts);
+      const canvas = document.querySelector('.design-canvas');
+      function selectConcept(key) {
+        const concept = concepts.find(row => row[0] === key) || concepts[0];
+        canvas.dataset.theme = concept[0];
+        document.querySelector('#concept-description').textContent = concept[3];
+        document.querySelectorAll('[data-concept]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.concept === concept[0])));
+        const url = new URL(location.href); url.searchParams.set('theme', concept[0]); history.replaceState(null, '', url);
+      }
+      selectConcept(new URL(location.href).searchParams.get('theme'));
+      document.querySelectorAll('[data-concept]').forEach(button => button.addEventListener('click', () => selectConcept(button.dataset.concept)));
+      document.querySelector('#viewport-toggle').addEventListener('click', event => {
+        const mobile = canvas.classList.toggle('mobile-preview');
+        event.currentTarget.setAttribute('aria-pressed', String(mobile));
+        event.currentTarget.textContent = mobile ? '桌面预览' : '手机预览';
+      });
+      document.querySelectorAll('[data-view]').forEach(button => button.addEventListener('click', () => {
+        canvas.dataset.view = button.dataset.view;
+        document.querySelectorAll('.site-header [data-view]').forEach(tab => tab.setAttribute('aria-pressed', String(tab.dataset.view === button.dataset.view)));
+      }));
+      let filter = '全部';
+      function filterImages() {
+        const query = document.querySelector('.collection-tools input').value.trim().toLowerCase();
+        const cards = [...document.querySelectorAll('.image-card')];
+        cards.forEach(card => { card.hidden = !card.dataset.search.toLowerCase().includes(query) || (filter !== '全部' && !card.dataset.search.includes(filter)); });
+        document.querySelector('.no-results').hidden = cards.some(card => !card.hidden);
+      }
+      document.querySelector('.collection-tools input').addEventListener('input', filterImages);
+      document.querySelectorAll('[data-filter]').forEach(button => button.addEventListener('click', () => {
+        filter = button.dataset.filter; document.querySelectorAll('[data-filter]').forEach(item => item.classList.toggle('active', item === button)); filterImages();
+      }));
+      const modal = document.querySelector('.preview-modal');
+      document.querySelectorAll('[data-preview]').forEach(button => button.addEventListener('click', () => {
+        modal.querySelector('img').src = button.dataset.preview; modal.querySelector('img').alt = button.dataset.title;
+        modal.querySelector('p').textContent = button.dataset.title; modal.showModal();
+      }));
+      modal.addEventListener('click', event => { if (event.target === modal) modal.close(); });
+    </script>
+  </body>
+</html>
