@@ -18,12 +18,12 @@ export function useDraggablePanel() {
     };
     const down = (event: PointerEvent) => {
       event.stopPropagation();
+      suppressClick.current = false;
       if (event.button !== 0 || event.pointerType !== 'mouse') return;
       const target = event.target as HTMLElement;
       const scroll = target.closest<HTMLElement>('[data-prompt-text]');
       if (scroll && event.clientX >= scroll.getBoundingClientRect().left + scroll.clientWidth) return;
       const box = panel.getBoundingClientRect();
-      suppressClick.current = false;
       drag = { id: event.pointerId, x: event.clientX, y: event.clientY, left: box.left, top: box.top, moved: false };
     };
     const move = (event: PointerEvent) => {
@@ -39,14 +39,20 @@ export function useDraggablePanel() {
           if (point) place(point.x, point.y);
         });
     };
-    const finish = () => {
+    const finish = (suppress = false) => {
       if (frame) cancelAnimationFrame(frame);
       frame = 0;
       if (point && drag?.moved) place(point.x, point.y);
-      suppressClick.current = Boolean(drag?.moved);
+      suppressClick.current = suppress && Boolean(drag?.moved);
       drag = null;
       point = null;
     };
+    const up = (event: PointerEvent) => {
+      if (drag?.id !== event.pointerId) return;
+      // Only this release can produce a drag-generated click in the panel; cancellation must not swallow a later tap.
+      finish(event.target instanceof Node && panel.contains(event.target));
+    };
+    const cancel = () => finish();
     const fit = () => {
       const box = panel.getBoundingClientRect();
       if (panel.style.top || box.right > innerWidth - 12 || box.bottom > innerHeight - 12 || box.top < 12)
@@ -56,18 +62,18 @@ export function useDraggablePanel() {
     observer.observe(panel);
     panel.addEventListener('pointerdown', down);
     window.addEventListener('pointermove', move, { passive: false });
-    window.addEventListener('pointerup', finish);
-    window.addEventListener('pointercancel', finish);
-    window.addEventListener('blur', finish);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', cancel);
+    window.addEventListener('blur', cancel);
     window.addEventListener('resize', fit);
     return () => {
       if (frame) cancelAnimationFrame(frame);
       observer.disconnect();
       panel.removeEventListener('pointerdown', down);
       window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', finish);
-      window.removeEventListener('pointercancel', finish);
-      window.removeEventListener('blur', finish);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', cancel);
+      window.removeEventListener('blur', cancel);
       window.removeEventListener('resize', fit);
     };
   }, []);

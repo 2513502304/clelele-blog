@@ -40,9 +40,12 @@
   color: #f9becd;
   font-size: 24px;
 }
-.generation-glass-toggle {
+.generation-glass-heading {
   flex: 1;
   min-width: 0;
+}
+.generation-glass-toggle {
+  width: 100%;
   text-align: left;
   cursor: pointer;
 }

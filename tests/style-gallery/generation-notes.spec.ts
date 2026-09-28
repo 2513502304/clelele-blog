@@ -56,6 +56,21 @@ test('group overview has no misleading note excerpt; each image opens its own co
   await page.mouse.up();
   await expect.poll(async () => (await panel.boundingBox())?.x).toBeGreaterThan(before.x + 100);
   await expect(panel).toHaveAttribute('data-expanded', 'true');
+  // Cancelled mouse drags must not swallow the next touch/pen-generated click.
+  for (const ending of ['pointercancel', 'blur', 'outside-release']) {
+    await panel.evaluate((el, ending) => {
+      const box = el.getBoundingClientRect();
+      const start = { bubbles: true, pointerId: 7, pointerType: 'mouse', button: 0, clientX: box.x + 30, clientY: box.y + 30 };
+      el.dispatchEvent(new PointerEvent('pointerdown', start));
+      window.dispatchEvent(new PointerEvent('pointermove', { ...start, clientX: start.clientX + 20 }));
+      window.dispatchEvent(
+        ending === 'blur' ? new Event('blur') : new PointerEvent(ending === 'pointercancel' ? ending : 'pointerup', start),
+      );
+      el.querySelector('button')?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+    }, ending);
+    await expect(panel).toHaveAttribute('data-expanded', 'false');
+    await panel.locator('.generation-glass-toggle').click();
+  }
   await page.screenshot({ path: '/tmp/gallery-glass-reader.png' });
 });
 
@@ -120,5 +135,6 @@ test('platform remains visible without a note, and does not leak the previous im
   });
   await expect(page.locator('[data-generation-platform]')).toHaveText('GPT-Image');
   await expect(page.locator('[data-generation-reader]')).toHaveAttribute('data-expanded', 'false');
-  await expect(page.locator('.generation-glass-toggle')).toBeDisabled();
+  await expect(page.locator('.generation-glass-toggle')).toHaveCount(0);
+  expect(await page.locator('[data-generation-reader]').ariaSnapshot()).toContain('GPT-Image');
 });

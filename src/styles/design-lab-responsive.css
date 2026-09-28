@@ -248,8 +248,10 @@
 .design-canvas[data-view="gallery"] .journal {
   display: none;
 }
-.design-canvas[data-view="gallery"] .image-card img {
-  height: 390px;
+@container (min-width: 701px) {
+  .design-canvas[data-view="gallery"] .image-card img {
+    height: 390px;
+  }
 }
 
 /* Hidden filter results must override all themed layouts. */

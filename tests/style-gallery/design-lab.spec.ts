@@ -31,4 +31,15 @@ test('four proposals switch independently, filter images, preview artwork and fi
   await page.getByRole('button', { name: '手机预览', exact: true }).click();
   await expect(page.locator('.design-canvas')).toHaveClass(/mobile-preview/);
   expect(await page.locator('.design-canvas').evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+  for (const theme of ['sakura', 'atelier', 'folio', 'cinema']) {
+    await page.locator(`[data-concept=${theme}]`).click();
+    await expect
+      .poll(() =>
+        page
+          .locator('.image-card img')
+          .first()
+          .evaluate((el) => el.getBoundingClientRect().height),
+      )
+      .toBeLessThanOrEqual(300);
+  }
 });

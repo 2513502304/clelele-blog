@@ -40,25 +40,27 @@ export function LightboxGenerationPrompt({
         <span className="generation-glass-mark" aria-hidden>
           <Icon icon={prompt ? 'ri:quill-pen-line' : 'ri:image-line'} />
         </span>
-        <button
-          type="button"
-          className="generation-glass-toggle"
-          disabled={!prompt}
-          aria-expanded={expanded}
-          aria-controls={bodyId}
-          aria-label={expanded ? t('gallery.generationPromptCollapse') : t('gallery.generationPromptExpand')}
-          onClick={() => setExpanded(!expanded)}
-        >
+        <div className="generation-glass-heading">
+          {/* Keep the platform readable independently of the toggle's accessible name, including images without notes. */}
           <span className="generation-glass-kicker" data-generation-platform>
             {platform || t('gallery.generationPrompt')}
           </span>
           {prompt && (
-            <span className="generation-glass-title">
-              {expanded ? t('gallery.generationPromptCollapse') : t('gallery.generationPromptShow')}{' '}
-              <Icon icon={expanded ? 'ri:subtract-line' : 'ri:add-line'} />
-            </span>
+            <button
+              type="button"
+              className="generation-glass-toggle"
+              aria-expanded={expanded}
+              aria-controls={bodyId}
+              aria-label={expanded ? t('gallery.generationPromptCollapse') : t('gallery.generationPromptExpand')}
+              onClick={() => setExpanded(!expanded)}
+            >
+              <span className="generation-glass-title">
+                {expanded ? t('gallery.generationPromptCollapse') : t('gallery.generationPromptShow')}{' '}
+                <Icon icon={expanded ? 'ri:subtract-line' : 'ri:add-line'} />
+              </span>
+            </button>
           )}
-        </button>
+        </div>
         <span title={moveLabel} className="generation-glass-grip" aria-hidden>
           <Icon icon="ri:draggable" />
         </span>
