@@ -210,6 +210,7 @@ export default function StyleGalleryExamples({
       id: candidate.id,
       gallerySourceSlug: slug,
       generationPrompt: candidate.note,
+      generationPlatform: candidate.model,
       generationPromptInitiallyExpanded: revealPrompt && candidate.id === example.id,
       src: candidate.src,
       resolvedSrc: getReusableStyleGalleryImageUrl(candidate.src, loadedExampleSources.current.has(candidate.src)),
@@ -748,8 +749,9 @@ export default function StyleGalleryExamples({
           <textarea
             value={note}
             onChange={(event) => setNote(event.currentTarget.value)}
-            rows={3}
-            className="max-h-64 min-h-24 w-full resize-y overflow-y-auto rounded-lg border border-sky-100 bg-white px-3 py-2 text-gray-900 text-sm outline-none dark:border-gray-800 dark:bg-gray-900 dark:text-white"
+            rows={1}
+            data-example-note-input
+            className="h-10 max-h-10 min-h-10 w-full resize-none overflow-y-auto overscroll-contain rounded-lg border border-sky-100 bg-white px-3 py-2 text-gray-900 text-sm outline-none [field-sizing:fixed] dark:border-gray-800 dark:bg-gray-900 dark:text-white"
           />
         </label>
 

@@ -83,6 +83,12 @@ export function appendSiteAssetHistory(profile: SiteProfile, asset: SiteAsset): 
   return history;
 }
 
+/** Retire a selectable image, never an active slot. Immutable HF bytes remain for recovery. */
+export function removeSiteAssetHistory(profile: SiteProfile, key: string): SiteAsset[] {
+  if (Object.values(profile.assets).includes(key)) throw new Error('请先更换并发布正在使用这张图片的页面。');
+  return profile.history.filter((asset) => asset.key !== key);
+}
+
 /** Localized subpages share a banner slot; a source detail never becomes an arbitrary storage key. */
 export function bannerSlot(path: string): SiteAssetSlot {
   const first =

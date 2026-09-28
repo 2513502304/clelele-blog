@@ -1,6 +1,5 @@
 import { ErrorBoundary, InlineErrorFallback } from '@components/common';
 import StyleGalleryDateRangeFilter from '@components/style-gallery/StyleGalleryDateRangeFilter';
-import { StyleGalleryExampleNote } from '@components/style-gallery/StyleGalleryExampleNote';
 import StyleGalleryVisualFilter, {
   type StyleGalleryVisualFilterLabels,
 } from '@components/style-gallery/StyleGalleryVisualFilter';
@@ -251,6 +250,7 @@ function StyleGalleryExamplesOverviewContent({
       id: candidate.id,
       gallerySourceSlug: candidate.sourceSlug,
       generationPrompt: candidate.note,
+      generationPlatform: candidate.model,
       generationPromptInitiallyExpanded: revealPrompt && candidate.id === example.id,
       src: candidate.src,
       dimensions: candidate.dimensions,
@@ -558,14 +558,6 @@ function StyleGalleryExamplesOverviewContent({
                       </time>
                     )}
                   </div>
-                  {example.note && (
-                    <StyleGalleryExampleNote
-                      note={example.note}
-                      locale={locale}
-                      rows={3}
-                      onOpen={() => openLightbox(example, grouped ? stack : filtered, true)}
-                    />
-                  )}
                   <a
                     href={`${galleryBasePath}/${example.sourceSlug}`}
                     data-astro-prefetch="false"

@@ -1,0 +1,165 @@
+/* Blur is confined to this small surface; only size/opacity animate, never the filter itself. */
+.generation-glass {
+  position: absolute;
+  left: 20px;
+  bottom: 144px;
+  z-index: 10;
+  width: min(224px, calc(100vw - 104px));
+  max-width: calc(100vw - 104px);
+  overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 26%);
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgb(255 255 255 / 13%), rgb(255 255 255 / 3%)), rgb(28 27 36 / 70%);
+  color: #fff;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 15%),
+    0 12px 38px rgb(0 0 0 / 23%);
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  transition: width 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  cursor: grab;
+}
+.generation-glass[data-expanded="true"] {
+  width: min(390px, calc(100vw - 104px));
+}
+.generation-glass:active {
+  cursor: grabbing;
+}
+.generation-glass-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+}
+.generation-glass-mark {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 36px;
+  flex-shrink: 0;
+  color: #f9becd;
+  font-size: 24px;
+}
+.generation-glass-heading {
+  flex: 1;
+  min-width: 0;
+}
+.generation-glass-toggle {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+.generation-glass-kicker {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.045em;
+  color: #ebdee4;
+}
+.generation-glass-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 3px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.generation-glass-grip {
+  color: #c8bcc3;
+  font-size: 14px;
+}
+.generation-glass-reveal {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 240ms ease,
+    opacity 180ms ease;
+}
+.generation-glass[data-expanded="true"] .generation-glass-reveal {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+.generation-glass-content {
+  min-height: 0;
+  overflow: hidden;
+}
+.generation-glass-rule {
+  display: flex;
+  justify-content: space-between;
+  margin: 0 18px 10px;
+  padding-top: 12px;
+  border-top: 1px solid rgb(255 255 255 / 13%);
+  color: #c4b8c2;
+  font:
+    10px / 1.4 ui-monospace,
+    monospace;
+  letter-spacing: 0.1em;
+}
+.generation-glass-text {
+  max-height: min(34dvh, 320px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0 12px 0 18px;
+  padding-right: 8px;
+  color: #f1eaf0;
+  font-size: 13px;
+  line-height: 1.9;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: #ffffff55 transparent;
+}
+.generation-glass-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 14px;
+  margin-top: 10px;
+  border-top: 1px solid rgb(255 255 255 / 12%);
+  color: #b9aeb7;
+}
+.generation-glass-footer button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgb(255 255 255 / 12%);
+  color: #fff;
+  font-size: 12px;
+  transition: background 150ms;
+}
+.generation-glass-footer button:hover {
+  background: rgb(255 255 255 / 22%);
+}
+.generation-glass button:focus-visible,
+.generation-glass-text:focus-visible {
+  outline: 2px solid #ffccdf;
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .generation-glass,
+  .generation-glass-reveal {
+    transition: none;
+  }
+}
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  .generation-glass {
+    background: #24212a;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+@supports not (backdrop-filter: blur(1px)) {
+  .generation-glass {
+    background: #24212a;
+  }
+}

@@ -1,5 +1,6 @@
 import { Icon } from '@iconify/react';
 import { useEffect, useState } from 'react';
+import { AVATAR_DISPLAY_SIZE } from '@/lib/site-profile/image-crop';
 import type { SiteProfile } from '@/lib/site-profile/schema';
 import { siteAssetUrl } from '@/lib/site-profile/schema';
 import { ProfileQuickEdit } from './ProfileQuickEdit';
@@ -52,13 +53,17 @@ export function SiteProfileView({ initial, contactsOnly = false }: { initial: Pu
     );
   return (
     <>
-      <div className="relative size-40 rounded-full">
+      <div
+        data-profile-asset
+        className="group/profile relative rounded-full"
+        style={{ width: AVATAR_DISPLAY_SIZE, height: AVATAR_DISPLAY_SIZE }}
+      >
         <img
-          className="size-full rounded-full object-cover shadow-card-darker"
+          className="size-full rounded-full object-cover shadow-card-darker motion-safe:group-hover/profile:animate-[shake_1s_ease-in-out]"
           src={siteAssetUrl('avatar', profile.revision)}
           alt={`${profile.name} avatar`}
-          width={160}
-          height={160}
+          width={AVATAR_DISPLAY_SIZE}
+          height={AVATAR_DISPLAY_SIZE}
           fetchPriority="high"
         />
         <ProfileQuickEdit slot="avatar" />

@@ -1,9 +1,9 @@
 import { defineConfig, devices } from '@playwright/test';
 
-/** Isolated fixture server keeps note-layout regression checks independent of HF availability. */
+/** Isolated fixture server keeps checks independent of HF. Run separately from Astro check/build, which rewrite Vite's cache. */
 export default defineConfig({
   testDir: './tests/style-gallery',
-  testMatch: 'generation-notes.spec.ts',
+  testMatch: ['generation-notes.spec.ts', 'profile-crop.spec.ts', 'design-lab.spec.ts'],
   workers: 1,
   timeout: 60_000,
   expect: { timeout: 15_000 },

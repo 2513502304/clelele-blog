@@ -8,6 +8,7 @@ import { Icon } from 'astro-icon/components';
 import { marked } from 'marked';
 import { MAX_WIDTH } from '@/constants/layout';
 import { getLocaleFromUrl, t } from '@/i18n';
+import { COVER_MAX_HEIGHT, SERIES_VIEWPORT_HEIGHT } from '@/lib/site-profile/image-crop';
 import WaveSvg from './wave';
 
 interface Props {
@@ -29,7 +30,7 @@ const rawHtml = series.description ? await marked.parse(series.description) : ''
 const descriptionHtml = getSanitizeHtml(rawHtml);
 ---
 
-<div class="relative flex z-0 max-h-200 min-h-[70dvh] items-center justify-center overflow-hidden pb-6">
+<div data-profile-asset style={{ height: `${SERIES_VIEWPORT_HEIGHT * 100}dvh`, maxHeight: `${COVER_MAX_HEIGHT}px` }} class="group/profile relative flex z-0 items-center justify-center overflow-hidden pb-6">
   <div class="absolute inset-0 h-full bg-black/40"></div>
   <!-- Series cover image -->
   <div class="absolute inset-0 -z-10 h-full w-full">

@@ -935,10 +935,11 @@ export default function ImageLightbox() {
                     </ErrorBoundary>
                   </div>
                 )}
-                {currentImage.generationPrompt && (
+                {(currentImage.generationPrompt || currentImage.generationPlatform) && (
                   <LightboxGenerationPrompt
                     key={currentImageKey}
                     prompt={currentImage.generationPrompt}
+                    platform={currentImage.generationPlatform}
                     initiallyExpanded={currentImage.generationPromptInitiallyExpanded}
                   />
                 )}

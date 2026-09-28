@@ -1,8 +1,13 @@
 import { createHash } from 'node:crypto';
 
 // Explicit test-server preload: exercise the real SSR routes without credentials or HF latency.
-// A reserved .invalid endpoint and read-only fetch stub make production writes impossible.
+// A reserved .invalid endpoint and in-memory profile writes make production mutations impossible.
 Object.assign(process.env, {
+  STYLE_GALLERY_SESSION_SECRET: 'profile-fixture-secret-for-local-tests-only',
+  STYLE_GALLERY_GITHUB_CLIENT_ID: 'fixture-client',
+  STYLE_GALLERY_GITHUB_CLIENT_SECRET: 'fixture-secret',
+  STYLE_GALLERY_GITHUB_REDIRECT_URI: 'http://127.0.0.1:4340/api/style-gallery/auth/github/callback',
+  SITE_ADMIN_GITHUB_ID: '129171955',
   HF_S3_ENDPOINT: 'https://gallery-fixture.invalid',
   HF_S3_ACCESS_KEY_ID: 'fixture',
   HF_S3_SECRET_ACCESS_KEY: 'fixture',
@@ -61,15 +66,55 @@ const objects = {
     groups: [{ sourceSlug: slug, examples: examples.map((example) => ({ ...example, likedBy: [] })) }],
   },
 };
+const profileKey = `images/${'c'.repeat(64)}.png`;
+const historyKey = `images/${'d'.repeat(64)}.png`;
+objects['profile.v1.json'] = {
+  version: 1,
+  revision: '0b6964a3-f2db-4555-9383-d600bcaa448d',
+  updatedAt: date,
+  name: 'clelele',
+  signature: '记录技术、AIGC、ACG 与一些个人的兴趣爱好',
+  links: [],
+  assets: { avatar: profileKey, home: profileKey },
+  history: [profileKey, historyKey].map((key, i) => ({
+    key,
+    name: `历史图片${i + 1}.png`,
+    uploadedAt: date,
+    width: 1,
+    height: 1,
+  })),
+};
+const blobs = new Map(
+  [profileKey, historyKey].map((key) => [
+    key,
+    Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64'),
+  ]),
+);
+let revision = 1;
 const originalFetch = globalThis.fetch;
 globalThis.fetch = async (input, init) => {
   const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url);
   if (url.hostname !== 'gallery-fixture.invalid') return originalFetch(input, init);
   const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
-  if (!['GET', 'HEAD'].includes(method)) throw new Error('Fixture storage is read-only.');
+  // Only this in-memory profile namespace accepts writes. No request can escape the .invalid host.
+  if (!['GET', 'HEAD'].includes(method)) {
+    if (method !== 'PUT' || !url.pathname.includes('/site-profile/')) throw new Error('Fixture gallery storage is read-only.');
+    const bytes = new Uint8Array(await new Response(init.body).arrayBuffer());
+    if (url.pathname.endsWith('/profile.v1.json')) {
+      if (new Headers(init.headers).get('if-match') !== `"fixture-v${revision}"`) return new Response('', { status: 412 });
+      objects['profile.v1.json'] = JSON.parse(new TextDecoder().decode(bytes));
+      revision++;
+    } else blobs.set(url.pathname.split('/site-profile/')[1], bytes);
+    return new Response(null, { headers: { ETag: `"fixture-v${revision}"` } });
+  }
+  const blobKey = [...blobs.keys()].find((key) => url.pathname.endsWith(`/${key}`));
+  if (blobKey)
+    return new Response(method === 'HEAD' ? null : blobs.get(blobKey), {
+      headers: { 'Content-Type': 'image/png', ETag: '"image"' },
+    });
   const key = Object.keys(objects).find((candidate) => url.pathname.endsWith(`/${candidate}`));
   return new Response(method === 'HEAD' ? null : key ? JSON.stringify(objects[key]) : '', {
     status: key ? 200 : 404,
-    headers: { 'Content-Type': 'application/json', ETag: '"fixture-v1"' },
+    headers: { 'Content-Type': 'application/json', ETag: `"fixture-v${revision}"` },
   });
 };

@@ -1,0 +1,5 @@
+/* These layers are loaded only by the isolated design-lab page. */
+@layer lab-base, lab-concepts, lab-responsive;
+@import "./design-lab-base.css" layer(lab-base);
+@import "./design-lab-concepts.css" layer(lab-concepts);
+@import "./design-lab-responsive.css" layer(lab-responsive);

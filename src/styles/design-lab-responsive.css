@@ -1,0 +1,260 @@
+.mobile-preview {
+  max-width: 390px;
+}
+@container (max-width: 700px) {
+  .design-inner {
+    padding: 0 6%;
+  }
+  .site-header {
+    height: 76px;
+    gap: 20px;
+    padding: 0;
+    margin: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+  .wordmark {
+    font-size: 27px;
+  }
+  .site-header nav {
+    gap: 15px;
+    font-size: 12px;
+    margin-left: auto;
+  }
+  .site-header nav a,
+  .header-caption {
+    display: none;
+  }
+  .workspace {
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+    padding-top: 30px;
+  }
+  .profile {
+    position: static;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 16px;
+    width: auto;
+    padding: 0 0 20px;
+    border: 0;
+    box-shadow: none;
+    background: transparent;
+    backdrop-filter: none;
+  }
+  .profile > img {
+    width: 50px;
+    height: 50px;
+    margin: 0;
+  }
+  .profile h2 {
+    margin: 0 0 5px;
+    font-size: 13px;
+  }
+  .profile p {
+    margin: 0;
+    font-size: 11px;
+  }
+  .profile .overline,
+  .profile-footnote,
+  .profile-links {
+    display: none;
+  }
+  .hero {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    margin-bottom: 40px;
+    padding: 0;
+  }
+  .hero h1 {
+    font-size: 34px;
+    margin: 16px 0;
+  }
+  .hero-copy {
+    align-self: flex-start;
+  }
+  .hero-image {
+    width: 100%;
+    padding: 0;
+    border: 0;
+    transform: none;
+  }
+  .hero-image > img {
+    height: 260px;
+  }
+  .hero-image figcaption {
+    padding: 12px;
+  }
+  .journal {
+    display: block;
+  }
+  .journal-row {
+    gap: 14px;
+    padding: 19px 0;
+    border-radius: 0;
+    background: none;
+    border: 0;
+    border-top: 1px solid var(--line);
+  }
+  .journal-row h3 {
+    font-size: 15px;
+    line-height: 1.6;
+  }
+  .journal-row p {
+    line-height: 1.8;
+  }
+  .journal-row > span:last-child {
+    display: none;
+  }
+  .section-heading h2 {
+    font-size: 19px;
+  }
+  .section-heading h2 span,
+  .section-heading > span {
+    display: none;
+  }
+  .collection-tools {
+    flex-wrap: wrap;
+  }
+  .collection-tools label {
+    width: 100%;
+    margin-bottom: 8px;
+  }
+  .image-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  .image-card img {
+    height: 200px;
+  }
+  .image-card:first-child {
+    grid-column: 1 / -1;
+  }
+  .image-card:first-child img {
+    height: 300px;
+  }
+  .image-caption code {
+    display: none;
+  }
+  .image-card:nth-child(2) {
+    padding-top: 0;
+  }
+  .image-number {
+    display: none;
+  }
+  .site-footer {
+    flex-wrap: wrap;
+    line-height: 1.7;
+    gap: 12px;
+  }
+  .site-footer span:nth-child(2) {
+    display: none;
+  }
+  [data-theme="atelier"] .hero {
+    padding: 30px;
+    min-height: 410px;
+  }
+  [data-theme="atelier"] .hero-copy {
+    margin-top: auto;
+  }
+  [data-theme="atelier"] .hero-image > img,
+  [data-theme="cinema"] .hero-image > img {
+    height: 100%;
+  }
+  [data-theme="cinema"] .hero {
+    height: 500px;
+  }
+  [data-theme="cinema"] .hero-copy {
+    left: 22px;
+    bottom: 35px;
+  }
+  [data-theme="cinema"] .hero-index {
+    display: none;
+  }
+}
+.preview-modal {
+  background: #121317ed;
+  border: 1px solid #ffffff33;
+  border-radius: 16px;
+  color: white;
+  padding: 20px;
+  max-width: 92vw;
+  max-height: 92dvh;
+}
+.preview-modal::backdrop {
+  background: #000b;
+  backdrop-filter: blur(10px);
+}
+.preview-modal img {
+  max-height: 75dvh;
+  max-width: 85vw;
+  object-fit: contain;
+}
+.preview-modal p {
+  text-align: center;
+  font-size: 13px;
+}
+.preview-modal form button {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  border: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #0009;
+  color: white;
+  font-size: 26px;
+}
+@media (max-width: 900px) {
+  .lab-controls {
+    flex-wrap: wrap;
+    padding: 12px;
+    gap: 10px;
+  }
+  .lab-brand {
+    margin-right: auto;
+  }
+  .lab-controls nav {
+    order: 3;
+    width: 100%;
+    justify-content: center;
+  }
+  .lab-controls nav button {
+    padding: 8px;
+    font-size: 11px;
+  }
+  .lab-context {
+    padding: 14px;
+  }
+  .lab-context > span:last-child {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none;
+    scroll-behavior: auto;
+  }
+}
+
+/* View state must override every concept and responsive layout. */
+.design-canvas[data-view="gallery"] .hero,
+.design-canvas[data-view="gallery"] .journal {
+  display: none;
+}
+@container (min-width: 701px) {
+  .design-canvas[data-view="gallery"] .image-card img {
+    height: 390px;
+  }
+}
+
+/* Hidden filter results must override all themed layouts. */
+[hidden] {
+  display: none;
+}
