@@ -143,3 +143,27 @@ test('platform remains visible without a note, and does not leak the previous im
   await expect(page.locator('.generation-glass-toggle')).toHaveCount(0);
   expect(await page.locator('[data-generation-reader]').ariaSnapshot()).toContain('GPT-Image');
 });
+
+test('detail masonry reserves each aspect ratio and grid toggle preserves selections and URL state', async ({ page }) => {
+  await imagesOnlyFixture(page);
+  await page.goto('/image-style-prompt-gallery/2026-09-23-35dc5191ccad', { waitUntil: 'domcontentloaded' });
+  const grid = page.locator('[data-gallery-layout]');
+  const toggle = page.getByRole('button', { name: '瀑布流', exact: true });
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  await expect(grid).toHaveAttribute('data-gallery-layout', 'masonry');
+  const cards = grid.locator('figure');
+  await cards.first().scrollIntoViewIfNeeded();
+  await expect
+    .poll(async () => ((await cards.first().boundingBox())?.height ?? 0) - ((await cards.nth(1).boundingBox())?.height ?? 0))
+    .toBeGreaterThan(80);
+  await cards.first().getByRole('checkbox').check();
+  await toggle.click();
+  await expect(page).toHaveURL(/layout=grid/);
+  await expect(grid).toHaveAttribute('data-gallery-layout', 'grid');
+  expect((await cards.first().boundingBox())?.height ?? 0).toBeCloseTo((await cards.nth(1).boundingBox())?.height ?? 0, 0);
+  await expect(cards.first().getByRole('checkbox')).toBeChecked();
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(grid).toHaveAttribute('data-gallery-layout', 'grid');
+  await toggle.click();
+  await expect(grid).toHaveAttribute('data-gallery-layout', 'masonry');
+});

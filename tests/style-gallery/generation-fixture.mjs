@@ -26,7 +26,7 @@ const examples = [1, 2].map((id) => ({
   note,
   uploadedAt: date,
   imageHash: `${id}`.repeat(64),
-  dimensions: { width: 640, height: 960 },
+  dimensions: { width: id === 1 ? 640 : 1280, height: 960 },
 }));
 const item = {
   version: 4,

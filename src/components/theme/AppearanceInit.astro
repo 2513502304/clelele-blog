@@ -1,7 +1,8 @@
 ---
 import { APPEARANCES } from './appearance';
+import { READING_RULES } from './reading-preferences';
 ---
-<script is:inline define:vars={{ appearanceIds: APPEARANCES.map(({ id }) => id) }}>
+<script is:inline define:vars={{ appearanceIds: APPEARANCES.map(({ id }) => id), readingRules: READING_RULES }}>
   (() => {
     const read = (key) => { try { return localStorage.getItem(key); } catch { return null; } };
     function apply() {
@@ -9,7 +10,18 @@ import { APPEARANCES } from './appearance';
       const appearance = read('appearance');
       const size = read('appearance-text-size');
       root.dataset.appearance = appearanceIds.includes(appearance) ? appearance : 'original';
-      root.dataset.textSize = ['comfort', 'large'].includes(size) ? size : 'standard';
+      let reading = {};
+      try { reading = JSON.parse(read('appearance-reading') || '{}') || {}; } catch { /* Ignore corrupt preferences. */ }
+      // Migrate the former three text sizes only when no numeric preference has been saved.
+      if (!read('appearance-reading')) reading.fontSize = size === 'large' ? 113 : size === 'comfort' ? 106 : 100;
+      for (const [key, rule] of Object.entries(readingRules)) {
+        const raw = reading[key];
+        const value = 'min' in rule
+          ? (typeof raw === 'number' && Number.isFinite(raw) ? Number((Math.round(Math.max(rule.min, Math.min(rule.max, raw)) / rule.step) * rule.step).toFixed(1)) : rule.default)
+          : (rule.values.includes(raw) ? raw : rule.default);
+        root.dataset[`reading${key[0].toUpperCase()}${key.slice(1)}`] = String(value);
+        if ('css' in rule) root.style.setProperty(rule.css, `${value}${rule.unit}`);
+      }
     }
     // Inline in <head>: apply before first paint and restore the same preference after Astro navigation.
     apply();
@@ -17,9 +29,10 @@ import { APPEARANCES } from './appearance';
       window.__appearanceListeners = true;
       document.addEventListener('astro:after-swap', apply);
       window.addEventListener('storage', (event) => {
-        if (!event.key || ['appearance', 'appearance-text-size'].includes(event.key)) {
+        if (!event.key || ['appearance', 'appearance-text-size', 'appearance-reading'].includes(event.key)) {
           apply();
           window.dispatchEvent(new Event('appearance-change'));
+          window.dispatchEvent(new Event('reading-change'));
         }
       });
     }

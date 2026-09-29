@@ -83,10 +83,13 @@ export default function StyleGalleryGrid({ children, masonry = false }: { childr
     const observer = new ResizeObserver((entries) => {
       if (entries.some((entry) => entry.target !== grid) || grid.clientWidth !== previousWidth) arrange();
     });
+    // Density changes the gutter without changing container width or card text height.
+    window.addEventListener('reading-change', arrange);
     observer.observe(grid);
     for (const card of cards) observer.observe(card);
     return () => {
       observer.disconnect();
+      window.removeEventListener('reading-change', arrange);
     };
   }, [children, masonry]);
 

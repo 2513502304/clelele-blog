@@ -37,7 +37,7 @@ test('appearance palettes persist, preserve layout and support a draggable foldi
   const panel = page.locator('.appearance-panel');
   await expect(panel).toBeVisible();
   const presets = panel.locator('.appearance-preset');
-  await expect(presets).toHaveCount(10);
+  await expect(presets).toHaveCount(18);
   for (const name of [
     '花间手记',
     '纸上画廊',
@@ -58,8 +58,10 @@ test('appearance palettes persist, preserve layout and support a draggable foldi
   await expect(page.locator('html')).toHaveAttribute('data-appearance', 'paper');
   await expect(page.locator('html')).not.toHaveClass(/appearance-transition/);
   await page.screenshot({ path: '/tmp/theme-paper.png' });
-  await panel.getByRole('button', { name: /Aa\s*舒适/ }).click();
-  await expect(page.locator('html')).toHaveAttribute('data-text-size', 'comfort');
+  await panel.getByRole('button', { name: '阅读与界面', exact: true }).click();
+  await panel.getByRole('spinbutton', { name: '字号', exact: true }).fill('110');
+  await expect(page.locator('html')).toHaveAttribute('data-reading-font-size', '110');
+  await panel.getByRole('button', { name: '外观预设', exact: true }).click();
   const before = await bounds(panel);
   // Drag from a swatch; this must not activate the palette under the release.
   const target = await panel.getByRole('button', { name: '海盐来信', exact: true }).boundingBox();
@@ -77,7 +79,7 @@ test('appearance palettes persist, preserve layout and support a draggable foldi
   await expect(panel).toHaveAttribute('data-expanded', 'true');
   await page.reload({ waitUntil: 'domcontentloaded' });
   await expect(page.locator('html')).toHaveAttribute('data-appearance', 'paper');
-  await expect(page.locator('html')).toHaveAttribute('data-text-size', 'comfort');
+  await expect(page.locator('html')).toHaveAttribute('data-reading-font-size', '110');
   await page.setViewportSize({ width: 390, height: 844 });
   await toggle.click();
   await expect(panel).toBeVisible();
@@ -91,7 +93,7 @@ test('appearance palettes persist, preserve layout and support a draggable foldi
   await page.screenshot({ path: '/tmp/theme-mobile.png' });
   await panel.getByRole('button', { name: '恢复默认', exact: true }).click();
   await expect(page.locator('html')).toHaveAttribute('data-appearance', 'original');
-  await expect(page.locator('html')).toHaveAttribute('data-text-size', 'standard');
+  await expect(page.locator('html')).toHaveAttribute('data-reading-font-size', '100');
   await panel.getByRole('button', { name: '关闭主题设置' }).click();
   await expect(panel).toHaveCount(0);
   await expect(toggle).toBeFocused();
@@ -154,10 +156,11 @@ test('keyboard opening focuses the panel and rapid preset/size changes keep the 
     });
   });
   await page.getByRole('button', { name: '纸上画廊', exact: true }).click();
-  await page.getByRole('button', { name: /Aa\s*舒适/ }).click();
+  await page.getByRole('button', { name: '阅读与界面', exact: true }).click();
+  await page.getByRole('spinbutton', { name: '字号', exact: true }).fill('110');
   await page.evaluate(() => (window as unknown as { finishAppearanceUpdates(): void }).finishAppearanceUpdates());
   await expect(page.locator('html')).toHaveAttribute('data-appearance', 'paper');
-  await expect(page.locator('html')).toHaveAttribute('data-text-size', 'comfort');
+  await expect(page.locator('html')).toHaveAttribute('data-reading-font-size', '110');
 });
 
 test('primary foreground meets normal-text contrast in every light and dark palette', async ({ page }) => {
@@ -176,7 +179,25 @@ test('primary foreground meets normal-text contrast in every light and dark pale
     };
     return [false, true].flatMap((dark) => {
       root.classList.toggle('dark', dark);
-      return ['sakura', 'paper', 'sage', 'ocean', 'lavender', 'amber', 'rosewood', 'graphite', 'blueprint'].map((palette) => {
+      return [
+        'sakura',
+        'paper',
+        'sage',
+        'ocean',
+        'lavender',
+        'amber',
+        'rosewood',
+        'graphite',
+        'blueprint',
+        'mint',
+        'lemon',
+        'peach',
+        'ice',
+        'mulberry',
+        'sand',
+        'pistachio',
+        'moonlight',
+      ].map((palette) => {
         root.dataset.appearance = palette;
         const style = getComputedStyle(probe);
         const values = [luminance(style.color), luminance(style.backgroundColor)].sort((a, b) => a - b);
@@ -185,4 +206,88 @@ test('primary foreground meets normal-text contrast in every light and dark pale
     });
   });
   for (const result of results) expect(result.contrast, JSON.stringify(result)).toBeGreaterThanOrEqual(4.5);
+});
+
+// Real coordinates bypass Playwright's wait-for-animation hit testing, matching rapid user clicks.
+test('native transition never swallows a second palette click', async ({ page }) => {
+  await page.goto('/image-style-prompt-gallery/examples', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: '主题与阅读', exact: true }).click();
+  const paper = await bounds(page.getByRole('button', { name: '纸上画廊', exact: true }));
+  const ocean = await bounds(page.getByRole('button', { name: '海盐来信', exact: true }));
+  await page.mouse.click(paper.x + paper.width / 2, paper.y + paper.height / 2);
+  // Intentionally click inside the animation, not after it completes.
+  await page.waitForTimeout(150);
+  await page.mouse.click(ocean.x + ocean.width / 2, ocean.y + ocean.height / 2);
+  await expect(page.locator('html')).toHaveAttribute('data-appearance', 'ocean', { timeout: 500 });
+});
+
+test('independent reading controls drag, type, persist and reset without moving the panel', async ({ page }) => {
+  await page.goto('/image-style-prompt-gallery/examples', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: '主题与阅读', exact: true }).click();
+  await page.getByRole('button', { name: '阅读与界面', exact: true }).click();
+  const panel = page.locator('.appearance-panel');
+  const before = await bounds(panel);
+  const range = page.getByRole('slider', { name: '字号 slider', exact: true });
+  const track = await bounds(range);
+  await page.mouse.move(track.x + track.width / 3, track.y + 6);
+  await page.mouse.down();
+  await page.mouse.move(track.x + track.width * 0.8, track.y + 6, { steps: 8 });
+  expect(Number(await range.inputValue())).toBeGreaterThan(118);
+  await page.mouse.up();
+  expect((await bounds(panel)).x).toBeCloseTo(before.x, 0);
+  const input = page.getByRole('spinbutton', { name: '字号', exact: true });
+  await input.fill('');
+  await input.pressSequentially('118');
+  await input.press('Tab');
+  expect(await page.locator('html').evaluate((el) => Number.parseFloat(getComputedStyle(el).fontSize))).toBeCloseTo(18.88, 2);
+  await panel.getByLabel('字体', { exact: true }).selectOption('serif');
+  await panel.getByLabel('界面密度', { exact: true }).selectOption('compact');
+  await panel.getByLabel('卡片圆角', { exact: true }).selectOption('square');
+  await panel.getByLabel('控制面板', { exact: true }).selectOption('solid');
+  await panel.getByLabel('主题动效', { exact: true }).selectOption('reduced');
+  await expect(panel).toHaveCSS('backdrop-filter', 'none');
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  for (const [key, value] of Object.entries({
+    font: 'serif',
+    density: 'compact',
+    corners: 'square',
+    transparency: 'solid',
+    motion: 'reduced',
+    'font-size': '118',
+  })) {
+    await expect(page.locator('html')).toHaveAttribute(`data-reading-${key}`, value);
+  }
+});
+
+test('diagonal reveal has old upper-left and new lower-right pixels after scrolling', async ({ page }) => {
+  await page.goto('/image-style-prompt-gallery/examples', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: '主题与阅读', exact: true }).click();
+  await page.evaluate(() => scrollTo(0, 480));
+  await page.getByRole('button', { name: '花间手记', exact: true }).click();
+  await expect(page.locator('html')).not.toHaveClass(/appearance-transition/);
+  await page.getByRole('button', { name: '海盐来信', exact: true }).click();
+  await page.waitForFunction(() =>
+    document.getAnimations().some((a) => a instanceof CSSAnimation && a.animationName === 'appearance-diagonal'),
+  );
+  await page.evaluate(() => {
+    const animation = document
+      .getAnimations()
+      .find((a) => a instanceof CSSAnimation && a.animationName === 'appearance-diagonal');
+    if (!animation) throw new Error('Missing reveal');
+    animation.pause();
+    animation.currentTime = 250;
+  });
+  const sharp = (await import('sharp')).default;
+  const { data, info } = await sharp(await page.screenshot({ path: '/tmp/appearance-diagonal-verified.png', scale: 'css' }))
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const color = (x: number, y: number) =>
+    Array.from(data.subarray((y * info.width + x) * info.channels, (y * info.width + x) * info.channels + 3));
+  const oldCorner = color(20, 80),
+    newCorner = color(800, 800);
+  expect(oldCorner[0] - oldCorner[2]).toBeGreaterThan(10);
+  expect(newCorner[2] - newCorner[0]).toBeGreaterThan(10);
+  // The live settings remain visible and clickable during the paused snapshot.
+  await page.getByRole('button', { name: '阅读与界面', exact: true }).click();
+  await expect(page.getByRole('spinbutton', { name: '字号', exact: true })).toBeVisible();
 });

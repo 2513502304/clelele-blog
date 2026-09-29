@@ -3,7 +3,8 @@
   z-index: 60;
   right: 68px;
   bottom: 28px;
-  width: min(354px, calc(100vw - 88px));
+  /* Keep controls stable while the page reading scale changes. */
+  width: min(380px, calc(100vw - 88px));
   overflow: hidden;
   border: 1px solid hsl(var(--foreground) / 12%);
   border-radius: 24px;
@@ -81,7 +82,7 @@
   overflow: hidden;
 }
 .appearance-scroll {
-  max-height: min(48dvh, 410px);
+  max-height: min(55dvh, 480px);
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 0 16px 6px;
@@ -158,28 +159,6 @@
   transform: translateY(-2px);
   box-shadow: 0 4px 10px rgb(0 0 0 / 8%);
 }
-.appearance-sizes {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 4px;
-  padding: 4px;
-  border: 1px solid hsl(var(--foreground) / 8%);
-  border-radius: 13px;
-  background: hsl(var(--foreground) / 4%);
-}
-.appearance-sizes button {
-  display: grid;
-  align-content: center;
-  gap: 4px;
-  height: 58px;
-  border-radius: 9px;
-  font-size: 10px;
-  cursor: pointer;
-}
-.appearance-sizes button[aria-pressed="true"] {
-  background: hsl(var(--card));
-  box-shadow: 0 1px 6px hsl(var(--foreground) / 10%);
-}
 .appearance-caption {
   margin: 12px 0;
   font-size: 10px;
@@ -242,4 +221,90 @@
   .appearance-panel {
     background: hsl(var(--card));
   }
+}
+
+.appearance-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 0 16px 16px;
+  padding: 4px;
+  border-radius: 12px;
+  background: hsl(var(--foreground) / 5%);
+}
+.appearance-tabs button {
+  flex: 1;
+  min-height: 34px;
+  border-radius: 9px;
+  font-size: 12px;
+}
+.appearance-tabs button[aria-pressed="true"] {
+  background: hsl(var(--card));
+  box-shadow: 0 2px 8px hsl(var(--foreground) / 8%);
+  color: hsl(var(--primary));
+}
+.appearance-reading {
+  display: grid;
+  gap: 16px;
+  padding: 2px 0 10px;
+}
+.appearance-specimen {
+  padding: 18px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 14px;
+  background: hsl(var(--background));
+  font-family: var(--reading-font, inherit);
+}
+.appearance-specimen > span {
+  font-size: 30px;
+  letter-spacing: -0.04em;
+}
+.appearance-specimen p {
+  font-size: 1rem;
+  line-height: var(--reading-leading);
+  margin-top: 8px;
+}
+.appearance-numeric > label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.appearance-numeric label > span:last-child {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: hsl(var(--muted-foreground));
+}
+.appearance-numeric input[type="number"] {
+  width: 72px;
+  padding: 6px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  background: hsl(var(--card));
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.appearance-numeric input[type="range"] {
+  width: 100%;
+  height: 32px;
+  accent-color: hsl(var(--primary));
+  touch-action: none;
+  cursor: ew-resize;
+}
+.appearance-choice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.appearance-choice select {
+  max-width: 58%;
+  padding: 8px 10px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 10px;
+  background: hsl(var(--card));
+  font-size: 12px;
+}
+.appearance-panel :is(input, select):focus-visible {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 2px;
 }

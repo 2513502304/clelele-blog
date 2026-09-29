@@ -1,57 +1,97 @@
+html[data-appearance="mint"] {
+  --palette-hue: 158;
+  --palette-saturation: 53%;
+  --paper-lightness: 82%;
+}
+html[data-appearance="lemon"] {
+  --palette-hue: 53;
+  --palette-saturation: 72%;
+  --paper-lightness: 81%;
+}
+html[data-appearance="peach"] {
+  --palette-hue: 21;
+  --palette-saturation: 81%;
+  --paper-lightness: 82%;
+}
+html[data-appearance="ice"] {
+  --palette-hue: 184;
+  --palette-saturation: 61%;
+  --paper-lightness: 82%;
+}
+html[data-appearance="mulberry"] {
+  --palette-hue: 326;
+  --palette-saturation: 46%;
+  --paper-lightness: 80%;
+}
+html[data-appearance="sand"] {
+  --palette-hue: 35;
+  --palette-saturation: 40%;
+  --paper-lightness: 75%;
+}
+html[data-appearance="pistachio"] {
+  --palette-hue: 70;
+  --palette-saturation: 50%;
+  --paper-lightness: 79%;
+}
+html[data-appearance="moonlight"] {
+  --palette-hue: 226;
+  --palette-saturation: 30%;
+  --paper-lightness: 80%;
+}
 /* Only design tokens change: no filters on artwork, grid overrides, hidden navigation or forced dark mode. */
 html[data-appearance="sakura"] {
   --palette-hue: 337;
-  --palette-saturation: 42%;
-  --paper-lightness: 96%;
+  --palette-saturation: 60%;
+  --paper-lightness: 88%;
 }
 html[data-appearance="paper"] {
   --palette-hue: 40;
-  --palette-saturation: 12%;
-  --paper-lightness: 93%;
+  --palette-saturation: 42%;
+  --paper-lightness: 86%;
 }
 html[data-appearance="sage"] {
   --palette-hue: 105;
-  --palette-saturation: 24%;
-  --paper-lightness: 96%;
+  --palette-saturation: 30%;
+  --paper-lightness: 84%;
 }
 html[data-appearance="ocean"] {
   --palette-hue: 198;
-  --palette-saturation: 44%;
-  --paper-lightness: 96%;
+  --palette-saturation: 60%;
+  --paper-lightness: 84%;
 }
 html[data-appearance="lavender"] {
   --palette-hue: 271;
-  --palette-saturation: 32%;
-  --paper-lightness: 96%;
+  --palette-saturation: 50%;
+  --paper-lightness: 86%;
 }
 html[data-appearance="amber"] {
   --palette-hue: 39;
-  --palette-saturation: 56%;
-  --paper-lightness: 95%;
+  --palette-saturation: 75%;
+  --paper-lightness: 82%;
 }
 html[data-appearance="rosewood"] {
   --palette-hue: 16;
   --palette-saturation: 32%;
-  --paper-lightness: 95%;
+  --paper-lightness: 79%;
 }
 html[data-appearance="graphite"] {
   --palette-hue: 100;
   --palette-saturation: 2%;
-  --paper-lightness: 94%;
+  --paper-lightness: 84%;
 }
 html[data-appearance="blueprint"] {
   --palette-hue: 219;
-  --palette-saturation: 40%;
-  --paper-lightness: 95%;
+  --palette-saturation: 55%;
+  --paper-lightness: 78%;
 }
 html[data-appearance]:not([data-appearance="original"]) {
   --background: var(--palette-hue) var(--palette-saturation) var(--paper-lightness);
   --foreground: var(--palette-hue) 14% 21%;
-  --card: var(--palette-hue) 24% 98%;
+  --card: var(--palette-hue) calc(var(--palette-saturation) * 0.65) 96%;
   --card-foreground: var(--foreground);
   --popover: var(--card);
   --popover-foreground: var(--foreground);
-  --primary: var(--palette-hue) var(--palette-saturation) 34%;
+  --primary: var(--palette-hue) var(--palette-saturation) 26%;
   --primary-foreground: var(--palette-hue) 15% 98%;
   --muted: var(--palette-hue) 15% 91%;
   --muted-foreground: var(--palette-hue) 10% 38%;
@@ -63,7 +103,7 @@ html[data-appearance]:not([data-appearance="original"]) {
   --input: var(--border);
   --ring: var(--primary);
   --badge-primary: var(--primary);
-  --gradient-bg-start: hsl(var(--card));
+  --gradient-bg-start: hsl(var(--background));
   --gradient-bg-end: hsl(var(--background));
   --gradient-header: linear-gradient(120deg, hsl(var(--background)), hsl(var(--card)));
   --gradient-bg: linear-gradient(180deg, hsl(var(--card)), hsl(var(--background)));
@@ -74,9 +114,9 @@ html[data-appearance]:not([data-appearance="original"]) {
   --color-pink-text: hsl(var(--primary));
 }
 html.dark[data-appearance]:not([data-appearance="original"]) {
-  --background: var(--palette-hue) 12% 12%;
+  --background: var(--palette-hue) 32% 12%;
   --foreground: var(--palette-hue) 16% 92%;
-  --card: var(--palette-hue) 13% 16%;
+  --card: var(--palette-hue) 23% 19%;
   --primary: var(--palette-hue) var(--palette-saturation) 74%;
   --primary-foreground: var(--palette-hue) 14% 12%;
   --muted: var(--palette-hue) 12% 22%;
@@ -95,33 +135,26 @@ html[data-appearance="graphite"] body {
   font-family: "Noto Serif CJK SC", "Songti SC", "Yu Mincho", Georgia, serif;
   background-image: repeating-linear-gradient(0deg, hsl(var(--foreground) / 1.5%) 0 1px, transparent 1px 4px);
 }
-html[data-text-size="comfort"] {
-  font-size: 106.25%;
-}
-html[data-text-size="large"] {
-  font-size: 112.5%;
-}
-
 /* Reveal from the toolbar corner toward the opposite corner. The soft diagonal edge crosses one viewport only. */
-html.appearance-transition::view-transition-group(root),
-html.appearance-transition::view-transition-image-pair(root) {
+html.appearance-transition::view-transition-group(appearance-page),
+html.appearance-transition::view-transition-image-pair(appearance-page) {
   height: 100dvh;
   overflow: clip;
   isolation: isolate;
 }
-html.appearance-transition::view-transition-old(root) {
+/* Retire the old snapshot over the live new page. Keeping the new DOM uncaptured also
+   preserves native interactions and avoids browser-specific new-snapshot scroll offsets. */
+html.appearance-transition::view-transition-old(appearance-page) {
+  height: auto;
+  top: var(--appearance-scroll-y, 0px);
+  mix-blend-mode: normal;
   animation: none;
-  height: 100%;
-  object-fit: cover;
-  object-position: left top;
 }
-html.appearance-transition::view-transition-new(root) {
-  height: 100%;
-  object-fit: cover;
-  object-position: left top;
-  mask-image: linear-gradient(135deg, transparent 44%, black 56%);
+html.appearance-transition::view-transition-image-pair(appearance-page) {
+  mask-image: linear-gradient(135deg, black 48%, transparent 52%);
   mask-size: 300% 300%;
-  animation: appearance-diagonal 650ms cubic-bezier(0.2, 0.7, 0.25, 1) both;
+  mask-repeat: no-repeat;
+  animation: appearance-diagonal 600ms cubic-bezier(0.4, 0, 0.2, 1) both;
 }
 html.appearance-transition [style*="view-transition-name"],
 html.appearance-transition #site-header {
@@ -136,7 +169,7 @@ html.appearance-transition #site-header {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  html.appearance-transition::view-transition-new(root) {
+  html.appearance-transition::view-transition-image-pair(appearance-page) {
     animation: none;
     mask-image: none;
   }
@@ -145,4 +178,87 @@ html.appearance-transition #site-header {
 html[data-appearance="paper"] :is(h1, h2, h3, h4),
 html[data-appearance="graphite"] :is(h1, h2, h3, h4) {
   font-family: "Noto Serif CJK SC", "Songti SC", "Yu Mincho", Georgia, serif;
+}
+
+/* A View Transition is a visual overlay, never an input shield. Native hit testing otherwise targets html. */
+html.appearance-transition::view-transition,
+html.appearance-transition::view-transition-group(*),
+html.appearance-transition::view-transition-image-pair(*),
+html.appearance-transition::view-transition-old(*),
+html.appearance-transition::view-transition-new(*) {
+  pointer-events: none;
+}
+html.appearance-transition::view-transition-old(appearance-page) {
+  mix-blend-mode: normal;
+}
+/* Only capture the page wrapper. Capturing root also disables hit testing on every live descendant,
+   even with pointer-events:none on the overlay. The settings portal is a body sibling of this wrapper. */
+html.appearance-transition {
+  view-transition-name: none;
+}
+html.appearance-transition:not(.appearance-updated) #appearance-stage {
+  view-transition-name: appearance-page;
+}
+#appearance-stage {
+  background: linear-gradient(to top, var(--gradient-bg-end) 0, var(--gradient-bg-start) 30%) no-repeat bottom;
+}
+html.appearance-transition::view-transition-group(appearance-page) {
+  animation: none;
+  transform: none;
+  clip-path: var(--appearance-clip);
+}
+
+html {
+  font-size: var(--reading-size, 100%);
+  --reading-leading: 1.8;
+  --reading-density: 1;
+  --reading-radius: 0.5rem;
+}
+html[data-reading-font="sans"] {
+  --reading-font: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft Yahei", sans-serif;
+}
+html[data-reading-font="serif"] {
+  --reading-font: "Noto Serif CJK SC", "Songti SC", "Yu Mincho", Georgia, serif;
+}
+html[data-reading-font="mono"] {
+  --reading-font: "SFMono-Regular", Consolas, "Noto Sans Mono CJK SC", monospace;
+}
+html[data-reading-font]:not([data-reading-font="theme"]) :is(body, h1, h2, h3, h4) {
+  font-family: var(--reading-font);
+}
+html :is(article, .prose, .markdown-body) :is(p, li) {
+  line-height: var(--reading-leading);
+}
+html[data-reading-density="compact"] {
+  --reading-density: 0.75;
+}
+html[data-reading-density="spacious"] {
+  --reading-density: 1.35;
+}
+main [data-gallery-layout] {
+  gap: calc(1rem * var(--reading-density));
+}
+html[data-reading-density]:not([data-reading-density="normal"]) main .p-5 {
+  padding: calc(1.25rem * var(--reading-density));
+}
+html[data-reading-density]:not([data-reading-density="normal"]) main .p-6 {
+  padding: calc(1.5rem * var(--reading-density));
+}
+html[data-reading-corners="square"] {
+  --reading-radius: 2px;
+}
+html[data-reading-corners="soft"] {
+  --reading-radius: 1.5rem;
+}
+html[data-reading-corners]:not([data-reading-corners="rounded"]) main :is(.rounded-lg, .rounded-xl, .rounded-2xl) {
+  border-radius: var(--reading-radius);
+}
+html[data-reading-transparency="solid"] :is(.glass-surface, .appearance-panel, .gallery-selection-dock) {
+  background: hsl(var(--card));
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+html[data-reading-motion="reduced"] :is(.appearance-panel, .appearance-reveal, .appearance-swatch) {
+  animation: none;
+  transition: none;
 }
