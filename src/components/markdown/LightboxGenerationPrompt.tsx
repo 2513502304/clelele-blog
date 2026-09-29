@@ -1,6 +1,6 @@
 import { useTranslation } from '@hooks/useTranslation';
 import { Icon } from '@iconify/react';
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useDraggablePanel } from '@/hooks/useDraggablePanel';
 import './lightbox-generation-prompt.css';
 
@@ -20,6 +20,8 @@ export function LightboxGenerationPrompt({
   const [expanded, setExpanded] = useState(initiallyExpanded && Boolean(prompt));
   const drag = useDraggablePanel();
   const bodyId = useId();
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(copiedTimer.current), []);
   const moveLabel =
     locale === 'zh'
       ? '拖动面板 · Alt + 方向键移动'
@@ -27,11 +29,17 @@ export function LightboxGenerationPrompt({
         ? 'ドラッグ / Alt + 矢印で移動'
         : 'Drag to move · Alt + arrow keys';
   async function copy() {
+    clearTimeout(copiedTimer.current);
+    setCopied(false);
+    setFailed(false);
     try {
       await navigator.clipboard.writeText(prompt ?? '');
       setCopied(true);
-      setFailed(false);
-    } catch {
+      copiedTimer.current = setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      // Report the failure type without logging the user's prompt or clipboard contents.
+      console.warn('Generation prompt clipboard copy failed:', error instanceof Error ? error.name : 'Unknown error');
+      setCopied(false);
       setFailed(true);
     }
   }

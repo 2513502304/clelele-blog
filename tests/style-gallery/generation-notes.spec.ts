@@ -22,6 +22,8 @@ async function checkPromptViewer(page: Page, prompt: string) {
   expect((await details.boundingBox())?.width).toBeLessThanOrEqual(192);
   await details.getByRole('button', { name: '复制全部生成图片 prompt', exact: true }).click();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(prompt);
+  await expect(details.locator('output')).not.toBeEmpty();
+  await expect(details.locator('output')).toBeEmpty();
   await details.locator('.generation-glass-toggle').click();
   const full = details.locator('[data-prompt-text]');
   expect(await full.textContent()).toBe(prompt);

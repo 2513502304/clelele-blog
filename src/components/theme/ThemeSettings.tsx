@@ -1,5 +1,5 @@
 import { Icon } from '@iconify/react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useDraggablePanel } from '@/hooks/useDraggablePanel';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -58,8 +58,16 @@ function ThemePanel({ onClose }: { onClose: () => void }) {
   const [appearance, select] = useState<Appearance>('original');
   const [size, resize] = useState<TextSize>('standard');
   const [expanded, expand] = useState(true);
+  const heading = useRef<HTMLButtonElement>(null);
   const drag = useDraggablePanel();
+  function choose(nextAppearance: Appearance, nextSize: TextSize, animate = true) {
+    // View transitions defer DOM updates; subsequent controls must use the user's latest choice immediately.
+    select(nextAppearance);
+    resize(nextSize);
+    setAppearance(nextAppearance, nextSize, animate);
+  }
   useEffect(() => {
+    heading.current?.focus({ preventScroll: true });
     const sync = () => {
       const root = document.documentElement;
       select((root.dataset.appearance ?? 'original') as Appearance);
@@ -88,6 +96,7 @@ function ThemePanel({ onClose }: { onClose: () => void }) {
           <Icon icon="ri:palette-line" />
         </span>
         <button
+          ref={heading}
           type="button"
           className="appearance-heading"
           onClick={() => expand(!expanded)}
@@ -116,7 +125,7 @@ function ThemePanel({ onClose }: { onClose: () => void }) {
                   type="button"
                   className="appearance-preset"
                   aria-pressed={appearance === preset.id}
-                  onClick={() => setAppearance(preset.id, size)}
+                  onClick={() => choose(preset.id, size)}
                 >
                   <span className="appearance-swatch" style={{ backgroundColor: preset.color, color: preset.ink }} aria-hidden>
                     <span className={['paper', 'graphite'].includes(preset.id) ? 'serif' : ''}>Aa</span>
@@ -135,7 +144,7 @@ function ThemePanel({ onClose }: { onClose: () => void }) {
                   type="button"
                   key={value}
                   aria-pressed={size === value}
-                  onClick={() => setAppearance(appearance, value, false)}
+                  onClick={() => choose(appearance, value, false)}
                 >
                   <span style={{ fontSize: 14 + index * 3 }}>Aa</span>
                   {text.sizes[index]}
@@ -149,7 +158,7 @@ function ThemePanel({ onClose }: { onClose: () => void }) {
               <Icon icon="ri:drag-move-2-line" />
               {text.saved}
             </span>
-            <button type="button" onClick={() => setAppearance('original', 'standard')}>
+            <button type="button" onClick={() => choose('original', 'standard')}>
               {text.reset}
             </button>
           </footer>

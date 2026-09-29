@@ -59,7 +59,14 @@ export const POST: APIRoute = async ({ cookies, request, url }) => {
         });
       } catch (error) {
         // A known CAS conflict never published this unique key. Uncertain network errors retain bytes for safety.
-        if (error instanceof HfS3ConflictError) await siteProfileStorage().delete(asset.key);
+        if (error instanceof HfS3ConflictError) {
+          try {
+            await siteProfileStorage().delete(asset.key);
+          } catch {
+            // Cleanup is best effort: preserve the conflict so the editor can refresh its stale revision.
+            console.warn('Failed to remove an unpublished profile upload after a conflict:', asset.key);
+          }
+        }
         throw error;
       }
       return Response.json({ profile: result, asset }, { headers: privateHeaders });

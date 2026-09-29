@@ -125,3 +125,64 @@ test('reduced motion, dark mode, storage changes and Astro navigation keep appea
   await expect(page.locator('html')).toHaveAttribute('data-appearance', 'sage');
   await expect(page.locator('html')).toHaveClass(/dark/);
 });
+
+test('keyboard opening focuses the panel and rapid preset/size changes keep the latest intent', async ({ page }) => {
+  await page.goto('/image-style-prompt-gallery/examples', { waitUntil: 'domcontentloaded' });
+  const toggle = page.getByRole('button', { name: '主题与阅读', exact: true });
+  await expect(toggle.locator('xpath=ancestor::astro-island')).not.toHaveAttribute('ssr');
+  await toggle.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('button', { name: '折叠主题设置' })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.appearance-panel')).toHaveCount(0);
+  await expect(toggle).toBeFocused();
+  await page.keyboard.press('Enter');
+  // Hold the snapshot callback to reproduce a second control click before the palette reaches the DOM.
+  await page.evaluate(() => {
+    const updates: Array<() => void> = [];
+    Object.assign(window, {
+      finishAppearanceUpdates: () => {
+        for (const update of updates) update();
+      },
+    });
+    Object.defineProperty(document, 'startViewTransition', {
+      configurable: true,
+      value: (update: () => void) => {
+        updates.push(update);
+        return { skipTransition() {}, finished: new Promise(() => {}) };
+      },
+    });
+  });
+  await page.getByRole('button', { name: '纸上画廊', exact: true }).click();
+  await page.getByRole('button', { name: /Aa\s*舒适/ }).click();
+  await page.evaluate(() => (window as unknown as { finishAppearanceUpdates(): void }).finishAppearanceUpdates());
+  await expect(page.locator('html')).toHaveAttribute('data-appearance', 'paper');
+  await expect(page.locator('html')).toHaveAttribute('data-text-size', 'comfort');
+});
+
+test('primary foreground meets normal-text contrast in every light and dark palette', async ({ page }) => {
+  await page.goto('/image-style-prompt-gallery/examples', { waitUntil: 'domcontentloaded' });
+  const results = await page.evaluate(() => {
+    const root = document.documentElement;
+    const probe = document.createElement('span');
+    probe.style.cssText = 'background: hsl(var(--primary)); color: hsl(var(--primary-foreground));';
+    document.body.append(probe);
+    const luminance = (rgb: string) => {
+      const channels = (rgb.match(/[\d.]+/g) ?? []).slice(0, 3).map((value) => {
+        const c = Number(value) / 255;
+        return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+      });
+      return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+    };
+    return [false, true].flatMap((dark) => {
+      root.classList.toggle('dark', dark);
+      return ['sakura', 'paper', 'sage', 'ocean', 'lavender', 'amber', 'rosewood', 'graphite', 'blueprint'].map((palette) => {
+        root.dataset.appearance = palette;
+        const style = getComputedStyle(probe);
+        const values = [luminance(style.color), luminance(style.backgroundColor)].sort((a, b) => a - b);
+        return { palette, dark, contrast: (values[1] + 0.05) / (values[0] + 0.05) };
+      });
+    });
+  });
+  for (const result of results) expect(result.contrast, JSON.stringify(result)).toBeGreaterThanOrEqual(4.5);
+});

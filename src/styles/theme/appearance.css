@@ -78,6 +78,7 @@ html.dark[data-appearance]:not([data-appearance="original"]) {
   --foreground: var(--palette-hue) 16% 92%;
   --card: var(--palette-hue) 13% 16%;
   --primary: var(--palette-hue) var(--palette-saturation) 74%;
+  --primary-foreground: var(--palette-hue) 14% 12%;
   --muted: var(--palette-hue) 12% 22%;
   --muted-foreground: var(--palette-hue) 14% 72%;
   --border: var(--palette-hue) 12% 30%;
