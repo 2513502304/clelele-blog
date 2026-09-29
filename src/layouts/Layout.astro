@@ -347,7 +347,7 @@ const keywords = keywordsOverride || siteConfig.keywords || [siteConfig.title];
   </head>
   <body>
     <ChristmasEffects transition:persist="christmas-snowfall" />
-    <div class="flex min-h-screen flex-col text-black dark:text-white">
+    <div id="appearance-stage" class="flex min-h-screen flex-col text-black dark:text-white">
       <Header isPostPage={isPostPage} tocNumbering={post?.data.tocNumbering ?? true} />
       <main class="relative flex grow flex-col gap-4">
         {(<slot />)}

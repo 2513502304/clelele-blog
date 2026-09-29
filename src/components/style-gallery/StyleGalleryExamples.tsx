@@ -32,9 +32,11 @@ import { getStyleGallerySourceHash } from '@lib/style-gallery-source-groups';
 import { fetchWithRetry, sha256, uploadFile } from '@lib/style-gallery-upload-client';
 import type { StyleGalleryVisualFeature } from '@lib/style-gallery-visual-types';
 import { openModal } from '@store/modal';
+import { NuqsAdapter } from 'nuqs/adapters/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { StyleGalleryExample, StyleGalleryExampleView, StyleGalleryImageDimensions } from '@/types/style-gallery';
 import GallerySelectionDock from './GallerySelectionDock';
+import StyleGalleryGrid, { StyleGalleryLayoutToggle, useStyleGalleryLayout } from './StyleGalleryGrid';
 import {
   createStyleGalleryLightboxLikeAction,
   StyleGalleryLikeButton,
@@ -98,7 +100,7 @@ const UPLOAD_CONCURRENCY = 5;
  * 单个 prompt item 的 Sub-gallery 管理器。
  * 支持小文件直传、大文件分块、并发文件任务、逐文件失败隔离，以及带令牌的批量改平台/删除操作。
  */
-export default function StyleGalleryExamples({
+function StyleGalleryExamplesContent({
   locale,
   slug,
   title,
@@ -129,6 +131,8 @@ export default function StyleGalleryExamples({
         ? 'ドラッグで選択。Ctrl / Shift / ⌘ で追加。スクロール可。'
         : 'Drag to select; Ctrl / Shift / ⌘ adds. Scroll while dragging.',
   };
+  const [layout, setLayout] = useStyleGalleryLayout();
+  const masonry = layout === 'masonry';
   const [examples, setExamples] = useState<StyleGalleryExample[]>(initialExamples);
   const likes = useStyleGalleryLikes(Object.fromEntries(initialExamples.map((example) => [example.id, example.likeCount])));
   const [platform, setPlatform] = useState<string>(STYLE_GALLERY_PLATFORMS[0].slug);
@@ -820,6 +824,13 @@ export default function StyleGalleryExamples({
             >
               {selectionMode ? selectionText.exit : selectionText.start}
             </button>
+            <StyleGalleryLayoutToggle
+              masonry={masonry}
+              locale={locale}
+              onChange={() => {
+                void setLayout(masonry ? 'grid' : 'masonry').catch(console.error);
+              }}
+            />
             {selectionMode && selectionActions}
           </div>
           {selectionMode && (
@@ -858,10 +869,7 @@ export default function StyleGalleryExamples({
                   </span>
                 </div>
               </div>
-              <div
-                data-gallery-marquee-area
-                className="grid grid-cols-4 gap-3 md:grid-cols-2 [@media(min-width:769px)_and_(max-width:1279px)]:grid-cols-3"
-              >
+              <StyleGalleryGrid masonry={masonry}>
                 {platformExamples.map((example) => {
                   return (
                     <figure
@@ -870,10 +878,17 @@ export default function StyleGalleryExamples({
                       data-selected={selectedIds.has(example.id)}
                       id={getStyleGalleryLightboxElementId('detail-example', example.id)}
                       tabIndex={-1}
-                      className="w-full min-w-0 overflow-hidden rounded-lg border border-gray-100 bg-gray-50 [contain-intrinsic-size:auto_420px] [content-visibility:auto] dark:border-gray-800 dark:bg-gray-900"
+                      className="w-full min-w-0 overflow-hidden rounded-lg border border-gray-100 bg-gray-50 dark:border-gray-800 dark:bg-gray-900"
                     >
                       {/* 全局 reset 让 figure 使用 fit-content，因此 figure 与内层都必须显式占满 grid track；否则未加载的 1x1 img 会让整张卡片收缩。 */}
-                      <div className="relative aspect-square w-full overflow-hidden bg-gray-100 dark:bg-gray-900">
+                      <div
+                        className="relative w-full overflow-hidden bg-gray-100 dark:bg-gray-900"
+                        style={{
+                          aspectRatio: masonry
+                            ? `${example.dimensions?.width || 1} / ${example.dimensions?.height || 1}`
+                            : '1 / 1',
+                        }}
+                      >
                         <button
                           type="button"
                           onClick={() => openExampleLightbox(example, platformExamples)}
@@ -884,8 +899,8 @@ export default function StyleGalleryExamples({
                             source={example.src}
                             loadedSources={loadedExampleSources.current}
                             alt={example.alt ?? example.model ?? 'Generated example'}
-                            width={1}
-                            height={1}
+                            width={example.dimensions?.width || 1}
+                            height={example.dimensions?.height || 1}
                             loading="lazy"
                             decoding="async"
                             className="h-full w-full object-cover transition duration-200 group-hover:scale-105"
@@ -924,7 +939,7 @@ export default function StyleGalleryExamples({
                     </figure>
                   );
                 })}
-              </div>
+              </StyleGalleryGrid>
             </section>
           ))}
         </div>
@@ -934,5 +949,14 @@ export default function StyleGalleryExamples({
         </div>
       )}
     </section>
+  );
+}
+
+/** Share the Gallery's URL layout preference and preserve platform/lightbox order in both modes. */
+export default function StyleGalleryExamples(props: StyleGalleryExamplesProps) {
+  return (
+    <NuqsAdapter>
+      <StyleGalleryExamplesContent {...props} />
+    </NuqsAdapter>
   );
 }

@@ -87,6 +87,19 @@ test('file and clipboard enter crop editor; preview exports a bounded image and 
   expect(Number(await zoom.inputValue())).toBeGreaterThan(2.5);
   const zoomed = await stage.locator('img').boundingBox();
   expect(zoomed?.width).toBeGreaterThan((box?.width ?? 0) * 2.5);
+  // The full 44px target must drag, including padding outside the native thumb/track.
+  await zoom.fill('2');
+  await page.mouse.move(slider.x + slider.width / 3, slider.y + 6);
+  await page.mouse.down();
+  await page.mouse.move(slider.x + slider.width * 0.85, slider.y + 6, { steps: 8 });
+  expect(Number(await zoom.inputValue())).toBeGreaterThan(3.4);
+  await page.mouse.move(slider.x + slider.width * 0.2, slider.y - 20, { steps: 8 });
+  expect(Number(await zoom.inputValue())).toBeLessThan(1.8);
+  await page.mouse.up();
+  const beforeKey = Number(await zoom.inputValue());
+  await zoom.focus();
+  await page.keyboard.press('ArrowRight');
+  expect(Number(await zoom.inputValue())).toBeCloseTo(beforeKey + 0.01, 2);
   await zoom.fill('2');
   if (!box) throw new Error('Crop stage missing');
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);

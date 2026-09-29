@@ -1,5 +1,6 @@
 import './site-image-cropper.css';
 import { useEffect, useRef, useState } from 'react';
+import { usePointerRange } from '@/hooks/usePointerRange';
 import { AVATAR_DISPLAY_SIZE, type CropPosition, cropRectangle } from '@/lib/site-profile/image-crop';
 
 /** The viewport is the exported crop. Local input bytes are never changed or sent before confirmation. */
@@ -21,6 +22,7 @@ export default function SiteImageCropper({
   const [source, setSource] = useState('');
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [position, setPosition] = useState<CropPosition>({ zoom: 1, x: 0, y: 0 });
+  const zoomRange = usePointerRange((zoom) => setPosition((current) => ({ ...current, zoom })));
   const [error, setError] = useState('');
   const [exporting, setExporting] = useState(false);
   const image = useRef<HTMLImageElement>(null);
@@ -169,10 +171,7 @@ export default function SiteImageCropper({
           value={position.zoom}
           disabled={busy || exporting}
           className="site-crop-zoom min-w-0 flex-1"
-          onInput={(event) => {
-            const zoom = Number(event.currentTarget.value);
-            setPosition((current) => ({ ...current, zoom }));
-          }}
+          {...zoomRange}
         />
         <span className="w-12 text-right text-sm tabular-nums">{Math.round(position.zoom * 100)}%</span>
         <button
