@@ -1,0 +1,27 @@
+---
+import { APPEARANCES } from './appearance';
+---
+<script is:inline define:vars={{ appearanceIds: APPEARANCES.map(({ id }) => id) }}>
+  (() => {
+    const read = (key) => { try { return localStorage.getItem(key); } catch { return null; } };
+    function apply() {
+      const root = document.documentElement;
+      const appearance = read('appearance');
+      const size = read('appearance-text-size');
+      root.dataset.appearance = appearanceIds.includes(appearance) ? appearance : 'original';
+      root.dataset.textSize = ['comfort', 'large'].includes(size) ? size : 'standard';
+    }
+    // Inline in <head>: apply before first paint and restore the same preference after Astro navigation.
+    apply();
+    if (!window.__appearanceListeners) {
+      window.__appearanceListeners = true;
+      document.addEventListener('astro:after-swap', apply);
+      window.addEventListener('storage', (event) => {
+        if (!event.key || ['appearance', 'appearance-text-size'].includes(event.key)) {
+          apply();
+          window.dispatchEvent(new Event('appearance-change'));
+        }
+      });
+    }
+  })();
+</script>

@@ -25,3 +25,5 @@
 @import "./components/live2d.css";
 @import "./theme/glass.css";
 @import "./components/gallery-stack.css";
+
+@import "./theme/appearance.css";

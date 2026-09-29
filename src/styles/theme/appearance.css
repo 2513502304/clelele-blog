@@ -1,0 +1,147 @@
+/* Only design tokens change: no filters on artwork, grid overrides, hidden navigation or forced dark mode. */
+html[data-appearance="sakura"] {
+  --palette-hue: 337;
+  --palette-saturation: 42%;
+  --paper-lightness: 96%;
+}
+html[data-appearance="paper"] {
+  --palette-hue: 40;
+  --palette-saturation: 12%;
+  --paper-lightness: 93%;
+}
+html[data-appearance="sage"] {
+  --palette-hue: 105;
+  --palette-saturation: 24%;
+  --paper-lightness: 96%;
+}
+html[data-appearance="ocean"] {
+  --palette-hue: 198;
+  --palette-saturation: 44%;
+  --paper-lightness: 96%;
+}
+html[data-appearance="lavender"] {
+  --palette-hue: 271;
+  --palette-saturation: 32%;
+  --paper-lightness: 96%;
+}
+html[data-appearance="amber"] {
+  --palette-hue: 39;
+  --palette-saturation: 56%;
+  --paper-lightness: 95%;
+}
+html[data-appearance="rosewood"] {
+  --palette-hue: 16;
+  --palette-saturation: 32%;
+  --paper-lightness: 95%;
+}
+html[data-appearance="graphite"] {
+  --palette-hue: 100;
+  --palette-saturation: 2%;
+  --paper-lightness: 94%;
+}
+html[data-appearance="blueprint"] {
+  --palette-hue: 219;
+  --palette-saturation: 40%;
+  --paper-lightness: 95%;
+}
+html[data-appearance]:not([data-appearance="original"]) {
+  --background: var(--palette-hue) var(--palette-saturation) var(--paper-lightness);
+  --foreground: var(--palette-hue) 14% 21%;
+  --card: var(--palette-hue) 24% 98%;
+  --card-foreground: var(--foreground);
+  --popover: var(--card);
+  --popover-foreground: var(--foreground);
+  --primary: var(--palette-hue) var(--palette-saturation) 34%;
+  --primary-foreground: var(--palette-hue) 15% 98%;
+  --muted: var(--palette-hue) 15% 91%;
+  --muted-foreground: var(--palette-hue) 10% 38%;
+  --secondary: var(--muted);
+  --secondary-foreground: var(--foreground);
+  --accent: var(--muted);
+  --accent-foreground: var(--foreground);
+  --border: var(--palette-hue) 16% 84%;
+  --input: var(--border);
+  --ring: var(--primary);
+  --badge-primary: var(--primary);
+  --gradient-bg-start: hsl(var(--card));
+  --gradient-bg-end: hsl(var(--background));
+  --gradient-header: linear-gradient(120deg, hsl(var(--background)), hsl(var(--card)));
+  --gradient-bg: linear-gradient(180deg, hsl(var(--card)), hsl(var(--background)));
+  --gradient-pink: linear-gradient(110deg, hsl(var(--primary)), hsl(var(--primary) / 80%));
+  --gradient-shoka-button: var(--gradient-pink);
+  --color-pink: hsl(var(--primary));
+  --color-pink-a3: hsl(var(--primary) / 30%);
+  --color-pink-text: hsl(var(--primary));
+}
+html.dark[data-appearance]:not([data-appearance="original"]) {
+  --background: var(--palette-hue) 12% 12%;
+  --foreground: var(--palette-hue) 16% 92%;
+  --card: var(--palette-hue) 13% 16%;
+  --primary: var(--palette-hue) var(--palette-saturation) 74%;
+  --muted: var(--palette-hue) 12% 22%;
+  --muted-foreground: var(--palette-hue) 14% 72%;
+  --border: var(--palette-hue) 12% 30%;
+}
+/* Palette-specific surfaces cover legacy literal white cards without changing semantic status colors. */
+html[data-appearance]:not([data-appearance="original"]):not(.dark) :is(.bg-white, .bg-gray-50) {
+  background-color: hsl(var(--card));
+}
+html.dark[data-appearance]:not([data-appearance="original"]) :is(.dark\:bg-gray-950, .dark\:bg-gray-900) {
+  background-color: hsl(var(--card));
+}
+html[data-appearance="paper"] body,
+html[data-appearance="graphite"] body {
+  font-family: "Noto Serif CJK SC", "Songti SC", "Yu Mincho", Georgia, serif;
+  background-image: repeating-linear-gradient(0deg, hsl(var(--foreground) / 1.5%) 0 1px, transparent 1px 4px);
+}
+html[data-text-size="comfort"] {
+  font-size: 106.25%;
+}
+html[data-text-size="large"] {
+  font-size: 112.5%;
+}
+
+/* Reveal from the toolbar corner toward the opposite corner. The soft diagonal edge crosses one viewport only. */
+html.appearance-transition::view-transition-group(root),
+html.appearance-transition::view-transition-image-pair(root) {
+  height: 100dvh;
+  overflow: clip;
+  isolation: isolate;
+}
+html.appearance-transition::view-transition-old(root) {
+  animation: none;
+  height: 100%;
+  object-fit: cover;
+  object-position: left top;
+}
+html.appearance-transition::view-transition-new(root) {
+  height: 100%;
+  object-fit: cover;
+  object-position: left top;
+  mask-image: linear-gradient(135deg, transparent 44%, black 56%);
+  mask-size: 300% 300%;
+  animation: appearance-diagonal 650ms cubic-bezier(0.2, 0.7, 0.25, 1) both;
+}
+html.appearance-transition [style*="view-transition-name"],
+html.appearance-transition #site-header {
+  view-transition-name: none;
+}
+@keyframes appearance-diagonal {
+  from {
+    mask-position: 0% 0%;
+  }
+  to {
+    mask-position: 100% 100%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  html.appearance-transition::view-transition-new(root) {
+    animation: none;
+    mask-image: none;
+  }
+}
+
+html[data-appearance="paper"] :is(h1, h2, h3, h4),
+html[data-appearance="graphite"] :is(h1, h2, h3, h4) {
+  font-family: "Noto Serif CJK SC", "Songti SC", "Yu Mincho", Georgia, serif;
+}
