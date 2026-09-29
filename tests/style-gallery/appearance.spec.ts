@@ -163,6 +163,27 @@ test('keyboard opening focuses the panel and rapid preset/size changes keep the 
   await expect(page.locator('html')).toHaveAttribute('data-reading-font-size', '110');
 });
 
+test('snapshot startup failure still applies and persists the selected palette', async ({ page }) => {
+  await page.goto('/image-style-prompt-gallery/examples', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: '主题与阅读', exact: true }).click();
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'startViewTransition', {
+      configurable: true,
+      value: () => {
+        throw new Error('Snapshot unavailable');
+      },
+    });
+  });
+  await page.getByRole('button', { name: '纸上画廊', exact: true }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-appearance', 'paper');
+  await expect(page.locator('html')).not.toHaveClass(/appearance-(transition|updated)/);
+  await page.getByRole('button', { name: '海盐来信', exact: true }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-appearance', 'ocean');
+  await expect(page.locator('html')).not.toHaveClass(/appearance-(transition|updated)/);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(page.locator('html')).toHaveAttribute('data-appearance', 'ocean');
+});
+
 test('primary foreground meets normal-text contrast in every light and dark palette', async ({ page }) => {
   await page.goto('/image-style-prompt-gallery/examples', { waitUntil: 'domcontentloaded' });
   const results = await page.evaluate(() => {

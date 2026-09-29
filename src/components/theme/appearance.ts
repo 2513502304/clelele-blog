@@ -65,10 +65,19 @@ export function setAppearance(appearance: Appearance, animate = true) {
   root.style.setProperty('--appearance-clip', clip);
   root.classList.remove('appearance-updated');
   root.classList.add('appearance-transition');
-  const transition = document.startViewTransition(() => {
+  let transition: ViewTransition;
+  try {
+    transition = document.startViewTransition(() => {
+      apply();
+      if (id === sequence) root.classList.add('appearance-updated');
+    });
+  } catch {
+    // Animation is optional: a snapshot startup failure must not lose the chosen palette.
+    root.classList.remove('appearance-transition', 'appearance-updated');
+    activeTransition = undefined;
     apply();
-    if (id === sequence) root.classList.add('appearance-updated');
-  });
+    return;
+  }
   activeTransition = transition;
   const cancel = () => transition.skipTransition();
   // A moved panel or viewport invalidates snapshot geometry; finish immediately instead of showing stale pixels.

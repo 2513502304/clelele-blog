@@ -17,6 +17,7 @@ export interface ReadingPreferences {
   transparency: 'glass' | 'solid';
   motion: 'full' | 'reduced';
 }
+/** Accept stored data only through the shared finite-number bounds and enum allowlists. */
 export function normalizeReadingPreferences(input: unknown): ReadingPreferences {
   const value = input && typeof input === 'object' ? (input as Record<string, unknown>) : {};
   return Object.fromEntries(
@@ -34,6 +35,7 @@ export function normalizeReadingPreferences(input: unknown): ReadingPreferences 
   ) as unknown as ReadingPreferences;
 }
 export const DEFAULT_READING = normalizeReadingPreferences({});
+/** Read live DOM values so storage-disabled sessions and independently mounted controls stay in sync. */
 export function getReadingPreferences(): ReadingPreferences {
   const data = document.documentElement.dataset;
   return normalizeReadingPreferences(
@@ -45,6 +47,7 @@ export function getReadingPreferences(): ReadingPreferences {
     ),
   );
 }
+/** Apply immediately, persist when available, and notify layout consumers without replaying a palette change. */
 export function setReadingPreferences(input: ReadingPreferences) {
   const values = normalizeReadingPreferences(input);
   for (const [key, rule] of Object.entries(READING_RULES)) {

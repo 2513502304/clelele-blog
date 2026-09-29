@@ -53,6 +53,7 @@ const labels = {
   },
 };
 
+/** Keep palette intent separate from reading updates while a delayed snapshot callback is pending. */
 function ThemePanel({ onClose }: { onClose: () => void }) {
   const { locale } = useTranslation();
   const lang = locale === 'ja' ? 'ja' : locale === 'en' ? 'en' : 'zh';
@@ -236,6 +237,7 @@ const readingLabels = {
   },
 };
 
+/** Allow incomplete numeric typing; update valid values live and clamp the remaining draft only on blur. */
 function NumericSetting({
   name,
   value,
@@ -291,6 +293,7 @@ function NumericSetting({
   );
 }
 
+/** Present independently persisted reading choices using the same bounds as the pre-paint bootstrap. */
 function ReadingControls({
   value,
   onChange,
