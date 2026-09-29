@@ -3,7 +3,7 @@ import { getSiteProfile } from './store';
 /** A neutral build-time fallback keeps pages available without maintaining a second copy of editable profile data. */
 export async function publicSiteProfile() {
   try {
-    const { history: _, ...profile } = await getSiteProfile();
+    const { history: _, pendingDeletion: _pending, ...profile } = await getSiteProfile();
     return profile;
   } catch {
     return {

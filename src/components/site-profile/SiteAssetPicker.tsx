@@ -149,7 +149,7 @@ export default function SiteAssetPicker({
               <span className="text-muted-foreground text-xs">{history.length} 张</span>
             </div>
             <p className="text-muted-foreground text-xs leading-5">
-              可直接复用或重新裁剪。在用图片不可删除；删除会立即移出历史列表，HF 原始文件保留用于恢复。
+              可直接复用或重新裁剪。在用图片不可删除；删除会同时移除历史记录与 HF 图片文件，无法撤销。
             </p>
             <div className="grid grid-cols-3 gap-3 md:grid-cols-2">
               {[...history].reverse().map((asset) => (
@@ -181,10 +181,9 @@ export default function SiteAssetPicker({
                       className={`${buttonClass} text-destructive`}
                       disabled={protectedKeys.includes(asset.key)}
                       aria-label={`删除历史图片 ${asset.name}`}
-                      title={protectedKeys.includes(asset.key) ? '已发布或当前草稿正在使用' : '移出历史记录'}
+                      title={protectedKeys.includes(asset.key) ? '已发布或当前草稿正在使用' : '永久删除图片及历史记录'}
                       onClick={async () => {
-                        if (!window.confirm(`从历史记录中删除“${asset.name}”？此操作立即生效，HF 原文件仍保留用于恢复。`))
-                          return;
+                        if (!window.confirm(`永久删除“${asset.name}”的历史记录和 HF 图片文件？此操作无法撤销。`)) return;
                         try {
                           await onDelete(asset.key);
                         } catch (error) {

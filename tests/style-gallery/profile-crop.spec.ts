@@ -24,7 +24,16 @@ test('history deletion protects active images, enforces auth, CSRF and revision 
   expect((await request.delete('/api/site-profile/admin', { data: {} })).status()).toBe(404);
   expect((await request.get('/api/site-profile/source?key=images/x.png')).status()).toBe(404);
   await owner(context);
-  const profile = await (await context.request.get('/api/site-profile/admin')).json();
+  const initial = await (await context.request.get('/api/site-profile/admin')).json();
+  const upload = await context.request.post('/api/site-profile/admin', {
+    multipart: {
+      revision: initial.revision,
+      file: { name: 'remove-me.png', mimeType: 'image/png', buffer: await sharp(Buffer.from(svg)).png().toBuffer() },
+    },
+  });
+  expect(upload.ok()).toBe(true);
+  const { profile, asset: removable } = await upload.json();
+  const activeName = profile.history.find((asset: { key: string }) => asset.key === profile.assets.avatar).name;
   const active = { revision: profile.revision, key: profile.assets.avatar };
   expect(
     (
@@ -35,8 +44,8 @@ test('history deletion protects active images, enforces auth, CSRF and revision 
   await page.route('**/api/live2d**', (route) => route.abort());
   await page.goto('/admin?asset=avatar', { waitUntil: 'domcontentloaded' });
   const dialog = page.getByRole('dialog', { name: /^更换/ });
-  await expect(dialog.getByRole('button', { name: '删除历史图片 历史图片1.png', exact: true })).toBeDisabled();
-  const remove = dialog.getByRole('button', { name: '删除历史图片 历史图片2.png', exact: true });
+  await expect(dialog.getByRole('button', { name: `删除历史图片 ${activeName}`, exact: true })).toBeDisabled();
+  const remove = dialog.getByRole('button', { name: '删除历史图片 remove-me.png', exact: true });
   page.once('dialog', (d) => d.dismiss());
   await remove.click();
   await expect(remove).toBeVisible();
@@ -44,15 +53,11 @@ test('history deletion protects active images, enforces auth, CSRF and revision 
   await remove.click();
   await expect(remove).toHaveCount(0);
   const updated = await (await context.request.get('/api/site-profile/admin')).json();
-  expect(updated.history).toHaveLength(1);
-  expect(
-    (
-      await context.request.delete('/api/site-profile/admin', { data: { ...active, key: `images/${'d'.repeat(64)}.png` } })
-    ).status(),
-  ).toBe(409);
-  expect(
-    (await context.request.get(`/api/site-profile/source?key=${encodeURIComponent(`images/${'d'.repeat(64)}.png`)}`)).status(),
-  ).toBe(404);
+  expect(updated.history).toHaveLength(initial.history.length);
+  expect((await context.request.delete('/api/site-profile/admin', { data: { ...active, key: removable.key } })).status()).toBe(
+    409,
+  );
+  expect((await context.request.get(`/api/site-profile/source?key=${encodeURIComponent(removable.key)}`)).status()).toBe(404);
 });
 
 test('file and clipboard enter crop editor; preview exports a bounded image and only publishes after confirmation', async ({
@@ -72,7 +77,17 @@ test('file and clipboard enter crop editor; preview exports a bounded image and 
   await expect(stage.locator('img')).toHaveJSProperty('naturalWidth', 800);
   const box = await stage.boundingBox();
   expect(box?.width).toBeCloseTo(box?.height ?? 0, 0);
-  await dialog.getByLabel('缩放', { exact: true }).fill('2');
+  const zoom = dialog.getByLabel('缩放', { exact: true });
+  const slider = await zoom.boundingBox();
+  if (!slider) throw new Error('Zoom slider missing');
+  await page.mouse.move(slider.x + 8, slider.y + slider.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(slider.x + slider.width * 0.65, slider.y + slider.height / 2, { steps: 12 });
+  await page.mouse.up();
+  expect(Number(await zoom.inputValue())).toBeGreaterThan(2.5);
+  const zoomed = await stage.locator('img').boundingBox();
+  expect(zoomed?.width).toBeGreaterThan((box?.width ?? 0) * 2.5);
+  await zoom.fill('2');
   if (!box) throw new Error('Crop stage missing');
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
@@ -87,7 +102,8 @@ test('file and clipboard enter crop editor; preview exports a bounded image and 
   const result = await (await uploaded).json();
   expect(result.asset.width).toBe(300);
   expect(result.asset.height).toBe(300);
-  expect(result.asset.key).toMatch(/\.webp$/);
+  expect(result.asset.key).toMatch(/\.(webp|png)$/);
+  expect(result.asset.name.split('.').at(-1)).toBe(result.asset.key.split('.').at(-1));
   expect(result.profile.assets.avatar).toBe(original.assets.avatar);
   await expect(dialog).toHaveCount(0);
   page.once('dialog', (d) => d.dismiss());
@@ -125,6 +141,8 @@ test('quick edit is hover/focus-only and the avatar retains its shake animation'
   await avatar.hover();
   await expect(edit).toHaveCSS('opacity', '1');
   await expect(avatar.locator('img')).toHaveCSS('animation-name', 'shake');
+  await expect(avatar.locator('img')).toHaveCSS('animation-duration', '2s');
+  await expect(avatar.locator('img')).toHaveCSS('animation-timing-function', 'ease');
   await page.mouse.move(0, 0);
   await edit.focus();
   await expect(edit).toHaveCSS('opacity', '1');

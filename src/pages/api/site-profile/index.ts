@@ -3,7 +3,7 @@ import { getSiteProfile } from '../../../lib/site-profile/store';
 export const prerender = false;
 export const GET: APIRoute = async () => {
   try {
-    const { history: _, ...profile } = await getSiteProfile();
+    const { history: _, pendingDeletion: _pending, ...profile } = await getSiteProfile();
     return Response.json(profile, {
       headers: { 'Cache-Control': 'public, max-age=0, s-maxage=30, stale-while-revalidate=60' },
     });

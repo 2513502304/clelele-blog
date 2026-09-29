@@ -1,0 +1,34 @@
+/* Keep the same image visible beyond the export frame: the mask shades, never replaces, those pixels. */
+.site-crop-context {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 220px;
+  overflow: hidden;
+  isolation: isolate;
+  border-radius: 18px;
+  padding: 48px 24px;
+  background: repeating-conic-gradient(#e2e1e4 0% 25%, #f0eff1 0% 50%) 0 / 20px 20px;
+}
+.site-crop-frame {
+  flex-shrink: 0;
+}
+.site-crop-mask {
+  border-radius: inherit;
+  box-shadow:
+    0 0 0 9999px rgb(17 19 27 / 52%),
+    inset 0 0 0 1px rgb(255 255 255 / 85%);
+}
+/* A real 44px pointer target around the native range track works for mouse, touch and keyboard. */
+.site-crop-zoom {
+  appearance: auto;
+  height: 44px;
+  cursor: ew-resize;
+  touch-action: none;
+  accent-color: #e27596;
+}
+.site-crop-zoom:focus-visible {
+  outline: 2px solid #e27596;
+  outline-offset: 3px;
+  border-radius: 8px;
+}

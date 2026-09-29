@@ -1,3 +1,4 @@
+import './site-image-cropper.css';
 import { useEffect, useRef, useState } from 'react';
 import { AVATAR_DISPLAY_SIZE, type CropPosition, cropRectangle } from '@/lib/site-profile/image-crop';
 
@@ -50,7 +51,11 @@ export default function SiteImageCropper({
       context.drawImage(image.current, crop.x, crop.y, crop.width, crop.height, 0, 0, canvas.width, canvas.height);
       const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/webp', 0.95));
       if (!blob || blob.size > 3_000_000) throw new Error('裁剪结果超过 3 MB，请换用较小的图片。');
-      await onApply(new File([blob], `${file.name.replace(/\.[^.]+$/, '').slice(0, 230)}-crop.webp`, { type: blob.type }));
+      // Safari may fall back to PNG when its canvas encoder cannot write WebP. Respect the actual returned format.
+      const extension = blob.type === 'image/webp' ? 'webp' : 'png';
+      await onApply(
+        new File([blob], `${file.name.replace(/\.[^.]+$/, '').slice(0, 230)}-crop.${extension}`, { type: blob.type }),
+      );
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '裁剪失败，请重新选择图片。');
     } finally {
@@ -64,7 +69,7 @@ export default function SiteImageCropper({
         <span className="font-medium">拖动图片调整位置</span>
         <span className="text-muted-foreground">{avatar ? '圆形头像 · 1:1' : `当前横幅 · ${ratio.toFixed(2)}:1`}</span>
       </div>
-      <div className="flex min-h-48 items-center justify-center overflow-hidden rounded-2xl bg-zinc-950/95 p-5">
+      <div className="site-crop-context">
         <div
           role="slider"
           tabIndex={0}
@@ -74,9 +79,9 @@ export default function SiteImageCropper({
           aria-valuenow={Math.round(position.x * 100)}
           aria-valuetext={`水平 ${Math.round(position.x * 100)}，垂直 ${Math.round(position.y * 100)}`}
           data-crop-stage
-          className="relative touch-none overflow-hidden outline-none ring-1 ring-white/40 focus-visible:ring-2 focus-visible:ring-rose-300"
+          className="site-crop-frame relative touch-none outline-none focus-visible:ring-2 focus-visible:ring-rose-300"
           style={{
-            width: `min(100%, ${avatar ? '340px' : `calc(46dvh * ${ratio})`})`,
+            width: `min(80%, ${avatar ? '300px' : `calc(46dvh * ${ratio})`})`,
             aspectRatio: ratio,
             cursor: 'grab',
             borderRadius: avatar ? '50%' : '8px',
@@ -133,6 +138,8 @@ export default function SiteImageCropper({
               onError={() => setError('无法读取图片，请更换文件。')}
               className="pointer-events-none absolute max-w-none select-none"
               style={{
+                // The global image reset uses max-inline-size, which otherwise clamps zoomed images.
+                maxInlineSize: 'none',
                 width: `${(size.width / crop.width) * 100}%`,
                 height: `${(size.height / crop.height) * 100}%`,
                 left: `${(-crop.x / crop.width) * 100}%`,
@@ -140,10 +147,12 @@ export default function SiteImageCropper({
               }}
             />
           )}
-          <div aria-hidden className="pointer-events-none absolute inset-0 grid grid-cols-3 grid-rows-3 opacity-30">
-            {['tl', 'tc', 'tr', 'ml', 'mc', 'mr', 'bl', 'bc', 'br'].map((cell) => (
-              <span key={cell} className="border border-white/40" />
-            ))}
+          <div aria-hidden className="site-crop-mask pointer-events-none absolute inset-0">
+            <div className="absolute inset-0 grid grid-cols-3 grid-rows-3 overflow-hidden rounded-[inherit] opacity-30">
+              {['tl', 'tc', 'tr', 'ml', 'mc', 'mr', 'bl', 'bc', 'br'].map((cell) => (
+                <span key={cell} className="border border-white/40" />
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -159,8 +168,11 @@ export default function SiteImageCropper({
           step={0.01}
           value={position.zoom}
           disabled={busy || exporting}
-          className="min-w-0 flex-1 accent-rose-500"
-          onChange={(event) => setPosition({ ...position, zoom: Number(event.target.value) })}
+          className="site-crop-zoom min-w-0 flex-1"
+          onInput={(event) => {
+            const zoom = Number(event.currentTarget.value);
+            setPosition((current) => ({ ...current, zoom }));
+          }}
         />
         <span className="w-12 text-right text-sm tabular-nums">{Math.round(position.zoom * 100)}%</span>
         <button
@@ -174,8 +186,9 @@ export default function SiteImageCropper({
       </div>
       <p className="text-muted-foreground text-xs leading-5">
         {avatar
-          ? '圆形遮罩外的区域不会显示；保存为方形 WebP，适配站点所有头像。'
-          : '按打开页面的横幅比例导出 WebP。其他屏幕尺寸会继续居中适配，建议把主体留在画面中央。'}
+          ? '圆形遮罩外的区域不会显示；保存为方形图片，适配站点所有头像。'
+          : '按打开页面的横幅比例导出。其他屏幕尺寸会继续居中适配，建议把主体留在画面中央。'}
+        优先导出 WebP，浏览器不支持时使用 PNG。
         {file.type === 'image/gif' && ' 动图裁剪将保存为静态图片。'}
       </p>
       {error && (

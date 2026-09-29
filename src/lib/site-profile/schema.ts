@@ -59,11 +59,18 @@ export const siteProfileSchema = profileFieldsSchema
     updatedAt: z.string().datetime(),
     assets: z.record(assetSlotSchema, assetKeySchema),
     history: z.array(assetSchema).max(500),
+    // A durable intent lets a failed physical deletion resume without exposing the image for reuse.
+    pendingDeletion: assetKeySchema.optional(),
   })
   .superRefine((profile, ctx) => {
     const keys = new Set(profile.history.map((asset) => asset.key));
     if (!profile.assets.home || !profile.assets.avatar)
       ctx.addIssue({ code: 'custom', message: 'Home banner and avatar are required.' });
+    if (
+      profile.pendingDeletion &&
+      (!keys.has(profile.pendingDeletion) || Object.values(profile.assets).includes(profile.pendingDeletion))
+    )
+      ctx.addIssue({ code: 'custom', message: 'Pending deletion must reference an inactive history image.' });
     if (Object.values(profile.assets).some((key) => !keys.has(key)))
       ctx.addIssue({ code: 'custom', message: 'Active assets must belong to the uploaded history.' });
   });
@@ -72,18 +79,14 @@ export type SiteAsset = z.infer<typeof assetSchema>;
 
 /** Bound the selectable history while preserving every active slot and the just-uploaded asset. */
 export function appendSiteAssetHistory(profile: SiteProfile, asset: SiteAsset): SiteAsset[] {
-  const protectedKeys = new Set([...Object.values(profile.assets), asset.key]);
   const history = [...profile.history.filter((entry) => entry.key !== asset.key), asset];
-  while (history.length > 500) {
-    const index = history.findIndex((entry) => !protectedKeys.has(entry.key));
-    if (index < 0) throw new Error('No inactive image history entry can be retired.');
-    history.splice(index, 1);
+  if (history.length > 500) {
+    throw new Error('历史图片已满，请先删除不再使用的图片。');
   }
-  // This removes history references only. Original HF objects remain available for recovery.
   return history;
 }
 
-/** Retire a selectable image, never an active slot. Immutable HF bytes remain for recovery. */
+/** Remove the history reference only after the storage deletion has been verified. */
 export function removeSiteAssetHistory(profile: SiteProfile, key: string): SiteAsset[] {
   if (Object.values(profile.assets).includes(key)) throw new Error('请先更换并发布正在使用这张图片的页面。');
   return profile.history.filter((asset) => asset.key !== key);

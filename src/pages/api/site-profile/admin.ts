@@ -8,9 +8,15 @@ import {
   assetKeySchema,
   assetSlotSchema,
   profileFieldsSchema,
-  removeSiteAssetHistory,
+  type SiteProfile,
 } from '../../../lib/site-profile/schema';
-import { getSiteProfile, saveSiteProfile, uploadSiteAsset } from '../../../lib/site-profile/store';
+import {
+  deleteSiteAsset,
+  getSiteProfile,
+  saveSiteProfile,
+  siteProfileStorage,
+  uploadSiteAsset,
+} from '../../../lib/site-profile/store';
 export const prerender = false;
 const saveSchema = z.object({
   revision: z.string().uuid(),
@@ -40,11 +46,22 @@ export const POST: APIRoute = async ({ cookies, request, url }) => {
       const file = form.get('file');
       const revision = z.string().uuid().parse(form.get('revision'));
       if (!(file instanceof File) || file.size > 3_000_000) return new Response('请选择不超过 3 MB 的图片。', { status: 400 });
-      const asset = await uploadSiteAsset(new Uint8Array(await file.arrayBuffer()), file.name);
-      const result = await saveSiteProfile(revision, (current) => {
-        if (!current) throw new Error('Profile unavailable.');
-        return { ...current, history: appendSiteAssetHistory(current, asset) };
-      });
+      const latest = await getSiteProfile(true);
+      if (latest.revision !== revision || latest.pendingDeletion)
+        throw new HfS3ConflictError('资料已更新或有未完成的图片删除，请刷新后重试。');
+      if (latest.history.length >= 500) return new Response('历史图片已满，请先删除不再使用的图片。', { status: 409 });
+      const asset = await uploadSiteAsset(new Uint8Array(await file.arrayBuffer()), file.name, true);
+      let result: SiteProfile;
+      try {
+        result = await saveSiteProfile(revision, (current) => {
+          if (!current) throw new Error('Profile unavailable.');
+          return { ...current, history: appendSiteAssetHistory(current, asset) };
+        });
+      } catch (error) {
+        // A known CAS conflict never published this unique key. Uncertain network errors retain bytes for safety.
+        if (error instanceof HfS3ConflictError) await siteProfileStorage().delete(asset.key);
+        throw error;
+      }
       return Response.json({ profile: result, asset }, { headers: privateHeaders });
     }
     const raw = new TextDecoder().decode(await readBoundedBody(request, 128_000));
@@ -70,7 +87,7 @@ export const POST: APIRoute = async ({ cookies, request, url }) => {
   }
 };
 
-/** Delete the history reference under the same revision lock as publishing; active images are protected. */
+/** Delete inactive HF bytes and history together; the durable intent protects retries and concurrent publication. */
 export const DELETE: APIRoute = async ({ cookies, request, url }) => {
   if (!isSiteAdmin(cookies)) return new Response('Not found.', { status: 404, headers: privateHeaders });
   const rejected = rejectCrossOriginMutation(request, url);
@@ -79,12 +96,7 @@ export const DELETE: APIRoute = async ({ cookies, request, url }) => {
     const input = z
       .object({ revision: z.string().uuid(), key: assetKeySchema })
       .parse(JSON.parse(new TextDecoder().decode(await readBoundedBody(request, 2048))));
-    const result = await saveSiteProfile(input.revision, (current) => {
-      if (!current) throw new Error('Profile unavailable.');
-      if (Object.values(current.assets).includes(input.key))
-        throw new HfS3ConflictError('请先更换并发布正在使用这张图片的页面。');
-      return { ...current, history: removeSiteAssetHistory(current, input.key) };
-    });
+    const result = await deleteSiteAsset(input.revision, input.key);
     return Response.json(result, { headers: privateHeaders });
   } catch (error) {
     return new Response(error instanceof HfS3ConflictError ? error.message : '删除失败，请刷新后重试。', {

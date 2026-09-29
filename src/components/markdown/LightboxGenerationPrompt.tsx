@@ -26,6 +26,15 @@ export function LightboxGenerationPrompt({
       : locale === 'ja'
         ? 'ドラッグ / Alt + 矢印で移動'
         : 'Drag to move · Alt + arrow keys';
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(prompt ?? '');
+      setCopied(true);
+      setFailed(false);
+    } catch {
+      setFailed(true);
+    }
+  }
   return (
     <aside
       {...drag}
@@ -61,9 +70,18 @@ export function LightboxGenerationPrompt({
             </button>
           )}
         </div>
-        <span title={moveLabel} className="generation-glass-grip" aria-hidden>
-          <Icon icon="ri:draggable" />
-        </span>
+        {prompt && (
+          <button
+            type="button"
+            className="generation-glass-quick-copy"
+            hidden={expanded}
+            onClick={() => void copy()}
+            aria-label={t('gallery.generationPromptCopy')}
+            title={t('gallery.generationPromptCopy')}
+          >
+            <Icon icon={copied ? 'ri:check-line' : 'ri:file-copy-line'} />
+          </button>
+        )}
       </div>
       <div id={bodyId} className="generation-glass-reveal" inert={!expanded} aria-hidden={!expanded}>
         <div className="generation-glass-content">
@@ -84,30 +102,19 @@ export function LightboxGenerationPrompt({
             <span title={moveLabel}>
               <Icon icon="ri:drag-move-2-line" />
             </span>
-            <button
-              type="button"
-              onClick={async () => {
-                try {
-                  await navigator.clipboard.writeText(prompt ?? '');
-                  setCopied(true);
-                  setFailed(false);
-                } catch {
-                  setFailed(true);
-                }
-              }}
-              aria-label={t('gallery.generationPromptCopy')}
-            >
+            <button type="button" onClick={() => void copy()} aria-label={t('gallery.generationPromptCopy')}>
               <Icon icon={copied ? 'ri:check-line' : 'ri:file-copy-line'} />
               {copied ? t('gallery.copied') : t('gallery.generationPromptCopy')}
             </button>
           </footer>
-          {failed && (
-            <p role="alert" className="px-4 pb-3 text-rose-100 text-xs">
-              {t('gallery.generationPromptCopyFailed')}
-            </p>
-          )}
         </div>
       </div>
+      {failed && (
+        <p role="alert" className="px-4 pb-3 text-rose-100 text-xs">
+          {t('gallery.generationPromptCopyFailed')}
+        </p>
+      )}
+      <output className="sr-only">{copied ? t('gallery.copied') : ''}</output>
     </aside>
   );
 }

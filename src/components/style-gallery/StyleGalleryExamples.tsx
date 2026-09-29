@@ -708,10 +708,10 @@ export default function StyleGalleryExamples({
 
       <form
         onSubmit={handleUpload}
-        className="mb-5 grid grid-cols-[1fr_1fr] gap-3 rounded-lg border border-sky-100 bg-sky-50/60 p-3 md:grid-cols-1 dark:border-sky-950/60 dark:bg-sky-950/20"
+        className="mb-5 grid grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)_minmax(0,1fr)] gap-3 rounded-lg border border-sky-100 bg-sky-50/60 p-3 md:grid-cols-1 dark:border-sky-950/60 dark:bg-sky-950/20"
       >
-        <label className="space-y-1 font-bold text-gray-500 text-xs dark:text-gray-300">
-          <span>Platform</span>
+        <label className="min-w-0 space-y-1 font-bold text-gray-500 text-xs dark:text-gray-300">
+          <span>{zh ? '生成平台' : ja ? '生成プラットフォーム' : 'Platform'}</span>
           <select
             value={platform}
             onChange={(event) => setPlatform(event.currentTarget.value)}
@@ -724,18 +724,8 @@ export default function StyleGalleryExamples({
             ))}
           </select>
         </label>
-        <label className="space-y-1 font-bold text-gray-500 text-xs dark:text-gray-300">
-          <span>Upload token</span>
-          <input
-            type="password"
-            value={token}
-            onChange={(event) => setToken(event.currentTarget.value)}
-            className="h-10 w-full rounded-lg border border-sky-100 bg-white px-3 text-gray-900 text-sm outline-none dark:border-gray-800 dark:bg-gray-900 dark:text-white"
-            autoComplete="off"
-          />
-        </label>
-        <label className="space-y-1 font-bold text-gray-500 text-xs dark:text-gray-300">
-          <span>Images</span>
+        <label className="min-w-0 space-y-1 font-bold text-gray-500 text-xs dark:text-gray-300">
+          <span>{zh ? '图片' : ja ? '画像' : 'Images'}</span>
           <input
             type="file"
             accept="image/png,image/jpeg,image/webp"
@@ -744,19 +734,29 @@ export default function StyleGalleryExamples({
             className="block h-10 w-full rounded-lg border border-sky-100 bg-white px-3 py-2 text-gray-900 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-gray-950 file:px-3 file:py-1 file:font-bold file:text-white dark:border-gray-800 dark:bg-gray-900 dark:text-white dark:file:bg-white dark:file:text-gray-950"
           />
         </label>
-        <label className="space-y-1 font-bold text-gray-500 text-xs dark:text-gray-300">
-          <span>Note</span>
+        <label className="min-w-0 space-y-1 font-bold text-gray-500 text-xs dark:text-gray-300">
+          <span>{zh ? '上传令牌' : ja ? 'アップロードトークン' : 'Upload token'}</span>
+          <input
+            type="password"
+            value={token}
+            onChange={(event) => setToken(event.currentTarget.value)}
+            className="h-10 w-full rounded-lg border border-sky-100 bg-white px-3 text-gray-900 text-sm outline-none dark:border-gray-800 dark:bg-gray-900 dark:text-white"
+            autoComplete="off"
+          />
+        </label>
+        <label className="col-span-full space-y-1 font-bold text-gray-500 text-xs dark:text-gray-300">
+          <span>{zh ? '生成提示词 / 备注' : ja ? '生成プロンプト / メモ' : 'Note'}</span>
           <textarea
             value={note}
             onChange={(event) => setNote(event.currentTarget.value)}
-            rows={1}
+            rows={5}
             data-example-note-input
-            className="h-10 max-h-10 min-h-10 w-full resize-none overflow-y-auto overscroll-contain rounded-lg border border-sky-100 bg-white px-3 py-2 text-gray-900 text-sm outline-none [field-sizing:fixed] dark:border-gray-800 dark:bg-gray-900 dark:text-white"
+            className="h-[calc(5lh+1rem+2px)] max-h-[calc(5lh+1rem+2px)] min-h-[calc(5lh+1rem+2px)] w-full resize-none overflow-y-auto overscroll-contain rounded-lg border border-sky-100 bg-white px-3 py-2 text-gray-900 text-sm leading-5 outline-none [field-sizing:fixed] [scrollbar-gutter:stable] dark:border-gray-800 dark:bg-gray-900 dark:text-white"
           />
         </label>
 
         {fileProgress.length > 0 && (
-          <div className="col-span-2 space-y-2 md:col-span-1" aria-live="polite">
+          <div className="col-span-full space-y-2 md:col-span-1" aria-live="polite">
             <div className="flex items-center justify-between text-gray-500 text-xs dark:text-gray-300">
               <span>{status}</span>
               <span className="font-mono tabular-nums">{aggregateProgress.percent}%</span>
@@ -787,7 +787,7 @@ export default function StyleGalleryExamples({
           </div>
         )}
 
-        <div className="col-span-2 flex flex-wrap items-center justify-between gap-3 md:col-span-1">
+        <div className="col-span-full flex flex-wrap items-center justify-between gap-3 md:col-span-1">
           <p className="text-gray-500 text-xs dark:text-gray-300">
             {uploadDisabledReason || (files.length ? `${files.length} image${files.length > 1 ? 's' : ''} selected` : status)}
           </p>

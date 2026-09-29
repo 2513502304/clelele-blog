@@ -49,8 +49,11 @@ export function getSiteProfile(fresh = false): Promise<SiteProfile> {
 export async function saveSiteProfile(
   expectedRevision: string | null,
   mutation: (current: SiteProfile | null) => SiteProfile,
+  completingDeletion?: string,
 ): Promise<SiteProfile> {
   const current = await snapshot();
+  if (current?.value.pendingDeletion && current.value.pendingDeletion !== completingDeletion)
+    throw new HfS3ConflictError('有未完成的历史图片删除，请先重试删除该图片。');
   if ((current?.value.revision ?? null) !== expectedRevision)
     throw new HfS3ConflictError('资料已在其他窗口更新，请重新载入后编辑。');
   if (current && !current.etag) throw new Error('HF did not return an ETag; refusing an unconditional update.');
@@ -78,14 +81,54 @@ export async function saveSiteProfile(
   return next;
 }
 /** Validate decoded raster data before saving; SVG/HTML never enter the public asset namespace. */
-export async function uploadSiteAsset(bytes: Uint8Array, name: string): Promise<SiteAsset> {
+export async function uploadSiteAsset(bytes: Uint8Array, name: string, uniqueVersion = false): Promise<SiteAsset> {
   if (!bytes.length || bytes.length > 20 * 1024 * 1024) throw new Error('图片大小须为 1 字节至 20 MB。');
   const { default: sharp } = await import('sharp');
   const meta = await sharp(bytes, { limitInputPixels: 40_000_000 }).metadata();
   const extensions: Record<string, string> = { jpeg: 'jpg', png: 'png', webp: 'webp', gif: 'gif' };
   const extension = extensions[meta.format ?? ''];
   if (!extension || !meta.width || !meta.height) throw new Error('请选择 JPEG、PNG、WebP 或 GIF 图片。');
-  const key = `images/${createHash('sha256').update(bytes).digest('hex')}.${extension}`;
+  // Web uploads get a fresh immutable version. A late retry of an older deletion can never delete a re-upload.
+  const digest = createHash('sha256').update(bytes);
+  if (uniqueVersion) digest.update(randomUUID());
+  const key = `images/${digest.digest('hex')}.${extension}`;
   if (!(await siteProfileStorage().head(key)).exists) await siteProfileStorage().put(key, bytes, `image/${meta.format}`);
   return { key, name: name.slice(0, 255), uploadedAt: new Date().toISOString(), width: meta.width, height: meta.height };
+}
+
+/** Reserve the reference with CAS, delete HF bytes, then retire history. Failed steps remain explicitly retryable. */
+export async function deleteSiteAsset(expectedRevision: string, key: string): Promise<SiteProfile> {
+  let current = await getSiteProfile(true);
+  // Only the exact pending intent can be resumed with an old revision after a lost response.
+  if (current.pendingDeletion !== key) {
+    current = await saveSiteProfile(expectedRevision, (profile) => {
+      if (!profile || !profile.history.some((asset) => asset.key === key))
+        throw new HfS3ConflictError('历史图片已更新，请刷新后重试。');
+      if (Object.values(profile.assets).includes(key)) throw new HfS3ConflictError('请先更换并发布正在使用这张图片的页面。');
+      return { ...profile, pendingDeletion: key };
+    });
+  }
+  const storage = siteProfileStorage();
+  try {
+    await storage.delete(key);
+  } catch (error) {
+    if ((await storage.head(key)).exists) throw error;
+  }
+  if ((await storage.head(key)).exists) throw new Error('HF 图片尚未删除，请重试。');
+  try {
+    return await saveSiteProfile(
+      current.revision,
+      (profile) => {
+        if (!profile || profile.pendingDeletion !== key) throw new HfS3ConflictError('删除状态已更新，请刷新。');
+        const { pendingDeletion: _, ...next } = profile;
+        return { ...next, history: next.history.filter((asset) => asset.key !== key) };
+      },
+      key,
+    );
+  } catch (error) {
+    const observed = await getSiteProfile(true);
+    // Concurrent retries may complete this same intent first; keys are never reused by web uploads.
+    if (!observed.pendingDeletion && !observed.history.some((asset) => asset.key === key)) return observed;
+    throw error;
+  }
 }

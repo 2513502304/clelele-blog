@@ -14,14 +14,16 @@ export function useDraggablePanel() {
       // The Lightbox fills the viewport. Position once per frame and do not rerender its prompt text while dragging.
       const left = Math.max(12, Math.min(x, innerWidth - panel.offsetWidth - 12));
       const top = Math.max(12, Math.min(y, innerHeight - panel.offsetHeight - 12));
-      Object.assign(panel.style, { left: `${left}px`, top: `${top}px`, bottom: 'auto' });
+      Object.assign(panel.style, { left: `${left}px`, top: `${top}px`, bottom: 'auto', right: 'auto' });
     };
     const down = (event: PointerEvent) => {
       event.stopPropagation();
       suppressClick.current = false;
       if (event.button !== 0 || event.pointerType !== 'mouse') return;
       const target = event.target as HTMLElement;
-      const scroll = target.closest<HTMLElement>('[data-prompt-text]');
+      // Form controls retain their own pointer gestures (especially sliders); ordinary buttons may still drag.
+      if (target.closest('input, select, textarea, [contenteditable=true], [data-panel-no-drag]')) return;
+      const scroll = target.closest<HTMLElement>('[data-prompt-text], [data-panel-scroll]');
       if (scroll && event.clientX >= scroll.getBoundingClientRect().left + scroll.clientWidth) return;
       const box = panel.getBoundingClientRect();
       drag = { id: event.pointerId, x: event.clientX, y: event.clientY, left: box.left, top: box.top, moved: false };
@@ -99,6 +101,7 @@ export function useDraggablePanel() {
         left: `${Math.max(12, Math.min(box.left + delta[0], innerWidth - box.width - 12))}px`,
         top: `${Math.max(12, Math.min(box.top + delta[1], innerHeight - box.height - 12))}px`,
         bottom: 'auto',
+        right: 'auto',
       });
     },
   };
