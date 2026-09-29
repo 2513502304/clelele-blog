@@ -98,6 +98,10 @@ globalThis.fetch = async (input, init) => {
   const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
   // Only this in-memory profile namespace accepts writes. No request can escape the .invalid host.
   if (!['GET', 'HEAD'].includes(method)) {
+    if (method === 'DELETE' && url.pathname.includes('/site-profile/images/')) {
+      blobs.delete(url.pathname.split('/site-profile/')[1]);
+      return new Response(null, { status: 204 });
+    }
     if (method !== 'PUT' || !url.pathname.includes('/site-profile/')) throw new Error('Fixture gallery storage is read-only.');
     const bytes = new Uint8Array(await new Response(init.body).arrayBuffer());
     if (url.pathname.endsWith('/profile.v1.json')) {

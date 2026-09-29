@@ -4,7 +4,7 @@ import { RequestTooLargeError, readBoundedBody } from '../read-bounded-body';
 import { appendSiteAssetHistory, bannerSlot, profileFieldsSchema, type SiteProfile, siteProfileSchema } from './schema';
 
 const link = { id: 'link-1', label: 'Link', text: 'Example', url: 'https://example.com', icon: 'ri:link', color: '#ff477e' };
-it('retires the oldest inactive history entry without losing active images or the new upload', () => {
+it('requires explicit deletion when history is full instead of orphaning HF files', () => {
   const history = Array.from({ length: 500 }, (_, i) => ({
     key: `images/${i.toString(16).padStart(64, '0')}.png`,
     name: `${i}`,
@@ -14,12 +14,7 @@ it('retires the oldest inactive history entry without losing active images or th
   }));
   const asset = { ...history[0], key: `images/${'f'.repeat(64)}.png` };
   const profile = { history, assets: { home: history[0].key, avatar: history[1].key } } as SiteProfile;
-  const next = appendSiteAssetHistory(profile, asset);
-  assert.equal(next.length, 500);
-  assert.ok(next.some((entry) => entry.key === history[0].key));
-  assert.ok(next.some((entry) => entry.key === history[1].key));
-  assert.ok(!next.some((entry) => entry.key === history[2].key));
-  assert.equal(next.at(-1)?.key, asset.key);
+  assert.throws(() => appendSiteAssetHistory(profile, asset), /历史图片已满/);
   assert.equal(profile.history.length, 500);
 });
 it('accepts extensible contacts and rejects script/protocol-relative links and duplicate IDs', () => {

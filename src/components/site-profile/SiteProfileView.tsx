@@ -5,7 +5,7 @@ import type { SiteProfile } from '@/lib/site-profile/schema';
 import { siteAssetUrl } from '@/lib/site-profile/schema';
 import { ProfileQuickEdit } from './ProfileQuickEdit';
 
-export type PublicProfile = Omit<SiteProfile, 'history'>;
+export type PublicProfile = Omit<SiteProfile, 'history' | 'pendingDeletion'>;
 let request: Promise<PublicProfile> | undefined;
 let expiresAt = 0;
 /** One small cacheable read is shared by sidebar/mobile/About islands, including prerendered pages. */
@@ -59,7 +59,7 @@ export function SiteProfileView({ initial, contactsOnly = false }: { initial: Pu
         style={{ width: AVATAR_DISPLAY_SIZE, height: AVATAR_DISPLAY_SIZE }}
       >
         <img
-          className="size-full rounded-full object-cover shadow-card-darker motion-safe:group-hover/profile:animate-[shake_1s_ease-in-out]"
+          className="size-full rounded-full object-cover shadow-card-darker motion-safe:hover:animate-shake"
           src={siteAssetUrl('avatar', profile.revision)}
           alt={`${profile.name} avatar`}
           width={AVATAR_DISPLAY_SIZE}

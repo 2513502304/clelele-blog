@@ -1,6 +1,6 @@
 import { useTranslation } from '@hooks/useTranslation';
 import { Icon } from '@iconify/react';
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useDraggablePanel } from '@/hooks/useDraggablePanel';
 import './lightbox-generation-prompt.css';
 
@@ -20,12 +20,29 @@ export function LightboxGenerationPrompt({
   const [expanded, setExpanded] = useState(initiallyExpanded && Boolean(prompt));
   const drag = useDraggablePanel();
   const bodyId = useId();
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(copiedTimer.current), []);
   const moveLabel =
     locale === 'zh'
       ? '拖动面板 · Alt + 方向键移动'
       : locale === 'ja'
         ? 'ドラッグ / Alt + 矢印で移動'
         : 'Drag to move · Alt + arrow keys';
+  async function copy() {
+    clearTimeout(copiedTimer.current);
+    setCopied(false);
+    setFailed(false);
+    try {
+      await navigator.clipboard.writeText(prompt ?? '');
+      setCopied(true);
+      copiedTimer.current = setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      // Report the failure type without logging the user's prompt or clipboard contents.
+      console.warn('Generation prompt clipboard copy failed:', error instanceof Error ? error.name : 'Unknown error');
+      setCopied(false);
+      setFailed(true);
+    }
+  }
   return (
     <aside
       {...drag}
@@ -61,9 +78,18 @@ export function LightboxGenerationPrompt({
             </button>
           )}
         </div>
-        <span title={moveLabel} className="generation-glass-grip" aria-hidden>
-          <Icon icon="ri:draggable" />
-        </span>
+        {prompt && (
+          <button
+            type="button"
+            className="generation-glass-quick-copy"
+            hidden={expanded}
+            onClick={() => void copy()}
+            aria-label={t('gallery.generationPromptCopy')}
+            title={t('gallery.generationPromptCopy')}
+          >
+            <Icon icon={copied ? 'ri:check-line' : 'ri:file-copy-line'} />
+          </button>
+        )}
       </div>
       <div id={bodyId} className="generation-glass-reveal" inert={!expanded} aria-hidden={!expanded}>
         <div className="generation-glass-content">
@@ -84,30 +110,19 @@ export function LightboxGenerationPrompt({
             <span title={moveLabel}>
               <Icon icon="ri:drag-move-2-line" />
             </span>
-            <button
-              type="button"
-              onClick={async () => {
-                try {
-                  await navigator.clipboard.writeText(prompt ?? '');
-                  setCopied(true);
-                  setFailed(false);
-                } catch {
-                  setFailed(true);
-                }
-              }}
-              aria-label={t('gallery.generationPromptCopy')}
-            >
+            <button type="button" onClick={() => void copy()} aria-label={t('gallery.generationPromptCopy')}>
               <Icon icon={copied ? 'ri:check-line' : 'ri:file-copy-line'} />
               {copied ? t('gallery.copied') : t('gallery.generationPromptCopy')}
             </button>
           </footer>
-          {failed && (
-            <p role="alert" className="px-4 pb-3 text-rose-100 text-xs">
-              {t('gallery.generationPromptCopyFailed')}
-            </p>
-          )}
         </div>
       </div>
+      {failed && (
+        <p role="alert" className="px-4 pb-3 text-rose-100 text-xs">
+          {t('gallery.generationPromptCopyFailed')}
+        </p>
+      )}
+      <output className="sr-only">{copied ? t('gallery.copied') : ''}</output>
     </aside>
   );
 }

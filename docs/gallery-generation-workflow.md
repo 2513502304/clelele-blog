@@ -136,8 +136,10 @@ npm run upload:generated-examples -- /absolute/path/receipt.json --apply
 
 请求参数与服务端报告分开保存。内置工具未报告模型版本时记为 `builtin-unspecified`，实际尺寸从文件读取；PixAI 请求中的 Tsubaki.3/helper 设置不能冒充响应已确认的实际参数。`paidQuota` 保留原字段名，不改称 credits，也不推算供应商未返回的费用。
 
-sub-gallery 总览卡片只显示图片组、平台、日期与来源，不展示首图的 prompt 摘要。一组中的图片可以使用不同的生成 prompt，首图的文本不能代表整组。详情页的每张 sub-image 仍保留最多五行的 note，超过后在框内滚动；上传表单的 note 输入框则与旁边文件选择框等高，固定高度，换行后在框内滚动。
+sub-gallery 总览卡片只显示图片组、平台、日期与来源，不展示首图的 prompt 摘要。一组中的图片可以使用不同的生成 prompt，首图的文本不能代表整组。详情页的每张 sub-image 仍保留最多五行的 note，超过后在框内滚动；上传表单在宽屏上把 Platform、Images、Upload token 排在同一行，Note 单独占据下一行，保留五行输入空间，超出后在框内滚动；窄屏按顺序排列。
 
 点击图片会打开 Lightbox。左侧的小型毛玻璃面板显示当前图片的平台，点击“展开全文”即可阅读完整生成 prompt。即使没有 note，平台也会保留。面板可从任意鼠标位置拖动，移动超过阈值后不会误触发复制或展开；键盘可用 Alt + 方向键移动。展开后的正文独立滚动，复制按钮取完整原文。详情页的 prompt 入口直接打开展开状态，右侧工具栏的复制来源模板操作仍然独立。
 
 用 `npx playwright test --config playwright.generation-notes.config.ts` 验证真实卡片入口、五行展示、全文复制、面板拖动、窄屏边界、裁剪与历史删除。测试服务器使用合成数据和内存中的 HF 模拟存储，不需要真实凭据，也不写生产数据。线上数据的真实性另由发布回读验证。
+
+Lightbox 的 prompt 面板收起时也有独立复制按钮，复制的是当前图片的完整 prompt；展开后可滚动阅读全文。面板显示该图片的平台，拖动与点击互不替代。

@@ -18,6 +18,7 @@ import { christmasEnabled, disableChristmasCompletely, enableChristmas, initChri
 import { $isDrawerOpen } from '@store/modal';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useState } from 'react';
+import ThemeSettings from '../theme/ThemeSettings';
 
 interface FloatingButtonProps {
   onClick: () => void;
@@ -95,6 +96,7 @@ export default function FloatingGroup() {
             exit={{ y: 50, opacity: 0 }}
             transition={{ duration: 0.15, ease: 'easeInOut' }}
           >
+            <ThemeSettings />
             {christmasConfig.enabled && (
               <FloatingButton onClick={toggleChristmas} ariaLabel={t('floating.christmas')} title={t('floating.christmas')}>
                 <Icon icon={isChristmasEnabled ? 'ri:snowy-fill' : 'ri:snowy-line'} className="h-5 w-5" />

@@ -4,7 +4,7 @@
   left: 20px;
   bottom: 144px;
   z-index: 10;
-  width: min(224px, calc(100vw - 104px));
+  width: min(176px, calc(100vw - 104px));
   max-width: calc(100vw - 104px);
   overflow: hidden;
   border: 1px solid rgb(255 255 255 / 26%);
@@ -20,7 +20,7 @@
   cursor: grab;
 }
 .generation-glass[data-expanded="true"] {
-  width: min(390px, calc(100vw - 104px));
+  width: min(360px, calc(100vw - 104px));
 }
 .generation-glass:active {
   cursor: grabbing;
@@ -28,17 +28,17 @@
 .generation-glass-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
+  gap: 7px;
+  padding: 9px 10px;
 }
 .generation-glass-mark {
   display: grid;
   place-items: center;
-  width: 32px;
+  width: 22px;
   height: 36px;
   flex-shrink: 0;
   color: #f9becd;
-  font-size: 24px;
+  font-size: 20px;
 }
 .generation-glass-heading {
   flex: 1;
@@ -162,4 +162,22 @@
   .generation-glass {
     background: #24212a;
   }
+}
+
+.generation-glass-quick-copy {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 40px;
+  border-radius: 10px;
+  background: rgb(255 255 255 / 10%);
+  color: #fce6ed;
+  cursor: pointer;
+}
+.generation-glass-quick-copy[hidden] {
+  display: none;
+}
+.generation-glass-quick-copy:hover {
+  background: rgb(255 255 255 / 20%);
 }
