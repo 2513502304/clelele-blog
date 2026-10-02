@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
-import { fetchHpoiCollection, fetchHpoiCollectionState } from './fetch';
+import { fetchHpoiCollection, fetchHpoiCollectionState, fetchHpoiPage } from './fetch';
 
 const originalFetch = globalThis.fetch;
 
@@ -186,5 +186,29 @@ describe('detail rating enrichment', () => {
     const data = await fetchHpoiCollection('783694');
     assert.equal(detailReads, 1);
     for (const items of Object.values(data.collections)) assert.equal(items[0].score, '4.77');
+  });
+});
+
+describe('fetchHpoiPage', () => {
+  it('loads only the requested state/page, then follows a cursor without rereading the first page or profile', async () => {
+    const urls: string[] = [];
+    globalThis.fetch = async (input, init) => {
+      urls.push(String(input));
+      if (String(input).endsWith('/user/783694')) return new Response(profilePage());
+      if (String(input).includes('/hobby/')) return new Response('<div class="hpoi-score">8</div>');
+      return new Response(init?.body ? collectionPage(['2']) : collectionPage(['1'], 3));
+    };
+    const first = await fetchHpoiPage('783694', 'buy');
+    assert.equal(first.items.length, 1);
+    assert.equal(first.next, '/api/hpoi?state=buy&page=2&pages=3');
+    assert.equal(urls.filter((url) => url.includes('/hobby?')).length, 1);
+    urls.length = 0;
+    const second = await fetchHpoiPage('783694', 'buy', 2, 3);
+    assert.deepEqual(
+      second.items.map((item) => item.id),
+      ['2'],
+    );
+    assert.equal(urls.filter((url) => url.includes('/user/')).length, 1);
+    assert.equal(second.meta.profile, undefined);
   });
 });

@@ -88,7 +88,7 @@ function Popover({
           <FloatingPortal>
             <FloatingFocusManager context={context} modal={false}>
               <motion.div
-                className={cn('z-30 rounded-ss-2xl rounded-ee-2xl bg-black/30 backdrop-blur-sm', className)}
+                className={cn('glass-surface z-30 rounded-ss-2xl rounded-ee-2xl', className)}
                 initial={{ opacity: 0, scale: 0.85 }}
                 animate={{ opacity: 1, scale: 1, originY: 0 }}
                 exit={{ opacity: 0, scale: 0.85, pointerEvents: 'none' }}

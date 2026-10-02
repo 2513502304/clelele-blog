@@ -14,9 +14,11 @@
 }
 
 .glass-surface,
-.live2d-controls {
+.live2d-controls,
+.live2d-panel,
+.bgm-panel {
   border: 1px solid var(--glass-edge);
-  background: rgb(var(--glass-tint) / 96%);
+  background: hsl(var(--card));
   box-shadow:
     inset 0 1px 0 var(--glass-glint),
     inset 0 -1px 0 rgb(var(--glass-tint) / 25%),
@@ -34,7 +36,7 @@
 }
 
 .glass-float:hover {
-  background-color: rgb(var(--glass-tint) / 90%);
+  background-color: hsl(var(--card) / 90%);
   box-shadow:
     inset 0 1px 0 var(--glass-glint),
     0 5px 18px var(--glass-shadow);
@@ -70,21 +72,25 @@
 }
 
 #site-header.with-background::before {
-  background: rgb(var(--glass-tint) / 96%);
+  background: hsl(var(--card));
   box-shadow: inset 0 -1px 0 var(--glass-glint);
 }
 
 @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .glass-surface,
   .live2d-controls,
+  .live2d-panel,
+  .bgm-panel,
   #site-header.with-background::before {
     background:
       linear-gradient(125deg, var(--glass-glint), transparent 42%),
-      linear-gradient(120deg, hsl(var(--primary) / 4%), transparent 65%), rgb(var(--glass-tint) / 76%);
+      linear-gradient(120deg, hsl(var(--primary) / 4%), transparent 65%), hsl(var(--card) / 76%);
   }
 
   .glass-surface,
   .live2d-controls,
+  .live2d-panel,
+  .bgm-panel,
   #site-header.with-background {
     -webkit-backdrop-filter: blur(20px) saturate(145%);
     backdrop-filter: blur(20px) saturate(145%);
@@ -100,6 +106,8 @@
 @media (prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active) {
   .glass-surface,
   .live2d-controls,
+  .live2d-panel,
+  .bgm-panel,
   #site-header.with-background,
   #site-header.with-background::before {
     background: rgb(var(--glass-tint));
@@ -118,4 +126,12 @@
   .glass-float {
     transition: none;
   }
+}
+
+/* Keep panel headers and player internals from painting an opaque sheet over the glass shell. */
+.live2d-panel-header, .bgm-panel .audio-player { background: transparent; }
+html[data-reading-transparency="solid"] :is(.glass-surface, .live2d-controls, .live2d-panel, .bgm-panel, .appearance-panel, .gallery-selection-dock, #site-header.with-background, #site-header.with-background::before) {
+  background: hsl(var(--card));
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }

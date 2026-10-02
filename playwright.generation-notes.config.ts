@@ -3,7 +3,14 @@ import { defineConfig, devices } from '@playwright/test';
 /** Isolated fixture server keeps checks independent of HF. Run separately from Astro check/build, which rewrite Vite's cache. */
 export default defineConfig({
   testDir: './tests/style-gallery',
-  testMatch: ['generation-notes.spec.ts', 'profile-crop.spec.ts', 'design-lab.spec.ts', 'appearance.spec.ts'],
+  testMatch: [
+    'generation-notes.spec.ts',
+    'profile-crop.spec.ts',
+    'design-lab.spec.ts',
+    'appearance.spec.ts',
+    'collections.spec.ts',
+    'theme-pages.spec.ts',
+  ],
   workers: 1,
   timeout: 60_000,
   expect: { timeout: 15_000 },
@@ -12,7 +19,7 @@ export default defineConfig({
     { name: 'chromium', use: { ...devices['Desktop Chrome'], viewport: { width: 1512, height: 870 } } },
     {
       name: 'webkit',
-      testMatch: ['profile-crop.spec.ts', 'appearance.spec.ts'],
+      testMatch: ['profile-crop.spec.ts', 'appearance.spec.ts', 'collections.spec.ts', 'theme-pages.spec.ts'],
       use: { ...devices['Desktop Safari'], viewport: { width: 1512, height: 870 } },
     },
   ],

@@ -181,3 +181,10 @@
 .generation-glass-quick-copy:hover {
   background: rgb(255 255 255 / 20%);
 }
+
+/* Keep white prompt text readable when blur is disabled over the dark lightbox. */
+html[data-reading-transparency="solid"] .generation-glass {
+  background: #201f29;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}

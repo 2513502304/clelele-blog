@@ -55,7 +55,7 @@ function StylePromptCopyContent({
   return (
     // The live region is out of flow; sibling spacing would add an invisible gap below the painted card.
     <div className={cn('relative', className)}>
-      <div className="overflow-hidden rounded-lg border border-rose-200/70 bg-white/80 shadow-sm dark:border-rose-900/40 dark:bg-gray-950/60">
+      <div className="overflow-hidden rounded-lg border border-rose-200/70 bg-card/80 shadow-sm dark:border-rose-900/40">
         <div className="flex min-h-14 items-center justify-between gap-3 border-rose-100 border-b bg-rose-50/55 px-5 py-2.5 dark:border-rose-950/60 dark:bg-rose-950/20">
           <div className="flex min-w-0 items-center gap-3">
             <p className="shrink-0 font-bold text-rose-500 text-sm dark:text-rose-300">{label}</p>
@@ -80,7 +80,7 @@ function StylePromptCopyContent({
                     });
                 }}
                 aria-label={chooserLabel}
-                className="h-9 min-w-0 max-w-64 rounded-md border border-rose-200 bg-white px-2 text-gray-700 text-xs outline-none focus:border-rose-400 dark:border-rose-900 dark:bg-gray-900 dark:text-gray-200"
+                className="h-9 min-w-0 max-w-64 rounded-md border border-rose-200 bg-card px-2 text-gray-700 text-xs outline-none focus:border-rose-400 dark:border-rose-900 dark:text-gray-200"
               >
                 {promptGroups.map((group) => (
                   <optgroup key={group.model ?? '__unknown__'} label={group.model ?? unknownModelLabel}>
@@ -112,7 +112,7 @@ function StylePromptCopyContent({
             <button
               type="button"
               onClick={copyPrompt}
-              className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-rose-200 bg-white text-rose-500 shadow-sm transition hover:-translate-y-0.5 hover:border-rose-300 hover:text-rose-600 dark:border-rose-900 dark:bg-gray-900 dark:text-rose-300"
+              className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-rose-200 bg-card text-rose-500 shadow-sm transition hover:-translate-y-0.5 hover:border-rose-300 hover:text-rose-600 dark:border-rose-900 dark:text-rose-300"
               aria-label={copied ? copiedLabel : copyLabel}
               title={copied ? copiedLabel : copyLabel}
             >

@@ -1,15 +1,15 @@
-import { useBangumiData } from '@hooks/useBangumiData';
-import { useCollectionPagination } from '@hooks/useCollectionPagination';
+import { useProgressiveCollection } from '@hooks/useProgressiveCollection';
 import { useTranslation } from '@hooks/useTranslation';
 import { Icon } from '@iconify/react';
 import { cn } from '@lib/utils';
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { motion, useReducedMotion } from 'motion/react';
 import { useMemo, useState } from 'react';
 import type { TranslationKey } from '@/i18n/types';
 import { SUBJECT_TYPE_KEYS, type SubjectTypeKey } from '@/lib/bangumi/constants';
 import { sortBangumiCollectionItems } from '@/lib/bangumi/sort';
-import type { BangumiCollectionType, BangumiSortDirection, BangumiSortKey } from '@/types/bangumi';
-import { CollectionPaginationSettings, CollectionPaginator } from '../collection/CollectionPagination';
+import type { BangumiCollectionType, BangumiSortDirection, BangumiSortKey, BangumiUserCollection } from '@/types/bangumi';
+import { CollectionLoadMore } from '../collection/CollectionLoadMore';
+import StyleGalleryGrid, { StyleGalleryLayoutToggle } from '../style-gallery/StyleGalleryGrid';
 import { BangumiCard } from './BangumiCard';
 
 const TAB_LABEL_KEYS: Record<SubjectTypeKey, TranslationKey> = {
@@ -41,15 +41,9 @@ interface BangumiCollectionProps {
   userId: string;
 }
 
-/**
- * 追番页的交互容器。
- *
- * `useBangumiData` 先取得各作品类型的完整收藏，再依次执行标签页筛选、收藏状态筛选、排序和本地分页；
- * 因此“每页数量”只影响渲染数量，不会改变 Bangumi 数据的抓取范围。
- */
+/** Load the active subject on demand; filtering and sorting require its complete collection. */
 export function BangumiCollection({ userId }: BangumiCollectionProps) {
-  const { t } = useTranslation();
-  const { data, isLoading, error, retry } = useBangumiData(userId);
+  const { t, locale } = useTranslation();
 
   const [activeTab, setActiveTab] = useState<SubjectTypeKey>('anime');
   const [activeFilter, setActiveFilter] = useState<BangumiCollectionType | 'all'>('all');
@@ -59,101 +53,56 @@ export function BangumiCollection({ userId }: BangumiCollectionProps) {
 
   const springTransition = shouldReduceMotion ? { duration: 0 } : { type: 'spring' as const, stiffness: 400, damping: 30 };
 
-  const tabs = useMemo(() => {
-    return SUBJECT_TYPE_KEYS.filter((key) => data[key].length > 0).map((key) => ({
-      key,
-      label: t(TAB_LABEL_KEYS[key]),
-      count: data[key].length,
-    }));
-  }, [data, t]);
-
-  const tabItems = data[activeTab];
-
+  const [masonry, setMasonry] = useState(true);
+  const collection = useProgressiveCollection<BangumiUserCollection, Record<string, never>>(
+    `/api/bangumi?subject=${activeTab}&offset=0`,
+    (item) => item.subject_id,
+    activeFilter !== 'all' || sortKey !== 'default' || sortDirection !== 'asc',
+  );
+  const { error, loadMore: retry } = collection;
+  const waitingForComplete =
+    (activeFilter !== 'all' || sortKey !== 'default' || sortDirection !== 'asc') && !collection.complete;
+  const tabs = SUBJECT_TYPE_KEYS.map((key) => ({
+    key,
+    label: t(TAB_LABEL_KEYS[key]),
+    count: key === activeTab ? collection.total : undefined,
+  }));
   const filterCounts = useMemo(() => {
-    const counts: Record<string, number> = { all: tabItems.length };
-    for (const item of tabItems) {
-      counts[item.type] = (counts[item.type] ?? 0) + 1;
-    }
+    const counts: Record<string, number> = { all: collection.items.length };
+    for (const item of collection.items) counts[item.type] = (counts[item.type] ?? 0) + 1;
     return counts;
-  }, [tabItems]);
-
-  const filteredItems = useMemo(() => {
-    if (activeFilter === 'all') return tabItems;
-    return tabItems.filter((item) => item.type === activeFilter);
-  }, [tabItems, activeFilter]);
-
+  }, [collection.items]);
+  const filteredItems = useMemo(
+    () => (activeFilter === 'all' ? collection.items : collection.items.filter((item) => item.type === activeFilter)),
+    [collection.items, activeFilter],
+  );
   const sortedItems = useMemo(
     () => sortBangumiCollectionItems(filteredItems, sortKey, sortDirection),
-    [filteredItems, sortDirection, sortKey],
+    [filteredItems, sortKey, sortDirection],
   );
-  // 分页状态持久化到浏览器；输入集合已经完成筛选和排序，切页不会触发额外 API 请求。
-  const { currentPage, isPaginated, pageSize, setCurrentPage, setIsPaginated, setPageSize, totalPages, visibleItems } =
-    useCollectionPagination(sortedItems, 'bangumi-pagination-settings');
+  const [visibleCount, setVisibleCount] = useState(24);
+  const visibleItems = waitingForComplete ? [] : sortedItems.slice(0, visibleCount);
+  const loadMore = () => (sortedItems.length > visibleCount ? setVisibleCount((n) => n + 24) : collection.loadMore());
 
   function handleTabChange(key: SubjectTypeKey) {
     setActiveTab(key);
     setActiveFilter('all');
-    setCurrentPage(1);
+    setVisibleCount(24);
   }
 
   function handleFilterChange(key: BangumiCollectionType | 'all') {
     setActiveFilter(key);
-    setCurrentPage(1);
+    setVisibleCount(24);
   }
 
   function handleSortChange(key: BangumiSortKey) {
     setSortKey(key);
-    setCurrentPage(1);
+    setVisibleCount(24);
   }
 
   function toggleSortDirection() {
     setSortDirection((direction) => (direction === 'asc' ? 'desc' : 'asc'));
-    setCurrentPage(1);
-  }
-
-  if (isLoading) {
-    return (
-      <div className="space-y-4 py-8" aria-hidden="true">
-        <div className="flex gap-2">
-          {Array.from({ length: 4 }, (_, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: skeleton placeholders have no stable id
-            <div key={i} className="h-8 w-16 animate-pulse rounded bg-muted" />
-          ))}
-        </div>
-        <div className="grid desktop:grid-cols-4 grid-cols-3 gap-4 md:grid-cols-2">
-          {Array.from({ length: 8 }, (_, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: skeleton placeholders have no stable id
-            <div key={i} className="animate-pulse">
-              <div className="aspect-[2/3] rounded-lg bg-muted" />
-              <div className="mt-2 h-4 w-3/4 rounded bg-muted" />
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex min-h-[300px] flex-col items-center justify-center gap-4 py-8">
-        <p className="text-muted-foreground">{t('bangumi.error')}</p>
-        <button
-          type="button"
-          onClick={retry}
-          className="rounded-md bg-primary px-4 py-2 text-primary-foreground text-sm transition-colors hover:bg-primary/90"
-        >
-          {t('bangumi.retry')}
-        </button>
-      </div>
-    );
-  }
-
-  if (tabs.length === 0) {
-    return (
-      <div className="flex min-h-[300px] flex-col items-center justify-center py-8">
-        <p className="text-muted-foreground">{t('bangumi.noItems')}</p>
-      </div>
-    );
+    setVisibleCount(24);
   }
 
   return (
@@ -192,7 +141,7 @@ export function BangumiCollection({ userId }: BangumiCollectionProps) {
       <div className="flex flex-wrap gap-1.5">
         {FILTER_OPTIONS.map(
           ({ key, labelKey }) =>
-            (key === 'all' || (filterCounts[key] ?? 0) > 0) && (
+            (!collection.complete || key === 'all' || (filterCounts[key] ?? 0) > 0) && (
               <button
                 key={key}
                 type="button"
@@ -205,19 +154,14 @@ export function BangumiCollection({ userId }: BangumiCollectionProps) {
                 )}
               >
                 {t(labelKey)}
-                <span className="ml-1 tabular-nums opacity-60">({filterCounts[key] ?? 0})</span>
+                {collection.complete && <span className="ml-1 tabular-nums opacity-60">({filterCounts[key] ?? 0})</span>}
               </button>
             ),
         )}
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <CollectionPaginationSettings
-          isPaginated={isPaginated}
-          pageSize={pageSize}
-          onModeChange={setIsPaginated}
-          onPageSizeChange={setPageSize}
-        />
+        <StyleGalleryLayoutToggle masonry={masonry} onChange={() => setMasonry((value) => !value)} locale={locale} />
         <div className="flex gap-2">
           <label htmlFor="bangumi-sort" className="sr-only">
             {t('bangumi.sortBy')}
@@ -256,28 +200,30 @@ export function BangumiCollection({ userId }: BangumiCollectionProps) {
         </div>
       </div>
 
-      <AnimatePresence mode="popLayout">
-        <motion.div
-          key={`${activeTab}-${activeFilter}-${sortKey}-${sortDirection}-${isPaginated}-${currentPage}`}
-          className="grid desktop:grid-cols-4 grid-cols-3 gap-3 md:grid-cols-2"
-          initial={shouldReduceMotion ? false : { opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -8 }}
-          transition={{ duration: 0.2 }}
-        >
-          {visibleItems.map((item) => (
-            <BangumiCard key={item.subject_id} item={item} />
-          ))}
-        </motion.div>
-      </AnimatePresence>
-
-      {filteredItems.length === 0 && (
-        <div className="flex min-h-[200px] items-center justify-center">
-          <p className="text-muted-foreground">{t('bangumi.noItems')}</p>
-        </div>
+      {waitingForComplete && (
+        <output className="text-muted-foreground text-sm">
+          {locale.startsWith('zh')
+            ? '正在读取当前分类，以完成完整筛选与排序…'
+            : locale.startsWith('ja')
+              ? '絞り込みと並べ替えのために読み込み中…'
+              : 'Loading this category for complete filtering and sorting…'}
+        </output>
       )}
-
-      {isPaginated && <CollectionPaginator currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />}
+      <StyleGalleryGrid masonry={masonry}>
+        {visibleItems.map((item) => (
+          <BangumiCard key={item.subject_id} item={item} />
+        ))}
+      </StyleGalleryGrid>
+      {collection.complete && filteredItems.length === 0 && (
+        <p className="py-8 text-center text-muted-foreground">{t('bangumi.noItems')}</p>
+      )}
+      <CollectionLoadMore
+        more={!collection.complete || visibleCount < sortedItems.length}
+        loading={collection.loading}
+        error={error}
+        onLoad={error ? retry : loadMore}
+        locale={locale}
+      />
 
       <footer className="flex justify-end border-border border-t pt-3">
         <a

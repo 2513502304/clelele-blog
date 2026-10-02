@@ -650,7 +650,7 @@ function StyleGalleryExamplesContent({
             disabled={!selectedIds.size || mutating}
             onChange={(event) => setBulkPlatform(event.currentTarget.value)}
             aria-label={selectionText.platform}
-            className="h-9 rounded-md border border-gray-200 bg-white px-3 text-sm outline-none disabled:opacity-50 dark:border-gray-700 dark:bg-gray-950"
+            className="h-9 rounded-md border border-gray-200 bg-card px-3 text-sm outline-none disabled:opacity-50 dark:border-gray-700"
           >
             {STYLE_GALLERY_PLATFORMS.map((item) => (
               <option key={item.slug} value={item.slug}>
@@ -695,10 +695,7 @@ function StyleGalleryExamplesContent({
     </>
   );
   return (
-    <section
-      ref={marquee.rootRef}
-      className="rounded-lg border border-rose-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-950"
-    >
+    <section ref={marquee.rootRef} className="rounded-lg border border-rose-100 bg-card p-5 shadow-sm dark:border-gray-800">
       {marquee.overlay}
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
@@ -712,14 +709,14 @@ function StyleGalleryExamplesContent({
 
       <form
         onSubmit={handleUpload}
-        className="mb-5 grid grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)_minmax(0,1fr)] gap-3 rounded-lg border border-sky-100 bg-sky-50/60 p-3 md:grid-cols-1 dark:border-sky-950/60 dark:bg-sky-950/20"
+        className="mb-5 grid grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)_minmax(0,1fr)] gap-3 rounded-lg border border-border bg-muted/60 p-3 md:grid-cols-1"
       >
         <label className="min-w-0 space-y-1 font-bold text-gray-500 text-xs dark:text-gray-300">
           <span>{zh ? '生成平台' : ja ? '生成プラットフォーム' : 'Platform'}</span>
           <select
             value={platform}
             onChange={(event) => setPlatform(event.currentTarget.value)}
-            className="h-10 w-full rounded-lg border border-sky-100 bg-white px-3 text-gray-900 text-sm outline-none dark:border-gray-800 dark:bg-gray-900 dark:text-white"
+            className="h-10 w-full rounded-lg border border-sky-100 bg-card px-3 text-gray-900 text-sm outline-none dark:border-gray-800 dark:text-white"
           >
             {STYLE_GALLERY_PLATFORMS.map((item) => (
               <option key={item.slug} value={item.slug}>
@@ -735,7 +732,7 @@ function StyleGalleryExamplesContent({
             accept="image/png,image/jpeg,image/webp"
             multiple
             onChange={(event) => setFiles([...(event.currentTarget.files ?? [])])}
-            className="block h-10 w-full rounded-lg border border-sky-100 bg-white px-3 py-2 text-gray-900 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-gray-950 file:px-3 file:py-1 file:font-bold file:text-white dark:border-gray-800 dark:bg-gray-900 dark:text-white dark:file:bg-white dark:file:text-gray-950"
+            className="block h-10 w-full rounded-lg border border-sky-100 bg-card px-3 py-2 text-gray-900 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-gray-950 file:px-3 file:py-1 file:font-bold file:text-white dark:border-gray-800 dark:text-white dark:file:bg-white dark:file:text-gray-950"
           />
         </label>
         <label className="min-w-0 space-y-1 font-bold text-gray-500 text-xs dark:text-gray-300">
@@ -744,7 +741,7 @@ function StyleGalleryExamplesContent({
             type="password"
             value={token}
             onChange={(event) => setToken(event.currentTarget.value)}
-            className="h-10 w-full rounded-lg border border-sky-100 bg-white px-3 text-gray-900 text-sm outline-none dark:border-gray-800 dark:bg-gray-900 dark:text-white"
+            className="h-10 w-full rounded-lg border border-sky-100 bg-card px-3 text-gray-900 text-sm outline-none dark:border-gray-800 dark:text-white"
             autoComplete="off"
           />
         </label>
@@ -755,7 +752,7 @@ function StyleGalleryExamplesContent({
             onChange={(event) => setNote(event.currentTarget.value)}
             rows={5}
             data-example-note-input
-            className="h-[calc(5lh+1rem+2px)] max-h-[calc(5lh+1rem+2px)] min-h-[calc(5lh+1rem+2px)] w-full resize-none overflow-y-auto overscroll-contain rounded-lg border border-sky-100 bg-white px-3 py-2 text-gray-900 text-sm leading-5 outline-none [field-sizing:fixed] [scrollbar-gutter:stable] dark:border-gray-800 dark:bg-gray-900 dark:text-white"
+            className="h-[calc(5lh+1rem+2px)] max-h-[calc(5lh+1rem+2px)] min-h-[calc(5lh+1rem+2px)] w-full resize-none overflow-y-auto overscroll-contain rounded-lg border border-sky-100 bg-card px-3 py-2 text-gray-900 text-sm leading-5 outline-none [field-sizing:fixed] [scrollbar-gutter:stable] dark:border-gray-800 dark:text-white"
           />
         </label>
 
@@ -814,7 +811,7 @@ function StyleGalleryExamplesContent({
         <div className="space-y-6">
           <div
             data-gallery-management
-            className="sticky top-3 z-10 flex flex-wrap items-center gap-2 rounded-lg border border-rose-200 bg-white/95 p-3 shadow-md backdrop-blur dark:border-rose-900 dark:bg-gray-950/95"
+            className="sticky top-3 z-10 flex flex-wrap items-center gap-2 rounded-lg border border-rose-200 bg-card/95 p-3 shadow-md backdrop-blur dark:border-rose-900"
           >
             <button
               type="button"
@@ -878,11 +875,11 @@ function StyleGalleryExamplesContent({
                       data-selected={selectedIds.has(example.id)}
                       id={getStyleGalleryLightboxElementId('detail-example', example.id)}
                       tabIndex={-1}
-                      className="w-full min-w-0 overflow-hidden rounded-lg border border-gray-100 bg-gray-50 dark:border-gray-800 dark:bg-gray-900"
+                      className="w-full min-w-0 overflow-hidden rounded-lg border border-border bg-card"
                     >
                       {/* 全局 reset 让 figure 使用 fit-content，因此 figure 与内层都必须显式占满 grid track；否则未加载的 1x1 img 会让整张卡片收缩。 */}
                       <div
-                        className="relative w-full overflow-hidden bg-gray-100 dark:bg-gray-900"
+                        className="relative w-full overflow-hidden bg-muted"
                         style={{
                           aspectRatio: masonry
                             ? `${example.dimensions?.width || 1} / ${example.dimensions?.height || 1}`
@@ -906,7 +903,7 @@ function StyleGalleryExamplesContent({
                             className="h-full w-full object-cover transition duration-200 group-hover:scale-105"
                           />
                         </button>
-                        <label className="absolute top-2 left-2 flex size-8 cursor-pointer items-center justify-center rounded-md bg-white/90 shadow dark:bg-gray-950/90">
+                        <label className="absolute top-2 left-2 flex size-8 cursor-pointer items-center justify-center rounded-md bg-card/90 shadow">
                           <input
                             type="checkbox"
                             checked={selectedIds.has(example.id)}
@@ -931,7 +928,7 @@ function StyleGalleryExamplesContent({
                           <StyleGalleryExampleNote
                             note={example.note}
                             locale={locale}
-                            rows={5}
+                            rows={3}
                             onOpen={() => openExampleLightbox(example, platformExamples, true)}
                           />
                         </figcaption>
@@ -944,7 +941,7 @@ function StyleGalleryExamplesContent({
           ))}
         </div>
       ) : (
-        <div className="rounded-lg border border-rose-200 border-dashed bg-rose-50/60 p-6 text-gray-500 text-sm dark:border-gray-800 dark:bg-gray-900/60 dark:text-gray-300">
+        <div className="rounded-lg border border-border border-dashed bg-muted/60 p-6 text-muted-foreground text-sm">
           Generated examples created from this prompt will appear here after they are added manually.
         </div>
       )}

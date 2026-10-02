@@ -79,14 +79,14 @@ test('group overview has no misleading note excerpt; each image opens its own co
   await page.screenshot({ path: '/tmp/gallery-glass-reader.png' });
 });
 
-test('detail note is five scrollable rows and opens its complete generation prompt', async ({ page, context }) => {
+test('detail note is three preview rows and opens its complete generation prompt', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await imagesOnlyFixture(page);
   await page.goto('/image-style-prompt-gallery/2026-09-23-35dc5191ccad', { waitUntil: 'domcontentloaded' });
   const input = page.locator('[data-example-note-input]');
   await input.fill('多行输入\n'.repeat(100));
   expect(await input.evaluate((el) => ({ height: el.clientHeight, scroll: el.scrollHeight > el.clientHeight }))).toEqual({
-    height: 116,
+    height: 110,
     scroll: true,
   });
   const note = page.locator('[data-example-note]').first();
@@ -95,16 +95,11 @@ test('detail note is five scrollable rows and opens its complete generation prom
     rows: el.clientHeight / Number.parseFloat(getComputedStyle(el).lineHeight),
     overflow: el.scrollHeight > el.clientHeight,
   }));
-  expect(box.rows).toBeCloseTo(5, 1);
+  expect(box.rows).toBeCloseTo(3, 1);
   expect(box.overflow).toBe(true);
-  const pageScroll = await page.evaluate(() => scrollY);
-  await note.hover();
-  await page.mouse.wheel(0, 100);
-  await expect.poll(() => note.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
-  expect(await page.evaluate(() => scrollY)).toBe(pageScroll);
   const prompt = (await note.textContent()) ?? '';
   expect(prompt).not.toBe('');
-  await page.screenshot({ path: '/tmp/gallery-detail-five-rows.png' });
+  await page.screenshot({ path: '/tmp/gallery-detail-three-rows.png' });
   const card = note.locator('xpath=ancestor::figure');
   await expect(card.locator('xpath=ancestor::astro-island')).not.toHaveAttribute('ssr');
   await card

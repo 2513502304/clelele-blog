@@ -260,7 +260,7 @@ test('independent reading controls drag, type, persist and reset without moving 
   await input.fill('');
   await input.pressSequentially('118');
   await input.press('Tab');
-  expect(await page.locator('html').evaluate((el) => Number.parseFloat(getComputedStyle(el).fontSize))).toBeCloseTo(18.88, 2);
+  expect(await page.locator('html').evaluate((el) => Number.parseFloat(getComputedStyle(el).fontSize))).toBeCloseTo(17.936, 2);
   await panel.getByLabel('字体', { exact: true }).selectOption('serif');
   await panel.getByLabel('界面密度', { exact: true }).selectOption('compact');
   await panel.getByLabel('卡片圆角', { exact: true }).selectOption('square');

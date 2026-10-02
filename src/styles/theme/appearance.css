@@ -87,19 +87,20 @@ html[data-appearance="blueprint"] {
 html[data-appearance]:not([data-appearance="original"]) {
   --background: var(--palette-hue) var(--palette-saturation) var(--paper-lightness);
   --foreground: var(--palette-hue) 14% 21%;
-  --card: var(--palette-hue) calc(var(--palette-saturation) * 0.65) 96%;
+  --card: var(--palette-hue) calc(var(--palette-saturation) * 0.58) calc(var(--paper-lightness) + 9%);
+  --control: var(--palette-hue) calc(var(--palette-saturation) * 0.45) min(98%, calc(var(--paper-lightness) + 13%));
   --card-foreground: var(--foreground);
   --popover: var(--card);
   --popover-foreground: var(--foreground);
   --primary: var(--palette-hue) var(--palette-saturation) 26%;
   --primary-foreground: var(--palette-hue) 15% 98%;
-  --muted: var(--palette-hue) 15% 91%;
+  --muted: var(--palette-hue) calc(var(--palette-saturation) * 0.4) calc(var(--paper-lightness) + 4%);
   --muted-foreground: var(--palette-hue) 10% 38%;
   --secondary: var(--muted);
   --secondary-foreground: var(--foreground);
   --accent: var(--muted);
   --accent-foreground: var(--foreground);
-  --border: var(--palette-hue) 16% 84%;
+  --border: var(--palette-hue) 22% calc(var(--paper-lightness) - 9%);
   --input: var(--border);
   --ring: var(--primary);
   --badge-primary: var(--primary);
@@ -117,6 +118,7 @@ html.dark[data-appearance]:not([data-appearance="original"]) {
   --background: var(--palette-hue) 32% 12%;
   --foreground: var(--palette-hue) 16% 92%;
   --card: var(--palette-hue) 23% 19%;
+  --control: var(--palette-hue) 20% 23%;
   --primary: var(--palette-hue) var(--palette-saturation) 74%;
   --primary-foreground: var(--palette-hue) 14% 12%;
   --muted: var(--palette-hue) 12% 22%;
@@ -209,7 +211,8 @@ html.appearance-transition::view-transition-group(appearance-page) {
 }
 
 html {
-  font-size: var(--reading-size, 100%);
+  /* 100% now means the previous 95% baseline, independent of the chosen palette. */
+  font-size: calc(var(--reading-size, 100%) * 0.95);
   --reading-leading: 1.8;
   --reading-density: 1;
   --reading-radius: 0.5rem;
@@ -261,4 +264,40 @@ html[data-reading-transparency="solid"] :is(.glass-surface, .appearance-panel, .
 html[data-reading-motion="reduced"] :is(.appearance-panel, .appearance-reveal, .appearance-swatch) {
   animation: none;
   transition: none;
+}
+
+/* Keep controls a distinct, gently lit layer instead of using the page background. */
+html[data-appearance]:not([data-appearance="original"]) :is(input:not([type="range"]):not([type="checkbox"]):not([type="radio"]), textarea, select, button.bg-background) {
+  background: linear-gradient(145deg, hsl(var(--control)), hsl(var(--card)));
+  color: hsl(var(--foreground));
+  border-color: hsl(var(--border));
+}
+/* These are decorative Gallery brand shades, not error/success status colors. */
+html[data-appearance]:not([data-appearance="original"]) {
+  --color-rose-50: hsl(var(--card));
+  --color-rose-100: hsl(var(--border));
+  --color-rose-200: hsl(var(--primary) / 25%);
+  --color-rose-300: hsl(var(--primary) / 55%);
+  --color-rose-500: hsl(var(--primary));
+  --color-rose-600: hsl(var(--primary));
+  --color-rose-700: hsl(var(--primary));
+  --color-rose-900: hsl(var(--border));
+  --color-rose-950: hsl(var(--muted));
+}
+/* Scale flow spacing explicitly; changing --spacing would also shrink icons and hit targets. */
+main .gap-6 { gap: calc(1.5rem * var(--reading-density)); }
+main .gap-4 { gap: calc(1rem * var(--reading-density)); }
+main .space-y-6 > :not(:last-child) { margin-block-end: calc(1.5rem * var(--reading-density)); }
+main .space-y-4 > :not(:last-child) { margin-block-end: calc(1rem * var(--reading-density)); }
+main .mb-6 { margin-bottom: calc(1.5rem * var(--reading-density)); }
+main .mt-6 { margin-top: calc(1.5rem * var(--reading-density)); }
+
+html[data-appearance]:not([data-appearance="original"]) .gallery-summary {
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}
+html[data-appearance]:not([data-appearance="original"]) input::placeholder,
+html[data-appearance]:not([data-appearance="original"]) textarea::placeholder {
+  color: hsl(var(--muted-foreground));
+  opacity: 1;
 }
