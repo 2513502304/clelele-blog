@@ -79,32 +79,49 @@ test('group overview has no misleading note excerpt; each image opens its own co
   await page.screenshot({ path: '/tmp/gallery-glass-reader.png' });
 });
 
-test('detail note is five scrollable rows and opens its complete generation prompt', async ({ page, context }) => {
+test('detail note is three preview rows and opens its complete generation prompt', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await imagesOnlyFixture(page);
   await page.goto('/image-style-prompt-gallery/2026-09-23-35dc5191ccad', { waitUntil: 'domcontentloaded' });
   const input = page.locator('[data-example-note-input]');
   await input.fill('多行输入\n'.repeat(100));
-  expect(await input.evaluate((el) => ({ height: el.clientHeight, scroll: el.scrollHeight > el.clientHeight }))).toEqual({
-    height: 116,
-    scroll: true,
+  const inputBox = await input.evaluate((el) => {
+    const css = getComputedStyle(el);
+    return {
+      rows: (el.clientHeight - parseFloat(css.paddingTop) - parseFloat(css.paddingBottom)) / parseFloat(css.lineHeight),
+      scroll: el.scrollHeight > el.clientHeight,
+    };
   });
+  expect(inputBox.rows).toBeCloseTo(5, 1);
+  expect(inputBox.scroll).toBe(true);
+  await page.evaluate(() => {
+    document.documentElement.dataset.readingTransparency = 'solid';
+  });
+  const management = page.locator('[data-gallery-management]');
+  await expect(management).toHaveCSS('backdrop-filter', 'none');
+  expect(
+    await management.evaluate((el) => {
+      const color = getComputedStyle(el).backgroundColor;
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 1;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Canvas unavailable');
+      ctx.fillStyle = color;
+      ctx.fillRect(0, 0, 1, 1);
+      return ctx.getImageData(0, 0, 1, 1).data[3];
+    }),
+  ).toBe(255);
   const note = page.locator('[data-example-note]').first();
   await note.scrollIntoViewIfNeeded();
   const box = await note.evaluate((el) => ({
     rows: el.clientHeight / Number.parseFloat(getComputedStyle(el).lineHeight),
     overflow: el.scrollHeight > el.clientHeight,
   }));
-  expect(box.rows).toBeCloseTo(5, 1);
+  expect(box.rows).toBeCloseTo(3, 1);
   expect(box.overflow).toBe(true);
-  const pageScroll = await page.evaluate(() => scrollY);
-  await note.hover();
-  await page.mouse.wheel(0, 100);
-  await expect.poll(() => note.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
-  expect(await page.evaluate(() => scrollY)).toBe(pageScroll);
   const prompt = (await note.textContent()) ?? '';
   expect(prompt).not.toBe('');
-  await page.screenshot({ path: '/tmp/gallery-detail-five-rows.png' });
+  await page.screenshot({ path: '/tmp/gallery-detail-three-rows.png' });
   const card = note.locator('xpath=ancestor::figure');
   await expect(card.locator('xpath=ancestor::astro-island')).not.toHaveAttribute('ssr');
   await card

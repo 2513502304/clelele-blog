@@ -56,7 +56,7 @@ export function setReadingPreferences(input: ReadingPreferences) {
     if ('css' in rule) document.documentElement.style.setProperty(rule.css, `${value}${rule.unit}`);
   }
   try {
-    localStorage.setItem('appearance-reading', JSON.stringify(values));
+    localStorage.setItem('appearance-reading', JSON.stringify({ ...values, scaleVersion: 2 }));
   } catch {
     /* Private storage may be unavailable. */
   }

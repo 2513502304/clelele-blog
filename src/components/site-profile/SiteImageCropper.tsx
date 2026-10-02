@@ -199,7 +199,7 @@ export default function SiteImageCropper({
         type="button"
         disabled={busy || exporting || !size.width}
         onClick={() => void apply()}
-        className="w-full rounded-xl bg-primary px-4 py-3 font-medium text-white disabled:opacity-50"
+        className="w-full rounded-xl bg-primary px-4 py-3 font-medium text-primary-foreground disabled:opacity-50"
       >
         {exporting || busy ? '处理中…' : '使用这个构图'}
       </button>

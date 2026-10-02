@@ -14,6 +14,13 @@ import { READING_RULES } from './reading-preferences';
       try { reading = JSON.parse(read('appearance-reading') || '{}') || {}; } catch { /* Ignore corrupt preferences. */ }
       // Migrate the former three text sizes only when no numeric preference has been saved.
       if (!read('appearance-reading')) reading.fontSize = size === 'large' ? 113 : size === 'comfort' ? 106 : 100;
+      if (reading.scaleVersion !== 2) {
+        // Preserve custom sizes. Former default 100 and the requested 95 adopt the new baseline.
+        if ([95, 100].includes(reading.fontSize)) reading.fontSize = 100;
+        else if (typeof reading.fontSize === 'number' && Number.isFinite(reading.fontSize)) reading.fontSize = Math.round(reading.fontSize / 0.95);
+        reading.scaleVersion = 2;
+        try { localStorage.setItem('appearance-reading', JSON.stringify(reading)); } catch { /* Storage is optional. */ }
+      }
       for (const [key, rule] of Object.entries(readingRules)) {
         const raw = reading[key];
         const value = 'min' in rule

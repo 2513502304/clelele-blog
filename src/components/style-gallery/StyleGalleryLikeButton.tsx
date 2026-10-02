@@ -203,7 +203,7 @@ export function StyleGalleryLikeButton({ exampleId, controller, labels, classNam
       aria-pressed={liked}
       aria-label={`${title}: ${controller.getCount(exampleId)}`}
       title={title}
-      className={`inline-flex h-9 min-w-14 items-center justify-center gap-1.5 rounded-full border border-white/70 bg-white/92 px-2.5 font-bold text-xs shadow-md backdrop-blur transition hover:border-rose-300 hover:text-rose-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-950/90 ${liked ? 'text-rose-500' : 'text-gray-600 dark:text-gray-200'} ${className}`}
+      className={`inline-flex h-9 min-w-14 items-center justify-center gap-1.5 rounded-full border border-white/70 bg-card/92 px-2.5 font-bold text-xs shadow-md backdrop-blur transition hover:border-rose-300 hover:text-rose-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 ${liked ? 'text-rose-500' : 'text-gray-600 dark:text-gray-200'} ${className}`}
     >
       <Icon icon={liked ? 'ri:heart-3-fill' : 'ri:heart-3-line'} className={`size-4 ${pending ? 'animate-pulse' : ''}`} />
       <span className="min-w-3 text-center tabular-nums">{controller.getCount(exampleId)}</span>

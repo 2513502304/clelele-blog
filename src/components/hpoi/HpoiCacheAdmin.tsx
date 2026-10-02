@@ -37,6 +37,13 @@ export function HpoiCacheAdmin() {
       const response = await fetch('/api/hpoi/refresh', { method: 'POST' });
       if (!response.ok) throw new Error(`Hpoi refresh API returned HTTP ${response.status}.`);
       setData((await response.json()) as HpoiCollectionResponse);
+      // Owner refresh also retires public pages cached by this tab.
+      try {
+        for (const key of Object.keys(sessionStorage))
+          if (key.startsWith('collection-page-v1:/api/hpoi')) sessionStorage.removeItem(key);
+      } catch {
+        /* Private storage may be disabled. */
+      }
       setRequestState('success');
     } catch {
       setRequestState('error');

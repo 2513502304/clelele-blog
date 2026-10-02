@@ -1,20 +1,22 @@
-import { useCollectionPagination } from '@hooks/useCollectionPagination';
+import { useProgressiveCollection } from '@hooks/useProgressiveCollection';
 import { useTranslation } from '@hooks/useTranslation';
 import { Icon } from '@iconify/react';
 import { createHpoiImageProxyUrl } from '@lib/hpoi/image';
 import { sortHpoiCollectionItems } from '@lib/hpoi/sort';
 import { cn } from '@lib/utils';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { TranslationKey } from '@/i18n/types';
 import type {
-  HpoiCollectionResponse,
+  HpoiCollectionItem,
   HpoiCollectionState,
+  HpoiProfile,
   HpoiProfileStats,
   HpoiSortDirection,
   HpoiSortKey,
 } from '@/types/hpoi';
 import { HPOI_COLLECTION_STATES } from '@/types/hpoi';
-import { CollectionPaginationSettings, CollectionPaginator } from '../collection/CollectionPagination';
+import { CollectionLoadMore } from '../collection/CollectionLoadMore';
+import StyleGalleryGrid, { StyleGalleryLayoutToggle } from '../style-gallery/StyleGalleryGrid';
 import { HpoiCard } from './HpoiCard';
 
 const STATE_LABELS: Record<HpoiCollectionState, TranslationKey> = {
@@ -43,61 +45,42 @@ const SORT_OPTIONS: Array<{ key: HpoiSortKey; label: TranslationKey }> = [
   { key: 'releaseDate', label: 'hpoi.sortReleaseDate' },
 ];
 
-/**
- * 手办收藏页的客户端交互容器。
- *
- * `/api/hpoi` 先在服务端抓取全部状态及首屏元数据可发现的懒加载分页，本组件再切换状态、排序和本地分页；
- * 因此用户配置的每页数量不会改变 Hpoi 上游请求，但抓取完整性仍取决于 Hpoi 是否提供可解析的页数元数据。
- */
+/** Read one upstream state/page at a time; CDN and session caches survive reloads. */
 export function HpoiCollection() {
   const { t, locale } = useTranslation();
-  const [data, setData] = useState<HpoiCollectionResponse | null>(null);
-  const [error, setError] = useState(false);
-  const [requestVersion, setRequestVersion] = useState(0);
   const [activeState, setActiveState] = useState<HpoiCollectionState>('all');
   const [sortKey, setSortKey] = useState<HpoiSortKey>('default');
   const [sortDirection, setSortDirection] = useState<HpoiSortDirection>('asc');
 
-  useEffect(() => {
-    const controller = new AbortController();
-    setError(false);
-
-    const requestUrl = requestVersion === 0 ? '/api/hpoi' : `/api/hpoi?retry=${requestVersion}`;
-    fetch(requestUrl, { signal: controller.signal })
-      .then((response) => {
-        if (!response.ok) throw new Error(`Hpoi API returned HTTP ${response.status}.`);
-        return response.json() as Promise<HpoiCollectionResponse>;
-      })
-      .then(setData)
-      .catch((requestError: unknown) => {
-        if (requestError instanceof DOMException && requestError.name === 'AbortError') return;
-        setError(true);
-      });
-
-    return () => controller.abort();
-  }, [requestVersion]);
-
+  const [masonry, setMasonry] = useState(true);
+  const collection = useProgressiveCollection<
+    HpoiCollectionItem,
+    { profile?: HpoiProfile; warnings: string[]; fetchedAt: string }
+  >(`/api/hpoi?state=${activeState}`, (item) => item.id, sortKey !== 'default' || sortDirection !== 'asc');
+  const data = collection.meta?.profile ? { ...collection.meta, profile: collection.meta.profile } : null;
+  const error = collection.error;
+  const waitingForComplete = (sortKey !== 'default' || sortDirection !== 'asc') && !collection.complete;
   const activeItems = useMemo(
-    () => (data ? sortHpoiCollectionItems(data.collections[activeState], sortKey, sortDirection) : []),
-    [activeState, data, sortDirection, sortKey],
+    () => sortHpoiCollectionItems(collection.items, sortKey, sortDirection),
+    [collection.items, sortKey, sortDirection],
   );
-  // 本地分页设置持久化到浏览器；切页不重新抓取 Hpoi。
-  const { currentPage, isPaginated, pageSize, setCurrentPage, setIsPaginated, setPageSize, totalPages, visibleItems } =
-    useCollectionPagination(activeItems, 'hpoi-pagination-settings');
+  const [visibleCount, setVisibleCount] = useState(24);
+  const visibleItems = waitingForComplete ? [] : activeItems.slice(0, visibleCount);
+  const loadMore = () => (activeItems.length > visibleCount ? setVisibleCount((n) => n + 24) : collection.loadMore());
 
   function handleStateChange(state: HpoiCollectionState) {
     setActiveState(state);
-    setCurrentPage(1);
+    setVisibleCount(24);
   }
 
   function handleSortChange(key: HpoiSortKey) {
     setSortKey(key);
-    setCurrentPage(1);
+    setVisibleCount(24);
   }
 
   function toggleSortDirection() {
     setSortDirection((direction) => (direction === 'asc' ? 'desc' : 'asc'));
-    setCurrentPage(1);
+    setVisibleCount(24);
   }
 
   if (!data && !error) return <HpoiCollectionSkeleton />;
@@ -109,7 +92,7 @@ export function HpoiCollection() {
         <p className="text-muted-foreground text-sm">{t('hpoi.error')}</p>
         <button
           type="button"
-          onClick={() => setRequestVersion((version) => version + 1)}
+          onClick={collection.loadMore}
           className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground text-sm transition-colors hover:bg-primary/90"
         >
           <Icon icon="ri:refresh-line" className="size-4" />
@@ -195,7 +178,9 @@ export function HpoiCollection() {
               )}
             >
               {t(STATE_LABELS[state])}
-              <span className="text-xs tabular-nums opacity-60">{data.collections[state].length}</span>
+              {state === activeState && collection.complete && (
+                <span className="text-xs tabular-nums opacity-60">{activeItems.length}</span>
+              )}
               {activeState === state && <span className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-primary" />}
             </button>
           ))}
@@ -203,12 +188,7 @@ export function HpoiCollection() {
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <CollectionPaginationSettings
-          isPaginated={isPaginated}
-          pageSize={pageSize}
-          onModeChange={setIsPaginated}
-          onPageSizeChange={setPageSize}
-        />
+        <StyleGalleryLayoutToggle masonry={masonry} onChange={() => setMasonry((value) => !value)} locale={locale} />
         <div className="flex gap-2">
           <label htmlFor="hpoi-sort" className="sr-only">
             {t('hpoi.sortBy')}
@@ -247,20 +227,30 @@ export function HpoiCollection() {
         </div>
       </div>
 
-      {activeItems.length > 0 ? (
-        <div className="grid desktop:grid-cols-4 grid-cols-3 gap-3 md:grid-cols-2">
-          {visibleItems.map((item) => (
-            <HpoiCard key={item.id} item={item} state={activeState} />
-          ))}
-        </div>
-      ) : (
-        <div className="flex min-h-52 flex-col items-center justify-center gap-2 text-muted-foreground">
-          <Icon icon="ri:archive-drawer-line" className="size-7 opacity-60" />
-          <p className="text-sm">{t('hpoi.noItems')}</p>
-        </div>
+      {waitingForComplete && (
+        <output className="text-muted-foreground text-sm">
+          {locale.startsWith('zh')
+            ? '正在读取当前分类，以完成完整排序…'
+            : locale.startsWith('ja')
+              ? '並べ替えのために読み込み中…'
+              : 'Loading this category for complete sorting…'}
+        </output>
       )}
-
-      {isPaginated && <CollectionPaginator currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />}
+      <StyleGalleryGrid masonry={masonry}>
+        {visibleItems.map((item) => (
+          <HpoiCard key={item.id} item={item} state={activeState} />
+        ))}
+      </StyleGalleryGrid>
+      {collection.complete && activeItems.length === 0 && (
+        <p className="py-8 text-center text-muted-foreground">{t('hpoi.noItems')}</p>
+      )}
+      <CollectionLoadMore
+        more={!collection.complete || visibleCount < activeItems.length}
+        loading={collection.loading}
+        error={error}
+        onLoad={error ? collection.loadMore : loadMore}
+        locale={locale}
+      />
 
       <footer className="flex justify-end border-border border-t pt-3">
         <a

@@ -10,7 +10,6 @@ import { useActiveHeading, useExpandedState, useHeadingClickHandler, useHeadingT
 import { useCurrentHeading } from '@hooks/useCurrentHeading';
 import { useTranslation } from '@hooks/useTranslation';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { siteConfig } from '@/constants/site-config';
 import { HeadingTitle } from './HeadingTitle';
 import { MobileTOCDropdown } from './MobileTOCDropdown';
 import { ProgressCircle } from './ProgressCircle';
@@ -19,10 +18,10 @@ interface MobilePostHeaderProps {
   /** Whether the current page is a post page */
   isPostPage: boolean;
   /** Type of logo element to display */
-  logoElement: 'svg' | 'text';
+  logoElement: 'image' | 'text';
   /** Text to display when logoElement is 'text' */
   logoText?: string;
-  /** Logo image URL (for svg type) */
+  /** Optimized logo image URL shared with the desktop header. */
   logoSrc?: string;
   /** Whether to enable CSS counter numbering in TOC (default: true) */
   enableNumbering?: boolean;
@@ -69,8 +68,8 @@ export function MobilePostHeader({
   // Logo component
   const Logo = () => (
     <a href="/" className="flex items-center gap-1">
-      {logoElement === 'svg' && logoSrc ? (
-        <img src={logoSrc} alt={siteConfig?.alternate ?? siteConfig?.name} className="h-8" height={32} />
+      {logoElement === 'image' && logoSrc ? (
+        <img src={logoSrc} alt="clelele" className="h-8 w-auto" width={89} height={32} />
       ) : (
         <span className="logo-text">{logoText}</span>
       )}

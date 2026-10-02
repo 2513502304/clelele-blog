@@ -374,7 +374,7 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
                 if (query.trim() && !tagQuery) void ensurePromptSearchIndex();
               }}
               placeholder={labels.searchPlaceholder}
-              className="h-11 w-full rounded-lg border border-rose-100 bg-white pr-3 pl-10 text-sm outline-none transition focus:border-rose-300 focus:ring-4 focus:ring-rose-100 dark:border-gray-800 dark:bg-gray-900 dark:focus:border-rose-700 dark:focus:ring-rose-950"
+              className="h-11 w-full rounded-lg border border-rose-100 bg-card pr-3 pl-10 text-sm outline-none transition focus:border-rose-300 focus:ring-4 focus:ring-rose-100 dark:border-gray-800 dark:focus:border-rose-700 dark:focus:ring-rose-950"
             />
           </label>
         </div>
@@ -471,9 +471,9 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
             tabIndex={-1}
             onPointerEnter={() => prefetchPromptChoices(item)}
             onFocusCapture={() => prefetchPromptChoices(item)}
-            className="group overflow-hidden rounded-lg border border-rose-100 bg-white shadow-sm transition hover:-translate-y-1 hover:border-rose-200 hover:shadow-lg dark:border-gray-800 dark:bg-gray-950"
+            className="group overflow-hidden rounded-lg border border-rose-100 bg-card shadow-sm transition hover:-translate-y-1 hover:border-rose-200 hover:shadow-lg dark:border-gray-800"
           >
-            <div className={`relative overflow-hidden bg-rose-50 dark:bg-gray-900 ${masonry ? '' : 'aspect-[4/5]'}`}>
+            <div className={`relative overflow-hidden bg-muted ${masonry ? '' : 'aspect-[4/5]'}`}>
               <a href={`${galleryBasePath}/${item.slug}`} data-astro-prefetch="false" className="block h-full w-full">
                 <StyleGallerySharedImage
                   source={item.sourceImage}
@@ -574,7 +574,7 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
       </StyleGalleryGrid>
 
       {visibleItems.length === 0 && (
-        <div className="rounded-lg border border-rose-200 border-dashed bg-white/70 p-10 text-center text-gray-500 dark:border-gray-800 dark:bg-gray-950/50">
+        <div className="rounded-lg border border-rose-200 border-dashed bg-card/70 p-10 text-center text-gray-500 dark:border-gray-800">
           {labels.noMatches}
         </div>
       )}
@@ -594,7 +594,7 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
       <Dialog open={Boolean(promptPicker)} onOpenChange={(open) => !open && setPromptPicker(null)}>
         <DialogContent
           stableScroll
-          className="flex max-h-[min(80dvh,44rem)] max-w-2xl flex-col gap-0 overflow-hidden bg-white p-0 dark:bg-gray-950"
+          className="flex max-h-[min(80dvh,44rem)] max-w-2xl flex-col gap-0 overflow-hidden bg-card p-0"
           overlayClassName="bg-black/65"
           onEscapeKeyDown={(event) => {
             event.preventDefault();
