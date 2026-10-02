@@ -22,6 +22,7 @@ export interface StylePromptCopyProps {
   className?: string;
 }
 
+/** Keep variant selection, editing and full-text copying bound to the same prompt, independent of its presentation. */
 function StylePromptCopyContent({
   itemSlug,
   prompts: initialPrompts,

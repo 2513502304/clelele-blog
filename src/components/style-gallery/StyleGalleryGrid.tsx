@@ -8,6 +8,7 @@ export function useStyleGalleryLayout() {
   return useQueryState('layout', parseAsStringLiteral(['grid', 'masonry'] as const).withDefault('masonry'));
 }
 
+/** The caller owns layout state; color and a decorative check mirror the same accessible pressed state. */
 export function StyleGalleryLayoutToggle({
   masonry,
   onChange,
