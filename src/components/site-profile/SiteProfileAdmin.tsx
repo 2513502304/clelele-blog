@@ -234,11 +234,11 @@ export default function SiteProfileAdmin({ initial }: { initial: SiteProfile }) 
           </div>
         </section>
       </fieldset>
-      <footer className="sticky bottom-4 flex items-center justify-between rounded-2xl border bg-background/95 p-4 shadow-xl backdrop-blur">
+      <footer className="glass-surface sticky bottom-4 flex items-center justify-between rounded-2xl p-4">
         <span className="text-sm">{dirty ? '有尚未发布的修改' : '资料已同步'}</span>
         <button
           type="button"
-          className={`${buttonClass} bg-primary text-white`}
+          className={`${buttonClass} bg-primary text-primary-foreground`}
           disabled={busy || !dirty}
           onClick={() => void save()}
         >

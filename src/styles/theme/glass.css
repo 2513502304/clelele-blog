@@ -130,7 +130,7 @@
 
 /* Keep panel headers and player internals from painting an opaque sheet over the glass shell. */
 .live2d-panel-header, .bgm-panel .audio-player { background: transparent; }
-html[data-reading-transparency="solid"] :is(.glass-surface, .live2d-controls, .live2d-panel, .bgm-panel, .appearance-panel, .gallery-selection-dock, #site-header.with-background, #site-header.with-background::before) {
+html[data-reading-transparency="solid"] :is(.glass-surface, .live2d-controls, .live2d-panel, .live2d-status, .live2d-dialogue, .live2d-wake, .bgm-panel, .appearance-panel, .gallery-selection-dock, #site-header.with-background, #site-header.with-background::before) {
   background: hsl(var(--card));
   backdrop-filter: none;
   -webkit-backdrop-filter: none;

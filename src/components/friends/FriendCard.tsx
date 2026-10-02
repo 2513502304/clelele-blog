@@ -12,11 +12,6 @@ interface FriendCardProps {
   index: number;
 }
 
-/** CSS 自定义属性类型扩展 */
-interface CSSCustomProperties extends React.CSSProperties {
-  '--card-color'?: string;
-}
-
 const DEFAULT_COLOR = '#ffc0cb';
 // Cute SVG Avatar Data URI (Pink Theme)
 const DEFAULT_AVATAR = `data:image/svg+xml;utf8,${encodeURIComponent(`
@@ -94,7 +89,7 @@ export default function FriendCard({ friend, index }: FriendCardProps) {
       onMouseLeave={handleMouseLeave}
     >
       <motion.div
-        className="relative h-full w-full rounded-2xl bg-white p-3 shadow-xl ring-1 ring-gray-900/5 dark:bg-gray-800 dark:ring-white/10"
+        className="relative h-full w-full rounded-2xl bg-card p-3 shadow-xl ring-1 ring-border"
         style={{
           transformStyle: 'preserve-3d',
           rotateX,
@@ -102,7 +97,7 @@ export default function FriendCard({ friend, index }: FriendCardProps) {
         }}
       >
         {/* Inner Card Container */}
-        <div className="relative h-full w-full overflow-hidden rounded-xl bg-gray-50 dark:bg-gray-900">
+        <div className="relative h-full w-full overflow-hidden rounded-xl bg-muted">
           {/* Background Image / Color */}
           <div
             className="absolute inset-0 h-16 w-full"
@@ -111,7 +106,7 @@ export default function FriendCard({ friend, index }: FriendCardProps) {
 
           {/* Avatar */}
           <div className="absolute top-8 left-1/2 -translate-x-1/2">
-            <div className="relative h-14 w-14 overflow-hidden rounded-full border-4 border-white bg-white shadow-lg dark:border-gray-800 dark:bg-gray-800">
+            <div className="relative h-14 w-14 overflow-hidden rounded-full border-4 border-card bg-card shadow-lg">
               <img
                 src={avatarImage}
                 alt={friend.owner}
@@ -123,14 +118,11 @@ export default function FriendCard({ friend, index }: FriendCardProps) {
 
           {/* Content */}
           <div className="mt-24 flex h-full flex-col px-2 pb-3 text-center">
-            <p
-              className="truncate font-bold text-gray-900 text-sm transition-colors group-hover:text-(--card-color) dark:text-white"
-              style={{ '--card-color': cardColor } as CSSCustomProperties}
-            >
-              {friend.owner}
+            <p className="truncate font-bold text-foreground text-sm transition-colors">{friend.owner}</p>
+            <p className="mb-1 truncate font-medium text-[10px] text-muted-foreground uppercase tracking-wider">
+              {friend.site}
             </p>
-            <p className="mb-1 truncate font-medium text-[10px] text-gray-400 uppercase tracking-wider">{friend.site}</p>
-            <p className="line-clamp-2 text-[10px] text-gray-600 dark:text-gray-300">{friend.desc}</p>
+            <p className="line-clamp-2 text-[10px] text-muted-foreground">{friend.desc}</p>
           </div>
         </div>
 

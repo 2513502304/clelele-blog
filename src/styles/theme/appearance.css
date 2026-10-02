@@ -285,12 +285,16 @@ html[data-appearance]:not([data-appearance="original"]) {
   --color-rose-950: hsl(var(--muted));
 }
 /* Scale flow spacing explicitly; changing --spacing would also shrink icons and hit targets. */
-main .gap-6 { gap: calc(1.5rem * var(--reading-density)); }
-main .gap-4 { gap: calc(1rem * var(--reading-density)); }
-main .space-y-6 > :not(:last-child) { margin-block-end: calc(1.5rem * var(--reading-density)); }
-main .space-y-4 > :not(:last-child) { margin-block-end: calc(1rem * var(--reading-density)); }
-main .mb-6 { margin-bottom: calc(1.5rem * var(--reading-density)); }
-main .mt-6 { margin-top: calc(1.5rem * var(--reading-density)); }
+html[data-reading-density]:not([data-reading-density="normal"]) main .gap-6 { gap: calc(1.5rem * var(--reading-density)); }
+html[data-reading-density]:not([data-reading-density="normal"]) main .gap-8 { gap: calc(2rem * var(--reading-density)); }
+html[data-reading-density]:not([data-reading-density="normal"]) main .gap-5 { gap: calc(1.25rem * var(--reading-density)); }
+html[data-reading-density]:not([data-reading-density="normal"]) main .gap-4 { gap: calc(1rem * var(--reading-density)); }
+html[data-reading-density]:not([data-reading-density="normal"]) main .space-y-8 > :not(:last-child) { margin-block-end: calc(2rem * var(--reading-density)); }
+html[data-reading-density]:not([data-reading-density="normal"]) main .space-y-5 > :not(:last-child) { margin-block-end: calc(1.25rem * var(--reading-density)); }
+html[data-reading-density]:not([data-reading-density="normal"]) main .space-y-6 > :not(:last-child) { margin-block-end: calc(1.5rem * var(--reading-density)); }
+html[data-reading-density]:not([data-reading-density="normal"]) main .space-y-4 > :not(:last-child) { margin-block-end: calc(1rem * var(--reading-density)); }
+html[data-reading-density]:not([data-reading-density="normal"]) main .mb-6 { margin-bottom: calc(1.5rem * var(--reading-density)); }
+html[data-reading-density]:not([data-reading-density="normal"]) main .mt-6 { margin-top: calc(1.5rem * var(--reading-density)); }
 
 html[data-appearance]:not([data-appearance="original"]) .gallery-summary {
   background: hsl(var(--primary));
@@ -300,4 +304,9 @@ html[data-appearance]:not([data-appearance="original"]) input::placeholder,
 html[data-appearance]:not([data-appearance="original"]) textarea::placeholder {
   color: hsl(var(--muted-foreground));
   opacity: 1;
+}
+
+/* Article and nested-page reading shells sit above the page tint, like Gallery cards. */
+html[data-appearance]:not([data-appearance="original"]) main .shadow-box.bg-gradient-start {
+  background: linear-gradient(150deg, hsl(var(--card)), hsl(var(--card) / 90%));
 }
