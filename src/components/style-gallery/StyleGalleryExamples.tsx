@@ -695,9 +695,9 @@ function StyleGalleryExamplesContent({
     </>
   );
   return (
-    <section ref={marquee.rootRef} className="rounded-lg border border-rose-100 bg-card p-5 shadow-sm dark:border-gray-800">
+    <section ref={marquee.rootRef} className="gallery-examples-sheet rounded-xl p-5">
       {marquee.overlay}
-      <div className="mb-4 flex items-center justify-between gap-3">
+      <div className="mb-4 flex items-center justify-between gap-3 py-2">
         <div>
           <p className="font-bold text-rose-500 text-sm">Generated examples</p>
           <h2 className="font-black text-2xl text-gray-950 dark:text-white">Sub-gallery</h2>

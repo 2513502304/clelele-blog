@@ -420,10 +420,13 @@ function StyleGalleryExamplesOverviewContent({
               onClick={() => {
                 void setGrouped(!grouped).catch(reportUrlStateError);
               }}
-              className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm transition hover:border-primary/40 aria-pressed:border-primary aria-pressed:text-primary"
+              className="gallery-view-toggle inline-flex h-10 items-center gap-2 rounded-md border px-3 text-sm"
             >
               <Icon icon="ri:stack-line" className="size-4" />
               {groupLabel}
+              <span className="gallery-toggle-status" aria-hidden="true">
+                {grouped ? '✓' : ''}
+              </span>
             </button>
             <span className="shrink-0 text-muted-foreground text-sm tabular-nums">
               {filtered.length} / {examples.length}

@@ -46,27 +46,27 @@ setStyleGalleryPublicCacheHeaders(Astro.response.headers, [getStyleGalleryItemCa
     <Cover slot="cover" title={data.title} />
     <HomeSider slot="sider" />
     <div data-gallery-selection-surface class={`bg-gradient-start shadow-box tablet:shadow-none flex flex-col gap-6 overflow-clip ${CONTENT_PADDING.standard}`}>
-      <nav class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+      <nav class="gallery-detail-breadcrumb flex items-center gap-2 text-sm text-muted-foreground">
         <Icon name="fa6-solid:house-chimney" class="size-4" />
         <a href={localizedPath('/', locale)} class="hover:text-rose-500">{t(locale, 'breadcrumb.home')}</a>
         <Icon name="ri:arrow-right-s-line" class="size-4 opacity-60" />
         <a href={galleryPath} data-astro-prefetch="false" class="hover:text-rose-500">{t(locale, 'gallery.title')}</a>
         <Icon name="ri:arrow-right-s-line" class="size-4 opacity-60" />
-        <span class="line-clamp-1 text-gray-900 dark:text-white">{data.title}</span>
+        <span class="line-clamp-1 text-foreground">{data.title}</span>
       </nav>
 
       <article class="grid grid-cols-2 items-start gap-6 lg:grid-cols-1" data-pagefind-body>
-        <aside data-gallery-detail-sticky class="sticky min-w-0 self-start lg:static" style="top: min(1.5rem, calc(100dvh - var(--gallery-detail-height, 0px) - 1.5rem))">
-          <header class="mb-4 space-y-3 px-1">
-            <h1 class="whitespace-nowrap font-black text-2xl text-gray-950 lg:whitespace-normal dark:text-white">{data.title}</h1>
-            <div class="flex flex-nowrap gap-1.5 lg:flex-wrap">
-              {(data.modelTargets ?? []).map((target) => (
-                <span class="whitespace-nowrap rounded-full bg-sky-50 px-2.5 py-1 text-xs font-bold text-sky-600 dark:bg-sky-950/50 dark:text-sky-200">{target}</span>
-              ))}
-            </div>
-          </header>
+        <header class="gallery-detail-heading col-span-full">
+          <h1 class="text-balance font-black text-2xl text-foreground">{data.title}</h1>
+          <div class="gallery-model-targets flex flex-wrap gap-1.5">
+            {(data.modelTargets ?? []).map((target) => (
+              <span class="whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium">{target}</span>
+            ))}
+          </div>
+        </header>
 
-          <div class="rounded-lg border border-rose-100 bg-card shadow-sm dark:border-gray-800">
+        <aside data-gallery-detail-sticky class="sticky min-w-0 self-start lg:static" style="top: min(1.5rem, calc(100dvh - var(--gallery-detail-height, 0px) - 1.5rem))">
+          <div class="gallery-reference-frame rounded-xl">
             <StyleGalleryReferenceImages
               client:load
               images={referenceImages}

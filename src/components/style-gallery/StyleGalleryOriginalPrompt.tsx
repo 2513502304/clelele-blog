@@ -28,12 +28,9 @@ export default function StyleGalleryOriginalPrompt({
   }, [slug]);
   if (!prompt) return null;
   return (
-    <section
-      className="mt-4 rounded-lg border border-sky-100 bg-sky-50/70 p-5 shadow-sm dark:border-sky-950/60 dark:bg-sky-950/30"
-      data-gallery-original-prompt
-    >
-      <h2 className="font-bold text-sky-500 text-xs uppercase tracking-wider dark:text-sky-200">{label}</h2>
-      <p className="mt-2 whitespace-pre-wrap text-gray-700 text-sm leading-7 dark:text-gray-200">{prompt}</p>
+    <section className="gallery-original-note mt-5 px-4 py-2" data-gallery-original-prompt>
+      <h2 className="font-medium text-muted-foreground text-xs tracking-wide">{label}</h2>
+      <p className="mt-2 whitespace-pre-wrap text-foreground text-sm leading-7">{prompt}</p>
     </section>
   );
 }

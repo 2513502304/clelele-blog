@@ -1,0 +1,92 @@
+/* Selection is a semantic layer, independent of the page/control tint. The original
+   rose needs a deeper light-mode fill to keep the small white label readable. */
+:root {
+  --selection-fill: hsl(351 68% 42%);
+  --selection-ink: white;
+}
+.dark {
+  --selection-fill: hsl(350 77% 76%);
+  --selection-ink: hsl(350 24% 14%);
+}
+html[data-appearance]:not([data-appearance="original"]) {
+  --selection-fill: hsl(var(--primary));
+  --selection-ink: hsl(var(--primary-foreground));
+}
+
+.gallery-view-toggle {
+  color: hsl(var(--foreground));
+  border-color: hsl(var(--border));
+  background: linear-gradient(145deg, hsl(var(--control, var(--card))), hsl(var(--card) / 80%));
+  box-shadow: inset 0 1px 0 hsl(var(--foreground) / 4%);
+  transition:
+    color 160ms,
+    background-color 160ms,
+    border-color 160ms,
+    box-shadow 160ms;
+}
+.gallery-view-toggle:hover {
+  border-color: hsl(var(--primary) / 65%);
+}
+.gallery-view-toggle[aria-pressed="true"] {
+  color: var(--selection-ink);
+  border-color: var(--selection-fill);
+  background: linear-gradient(145deg, hsl(var(--card) / 10%), transparent 65%), var(--selection-fill);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 16%),
+    0 2px 7px hsl(var(--primary) / 18%);
+}
+.gallery-view-toggle:focus-visible,
+.gallery-note-scroll:focus-visible {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 3px;
+}
+.gallery-toggle-status {
+  display: inline-grid;
+  place-items: center;
+  width: 1rem;
+  height: 1rem;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+  opacity: 0.4;
+}
+[aria-pressed="true"] > .gallery-toggle-status {
+  opacity: 1;
+  background: rgb(255 255 255 / 12%);
+}
+
+.gallery-note-scroll {
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  padding-inline-end: 0.5rem;
+  border-radius: 0.25rem;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--primary) / 70%) hsl(var(--foreground) / 7%);
+}
+/* Safari versions without standard scrollbar styling still get a visible rail. */
+.gallery-note-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.gallery-note-scroll::-webkit-scrollbar-track {
+  background: hsl(var(--foreground) / 7%);
+  border-radius: 6px;
+}
+.gallery-note-scroll::-webkit-scrollbar-thumb {
+  background: hsl(var(--primary) / 70%);
+  border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gallery-view-toggle {
+    transition: none;
+  }
+}
+@media (forced-colors: active) {
+  .gallery-view-toggle[aria-pressed="true"] {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+}

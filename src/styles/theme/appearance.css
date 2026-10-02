@@ -270,8 +270,7 @@ html[data-reading-motion="reduced"] :is(.appearance-panel, .appearance-reveal, .
 html[data-appearance]:not([data-appearance="original"])
 :is(input:not([type="range"]):not([type="checkbox"]):not([type="radio"]), textarea, select, button.bg-background) {
   background: linear-gradient(145deg, hsl(var(--control)), hsl(var(--card)));
-  color: hsl(var(--foreground));
-  border-color: hsl(var(--border));
+  /* Leave foreground, focus and selected borders to each control's state styles. */
 }
 /* These are decorative Gallery brand shades, not error/success status colors. */
 html[data-appearance]:not([data-appearance="original"]) {
@@ -327,7 +326,19 @@ html[data-appearance]:not([data-appearance="original"]) textarea::placeholder {
   opacity: 1;
 }
 
-/* Article and nested-page reading shells sit above the page tint, like Gallery cards. */
+/* Light belongs to the shared canvas, not the perimeter of a rectangular content
+   sheet. Both pools begin transparent below the cover and gather around the artwork
+   and reading columns. Rem-sized pools stay stable as infinite galleries grow. */
+html[data-appearance]:not([data-appearance="original"]) .page-reading-layout {
+  background-image:
+    radial-gradient(ellipse 38% 28rem at 62% 28rem, hsl(var(--card) / 80%), hsl(var(--card) / 36%) 52%, transparent),
+    radial-gradient(ellipse 30% 24rem at 30% 46rem, hsl(var(--control) / 38%), transparent);
+}
 html[data-appearance]:not([data-appearance="original"]) main .shadow-box.bg-gradient-start {
-  background: linear-gradient(150deg, hsl(var(--card)), hsl(var(--card) / 90%));
+  background: transparent;
+  box-shadow: none;
+}
+html[data-appearance]:not([data-appearance="original"]) .page-home-sider {
+  /* The old vertical drop shadow creates a seam across the feathered reading edge. */
+  box-shadow: none;
 }

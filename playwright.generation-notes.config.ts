@@ -10,6 +10,7 @@ export default defineConfig({
     'appearance.spec.ts',
     'collections.spec.ts',
     'theme-pages.spec.ts',
+    'theme-refinement.spec.ts',
   ],
   workers: 1,
   timeout: 60_000,
@@ -19,7 +20,13 @@ export default defineConfig({
     { name: 'chromium', use: { ...devices['Desktop Chrome'], viewport: { width: 1512, height: 870 } } },
     {
       name: 'webkit',
-      testMatch: ['profile-crop.spec.ts', 'appearance.spec.ts', 'collections.spec.ts', 'theme-pages.spec.ts'],
+      testMatch: [
+        'profile-crop.spec.ts',
+        'appearance.spec.ts',
+        'collections.spec.ts',
+        'theme-pages.spec.ts',
+        'theme-refinement.spec.ts',
+      ],
       use: { ...devices['Desktop Safari'], viewport: { width: 1512, height: 870 } },
     },
   ],
