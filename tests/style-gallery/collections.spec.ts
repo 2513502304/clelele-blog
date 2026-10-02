@@ -107,9 +107,43 @@ test('Hpoi requests one state, keeps loaded cards on failure and retries without
   await page.getByRole('button', { name: '加载失败，点击重试' }).click();
   await expect(cards).toHaveCount(47);
   const count = requests.length;
+  // Reload at the top; restoring the load-more scroll position legitimately reveals the cached second page.
+  await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
   await page.reload({ waitUntil: 'domcontentloaded' });
   await expect(cards).toHaveCount(24);
   expect(requests).toHaveLength(count);
+});
+
+test('non-advancing cursors are ignored in cache and rejected before caching a retry', async ({ page }) => {
+  await fixtures(page);
+  const first = '/api/bangumi?subject=anime&offset=0';
+  await page.addInitScript((url) => {
+    const key = `collection-page-v1:${url}`;
+    if (!sessionStorage.getItem(key)) {
+      sessionStorage.setItem(key, JSON.stringify({ expires: Date.now() + 60000, page: { items: [], next: url } }));
+    }
+  }, first);
+  let requests = 0;
+  await page.route('**/api/bangumi?**', (route) => {
+    requests++;
+    return route.fulfill({
+      json: {
+        items: Array.from({ length: 24 }, (_, i) => bangumiItem(i + 1)),
+        next: requests === 1 ? first : null,
+        total: 24,
+      },
+    });
+  });
+  await page.goto('/bangumi', { waitUntil: 'domcontentloaded' });
+  const retry = page.getByRole('button', { name: '加载失败，点击重试' });
+  await expect(retry).toBeVisible();
+  expect(requests).toBe(1);
+  await retry.click();
+  await expect(page.locator('[data-gallery-layout] > a')).toHaveCount(24);
+  expect(requests).toBe(2);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(page.locator('[data-gallery-layout] > a')).toHaveCount(24);
+  expect(requests).toBe(2);
 });
 
 test('late category responses cannot replace the current Bangumi tab', async ({ page }) => {

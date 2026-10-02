@@ -85,10 +85,32 @@ test('detail note is three preview rows and opens its complete generation prompt
   await page.goto('/image-style-prompt-gallery/2026-09-23-35dc5191ccad', { waitUntil: 'domcontentloaded' });
   const input = page.locator('[data-example-note-input]');
   await input.fill('多行输入\n'.repeat(100));
-  expect(await input.evaluate((el) => ({ height: el.clientHeight, scroll: el.scrollHeight > el.clientHeight }))).toEqual({
-    height: 110,
-    scroll: true,
+  const inputBox = await input.evaluate((el) => {
+    const css = getComputedStyle(el);
+    return {
+      rows: (el.clientHeight - parseFloat(css.paddingTop) - parseFloat(css.paddingBottom)) / parseFloat(css.lineHeight),
+      scroll: el.scrollHeight > el.clientHeight,
+    };
   });
+  expect(inputBox.rows).toBeCloseTo(5, 1);
+  expect(inputBox.scroll).toBe(true);
+  await page.evaluate(() => {
+    document.documentElement.dataset.readingTransparency = 'solid';
+  });
+  const management = page.locator('[data-gallery-management]');
+  await expect(management).toHaveCSS('backdrop-filter', 'none');
+  expect(
+    await management.evaluate((el) => {
+      const color = getComputedStyle(el).backgroundColor;
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 1;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Canvas unavailable');
+      ctx.fillStyle = color;
+      ctx.fillRect(0, 0, 1, 1);
+      return ctx.getImageData(0, 0, 1, 1).data[3];
+    }),
+  ).toBe(255);
   const note = page.locator('[data-example-note]').first();
   await note.scrollIntoViewIfNeeded();
   const box = await note.evaluate((el) => ({

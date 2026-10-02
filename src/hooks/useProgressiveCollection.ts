@@ -4,12 +4,14 @@ import type { CollectionPage } from '@/types/collection-page';
 const CACHE_MS = 30 * 60 * 1000;
 const pending = new Map<string, Promise<CollectionPage<unknown, unknown>>>();
 
-function isCollectionPage(page: unknown): page is CollectionPage<unknown, unknown> {
+/** Validate both persisted and fetched pages before a cursor can poison the retry cache. */
+function isCollectionPage(page: unknown, url: string): page is CollectionPage<unknown, unknown> {
   if (!page || typeof page !== 'object') return false;
   const value = page as Partial<CollectionPage<unknown, unknown>>;
   return (
     Array.isArray(value.items) &&
-    (value.next === null || (typeof value.next === 'string' && /^\/api\/(hpoi|bangumi)\?/.test(value.next)))
+    (value.next === null || (typeof value.next === 'string' && /^\/api\/(hpoi|bangumi)\?/.test(value.next))) &&
+    value.next !== url
   );
 }
 
@@ -18,7 +20,7 @@ async function readPage<T, M>(url: string): Promise<CollectionPage<T, M>> {
   const key = `collection-page-v1:${url}`;
   try {
     const cached = JSON.parse(sessionStorage.getItem(key) || 'null');
-    if (cached?.expires > Date.now() && isCollectionPage(cached.page)) return cached.page as CollectionPage<T, M>;
+    if (cached?.expires > Date.now() && isCollectionPage(cached.page, url)) return cached.page as CollectionPage<T, M>;
   } catch {
     /* Storage is optional. */
   }
@@ -28,7 +30,7 @@ async function readPage<T, M>(url: string): Promise<CollectionPage<T, M>> {
       .then(async (response) => {
         if (!response.ok) throw new Error(`Collection HTTP ${response.status}`);
         const page = await response.json();
-        if (!isCollectionPage(page)) throw new Error('Invalid collection page');
+        if (!isCollectionPage(page, url)) throw new Error('Invalid collection page or non-advancing cursor');
         try {
           sessionStorage.setItem(key, JSON.stringify({ expires: Date.now() + CACHE_MS, page }));
         } catch {
@@ -73,7 +75,6 @@ export function useProgressiveCollection<T, M>(url: string, identity: (item: T) 
     readPage<T, M>(next)
       .then((page) => {
         if (cancelled) return;
-        if (page.next === next) throw new Error('Upstream cursor did not advance');
         setSnapshot((previous) => {
           const prior = previous.url === url ? previous : { url, items: [] as T[], next: url };
           return {
