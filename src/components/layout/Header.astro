@@ -1,6 +1,6 @@
 ---
-import LogoSvg from '@assets/svg/logo.svg?react';
-import logoSrc from '@assets/svg/logo.svg?url';
+import { getImage } from 'astro:assets';
+import logo from '@assets/logo.webp';
 import ChristmasLights from '@components/christmas/ChristmasLights.astro';
 import { ChristmasOrnamentToggle } from '@components/christmas/ChristmasOrnamentToggle';
 import { MobilePostHeader } from '@components/layout/MobilePostHeader';
@@ -18,6 +18,9 @@ interface Props {
 const { isPostPage = false, tocNumbering = true } = Astro.props;
 const { alternate, title, showLogo } = siteConfig;
 const locale = getLocaleFromUrl(Astro.url.pathname);
+// Share one retina-sized asset between desktop and the hydrated mobile header.
+const logoImage = await getImage({ src: logo, width: 270, format: 'webp', quality: 90 });
+const logoSrc = logoImage.src;
 ---
 
 <div
@@ -35,7 +38,7 @@ const locale = getLocaleFromUrl(Astro.url.pathname);
       title={alternate || title}
       aria-label={alternate || title}
     >
-      {showLogo ? <LogoSvg className="h-8" /> : <p class="logo-text">{alternate || title}</p>}
+      {showLogo ? <img src={logoSrc} alt="clelele" class="h-8 w-auto" width={89} height={32} /> : <p class="logo-text">{alternate || title}</p>}
     </a>
     <!-- Mobile: MobilePostHeader (shows heading on post pages, logo otherwise) -->
     <div class="tablet:flex tablet:grow hidden items-center justify-center">
@@ -43,7 +46,7 @@ const locale = getLocaleFromUrl(Astro.url.pathname);
         client:only="react"
         isPostPage={isPostPage}
         enableNumbering={tocNumbering}
-        logoElement={showLogo ? 'svg' : 'text'}
+        logoElement={showLogo ? 'image' : 'text'}
         logoText={alternate || title}
         logoSrc={logoSrc}
       />

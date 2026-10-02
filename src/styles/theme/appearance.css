@@ -267,7 +267,8 @@ html[data-reading-motion="reduced"] :is(.appearance-panel, .appearance-reveal, .
 }
 
 /* Keep controls a distinct, gently lit layer instead of using the page background. */
-html[data-appearance]:not([data-appearance="original"]) :is(input:not([type="range"]):not([type="checkbox"]):not([type="radio"]), textarea, select, button.bg-background) {
+html[data-appearance]:not([data-appearance="original"])
+:is(input:not([type="range"]):not([type="checkbox"]):not([type="radio"]), textarea, select, button.bg-background) {
   background: linear-gradient(145deg, hsl(var(--control)), hsl(var(--card)));
   color: hsl(var(--foreground));
   border-color: hsl(var(--border));
@@ -285,16 +286,36 @@ html[data-appearance]:not([data-appearance="original"]) {
   --color-rose-950: hsl(var(--muted));
 }
 /* Scale flow spacing explicitly; changing --spacing would also shrink icons and hit targets. */
-html[data-reading-density]:not([data-reading-density="normal"]) main .gap-6 { gap: calc(1.5rem * var(--reading-density)); }
-html[data-reading-density]:not([data-reading-density="normal"]) main .gap-8 { gap: calc(2rem * var(--reading-density)); }
-html[data-reading-density]:not([data-reading-density="normal"]) main .gap-5 { gap: calc(1.25rem * var(--reading-density)); }
-html[data-reading-density]:not([data-reading-density="normal"]) main .gap-4 { gap: calc(1rem * var(--reading-density)); }
-html[data-reading-density]:not([data-reading-density="normal"]) main .space-y-8 > :not(:last-child) { margin-block-end: calc(2rem * var(--reading-density)); }
-html[data-reading-density]:not([data-reading-density="normal"]) main .space-y-5 > :not(:last-child) { margin-block-end: calc(1.25rem * var(--reading-density)); }
-html[data-reading-density]:not([data-reading-density="normal"]) main .space-y-6 > :not(:last-child) { margin-block-end: calc(1.5rem * var(--reading-density)); }
-html[data-reading-density]:not([data-reading-density="normal"]) main .space-y-4 > :not(:last-child) { margin-block-end: calc(1rem * var(--reading-density)); }
-html[data-reading-density]:not([data-reading-density="normal"]) main .mb-6 { margin-bottom: calc(1.5rem * var(--reading-density)); }
-html[data-reading-density]:not([data-reading-density="normal"]) main .mt-6 { margin-top: calc(1.5rem * var(--reading-density)); }
+html[data-reading-density]:not([data-reading-density="normal"]) main .gap-6 {
+  gap: calc(1.5rem * var(--reading-density));
+}
+html[data-reading-density]:not([data-reading-density="normal"]) main .gap-8 {
+  gap: calc(2rem * var(--reading-density));
+}
+html[data-reading-density]:not([data-reading-density="normal"]) main .gap-5 {
+  gap: calc(1.25rem * var(--reading-density));
+}
+html[data-reading-density]:not([data-reading-density="normal"]) main .gap-4 {
+  gap: calc(1rem * var(--reading-density));
+}
+html[data-reading-density]:not([data-reading-density="normal"]) main .space-y-8 > :not(:last-child) {
+  margin-block-end: calc(2rem * var(--reading-density));
+}
+html[data-reading-density]:not([data-reading-density="normal"]) main .space-y-5 > :not(:last-child) {
+  margin-block-end: calc(1.25rem * var(--reading-density));
+}
+html[data-reading-density]:not([data-reading-density="normal"]) main .space-y-6 > :not(:last-child) {
+  margin-block-end: calc(1.5rem * var(--reading-density));
+}
+html[data-reading-density]:not([data-reading-density="normal"]) main .space-y-4 > :not(:last-child) {
+  margin-block-end: calc(1rem * var(--reading-density));
+}
+html[data-reading-density]:not([data-reading-density="normal"]) main .mb-6 {
+  margin-bottom: calc(1.5rem * var(--reading-density));
+}
+html[data-reading-density]:not([data-reading-density="normal"]) main .mt-6 {
+  margin-top: calc(1.5rem * var(--reading-density));
+}
 
 html[data-appearance]:not([data-appearance="original"]) .gallery-summary {
   background: hsl(var(--primary));
