@@ -27,3 +27,5 @@
 @import "./components/gallery-stack.css";
 
 @import "./theme/appearance.css";
+@import "./components/gallery-controls.css";
+@import "./components/gallery-surfaces.css";

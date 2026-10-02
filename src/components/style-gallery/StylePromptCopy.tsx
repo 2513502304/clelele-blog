@@ -55,12 +55,15 @@ function StylePromptCopyContent({
   return (
     // The live region is out of flow; sibling spacing would add an invisible gap below the painted card.
     <div className={cn('relative', className)}>
-      <div className="overflow-hidden rounded-lg border border-rose-200/70 bg-card/80 shadow-sm dark:border-rose-900/40">
-        <div className="flex min-h-14 items-center justify-between gap-3 border-rose-100 border-b bg-rose-50/55 px-5 py-2.5 dark:border-rose-950/60 dark:bg-rose-950/20">
+      <div className="gallery-prompt-sheet overflow-hidden rounded-xl">
+        <div className="gallery-prompt-heading flex min-h-14 flex-wrap items-center justify-between gap-3 px-5 py-3">
           <div className="flex min-w-0 items-center gap-3">
-            <p className="shrink-0 font-bold text-rose-500 text-sm dark:text-rose-300">{label}</p>
+            <p className="flex shrink-0 items-center gap-2 font-bold text-foreground text-sm">
+              <Icon icon="ri:double-quotes-l" className="size-4 text-primary" aria-hidden="true" />
+              {label}
+            </p>
             {activePrompt && (
-              <span className="max-w-44 truncate rounded-full bg-sky-50 px-2.5 py-1 font-semibold text-sky-600 text-xs dark:bg-sky-950/50 dark:text-sky-200">
+              <span className="max-w-44 truncate rounded-full bg-primary/8 px-2.5 py-1 font-medium text-primary text-xs">
                 {activePrompt.model?.trim() || unknownModelLabel}
               </span>
             )}
@@ -121,7 +124,7 @@ function StylePromptCopyContent({
           </div>
         </div>
         {activePrompt && (
-          <p className="whitespace-pre-wrap text-pretty p-5 text-gray-700 text-sm leading-8 dark:text-gray-200">
+          <p className="gallery-prompt-body whitespace-pre-wrap text-pretty p-5 text-foreground text-sm leading-8">
             {activePrompt.prompt}
           </p>
         )}

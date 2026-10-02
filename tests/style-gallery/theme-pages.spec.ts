@@ -93,7 +93,8 @@ test('all palettes keep page/control surfaces related across routes and light/da
               bg: tokens.getPropertyValue('--background'),
               label: label ? getComputedStyle(label).color : null,
               mutedText: getComputedStyle(textProbe).color,
-              readingShell: shell ? getComputedStyle(shell).backgroundImage : null,
+              readingShell: shell ? getComputedStyle(shell).backgroundColor : null,
+              canvas: getComputedStyle(document.querySelector('.page-reading-layout') ?? root).backgroundImage,
             };
           });
         });
@@ -107,7 +108,10 @@ test('all palettes keep page/control surfaces related across routes and light/da
       expect(row.input, `${route} ${row.id} ${row.dark}`).toContain('linear-gradient');
       expect(row.card).not.toBe(row.bg);
       if (row.label) expect(row.label, `${route} ${row.id} label`).toBe(row.mutedText);
-      if (row.readingShell) expect(row.readingShell, `${route} ${row.id} reading shell`).toContain('linear-gradient');
+      if (row.readingShell) {
+        expect(row.readingShell, `${route} ${row.id} reading shell`).toBe('rgba(0, 0, 0, 0)');
+        expect(row.canvas, `${route} ${row.id} canvas`).toContain('radial-gradient');
+      }
     }
     await page.evaluate(() => {
       document.documentElement.classList.remove('dark');
