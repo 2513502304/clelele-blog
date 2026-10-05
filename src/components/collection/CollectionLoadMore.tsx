@@ -7,12 +7,14 @@ export function CollectionLoadMore({
   error,
   onLoad,
   locale,
+  rootMargin = '160px',
 }: {
   more: boolean;
   loading: boolean;
   error: boolean;
   onLoad: () => void;
   locale: string;
+  rootMargin?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const callback = useRef(onLoad);
@@ -23,11 +25,11 @@ export function CollectionLoadMore({
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) callback.current();
       },
-      { rootMargin: '160px' },
+      { rootMargin },
     );
     observer.observe(ref.current);
     return () => observer.disconnect();
-  }, [more, loading, error]);
+  }, [more, loading, error, rootMargin]);
   const zh = locale.startsWith('zh'),
     ja = locale.startsWith('ja');
   if (!more && !error) return null;

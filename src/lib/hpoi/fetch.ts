@@ -238,9 +238,15 @@ export async function fetchHpoiCollection(userId: string): Promise<HpoiCollectio
 }
 
 /** Fetch only the requested upstream page. Subsequent cursors carry bounded page-count metadata.
- * Ratings are enriched only for this page, so one visit never fans out over the full collection.
+ * Optional ratings load separately so slow detail pages cannot delay covers or pagination.
  */
 export async function fetchHpoiPage(userId: string, state: HpoiCollectionState, page = 1, knownPageCount = 1) {
+  const profileResult =
+    page === 1
+      ? fetchHtml(createHpoiProfileUrl(userId), undefined, isHpoiProfilePage)
+          .then((html) => ({ profile: parseHpoiProfile(html, userId), warnings: [] as string[] }))
+          .catch(() => ({ profile: createFallbackProfile(userId), warnings: ['profile'] }))
+      : undefined;
   const url = createHpoiCollectionUrl(userId, state);
   const endpoint = new URL(url);
   endpoint.search = '';
@@ -252,32 +258,26 @@ export async function fetchHpoiPage(userId: string, state: HpoiCollectionState, 
   if (pageCount > MAX_COLLECTION_PAGES) throw new Error('Hpoi page limit exceeded');
   const items = [...new Map(parseHpoiCollection(html).map((item) => [item.id, item])).values()];
   if (items.length === 0 && page < pageCount) throw new Error('Hpoi returned an empty intermediate page');
-  const signal = AbortSignal.timeout(RATING_BUDGET_MS);
-  await mapWithConcurrency(
-    items.filter((item) => !item.score),
-    4,
-    async (item) => {
-      if (signal.aborted) return;
-      try {
-        item.score = parseHpoiDetailScore(await fetchHtml(item.detailUrl, undefined, undefined, signal));
-      } catch {
-        /* Optional ratings never invalidate otherwise valid cards. */
-      }
-    },
-  );
-  let profile: HpoiProfile | undefined;
-  const warnings: string[] = [];
-  if (page === 1) {
-    try {
-      profile = parseHpoiProfile(await fetchHtml(createHpoiProfileUrl(userId), undefined, isHpoiProfilePage), userId);
-    } catch {
-      profile = createFallbackProfile(userId);
-      warnings.push('profile');
-    }
-  }
+  const { profile, warnings } = (await profileResult) ?? { profile: undefined, warnings: [] };
   return {
     items,
     next: page < pageCount ? `/api/hpoi?state=${state}&page=${page + 1}&pages=${pageCount}` : null,
     meta: { profile, warnings, fetchedAt: new Date().toISOString() },
   };
+}
+
+/** Ratings are optional, bounded to one visible batch and cancellable as a group. */
+export async function fetchHpoiRatings(ids: string[]): Promise<Record<string, string | null>> {
+  const signal = AbortSignal.timeout(RATING_BUDGET_MS);
+  const ratings: Record<string, string | null> = {};
+  await mapWithConcurrency(ids, 4, async (id) => {
+    ratings[id] = null;
+    if (signal.aborted) return;
+    try {
+      ratings[id] = parseHpoiDetailScore(await fetchHtml(`https://www.hpoi.net/hobby/${id}`, undefined, undefined, signal));
+    } catch {
+      /* Unavailable scores never prevent browsing the collection. */
+    }
+  });
+  return ratings;
 }

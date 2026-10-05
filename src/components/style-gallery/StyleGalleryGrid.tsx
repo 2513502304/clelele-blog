@@ -37,8 +37,8 @@ export function StyleGalleryLayoutToggle({
 
 /**
  * Keep DOM/filter/lightbox order and row-major column assignment intact.
- * Image aspect ratios reserve their height before requests start. Only container/text
- * sizes are measured; image load events never control layout. Appending cards leaves
+ * Gallery images reserve height from metadata; external collection covers may acquire their
+ * intrinsic ratio after loading. ResizeObserver measures either change without per-image listeners. Appending cards leaves
  * existing positions intact. Without JS this remains an ordinary readable grid.
  */
 export default function StyleGalleryGrid({ children, masonry = false }: { children: ReactNode; masonry?: boolean }) {

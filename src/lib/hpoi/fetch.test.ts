@@ -212,3 +212,25 @@ describe('fetchHpoiPage', () => {
     assert.equal(second.meta.profile, undefined);
   });
 });
+
+it('returns a page without waiting for missing detail ratings and starts the profile concurrently', async () => {
+  const urls: string[] = [];
+  let finishPage: ((response: Response) => void) | undefined;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    urls.push(url);
+    if (url.endsWith('/user/783694')) return new Response(profilePage());
+    if (/\/hobby\/\d+$/.test(url)) throw new Error('detail requests must not block this page');
+    return new Promise<Response>((resolve) => {
+      finishPage = resolve;
+    });
+  };
+  const loading = fetchHpoiPage('783694', 'all');
+  assert.ok(urls.some((url) => url.endsWith('/user/783694')));
+  assert.ok(finishPage);
+  finishPage(new Response(collectionPage(['999', '998'], 2)));
+  const page = await loading;
+  assert.equal(page.items.length, 2);
+  assert.ok(page.items.every((item) => item.score === null));
+  assert.equal(urls.length, 2);
+});

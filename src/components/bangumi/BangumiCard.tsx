@@ -15,10 +15,11 @@ const COLLECTION_LABEL_KEYS: Record<BangumiCollectionType, TranslationKey> = {
 
 interface BangumiCardProps {
   item: BangumiUserCollection;
+  masonry?: boolean;
 }
 
 /** 展示 fork 新增的个人评分、站点评分、放送信息和收藏统计，并保留 Bangumi 详情页入口。 */
-export function BangumiCard({ item }: BangumiCardProps) {
+export function BangumiCard({ item, masonry = false }: BangumiCardProps) {
   const { t, locale } = useTranslation();
   const { subject } = item;
   const title = subject.name_cn || subject.name;
@@ -45,14 +46,21 @@ export function BangumiCard({ item }: BangumiCardProps) {
       rel="noopener noreferrer"
       className="group relative flex flex-col overflow-hidden rounded-lg shadow-md transition-transform duration-200 hover:scale-[1.02] hover:shadow-lg"
     >
-      <div className="relative aspect-[2/3] w-full overflow-hidden bg-muted">
+      <div className={cn('relative w-full overflow-hidden bg-muted', (!masonry || !imageUrl) && 'aspect-[2/3]')}>
         {imageUrl ? (
-          <img src={imageUrl} alt={title} loading="lazy" className="size-full object-cover" />
+          <img
+            src={imageUrl}
+            alt={title}
+            loading="lazy"
+            decoding="async"
+            style={masonry ? { aspectRatio: 'auto 2 / 3' } : undefined}
+            className={masonry ? 'block h-auto w-full' : 'size-full object-cover'}
+          />
         ) : (
           <div className="flex size-full items-center justify-center text-muted-foreground text-sm">{t('bangumi.noImage')}</div>
         )}
 
-        <div className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/80 to-transparent" />
+        {!masonry && <div className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/80 to-transparent" />}
 
         <span
           className={cn(
@@ -63,12 +71,15 @@ export function BangumiCard({ item }: BangumiCardProps) {
           {t(COLLECTION_LABEL_KEYS[item.type])}
         </span>
 
-        <div className="absolute inset-x-0 bottom-0 p-2.5">
-          <h3 className="line-clamp-2 font-medium text-sm text-white leading-tight drop-shadow-md">{title}</h3>
-        </div>
+        {!masonry && (
+          <div className="absolute inset-x-0 bottom-0 p-2.5">
+            <h3 className="line-clamp-2 font-medium text-sm text-white leading-tight drop-shadow-md">{title}</h3>
+          </div>
+        )}
       </div>
 
       <div className="flex min-h-40 flex-1 flex-col gap-2 bg-card p-2.5">
+        {masonry && <h3 className="line-clamp-2 font-medium text-foreground text-sm leading-snug">{title}</h3>}
         <div className="grid grid-cols-2 gap-1.5 text-xs">
           <span className="rounded bg-amber-50 px-1.5 py-1 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
             <span className="block text-[10px] opacity-70">{t('bangumi.personalScore')}</span>
