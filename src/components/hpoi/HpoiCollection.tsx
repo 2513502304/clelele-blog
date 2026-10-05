@@ -1,3 +1,4 @@
+import { useHpoiRatings } from '@hooks/useHpoiRatings';
 import { useProgressiveCollection } from '@hooks/useProgressiveCollection';
 import { useTranslation } from '@hooks/useTranslation';
 import { Icon } from '@iconify/react';
@@ -57,16 +58,26 @@ export function HpoiCollection() {
     HpoiCollectionItem,
     { profile?: HpoiProfile; warnings: string[]; fetchedAt: string }
   >(`/api/hpoi?state=${activeState}`, (item) => item.id, sortKey !== 'default' || sortDirection !== 'asc');
+  const ratings = useHpoiRatings(collection.items);
   const data = collection.meta?.profile ? { ...collection.meta, profile: collection.meta.profile } : null;
   const error = collection.error;
-  const waitingForComplete = (sortKey !== 'default' || sortDirection !== 'asc') && !collection.complete;
+  const waitingForComplete =
+    ((sortKey !== 'default' || sortDirection !== 'asc') && !collection.complete) || (sortKey === 'score' && ratings.loading);
   const activeItems = useMemo(
-    () => sortHpoiCollectionItems(collection.items, sortKey, sortDirection),
-    [collection.items, sortKey, sortDirection],
+    () =>
+      sortHpoiCollectionItems(
+        collection.items.map((item) => ({ ...item, score: item.score ?? ratings.scores[item.id] ?? null })),
+        sortKey,
+        sortDirection,
+      ),
+    [collection.items, ratings.scores, sortKey, sortDirection],
   );
   const [visibleCount, setVisibleCount] = useState(24);
   const visibleItems = waitingForComplete ? [] : activeItems.slice(0, visibleCount);
-  const loadMore = () => (activeItems.length > visibleCount ? setVisibleCount((n) => n + 24) : collection.loadMore());
+  const loadMore = () => {
+    setVisibleCount((n) => n + 24);
+    if (activeItems.length <= visibleCount) collection.loadMore();
+  };
 
   function handleStateChange(state: HpoiCollectionState) {
     setActiveState(state);
@@ -238,7 +249,7 @@ export function HpoiCollection() {
       )}
       <StyleGalleryGrid masonry={masonry}>
         {visibleItems.map((item) => (
-          <HpoiCard key={item.id} item={item} state={activeState} />
+          <HpoiCard key={item.id} item={item} state={activeState} masonry={masonry} />
         ))}
       </StyleGalleryGrid>
       {collection.complete && activeItems.length === 0 && (
@@ -250,6 +261,7 @@ export function HpoiCollection() {
         error={error}
         onLoad={error ? collection.loadMore : loadMore}
         locale={locale}
+        rootMargin="600px"
       />
 
       <footer className="flex justify-end border-border border-t pt-3">

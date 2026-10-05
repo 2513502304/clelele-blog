@@ -16,9 +16,10 @@ const STATE_LABELS: Record<HpoiCollectionState, TranslationKey> = {
 interface HpoiCardProps {
   item: HpoiCollectionItem;
   state: HpoiCollectionState;
+  masonry?: boolean;
 }
 
-export function HpoiCard({ item, state }: HpoiCardProps) {
+export function HpoiCard({ item, state, masonry = false }: HpoiCardProps) {
   const { t } = useTranslation();
 
   return (
@@ -28,13 +29,19 @@ export function HpoiCard({ item, state }: HpoiCardProps) {
       rel="noopener noreferrer"
       className="group flex min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-card transition-[border-color,transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
     >
-      <div className="relative aspect-square w-full overflow-hidden bg-muted/60">
+      <div className={`relative w-full overflow-hidden bg-muted/60 ${masonry && item.imageUrl ? '' : 'aspect-square'}`}>
         {item.imageUrl ? (
           <img
             src={createHpoiImageProxyUrl(item.imageUrl)}
             alt={item.title}
             loading="lazy"
-            className="size-full object-contain transition-transform duration-300 group-hover:scale-[1.03]"
+            decoding="async"
+            style={masonry ? { aspectRatio: 'auto 1 / 1' } : undefined}
+            className={
+              masonry
+                ? 'block h-auto w-full'
+                : 'size-full object-contain transition-transform duration-300 group-hover:scale-[1.03]'
+            }
           />
         ) : (
           <div className="flex size-full flex-col items-center justify-center gap-2 text-muted-foreground text-xs">

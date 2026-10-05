@@ -94,6 +94,13 @@ let revision = 1;
 const originalFetch = globalThis.fetch;
 globalThis.fetch = async (input, init) => {
   const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url);
+  // Reserved fixture IDs exercise rating cache policy without querying real figures.
+  if (url.hostname === 'www.hpoi.net' && /^\/hobby\/99000000[1-3]$/.test(url.pathname)) {
+    if (url.pathname.endsWith('3')) return new Response('Fixture upstream unavailable', { status: 503 });
+    const product = { '@type': 'Product' };
+    if (url.pathname.endsWith('1')) product.aggregateRating = { ratingValue: 4.77, ratingCount: 2 };
+    return new Response(`<script type="application/ld+json">${JSON.stringify(product)}</script>`);
+  }
   if (url.hostname !== 'gallery-fixture.invalid') return originalFetch(input, init);
   const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
   // Only this in-memory profile namespace accepts writes. No request can escape the .invalid host.

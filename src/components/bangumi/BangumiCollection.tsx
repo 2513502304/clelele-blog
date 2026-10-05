@@ -211,7 +211,7 @@ export function BangumiCollection({ userId }: BangumiCollectionProps) {
       )}
       <StyleGalleryGrid masonry={masonry}>
         {visibleItems.map((item) => (
-          <BangumiCard key={item.subject_id} item={item} />
+          <BangumiCard key={item.subject_id} item={item} masonry={masonry} />
         ))}
       </StyleGalleryGrid>
       {collection.complete && filteredItems.length === 0 && (

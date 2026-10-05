@@ -4,6 +4,7 @@ import { createHpoiImageProxyUrl, isAllowedHpoiImageUrl } from './image';
 import {
   isHpoiCollectionFragment,
   isHpoiCollectionPage,
+  isHpoiDetailPage,
   isHpoiProfilePage,
   parseHpoiCollection,
   parseHpoiCollectionPageCount,
@@ -12,6 +13,15 @@ import {
 } from './parser';
 
 describe('Hpoi detail ratings', () => {
+  it('recognizes unrated detail pages without accepting block or unrelated structured data', () => {
+    for (const data of [{ '@type': 'Product' }, { mainEntity: { '@type': 'Product' } }, { '@graph': [{ '@type': 'Product' }] }])
+      assert.ok(isHpoiDetailPage(`<script type="application/ld+json">${JSON.stringify(data)}</script>`));
+    assert.ok(isHpoiDetailPage('<div class="hpoi-entry-score-num-box"></div>'));
+    for (const data of [null, { '@type': 'Organization' }, { '@graph': {} }])
+      assert.equal(isHpoiDetailPage(`<script type="application/ld+json">${JSON.stringify(data)}</script>`), false);
+    assert.equal(isHpoiDetailPage('<html>Access denied</html>'), false);
+  });
+
   it('rejects scores with missing, nonnumeric or nonpositive rating counts', () => {
     for (const ratingCount of [undefined, 'unknown', 0, -1, 'Infinity']) {
       const product = { '@type': 'Product', aggregateRating: { ratingValue: '4.77', ratingCount } };

@@ -69,6 +69,8 @@ export function describeImportHelp() {
     '',
     '[常用选项]',
     '  --dry-run                只检查并显示计划，不上传或修改线上数据。',
+    '  --search-all             从任意一份 JSONL 查找同一会话的全部续接文件，一起导入。扫描该文件所属 Codex 目录的 sessions 与 archived_sessions；外部副本使用 CODEX_HOME 或 ~/.codex。',
+    '                           按文件名的会话 UUID 筛选，再核对 session_meta.id；不按标题或 fork 关系扩展。按会话时间读取，保留每条 Prompt 的实际来源文件和行号。标签等选项应用到全部匹配文件。',
     '  --overwrite-images       检查已有图片的可恢复原图，按需替换并同步 URL 哈希；不会无条件重传，不会把更大的线上图换成较小附件。',
     '  --tag "插画"              可重复，例如 --tag "插画" --tag "现实"；默认追加并保留旧标签。不传则完全不处理标签。',
     '  --overwrite-tag          将目标卡片标签替换为本次 --tag 集合，移除未列出的旧标签；必须至少有一个 --tag。',
@@ -79,6 +81,7 @@ export function describeImportHelp() {
     '',
     '[示例]',
     '  npm run import:style-prompts -- "/path/session.jsonl" --dry-run',
+    '  npm run import:style-prompts -- "/path/session.jsonl" --search-all --tag "插画" --dry-run',
     '  npm run import:style-prompts -- "/path/session.jsonl" --tag "插画" --tag "现实"',
     '  npm run import:style-prompts -- "/path/session.jsonl" --overwrite-images --dry-run',
     '  npm run import:style-prompts -- "/path/session.jsonl" --overwrite-images',
@@ -156,7 +159,7 @@ export function describeImportPlan(prepared, existingByHash, metadataOnly = fals
     const previous = detail.previousLine ? `session image line ${detail.previousLine}` : 'published card';
     const label = detail.kind === 'duplicate' ? 'Duplicate skipped' : metadataOnly ? 'Replacement prompt' : 'Additional prompt';
     lines.push(
-      `  ${label} [${++ordinals[detail.kind]}]: ${detail.slug}; image line ${detail.sourceLine ?? '?'}, prompt line ${detail.promptLine ?? '?'}; matches ${previous}.`,
+      `  ${label} [${++ordinals[detail.kind]}]: ${detail.slug}; ${detail.sourceSession ? `${detail.sourceSession}; ` : ''}image line ${detail.sourceLine ?? '?'}, prompt line ${detail.promptLine ?? '?'}; matches ${previous}.`,
     );
   }
   return lines.join('\n');
