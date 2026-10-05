@@ -42,7 +42,11 @@ export function useHpoiRatings(items: HpoiCollectionItem[]) {
     .filter((item) => !item.score)
     .map((item) => item.id)
     .join(',');
-  const [state, setState] = useState<{ ids: string; scores: Record<string, string | null> }>({ ids: '', scores: {} });
+  const [state, setState] = useState<{
+    ids: string;
+    scores: Record<string, string | null>;
+    pendingIds: Set<string>;
+  }>({ ids: '', scores: {}, pendingIds: new Set() });
   useEffect(() => {
     let cancelled = false;
     async function load() {
@@ -60,6 +64,13 @@ export function useHpoiRatings(items: HpoiCollectionItem[]) {
         }
         missing.push(id);
       }
+      const pendingIds = new Set(missing);
+      // Publish cached scores immediately, then settle each batch independently. A missing score in
+      // a completed response is a failed lookup, not a reason to keep its loading indicator running.
+      const publish = () => {
+        if (!cancelled) setState({ ids, scores: { ...scores }, pendingIds: new Set(pendingIds) });
+      };
+      publish();
       // Serialize batches so rapid scrolling never starts an unbounded detail-request pool.
       for (let i = 0; i < missing.length && !cancelled; i += 24) {
         const batch = missing.slice(i, i + 24);
@@ -68,13 +79,16 @@ export function useHpoiRatings(items: HpoiCollectionItem[]) {
         } catch {
           for (const id of batch) scores[id] = null;
         }
+        for (const id of batch) pendingIds.delete(id);
+        publish();
       }
-      if (!cancelled) setState({ ids, scores });
     }
     void load();
     return () => {
       cancelled = true;
     };
   }, [ids]);
-  return { scores: state.scores, loading: state.ids !== ids };
+  // New cards must show pending on their first render, before the cache-reading effect runs.
+  const pendingIds = state.ids === ids ? state.pendingIds : new Set(ids.split(',').filter(Boolean));
+  return { scores: state.scores, pendingIds, loading: pendingIds.size > 0 };
 }

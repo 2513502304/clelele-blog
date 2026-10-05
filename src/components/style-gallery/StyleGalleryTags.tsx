@@ -19,6 +19,7 @@ import {
   useGalleryTags,
 } from '@store/gallery-tags';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { InlineSpinner } from '@/components/ui/InlineSpinner';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog';
 import '@/styles/components/gallery-tags.css';
 
@@ -271,7 +272,15 @@ export function GalleryLightboxTags({
       </button>
     );
   if (status !== 'ready')
-    return <output className="rounded-full bg-black/70 px-3 py-2 text-white/80 text-xs">{text.loading}</output>;
+    return (
+      <output
+        aria-busy="true"
+        className="inline-flex items-center gap-2 rounded-full bg-black/70 px-3 py-2 text-white/80 text-xs"
+      >
+        <InlineSpinner />
+        {text.loading}
+      </output>
+    );
   return <GalleryTagPills slug={slug} locale={locale} basePath={basePath} onNavigate={onNavigate} />;
 }
 

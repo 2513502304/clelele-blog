@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { InlineSpinner } from '@/components/ui/InlineSpinner';
 
 /** Keep an explicit retry/load button for keyboard users and browsers without IntersectionObserver. */
 export function CollectionLoadMore({
@@ -39,8 +40,10 @@ export function CollectionLoadMore({
         type="button"
         disabled={loading}
         onClick={onLoad}
-        className="rounded-full border border-border bg-card px-5 py-2 text-muted-foreground text-sm disabled:opacity-60"
+        aria-busy={loading}
+        className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-5 py-2 text-muted-foreground text-sm disabled:opacity-60"
       >
+        {loading && <InlineSpinner />}
         {loading
           ? zh
             ? '正在加载…'

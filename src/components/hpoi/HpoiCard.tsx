@@ -1,6 +1,7 @@
 import { useTranslation } from '@hooks/useTranslation';
 import { Icon } from '@iconify/react';
 import { createHpoiImageProxyUrl } from '@lib/hpoi/image';
+import { InlineSpinner } from '@/components/ui/InlineSpinner';
 import type { TranslationKey } from '@/i18n/types';
 import type { HpoiCollectionItem, HpoiCollectionState } from '@/types/hpoi';
 
@@ -17,9 +18,10 @@ interface HpoiCardProps {
   item: HpoiCollectionItem;
   state: HpoiCollectionState;
   masonry?: boolean;
+  ratingLoading?: boolean;
 }
 
-export function HpoiCard({ item, state, masonry = false }: HpoiCardProps) {
+export function HpoiCard({ item, state, masonry = false, ratingLoading = false }: HpoiCardProps) {
   const { t } = useTranslation();
 
   return (
@@ -55,9 +57,13 @@ export function HpoiCard({ item, state, masonry = false }: HpoiCardProps) {
             {t(STATE_LABELS[state])}
           </span>
         )}
-        <span className="absolute top-2 right-2 flex items-center gap-1 rounded bg-black/70 px-2 py-1 font-medium text-amber-300 text-xs backdrop-blur-sm">
+        <span
+          data-hpoi-rating
+          aria-busy={ratingLoading}
+          className="absolute top-2 right-2 flex min-w-12 items-center justify-center gap-1 rounded bg-black/70 px-2 py-1 font-medium text-amber-300 text-xs backdrop-blur-sm"
+        >
           <Icon icon="ri:star-fill" className="size-3" />
-          {item.score ?? '—'}
+          {ratingLoading ? <InlineSpinner label={t('common.loading')} /> : (item.score ?? '—')}
         </span>
       </div>
 

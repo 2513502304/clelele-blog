@@ -452,6 +452,11 @@ export const uiStrings: UIStrings = {
   'series.docs': 'Documentation',
 
   // ── Home Info ───────────────────────────────────────────────
+  'homeInfo.reading': 'Reading',
+  'homeInfo.collections': 'My collection',
+  'homeInfo.connections': 'Connect',
+  'homeInfo.socialLinks': 'Personal links',
+  'homeInfo.refreshing': 'Refreshing profile',
   'homeInfo.articles': 'Articles',
   'homeInfo.categories': 'Categories',
   'homeInfo.tags': 'Tags',
