@@ -1,0 +1,364 @@
+/* A: an illuminated profile block, with navigation resting on the page beneath it. */
+.sidebar-glass {
+  padding: 1px 0;
+}
+
+.sidebar-glass:before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 353px;
+  border-radius: 23px;
+  background: linear-gradient(155deg, hsl(var(--card) / 85%), hsl(var(--card) / 25%) 75%);
+  box-shadow:
+    inset 0 1px 0 hsl(var(--card)),
+    0 12px 35px -20px hsl(var(--primary) / 24%);
+  border: 1px solid hsl(var(--card) / 50%);
+  pointer-events: none;
+}
+
+.sidebar-glass .identity {
+  padding-top: 8px;
+}
+
+.sidebar-glass .socials,
+.sidebar-glass .stats {
+  position: relative;
+}
+
+.sidebar-glass .stats {
+  border-bottom: 0;
+  margin-bottom: 32px;
+}
+
+/* B: restrained editorial typography and a visible table of contents. */
+.sidebar-editorial {
+  text-align: left;
+  padding: 0 10px;
+}
+
+.sidebar-editorial .identity {
+  padding-top: 24px;
+}
+
+.sidebar-editorial .avatar-frame {
+  width: 86px;
+  margin: 0 0 20px;
+}
+
+.sidebar-editorial .avatar-frame img {
+  border-radius: 15px;
+}
+
+.sidebar-editorial .avatar-spark {
+  display: none;
+}
+
+.sidebar-editorial h3 {
+  font-family: Georgia, serif;
+  font-size: 38px;
+  letter-spacing: -0.07em;
+}
+
+.sidebar-editorial .small-label {
+  display: none;
+}
+
+.sidebar-editorial .margin-mark {
+  display: block;
+  position: absolute;
+  right: 0;
+  top: 27px;
+  writing-mode: vertical-rl;
+  font-size: 9px;
+  letter-spacing: 0.2em;
+}
+
+.sidebar-editorial .socials {
+  justify-content: flex-start;
+  gap: 0;
+}
+
+.sidebar-editorial .stats {
+  margin: 22px 0;
+  justify-content: space-between;
+}
+
+.sidebar-editorial .study-nav {
+  gap: 0;
+}
+
+.sidebar-editorial .study-nav button {
+  padding: 12px 0;
+  border-radius: 0;
+  border-bottom: 1px solid hsl(var(--border) / 55%);
+}
+
+.sidebar-editorial .study-nav svg {
+  display: none;
+}
+
+.sidebar-editorial .nav-number {
+  display: block;
+  font-family: Georgia, serif;
+  font-size: 12px;
+  font-style: italic;
+  color: hsl(var(--muted-foreground) / 65%);
+  width: 24px;
+}
+
+.sidebar-editorial .study-nav button[aria-current] {
+  background: transparent;
+  box-shadow: none;
+}
+
+.sidebar-editorial .study-nav button[aria-current]:before {
+  content: "";
+  position: absolute;
+  left: -12px;
+  width: 3px;
+  height: 18px;
+  border-radius: 2px;
+  background: hsl(var(--primary));
+}
+
+.sidebar-editorial .sidebar-footer {
+  margin: 20px 0 0;
+  border: 0;
+}
+
+/* C: compact identity, then clearly separated shelves for reading and collecting. */
+.sidebar-cabinet .identity {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  text-align: left;
+  padding: 22px 8px 0;
+}
+
+.sidebar-cabinet .avatar-frame {
+  width: 64px;
+  flex-shrink: 0;
+  margin: 0;
+}
+
+.sidebar-cabinet .identity h3 {
+  font-size: 23px;
+  margin: 0 0 6px;
+}
+
+.sidebar-cabinet .identity p {
+  font-size: 10px;
+}
+
+.sidebar-cabinet .small-label {
+  display: none;
+}
+
+.sidebar-cabinet .socials {
+  margin: 20px 0;
+}
+
+.sidebar-cabinet .stats {
+  border: 0;
+  gap: 0;
+  margin: 0 0 22px;
+  padding: 0;
+  justify-content: stretch;
+}
+
+.sidebar-cabinet .stats div {
+  flex: 1;
+  border-right: 1px solid hsl(var(--border));
+  padding: 3px;
+}
+
+.sidebar-cabinet .stats div:last-child {
+  border: 0;
+}
+
+.sidebar-cabinet .study-nav {
+  padding: 0 5px;
+}
+
+.sidebar-cabinet .nav-section:not([hidden]) {
+  display: block;
+  text-align: left;
+  font-size: 9px;
+  color: hsl(var(--muted-foreground));
+  letter-spacing: 0.08em;
+  margin: 15px 0 6px 14px;
+}
+
+.sidebar-cabinet .study-nav button {
+  background: hsl(var(--card) / 35%);
+  border: 1px solid hsl(var(--border) / 35%);
+  padding: 12px;
+  border-radius: 11px;
+}
+
+.sidebar-cabinet .study-nav button[aria-current] {
+  background: hsl(var(--primary) / 13%);
+  border-color: hsl(var(--primary) / 28%);
+}
+
+.sidebar-cabinet .sidebar-footer {
+  margin-top: 24px;
+}
+
+/* D: one continuous margin connects identity and navigation instead of stacked boxes. */
+.sidebar-ribbon {
+  padding: 18px 6px 0 35px;
+  text-align: left;
+}
+
+.sidebar-ribbon:before {
+  content: "";
+  position: absolute;
+  left: 18px;
+  top: 36px;
+  bottom: 10px;
+  width: 1px;
+  background: linear-gradient(transparent, hsl(var(--primary) / 35%) 12%, hsl(var(--border)) 78%, transparent);
+}
+
+.sidebar-ribbon .avatar-frame {
+  width: 105px;
+  margin: 0 0 20px;
+}
+
+.sidebar-ribbon .small-label {
+  font-size: 7px;
+}
+
+.sidebar-ribbon h3 {
+  font-size: 31px;
+}
+
+.sidebar-ribbon .socials {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  max-width: 166px;
+  gap: 4px;
+  margin: 15px 0;
+}
+
+.sidebar-ribbon .socials button {
+  padding: 7px;
+}
+
+.sidebar-ribbon .stats {
+  margin: 16px 0 20px;
+  padding: 13px 0;
+  gap: 23px;
+  border-top: 0;
+  justify-content: flex-start;
+}
+
+.sidebar-ribbon .study-nav {
+  margin-left: -13px;
+  gap: 5px;
+}
+
+.sidebar-ribbon .study-nav button {
+  padding: 10px 12px;
+  font-size: 12px;
+}
+
+.sidebar-ribbon .study-nav button[aria-current] {
+  background: hsl(var(--card) / 60%);
+  box-shadow: 0 4px 18px -12px hsl(var(--foreground) / 25%);
+}
+
+.sidebar-ribbon .study-nav button[aria-current]:before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  background: hsl(var(--primary));
+  border: 3px solid hsl(var(--background));
+  box-sizing: content-box;
+  border-radius: 50%;
+  position: absolute;
+  left: -10px;
+}
+
+.sidebar-ribbon .sidebar-footer {
+  margin-left: 0;
+  font-size: 8px;
+}
+
+.sidebar-ribbon .avatar-spark {
+  right: -3px;
+}
+
+body[data-focus] .study-grid {
+  grid-template-columns: minmax(260px, 320px);
+  justify-content: center;
+}
+
+body[data-focus] .study {
+  display: none;
+}
+
+body[data-focus="glass"] .study[data-concept="glass"],
+body[data-focus="editorial"] .study[data-concept="editorial"],
+body[data-focus="cabinet"] .study[data-concept="cabinet"],
+body[data-focus="ribbon"] .study[data-concept="ribbon"] {
+  display: block;
+}
+
+body[data-focus] .sidebar-stage {
+  min-height: 0;
+  padding-bottom: 24px;
+}
+
+@media (max-width: 1100px) {
+  .study-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    max-width: 800px;
+  }
+
+  .study-header {
+    max-width: 800px;
+  }
+
+  h1 {
+    font-size: 25px;
+  }
+}
+
+@media (max-width: 580px) {
+  .study-header {
+    padding: 25px 20px;
+    display: block;
+  }
+
+  .study-controls {
+    margin-top: 20px;
+  }
+
+  .study-grid {
+    grid-template-columns: minmax(0, 330px);
+    padding: 0 20px;
+    justify-content: center;
+  }
+
+  .study-footer {
+    padding: 0 20px;
+    flex-wrap: wrap;
+  }
+
+  h1 {
+    font-size: 22px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .study-nav button,
+  .socials button {
+    transition: none;
+  }
+  html {
+    scroll-behavior: auto;
+  }
+}

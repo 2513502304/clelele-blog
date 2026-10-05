@@ -198,7 +198,10 @@ export default defineConfig({
       hooks: {
         'astro:config:setup': ({ command, injectRoute }) => {
           // Design experiments never become public routes or enter the production sitemap.
-          if (command === 'dev') injectRoute({ pattern: '/design-lab', entrypoint: './src/dev/design-lab.astro' });
+          if (command === 'dev') {
+            injectRoute({ pattern: '/design-lab', entrypoint: './src/dev/design-lab.astro' });
+            injectRoute({ pattern: '/sidebar-lab', entrypoint: './src/dev/sidebar-lab.astro' });
+          }
         },
       },
     },

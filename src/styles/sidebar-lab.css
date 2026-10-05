@@ -1,0 +1,372 @@
+/* Local-only concept board: all surfaces derive from the production palette tokens. */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+button,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:focus-visible,
+select:focus-visible {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 4px;
+}
+
+button {
+  border: 0;
+  background: none;
+}
+
+svg {
+  width: 20px;
+  height: 20px;
+  display: block;
+  flex-shrink: 0;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 30px;
+  font-weight: 550;
+  letter-spacing: -0.04em;
+  margin: 8px 0;
+}
+
+h2 {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.eyebrow {
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  color: hsl(var(--primary));
+}
+
+.study-header {
+  max-width: 1500px;
+  margin: auto;
+  padding: 48px 36px 32px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 24px;
+}
+
+.study-header p {
+  color: hsl(var(--muted-foreground));
+  font-size: 12px;
+}
+
+.study-controls {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.study-controls label {
+  display: grid;
+  gap: 4px;
+  font-size: 10px;
+  color: hsl(var(--muted-foreground));
+}
+
+.study-controls select,
+.study-controls button {
+  border: 1px solid hsl(var(--border));
+  border-radius: 12px;
+  padding: 9px 12px;
+  background: hsl(var(--card) / 65%);
+}
+
+.study-controls button {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.study-controls button[aria-pressed="true"] {
+  background: hsl(var(--primary) / 14%);
+}
+
+.study-grid {
+  max-width: 1500px;
+  padding: 0 36px;
+  margin: auto;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.concept-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.concept-heading > span {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 38px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 9px;
+  font-family: Georgia, serif;
+  font-size: 23px;
+  color: hsl(var(--primary));
+}
+
+.concept-heading p {
+  font-size: 10px;
+  color: hsl(var(--muted-foreground));
+}
+
+.focus-concept {
+  margin-left: auto;
+  opacity: 0.6;
+  padding: 8px;
+}
+
+.sidebar-stage {
+  border: 1px solid hsl(var(--border) / 65%);
+  border-radius: 24px;
+  background:
+    radial-gradient(ellipse at 85% 0%, hsl(var(--primary) / 12%), transparent 55%),
+    linear-gradient(155deg, hsl(var(--card) / 30%), hsl(var(--background)));
+  min-height: 925px;
+  padding: 22px 16px;
+}
+
+.sidebar {
+  text-align: center;
+  position: relative;
+}
+
+.identity {
+  position: relative;
+}
+
+.avatar-frame {
+  width: 114px;
+  position: relative;
+  margin: 16px auto 18px;
+}
+
+.avatar-frame img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 50%;
+  box-shadow: 0 8px 36px hsl(var(--primary) / 12%);
+}
+
+.avatar-spark {
+  position: absolute;
+  bottom: 0;
+  right: 2px;
+  border-radius: 50%;
+  background: hsl(var(--card));
+  color: hsl(var(--primary));
+  width: 25px;
+  height: 25px;
+  font-size: 18px;
+  border: 3px solid hsl(var(--card));
+}
+
+.small-label {
+  font-size: 8px;
+  letter-spacing: 0.17em;
+  color: hsl(var(--muted-foreground));
+}
+
+.identity h3 {
+  font-size: 27px;
+  font-weight: 550;
+  letter-spacing: -0.055em;
+  line-height: 1.3;
+  margin: 4px 0 12px;
+}
+
+.name-dot {
+  color: hsl(var(--primary));
+}
+
+.identity p {
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
+  line-height: 1.9;
+}
+
+.socials {
+  display: flex;
+  justify-content: center;
+  gap: 2px;
+  margin: 17px 0;
+}
+
+.socials button {
+  padding: 7px;
+  border-radius: 10px;
+  color: hsl(var(--muted-foreground));
+  transition:
+    background 0.18s,
+    transform 0.18s;
+}
+
+.socials svg {
+  width: 17px;
+  height: 17px;
+}
+
+.socials button:hover {
+  color: hsl(var(--primary));
+  background: hsl(var(--primary) / 10%);
+  transform: translateY(-2px);
+}
+
+.stats {
+  display: flex;
+  justify-content: center;
+  gap: 26px;
+  padding: 15px 0;
+  margin: 0 12px 20px;
+  border-top: 1px solid hsl(var(--border) / 65%);
+  border-bottom: 1px solid hsl(var(--border) / 65%);
+}
+
+.stats div {
+  display: grid;
+  gap: 3px;
+}
+
+.stats strong {
+  font-size: 17px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.stats span {
+  font-size: 10px;
+  color: hsl(var(--muted-foreground));
+}
+
+.study-nav {
+  display: grid;
+  gap: 4px;
+}
+
+.study-nav button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 15px;
+  border-radius: 12px;
+  text-align: left;
+  font-size: 12px;
+  position: relative;
+  transition:
+    background 0.18s,
+    transform 0.18s;
+}
+
+.study-nav button:hover {
+  background: hsl(var(--primary) / 6%);
+}
+
+.study-nav svg {
+  width: 17px;
+  height: 17px;
+  opacity: 0.7;
+}
+
+.study-nav button[aria-current] {
+  color: hsl(var(--primary));
+  font-weight: 600;
+  background: linear-gradient(115deg, hsl(var(--primary) / 15%), hsl(var(--primary) / 3%));
+  box-shadow: inset 0 1px 0 hsl(var(--card) / 70%);
+}
+
+.nav-arrow {
+  margin-left: auto;
+  opacity: 0;
+}
+
+.study-nav button[aria-current] .nav-arrow {
+  opacity: 1;
+}
+
+.nav-number,
+.nav-section,
+.margin-mark {
+  display: none;
+}
+
+.sidebar-footer {
+  font-size: 9px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: hsl(var(--muted-foreground));
+  margin: 24px 10px 0;
+  padding-top: 16px;
+  border-top: 1px solid hsl(var(--border) / 55%);
+}
+
+.sidebar-footer > span:last-child {
+  margin-left: auto;
+}
+
+.footer-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: hsl(var(--primary));
+}
+
+.concept-description {
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+  padding: 17px 4px;
+  line-height: 1.9;
+}
+
+.study-footer {
+  max-width: 1500px;
+  margin: 12px auto 30px;
+  padding: 0 36px;
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  justify-content: space-between;
+  color: hsl(var(--muted-foreground));
+  font-size: 11px;
+}
+
+.study-footer button {
+  border-bottom: 1px solid hsl(var(--primary));
+  padding: 6px 0;
+  color: hsl(var(--primary));
+}

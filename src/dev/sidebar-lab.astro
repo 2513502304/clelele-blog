@@ -1,0 +1,95 @@
+---
+import { Icon } from 'astro-icon/components';
+import { APPEARANCES } from '../components/theme/appearance';
+import '../styles/theme/shadcn.css';
+import '../styles/theme/index.css';
+import '../styles/theme/appearance.css';
+import '../styles/sidebar-lab.css';
+import '../styles/sidebar-lab-concepts.css';
+const concepts = [
+  {
+    id: 'glass',
+    letter: 'A',
+    name: '浮光名片',
+    desc: '柔和透光的资料卡，导航悬于下方；最接近现有布局。',
+    label: '柔和 · 留白 · 轻盈',
+  },
+  {
+    id: 'editorial',
+    letter: 'B',
+    name: '私人索引',
+    desc: '以编号与细线组织目录，把个人侧栏变成一本书的扉页。',
+    label: '清晰 · 编辑感 · 秩序',
+  },
+  {
+    id: 'cabinet',
+    letter: 'C',
+    name: '收藏陈列',
+    desc: '小头像与横向身份栏，下方按内容分组；节省纵向空间。',
+    label: '紧凑 · 分组 · 易浏览',
+  },
+  {
+    id: 'ribbon',
+    letter: 'D',
+    name: '页边书签',
+    desc: '窄边轨道串联头像、导航与统计，像一本随手翻阅的手账。',
+    label: '安静 · 纵向节奏 · 连贯',
+  },
+];
+const nav = [
+  ['ri:home-5-line', '首页'],
+  ['ri:newspaper-line', '周刊'],
+  ['ri:quill-pen-line', '文章'],
+  ['ri:gallery-line', '风格提示词'],
+  ['ri:music-2-line', '歌单'],
+  ['ri:tv-2-line', '追番'],
+  ['ri:archive-2-line', '手办收藏'],
+  ['ri:links-line', '友链'],
+  ['ri:user-smile-line', '关于'],
+];
+const socials = [
+  ['ri:github-fill', 'GitHub'],
+  ['ri:bilibili-fill', 'Bilibili'],
+  ['ri:youtube-fill', 'YouTube'],
+  ['ri:twitter-x-line', 'X'],
+  ['ri:sparkling-2-line', 'PixAI'],
+  ['ri:mail-line', 'Email'],
+];
+---
+<!doctype html>
+<html lang="zh-CN" data-appearance="original">
+<head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><meta name="robots" content="noindex,nofollow" /><title>clelele · 侧栏设计预览</title></head>
+<body>
+  <header class="study-header"><div><span class="eyebrow">CLELELE / SIDEBAR STUDIES</span><h1>页面的留白，也可以有性格。</h1><p>四种侧栏方向 · 同一组内容 · 沿用网站的 18 套主题</p></div><div class="study-controls"><label>主题<select id="palette">{APPEARANCES.map(p => <option value={p.id}>{p.zh}</option>)}</select></label><button id="dark" type="button" aria-pressed="false"><Icon name="ri:moon-line" />深色</button></div></header>
+  <main class="study-grid">
+    {concepts.map(c => <section class="study" data-concept={c.id}>
+      <header class="concept-heading"><span>{c.letter}</span><div><h2>{c.name}</h2><p>{c.label}</p></div><button type="button" class="focus-concept" aria-label={`单独预览${c.name}`} data-focus={c.id}><Icon name="ri:expand-diagonal-line" /></button></header>
+      <div class="sidebar-stage"><aside class={`sidebar sidebar-${c.id}`}>
+        <div class="identity"><span class="margin-mark" aria-hidden="true">C / 01</span><div class="avatar-frame"><img src="/api/site-assets/avatar" width="160" height="160" alt="clelele" /><span class="avatar-spark" aria-hidden="true">✳</span></div><div class="identity-copy"><span class="small-label">PERSONAL JOURNAL</span><h3>clelele<span class="name-dot">.</span></h3><p>记录技术、AIGC、ACG<br />与一些个人的兴趣爱好</p></div></div>
+        <nav class="socials" aria-label="个人链接">{socials.map(([icon,name]) => <button type="button" aria-label={name} title={name}><Icon name={icon} /></button>)}</nav>
+        <div class="stats"><div><strong>11</strong><span>文章</span></div><div><strong>5</strong><span>分类</span></div><div><strong>17</strong><span>标签</span></div></div>
+        <nav class="study-nav" aria-label="页面导航">{nav.map(([icon,name],i) => <><span class="nav-section" hidden={i!==0 && i!==3 && i!==7}>{i===0?'阅读':i===3?'我的收藏':'连接'}</span><button type="button" aria-current={i===3?'page':undefined}><span class="nav-number">{String(i+1).padStart(2,'0')}</span><Icon name={icon}/><span>{name}</span><span class="nav-arrow" aria-hidden="true">↗</span></button></>)}</nav>
+        <footer class="sidebar-footer"><span class="footer-dot"/>一隅日常，慢慢收藏<span>↗</span></footer>
+      </aside></div><p class="concept-description">{c.desc}</p>
+    </section>)}
+  </main>
+  <footer class="study-footer"><span>仅本地预览，未替换网站侧栏。点击导航可体验选中状态。</span><button type="button" id="compare">查看全部方案</button></footer>
+  <script>
+    const root = document.documentElement;
+    const palette = document.querySelector<HTMLSelectElement>('#palette')!;
+    palette.addEventListener('change', () => { root.dataset.appearance = palette.value; });
+    document.querySelector('#dark')!.addEventListener('click', event => {
+      const dark = root.classList.toggle('dark');
+      (event.currentTarget as HTMLButtonElement).setAttribute('aria-pressed', String(dark));
+    });
+    document.querySelectorAll<HTMLButtonElement>('[data-focus]').forEach(button => button.addEventListener('click', () => {
+      document.body.dataset.focus = button.dataset.focus;
+      document.querySelector(`[data-concept="${button.dataset.focus}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    }));
+    document.querySelector('#compare')!.addEventListener('click', () => { delete document.body.dataset.focus; });
+    document.querySelectorAll('.study-nav button').forEach(button => button.addEventListener('click', () => {
+      button.closest('nav')!.querySelectorAll('button').forEach(item => item.removeAttribute('aria-current'));
+      button.setAttribute('aria-current', 'page');
+    }));
+  </script>
+</body></html>
