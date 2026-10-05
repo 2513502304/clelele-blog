@@ -1260,3 +1260,47 @@ it('keeps ordered multi-image projection hashes distinct from individual image i
   ]);
   assert.ok(!buildIdentityQuery(item).hashes.includes(getExtractedItemHash({ images: [uiImages[0]] })));
 });
+
+it('search-all preserves source-file provenance, cross-segment pairing and duplicate planning', async () => {
+  assert.equal(parseArgs(['session.jsonl', '--search-all', '--tag=插画']).searchAll, true);
+  assert.equal(parseArgs(['session.jsonl']).searchAll, false);
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'gallery-segments-'));
+  const a = path.join(directory, 'a.jsonl'),
+    b = path.join(directory, 'b.jsonl');
+  const png = await sharp({ create: { width: 2, height: 3, channels: 3, background: '#fff' } })
+    .png()
+    .toBuffer();
+  const input = {
+    type: 'event_msg',
+    timestamp: '2026-09-27T00:00:00Z',
+    payload: { type: 'user_message', message: '反推图片', images: [`data:image/png;base64,${png.toString('base64')}`] },
+  };
+  const output = { type: 'event_msg', payload: { type: 'agent_message', message: `${PLACEHOLDER}水彩画。` } };
+  try {
+    await fs.writeFile(a, `${JSON.stringify(input)}\n`);
+    await fs.writeFile(
+      b,
+      [output, input, output, input, { ...output, payload: { type: 'agent_message', message: `${PLACEHOLDER}油画。` } }]
+        .map(JSON.stringify)
+        .join('\n'),
+    );
+    const items = await readSessionItems([a, b]);
+    assert.deepEqual(
+      items.map((item) => [item.sourceSession, item.sourceLine]),
+      [
+        ['a.jsonl', 1],
+        ['b.jsonl', 2],
+        ['b.jsonl', 4],
+      ],
+    );
+    const plan = await buildImportData(items, a, new Map(), false);
+    assert.equal(plan.items.length, 1);
+    assert.equal(plan.skippedDuplicates, 1);
+    assert.deepEqual(
+      plan.items[0].prompts.map((prompt) => prompt.sourceSession),
+      ['a.jsonl', 'b.jsonl'],
+    );
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});

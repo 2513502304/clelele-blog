@@ -10,6 +10,7 @@ import { readStyleGalleryImageDimensions } from '../src/lib/style-gallery-image-
 import { sanitizeImportedOriginalPrompt, sanitizeImportedPrompt } from '../src/lib/style-gallery-prompt-sanitize.ts';
 import { isValidGalleryTag, MAX_GALLERY_TAGS_PER_ITEM, normalizeGalleryTag } from '../src/lib/style-gallery-tags.ts';
 import { computeStyleGalleryVisualFeaturesFromBytes } from '../src/lib/style-gallery-visual-feature-node.ts';
+import { findSessionFiles } from './lib/codex-session-files.mjs';
 import { configureEnvironmentProxy } from './lib/environment-proxy.mjs';
 import {
   describeImportContext,
@@ -50,12 +51,14 @@ function parseArgs(argv) {
   let overwriteImages = false;
   let promptModel = null;
   let dryRun = false;
+  let searchAll = false;
   let help = false;
   const tags = [];
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index];
     if (arg === '--help' || arg === '-h') help = true;
     else if (arg === '--dry-run') dryRun = true;
+    else if (arg === '--search-all') searchAll = true;
     else if (arg === '--metadata-only' || arg === '--update-metadata-only') metadataOnly = true;
     else if (arg === '--overwrite-tag') overwriteTag = true;
     else if (arg === '--overwrite-images') overwriteImages = true;
@@ -84,6 +87,7 @@ function parseArgs(argv) {
     overwriteTag,
     promptModel,
     sessionPath,
+    searchAll,
     tags,
   };
 }
@@ -191,26 +195,28 @@ function apiImagePath(kind, fileName) {
  */
 async function readSessionItems(sessionPath) {
   const extractor = createItemExtractor();
-  const input = createReadStream(sessionPath, { encoding: 'utf8' });
-  const lines = createInterface({ input, crlfDelay: Infinity });
-  let index = 0;
-  try {
-    for await (const line of lines) {
-      index++;
-      if (!line.trim()) continue;
-      let record;
-      try {
-        record = JSON.parse(line);
-      } catch (error) {
-        throw new Error(`Failed to parse JSONL line ${index}: ${error.message}`);
+  for (const file of Array.isArray(sessionPath) ? sessionPath : [sessionPath]) {
+    const input = createReadStream(file, { encoding: 'utf8' });
+    const lines = createInterface({ input, crlfDelay: Infinity });
+    let index = 0;
+    try {
+      for await (const line of lines) {
+        index++;
+        if (!line.trim()) continue;
+        let record;
+        try {
+          record = JSON.parse(line);
+        } catch (error) {
+          throw new Error(`Failed to parse JSONL line ${index} in ${path.basename(file)}: ${error.message}`);
+        }
+        extractor.consume({ index, record, ...(Array.isArray(sessionPath) ? { sourceSession: path.basename(file) } : {}) });
       }
-      extractor.consume({ index, record });
+    } finally {
+      lines.close();
+      input.destroy();
     }
-    return extractor.items;
-  } finally {
-    lines.close();
-    input.destroy();
   }
+  return extractor.items;
 }
 
 /**
@@ -365,7 +371,7 @@ function createItemExtractor() {
   const items = [];
   let pendingInput = null;
   let currentModel = null;
-  function consume({ index, record }) {
+  function consume({ index, record, sourceSession }) {
     const payload = record?.payload;
     if (!payload || typeof payload !== 'object') return;
     if (record.type === 'event_msg' && payload.type === 'task_started') {
@@ -398,6 +404,7 @@ function createItemExtractor() {
           images,
           originalPrompt,
           sourceLine: index,
+          ...(sourceSession ? { sourceSession } : {}),
           timestamp: record.timestamp,
           model: currentModel,
         };
@@ -426,6 +433,7 @@ function createItemExtractor() {
           turnId: payload.internal_chat_message_metadata_passthrough?.turn_id,
           originalPrompt: sanitizeOriginalPrompt(input.originalPrompt),
           sourceLine: index,
+          ...(sourceSession ? { sourceSession } : {}),
           timestamp: record.timestamp,
           model: currentModel,
         };
@@ -479,7 +487,12 @@ function createItemExtractor() {
           ? responseItemOutput(payload)
           : null;
     if (pendingInput && typeof message === 'string' && message.includes(PLACEHOLDER)) {
-      items.push({ ...pendingInput, prompt: normalizePrompt(message), promptLine: index });
+      items.push({
+        ...pendingInput,
+        prompt: normalizePrompt(message),
+        promptLine: index,
+        ...(sourceSession ? { promptSession: sourceSession } : {}),
+      });
       pendingInput = null;
     }
   }
@@ -602,6 +615,7 @@ async function buildImportData(extractedItems, sessionPath, existingByHash, meta
         kind: 'duplicate',
         slug,
         sourceLine: extracted.sourceLine,
+        sourceSession: extracted.sourceSession,
         promptLine: extracted.promptLine,
         previousLine: null,
       });
@@ -652,7 +666,7 @@ async function buildImportData(extractedItems, sessionPath, existingByHash, meta
       ...(promptModelOverride || extracted.model ? { model: promptModelOverride ?? extracted.model } : {}),
       ...(extracted.originalPrompt ? { originalPrompt: extracted.originalPrompt } : {}),
       importedAt: date.toISOString(),
-      sourceSession: path.basename(sessionPath),
+      sourceSession: extracted.sourceSession ?? path.basename(sessionPath),
       sourceLine: extracted.sourceLine,
     };
     const pending = itemsByHash.get(itemHash);
@@ -663,6 +677,7 @@ async function buildImportData(extractedItems, sessionPath, existingByHash, meta
           kind: 'duplicate',
           slug,
           sourceLine: extracted.sourceLine,
+          sourceSession: extracted.sourceSession,
           promptLine: extracted.promptLine,
           previousLine: pending.prompts.find((prompt) => normalizePrompt(prompt.prompt) === normalizedPrompt)?.sourceLine,
         });
@@ -671,6 +686,7 @@ async function buildImportData(extractedItems, sessionPath, existingByHash, meta
           kind: 'variant',
           slug,
           sourceLine: extracted.sourceLine,
+          sourceSession: extracted.sourceSession,
           promptLine: extracted.promptLine,
           previousLine: pending.prompts[0].sourceLine,
         });
@@ -683,6 +699,7 @@ async function buildImportData(extractedItems, sessionPath, existingByHash, meta
         kind: 'variant',
         slug,
         sourceLine: extracted.sourceLine,
+        sourceSession: extracted.sourceSession,
         promptLine: extracted.promptLine,
         previousLine: null,
       });
@@ -866,9 +883,8 @@ function sleep(ms) {
 }
 
 async function main() {
-  const { apiBaseUrl, dryRun, help, metadataOnly, overwriteTag, overwriteImages, promptModel, sessionPath, tags } = parseArgs(
-    process.argv.slice(2),
-  );
+  const { apiBaseUrl, dryRun, help, metadataOnly, overwriteTag, overwriteImages, promptModel, sessionPath, searchAll, tags } =
+    parseArgs(process.argv.slice(2));
   if (help || !sessionPath) {
     (help ? console.log : console.error)(usage());
     process.exit(help ? 0 : 1);
@@ -878,8 +894,14 @@ async function main() {
   if (!token) throw new Error('STYLE_GALLERY_UPLOAD_TOKEN is required, including read-only identity planning.');
   const absoluteSessionPath = path.resolve(sessionPath);
   console.log(describeImportContext({ overwriteImages, dryRun, metadataOnly, overwriteTag, tags, apiBaseUrl }));
-  console.log(`\nReading session: ${path.basename(absoluteSessionPath)} (streaming JSONL)...`);
-  const rawItems = (await readSessionItems(absoluteSessionPath)).map((item) => ({
+  const selection = searchAll ? await findSessionFiles(absoluteSessionPath) : { files: [absoluteSessionPath] };
+  if (searchAll)
+    console.log(
+      `\n[会话范围] ${selection.id}：在活动和归档目录找到 ${selection.files.length} 份 JSONL，按时间合并导入；相同图片/Prompt 仍只写入一次。`,
+    );
+  for (const [index, file] of selection.files.entries()) console.log(`  [${index + 1}/${selection.files.length}] ${file}`);
+  console.log('\nReading session files (streaming JSONL)...');
+  const rawItems = (await readSessionItems(selection.files)).map((item) => ({
     ...item,
     embeddedHash: getExtractedItemHash(item),
     embeddedPixelHash: '',
@@ -1252,6 +1274,8 @@ npm run import:style-prompts -- --help
 # 首次导入或补回原图前可先加 --dry-run 查看来源、去重和覆盖计划；它需要管理 token，但不会写入。
 npm run import:style-prompts -- <session.jsonl> --prompt-model='gpt-5.6-sol'
 npm run import:style-prompts -- <session.jsonl> --tag "溶图" --tag "现实"
+# 同一会话的任意续接文件均可作为入口；搜索活动与归档目录，一起导入并追加标签。
+npm run import:style-prompts -- <session.jsonl> --search-all --tag "插画"
 npm run import:style-prompts -- <session.jsonl> --tag "溶图" --tag "现实" --overwrite-tag
 
 # 默认保留已发布图片身份；--overwrite-images 才会迁移可恢复的原始附件，URL 尾缀同步更新为新 hash，保留导入日期、Prompt、标签、示例和点赞。
