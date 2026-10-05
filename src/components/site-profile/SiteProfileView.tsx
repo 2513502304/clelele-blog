@@ -27,6 +27,10 @@ function loadProfile() {
     });
   return request;
 }
+/**
+ * Keep the server profile visible during the shared background refresh, including on failure.
+ * About uses the same data and loading lifecycle through the contacts-only presentation.
+ */
 export function SiteProfileView({ initial, contactsOnly = false }: { initial: PublicProfile; contactsOnly?: boolean }) {
   const [profile, setProfile] = useState(initial);
   const [loading, setLoading] = useState(true);

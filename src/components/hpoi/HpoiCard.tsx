@@ -21,6 +21,7 @@ interface HpoiCardProps {
   ratingLoading?: boolean;
 }
 
+/** Keep the cover usable while optional rating enrichment is pending; settled empty scores display a dash. */
 export function HpoiCard({ item, state, masonry = false, ratingLoading = false }: HpoiCardProps) {
   const { t } = useTranslation();
 
