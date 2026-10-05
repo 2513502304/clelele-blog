@@ -16,7 +16,9 @@ async function readRatings(ids: string[]) {
         const data = await response.json();
         const scores: Record<string, string | null> = {};
         for (const id of ids) {
-          scores[id] = typeof data[id] === 'string' && /^\d+(\.\d+)?$/.test(data[id]) ? data[id] : null;
+          // Absent/invalid IDs are temporary failures, not a cacheable "unrated" result.
+          if (data?.[id] !== null && !(typeof data?.[id] === 'string' && /^\d+(\.\d+)?$/.test(data[id]))) continue;
+          scores[id] = data[id];
           try {
             sessionStorage.setItem(
               `hpoi-rating-v1:${id}`,

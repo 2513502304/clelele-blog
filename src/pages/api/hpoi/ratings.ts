@@ -10,7 +10,9 @@ export const GET: APIRoute = async ({ url }) => {
   const ids = [...new Set((url.searchParams.get('ids') ?? '').split(','))];
   if (!ids.length || ids.length > 24 || ids.some((id) => !/^[1-9]\d{0,9}$/.test(id)))
     return new Response('Invalid figure IDs.', { status: 400 });
-  return Response.json(await fetchHpoiRatings(ids), {
-    headers: { 'cache-control': HPOI_CACHE_CONTROL, 'vercel-cache-tag': HPOI_CACHE_TAG },
+  const ratings = await fetchHpoiRatings(ids);
+  const complete = ids.every((id) => Object.hasOwn(ratings, id));
+  return Response.json(ratings, {
+    headers: { 'cache-control': complete ? HPOI_CACHE_CONTROL : 'no-store', 'vercel-cache-tag': HPOI_CACHE_TAG },
   });
 };

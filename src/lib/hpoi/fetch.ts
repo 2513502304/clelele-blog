@@ -4,6 +4,7 @@ import { createHpoiCollectionUrl, createHpoiProfileUrl } from './constants';
 import {
   isHpoiCollectionFragment,
   isHpoiCollectionPage,
+  isHpoiDetailPage,
   isHpoiProfilePage,
   parseHpoiCollection,
   parseHpoiCollectionPageCount,
@@ -266,17 +267,18 @@ export async function fetchHpoiPage(userId: string, state: HpoiCollectionState, 
   };
 }
 
-/** Ratings are optional, bounded to one visible batch and cancellable as a group. */
+/** Ratings are optional and bounded. Omitted IDs failed; null means a verified detail page has no score. */
 export async function fetchHpoiRatings(ids: string[]): Promise<Record<string, string | null>> {
   const signal = AbortSignal.timeout(RATING_BUDGET_MS);
   const ratings: Record<string, string | null> = {};
   await mapWithConcurrency(ids, 4, async (id) => {
-    ratings[id] = null;
     if (signal.aborted) return;
     try {
-      ratings[id] = parseHpoiDetailScore(await fetchHtml(`https://www.hpoi.net/hobby/${id}`, undefined, undefined, signal));
+      ratings[id] = parseHpoiDetailScore(
+        await fetchHtml(`https://www.hpoi.net/hobby/${id}`, undefined, isHpoiDetailPage, signal),
+      );
     } catch {
-      /* Unavailable scores never prevent browsing the collection. */
+      // Leave failures absent so clients and CDN never cache an outage as "no rating".
     }
   });
   return ratings;

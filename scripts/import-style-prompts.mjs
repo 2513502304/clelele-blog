@@ -666,8 +666,12 @@ async function buildImportData(extractedItems, sessionPath, existingByHash, meta
       ...(promptModelOverride || extracted.model ? { model: promptModelOverride ?? extracted.model } : {}),
       ...(extracted.originalPrompt ? { originalPrompt: extracted.originalPrompt } : {}),
       importedAt: date.toISOString(),
-      sourceSession: extracted.sourceSession ?? path.basename(sessionPath),
-      sourceLine: extracted.sourceLine,
+      sourceSession: extracted.promptSession ?? extracted.sourceSession ?? path.basename(sessionPath),
+      // A cross-file reply must point to its own physical line, not the image line in another file.
+      sourceLine:
+        extracted.promptSession && extracted.promptSession !== extracted.sourceSession
+          ? extracted.promptLine
+          : extracted.sourceLine,
     };
     const pending = itemsByHash.get(itemHash);
     if (pending) {

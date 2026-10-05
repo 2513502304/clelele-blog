@@ -53,6 +53,23 @@ function parseReleaseDate(value: string | null): string | null {
   return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
 }
 
+/** Reject HTTP-200 block pages before interpreting an absent rating as an unrated figure. */
+export function isHpoiDetailPage(html: string): boolean {
+  const $ = load(html);
+  if ($('.hpoi-entry-score-num-box').length > 0) return true;
+  return $('script[type="application/ld+json"]')
+    .toArray()
+    .some((script) => {
+      try {
+        const root = JSON.parse($(script).text());
+        const nodes = Array.isArray(root) ? root : [root, ...(root?.['@graph'] ?? [])];
+        return nodes.some((node) => (node?.mainEntity ?? node)?.['@type'] === 'Product');
+      } catch {
+        return false;
+      }
+    });
+}
+
 /** Collection pages now omit ratings; the public detail page retains its Product aggregate rating. */
 export function parseHpoiDetailScore(html: string): string | null {
   const $ = load(html);

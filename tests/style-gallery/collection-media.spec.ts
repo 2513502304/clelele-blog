@@ -86,52 +86,72 @@ for (const kind of ['bangumi', 'hpoi']) {
   });
 }
 
-test('Hpoi shows cards while scores are pending, then caches scores across reloads', async ({ page }) => {
-  await page.route('**/*', (route) =>
-    route.request().resourceType() === 'image'
-      ? route.fulfill({ contentType: 'image/svg+xml', body: image(false) })
-      : route.continue(),
-  );
-  await page.route('**/api/live2d**', (route) => route.abort());
-  await page.route('**/api/hpoi?**', (route) =>
-    route.fulfill({
-      json: {
-        items: [
-          {
-            id: '123',
-            title: 'Visible before rating',
-            imageUrl: null,
-            detailUrl: 'https://www.hpoi.net/hobby/123',
-            score: null,
+for (const failFirst of [false, true]) {
+  test(`Hpoi keeps cards visible and ${failFirst ? 'retries transient scores after reload' : 'caches resolved scores across reloads'}`, async ({
+    page,
+  }) => {
+    await page.route('**/*', (route) =>
+      route.request().resourceType() === 'image'
+        ? route.fulfill({ contentType: 'image/svg+xml', body: image(false) })
+        : route.continue(),
+    );
+    await page.route('**/api/live2d**', (route) => route.abort());
+    await page.route('**/api/hpoi?**', (route) =>
+      route.fulfill({
+        json: {
+          items: [
+            {
+              id: '123',
+              title: 'Visible before rating',
+              imageUrl: null,
+              detailUrl: 'https://www.hpoi.net/hobby/123',
+              score: null,
+            },
+          ],
+          next: null,
+          meta: {
+            profile: { name: 'Fixture', profileUrl: 'https://www.hpoi.net/user/1', stats: {} },
+            warnings: [],
+            fetchedAt: '2026-10-05T00:00:00Z',
           },
-        ],
-        next: null,
-        meta: {
-          profile: { name: 'Fixture', profileUrl: 'https://www.hpoi.net/user/1', stats: {} },
-          warnings: [],
-          fetchedAt: '2026-10-05T00:00:00Z',
         },
-      },
-    }),
-  );
-  let release: (() => void) | undefined;
-  let reads = 0;
-  await page.route('**/api/hpoi/ratings?**', async (route) => {
-    reads++;
-    await new Promise<void>((resolve) => {
-      release = resolve;
+      }),
+    );
+    let release: (() => void) | undefined;
+    let reads = 0;
+    await page.route('**/api/hpoi/ratings?**', async (route) => {
+      reads++;
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await route.fulfill({ json: failFirst && reads === 1 ? {} : { '123': '4.77' } });
     });
-    await route.fulfill({ json: { '123': '4.77' } });
+    await page.goto('/hpoi', { waitUntil: 'domcontentloaded' });
+    const card = page.locator('[data-gallery-layout] > a');
+    await expect(card).toContainText('Visible before rating');
+    await expect.poll(() => !!release).toBe(true);
+    release?.();
+    if (failFirst) {
+      await expect.poll(() => page.evaluate(() => sessionStorage.getItem('hpoi-rating-v1:123'))).toBe(null);
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await expect.poll(() => reads).toBe(2);
+      release?.();
+    }
+    await expect(card).toContainText('4.77');
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await expect(card).toContainText('4.77');
+    expect(reads).toBe(failFirst ? 2 : 1);
   });
-  await page.goto('/hpoi', { waitUntil: 'domcontentloaded' });
-  const card = page.locator('[data-gallery-layout] > a');
-  await expect(card).toContainText('Visible before rating');
-  await expect.poll(() => !!release).toBe(true);
-  release?.();
-  await expect(card).toContainText('4.77');
-  await page.reload({ waitUntil: 'domcontentloaded' });
-  await expect(card).toContainText('4.77');
-  expect(reads).toBe(1);
+}
+
+test('ratings endpoint caches confirmed empty scores but not temporary failures', async ({ request }) => {
+  const complete = await request.get('/api/hpoi/ratings?ids=990000001,990000002');
+  expect(complete.status()).toBe(200);
+  expect(complete.headers()['cache-control']).toContain('s-maxage=1800');
+  expect(await complete.json()).toEqual({ '990000001': '4.77', '990000002': null });
+  const partial = await request.get('/api/hpoi/ratings?ids=990000001,990000003');
+  expect(partial.headers()['cache-control']).toBe('no-store');
+  expect(await partial.json()).toEqual({ '990000001': '4.77' });
 });
 
 test('sidebar proposals are interactive and inherit every light/dark theme without overflow', async ({ page }) => {

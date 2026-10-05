@@ -1280,25 +1280,28 @@ it('search-all preserves source-file provenance, cross-segment pairing and dupli
     await fs.writeFile(a, `${JSON.stringify(input)}\n`);
     await fs.writeFile(
       b,
-      [output, input, output, input, { ...output, payload: { type: 'agent_message', message: `${PLACEHOLDER}油画。` } }]
+      `\n${[output, input, output, input, { ...output, payload: { type: 'agent_message', message: `${PLACEHOLDER}油画。` } }]
         .map(JSON.stringify)
-        .join('\n'),
+        .join('\n')}`,
     );
     const items = await readSessionItems([a, b]);
     assert.deepEqual(
       items.map((item) => [item.sourceSession, item.sourceLine]),
       [
         ['a.jsonl', 1],
-        ['b.jsonl', 2],
-        ['b.jsonl', 4],
+        ['b.jsonl', 3],
+        ['b.jsonl', 5],
       ],
     );
     const plan = await buildImportData(items, a, new Map(), false);
     assert.equal(plan.items.length, 1);
     assert.equal(plan.skippedDuplicates, 1);
     assert.deepEqual(
-      plan.items[0].prompts.map((prompt) => prompt.sourceSession),
-      ['a.jsonl', 'b.jsonl'],
+      plan.items[0].prompts.map((prompt) => [prompt.sourceSession, prompt.sourceLine]),
+      [
+        ['b.jsonl', 2],
+        ['b.jsonl', 5],
+      ],
     );
   } finally {
     await fs.rm(directory, { recursive: true, force: true });

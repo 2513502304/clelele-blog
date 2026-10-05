@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
-import { fetchHpoiCollection, fetchHpoiCollectionState, fetchHpoiPage } from './fetch';
+import { fetchHpoiCollection, fetchHpoiCollectionState, fetchHpoiPage, fetchHpoiRatings } from './fetch';
 
 const originalFetch = globalThis.fetch;
 
@@ -147,6 +147,33 @@ describe('fetchHpoiCollectionState', () => {
 });
 
 describe('detail rating enrichment', () => {
+  it('omits HTTP failures and block pages but retains confirmed unrated items', async () => {
+    globalThis.fetch = async (input) => {
+      const id = String(input).split('/').pop();
+      if (id === '1')
+        return new Response('<div class="hpoi-entry-score-num-box"><div><div><span>4.77</span></div></div></div>');
+      if (id === '2') return new Response('<script type="application/ld+json">{"@type":"Product"}</script>');
+      if (id === '3') return new Response('Unavailable', { status: 503 });
+      return new Response('<html>Temporarily blocked</html>');
+    };
+    assert.deepEqual(await fetchHpoiRatings(['1', '2', '3', '4']), { '1': '4.77', '2': null });
+  });
+
+  it('omits ratings aborted by the shared deadline', async (t) => {
+    const timeout = AbortSignal.timeout;
+    t.mock.method(AbortSignal, 'timeout', (ms: number) => {
+      if (ms !== 20_000) return timeout(ms);
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(), 20);
+      return controller.signal;
+    });
+    globalThis.fetch = async (_input, init) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true });
+      });
+    assert.deepEqual(await fetchHpoiRatings(['1', '2', '3', '4', '5']), {});
+  });
+
   it('cancels slow rating reads at the shared deadline without losing collection cards', async (t) => {
     const timeout = AbortSignal.timeout;
     t.mock.method(AbortSignal, 'timeout', (ms: number) => {
