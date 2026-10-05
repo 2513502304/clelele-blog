@@ -6,6 +6,7 @@ import { createHpoiImageProxyUrl } from '@lib/hpoi/image';
 import { sortHpoiCollectionItems } from '@lib/hpoi/sort';
 import { cn } from '@lib/utils';
 import { useMemo, useState } from 'react';
+import { InlineSpinner } from '@/components/ui/InlineSpinner';
 import type { TranslationKey } from '@/i18n/types';
 import type {
   HpoiCollectionItem,
@@ -239,7 +240,11 @@ export function HpoiCollection() {
       </div>
 
       {waitingForComplete && (
-        <output className="text-muted-foreground text-sm">
+        <output
+          className="flex items-center gap-2 text-muted-foreground text-sm"
+          aria-busy={collection.loading || ratings.loading}
+        >
+          {(collection.loading || ratings.loading) && <InlineSpinner />}
           {locale.startsWith('zh')
             ? '正在读取当前分类，以完成完整排序…'
             : locale.startsWith('ja')
@@ -249,7 +254,13 @@ export function HpoiCollection() {
       )}
       <StyleGalleryGrid masonry={masonry}>
         {visibleItems.map((item) => (
-          <HpoiCard key={item.id} item={item} state={activeState} masonry={masonry} />
+          <HpoiCard
+            key={item.id}
+            item={item}
+            state={activeState}
+            masonry={masonry}
+            ratingLoading={ratings.pendingIds.has(item.id)}
+          />
         ))}
       </StyleGalleryGrid>
       {collection.complete && activeItems.length === 0 && (

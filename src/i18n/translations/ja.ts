@@ -452,6 +452,11 @@ export const uiStrings: UIStrings = {
   'series.docs': 'ドキュメント',
 
   // ── ホーム情報 ───────────────────────────────────────────────
+  'homeInfo.reading': '読む',
+  'homeInfo.collections': 'コレクション',
+  'homeInfo.connections': 'つながり',
+  'homeInfo.socialLinks': '個人リンク',
+  'homeInfo.refreshing': 'プロフィールを更新中',
   'homeInfo.articles': '記事',
   'homeInfo.categories': 'カテゴリー',
   'homeInfo.tags': 'タグ',

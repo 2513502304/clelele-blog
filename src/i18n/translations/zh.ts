@@ -450,6 +450,11 @@ export const uiStrings = {
   'series.docs': '文档',
 
   // ── Home Info ───────────────────────────────────────────────
+  'homeInfo.reading': '阅读',
+  'homeInfo.collections': '我的收藏',
+  'homeInfo.connections': '连接',
+  'homeInfo.socialLinks': '个人链接',
+  'homeInfo.refreshing': '正在更新个人资料',
   'homeInfo.articles': '文章',
   'homeInfo.categories': '分类',
   'homeInfo.tags': '标签',

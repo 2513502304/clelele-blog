@@ -1,5 +1,7 @@
 import { Icon } from '@iconify/react';
 import { useEffect, useState } from 'react';
+import { InlineSpinner } from '@/components/ui/InlineSpinner';
+import { useTranslation } from '@/hooks/useTranslation';
 import { AVATAR_DISPLAY_SIZE } from '@/lib/site-profile/image-crop';
 import type { SiteProfile } from '@/lib/site-profile/schema';
 import { siteAssetUrl } from '@/lib/site-profile/schema';
@@ -25,22 +27,36 @@ function loadProfile() {
     });
   return request;
 }
+/**
+ * Keep the server profile visible during the shared background refresh, including on failure.
+ * About uses the same data and loading lifecycle through the contacts-only presentation.
+ */
 export function SiteProfileView({ initial, contactsOnly = false }: { initial: PublicProfile; contactsOnly?: boolean }) {
   const [profile, setProfile] = useState(initial);
+  const [loading, setLoading] = useState(true);
+  const { t } = useTranslation();
   useEffect(() => {
     let active = true;
     void loadProfile()
       .then((value) => {
         if (active) setProfile(value);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        if (active) setLoading(false);
+      });
     return () => {
       active = false;
     };
   }, []);
   if (contactsOnly)
     return (
-      <ul>
+      <ul aria-busy={loading}>
+        {loading && (
+          <li className="list-none">
+            <InlineSpinner label={t('homeInfo.refreshing')} />
+          </li>
+        )}
         {profile.links.map((link) => (
           <li key={link.id}>
             {link.label}:{' '}
@@ -52,25 +68,28 @@ export function SiteProfileView({ initial, contactsOnly = false }: { initial: Pu
       </ul>
     );
   return (
-    <>
-      <div
-        data-profile-asset
-        className="group/profile relative rounded-full"
-        style={{ width: AVATAR_DISPLAY_SIZE, height: AVATAR_DISPLAY_SIZE }}
-      >
-        <img
-          className="size-full rounded-full object-cover shadow-card-darker motion-safe:hover:animate-shake"
-          src={siteAssetUrl('avatar', profile.revision)}
-          alt={`${profile.name} avatar`}
-          width={AVATAR_DISPLAY_SIZE}
-          height={AVATAR_DISPLAY_SIZE}
-          fetchPriority="high"
-        />
-        <ProfileQuickEdit slot="avatar" />
+    <div className="sidebar-profile">
+      <div className="sidebar-identity">
+        <div data-profile-asset className="sidebar-avatar group/profile relative rounded-full">
+          <img
+            className="size-full rounded-full object-cover shadow-card-darker motion-safe:hover:animate-shake"
+            src={siteAssetUrl('avatar', profile.revision)}
+            alt={`${profile.name} avatar`}
+            width={AVATAR_DISPLAY_SIZE}
+            height={AVATAR_DISPLAY_SIZE}
+            fetchPriority="high"
+          />
+          <ProfileQuickEdit slot="avatar" />
+        </div>
+        <div className="sidebar-identity-copy" aria-busy={loading}>
+          <p className="sidebar-name">
+            {profile.name}
+            {loading && <InlineSpinner className="text-muted-foreground" label={t('homeInfo.refreshing')} />}
+          </p>
+          <p className="sidebar-signature">{profile.signature}</p>
+        </div>
       </div>
-      <p className="mt-2">{profile.name}</p>
-      <p className="mt-3 whitespace-pre-wrap text-center text-muted-foreground">{profile.signature}</p>
-      <div className="mt-2 grid grid-cols-3 gap-2">
+      <nav className="sidebar-socials" aria-label={t('homeInfo.socialLinks')}>
         {profile.links.map((link) => (
           <a
             key={link.id}
@@ -79,13 +98,13 @@ export function SiteProfileView({ initial, contactsOnly = false }: { initial: Pu
             aria-label={link.label}
             rel="me noreferrer"
             target="_blank"
-            className="flex items-center justify-center rounded-xl px-3 py-2 transition hover:bg-primary/10"
+            className="sidebar-social-link"
             style={{ color: link.color }}
           >
-            <Icon icon={link.icon} className={link.icon === 'ri:github-fill' ? 'size-6 dark:text-white' : 'size-6'} />
+            <Icon icon={link.icon} className={link.icon === 'ri:github-fill' ? 'dark:text-white' : undefined} />
           </a>
         ))}
-      </div>
-    </>
+      </nav>
+    </div>
   );
 }

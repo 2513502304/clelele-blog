@@ -28,6 +28,7 @@ import { openModal } from '@store/modal';
 import { parseAsString, parseAsStringLiteral, useQueryState, useQueryStates } from 'nuqs';
 import { NuqsAdapter } from 'nuqs/adapters/react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { InlineSpinner } from '@/components/ui/InlineSpinner';
 import { useProgressiveList } from '@/hooks/useProgressiveList';
 import type { StyleGalleryCardData } from '@/types/style-gallery';
 import StyleGalleryCuration from './StyleGalleryCuration';
@@ -240,13 +241,17 @@ function StyleGalleryImageIndexContent({
           <Icon icon="ri:search-line" className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
           <input
             value={query}
+            aria-busy={promptSearchStatus === 'loading'}
             onChange={(event) => setQuery(event.currentTarget.value).catch(reportUrlStateError)}
             onFocus={() => {
               if (query.trim() && !tagQuery) void ensurePromptSearchIndex();
             }}
             placeholder={labels.searchPlaceholder}
-            className="h-10 w-full rounded-md border border-border bg-background pr-3 pl-9 text-sm outline-none transition-colors focus:border-primary"
+            className="h-10 w-full rounded-md border border-border bg-background pr-9 pl-9 text-sm outline-none transition-colors focus:border-primary"
           />
+          {promptSearchStatus === 'loading' && (
+            <InlineSpinner className="absolute top-1/2 right-3 -translate-y-1/2 text-muted-foreground" />
+          )}
         </label>
 
         <StyleGalleryVisualFilter

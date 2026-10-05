@@ -130,7 +130,9 @@ for (const failFirst of [false, true]) {
     const card = page.locator('[data-gallery-layout] > a');
     await expect(card).toContainText('Visible before rating');
     await expect.poll(() => !!release).toBe(true);
+    await expect(card.locator('[data-hpoi-rating]')).toHaveAttribute('aria-busy', 'true');
     release?.();
+    await expect(card.locator('[data-hpoi-rating]')).toHaveAttribute('aria-busy', 'false');
     if (failFirst) {
       await expect.poll(() => page.evaluate(() => sessionStorage.getItem('hpoi-rating-v1:123'))).toBe(null);
       await page.reload({ waitUntil: 'domcontentloaded' });

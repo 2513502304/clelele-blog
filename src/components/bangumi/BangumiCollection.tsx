@@ -4,6 +4,7 @@ import { Icon } from '@iconify/react';
 import { cn } from '@lib/utils';
 import { motion, useReducedMotion } from 'motion/react';
 import { useMemo, useState } from 'react';
+import { InlineSpinner } from '@/components/ui/InlineSpinner';
 import type { TranslationKey } from '@/i18n/types';
 import { SUBJECT_TYPE_KEYS, type SubjectTypeKey } from '@/lib/bangumi/constants';
 import { sortBangumiCollectionItems } from '@/lib/bangumi/sort';
@@ -201,7 +202,8 @@ export function BangumiCollection({ userId }: BangumiCollectionProps) {
       </div>
 
       {waitingForComplete && (
-        <output className="text-muted-foreground text-sm">
+        <output className="flex items-center gap-2 text-muted-foreground text-sm" aria-busy={collection.loading}>
+          {collection.loading && <InlineSpinner />}
           {locale.startsWith('zh')
             ? '正在读取当前分类，以完成完整筛选与排序…'
             : locale.startsWith('ja')
