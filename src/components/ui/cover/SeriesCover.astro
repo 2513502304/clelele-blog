@@ -30,14 +30,15 @@ const rawHtml = series.description ? await marked.parse(series.description) : ''
 const descriptionHtml = getSanitizeHtml(rawHtml);
 ---
 
-<div data-profile-asset style={{ height: `${SERIES_VIEWPORT_HEIGHT * 100}dvh`, maxHeight: `${COVER_MAX_HEIGHT}px` }} class="group/profile relative flex z-0 items-center justify-center overflow-hidden pb-6">
-  <div class="absolute inset-0 h-full bg-black/40"></div>
+<div data-profile-asset style={{ height: `${SERIES_VIEWPORT_HEIGHT * 100}dvh`, maxHeight: `${COVER_MAX_HEIGHT}px` }} class="site-banner group/profile relative flex z-0 items-center justify-center overflow-hidden pb-6">
+  <div class="banner-mask"></div>
+  <div class="banner-tint" aria-hidden="true"></div>
   <!-- Series cover image -->
   <div class="absolute inset-0 -z-10 h-full w-full">
     <img
       src={assetSlot ? siteAssetUrl(assetSlot) : series.cover || siteAssetUrl('home')}
       alt={seriesTitle}
-      class="h-full w-full object-cover"
+      class="banner-image h-full w-full object-cover"
       loading="eager"
       fetchpriority="high"
       decoding="async"
@@ -45,7 +46,7 @@ const descriptionHtml = getSanitizeHtml(rawHtml);
   </div>
 
   <!-- Main content area -->
-  <div class={`relative z-10 flex flex-col items-center justify-center px-5 py-4 text-white ${MAX_WIDTH.content}`}>
+  <div class={`banner-copy relative z-10 flex flex-col items-center justify-center px-5 py-4 text-white ${MAX_WIDTH.content}`}>
     <!-- Title -->
     <h1 class="shadow-text text-center text-5xl font-bold md:text-3xl">
       {seriesTitle}

@@ -1,7 +1,9 @@
 ---
 import type { HomeSiderType } from '@constants/enum';
 import type { BlogPost } from 'types/blog';
+import AmbientEffects from '../components/theme/AmbientEffects.astro';
 import AppearanceInit from '../components/theme/AppearanceInit.astro';
+import SceneryInit from '../components/theme/SceneryInit.astro';
 
 interface Props {
   title: string;
@@ -142,6 +144,7 @@ const keywords = keywordsOverride || siteConfig.keywords || [siteConfig.title];
     {isI18nEnabled && <link rel="alternate" hreflang="x-default" href={xDefaultHref} />}
 
     <AppearanceInit />
+    <SceneryInit />
     <script is:inline>
       // 主题系统 - 立即执行以防止 FOUC（无样式内容闪烁）
       // 优先级：1. 用户手动选择 > 2. 系统偏好
@@ -347,6 +350,7 @@ const keywords = keywordsOverride || siteConfig.keywords || [siteConfig.title];
   </head>
   <body>
     <ChristmasEffects transition:persist="christmas-snowfall" />
+    <AmbientEffects />
     <div id="appearance-stage" class="flex min-h-screen flex-col text-black dark:text-white">
       <Header isPostPage={isPostPage} tocNumbering={post?.data.tocNumbering ?? true} />
       <main class="relative flex grow flex-col gap-4">

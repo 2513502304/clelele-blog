@@ -8,6 +8,7 @@ export default defineConfig({
     'profile-crop.spec.ts',
     'design-lab.spec.ts',
     'appearance.spec.ts',
+    'banner-atmosphere.spec.ts',
     'collections.spec.ts',
     'collection-media.spec.ts',
     'sidebar-loading.spec.ts',
@@ -25,6 +26,7 @@ export default defineConfig({
       testMatch: [
         'profile-crop.spec.ts',
         'appearance.spec.ts',
+        'banner-atmosphere.spec.ts',
         'collections.spec.ts',
         'collection-media.spec.ts',
         'sidebar-loading.spec.ts',

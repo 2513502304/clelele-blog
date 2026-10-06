@@ -1,0 +1,40 @@
+---
+import { SCENERY_RULES } from './scenery-preferences';
+---
+<script is:inline define:vars={{ sceneryRules: SCENERY_RULES }}>
+  (() => {
+    function apply(fromStorage = false) {
+      let saved = window.__sceneryPreferences;
+      if (!saved || fromStorage) {
+        try { saved = JSON.parse(localStorage.getItem('appearance-scenery') || '{}'); } catch { saved ??= {}; }
+      }
+      const input = saved && typeof saved === 'object' ? saved : {};
+      const values = {};
+      for (const [key, rule] of Object.entries(sceneryRules)) {
+        const raw = input[key];
+        const value = 'min' in rule
+          ? (typeof raw === 'number' && Number.isFinite(raw)
+            ? Number((Math.round(Math.max(rule.min, Math.min(rule.max, raw)) / rule.step) * rule.step).toFixed(2))
+            : rule.default)
+          : (rule.values.includes(raw) ? raw : rule.default);
+        values[key] = value;
+        const name = key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
+        if (typeof value === 'number') document.documentElement.style.setProperty(`--scene-${name}`, String(value));
+        else document.documentElement.setAttribute(`data-scene-${name}`, value);
+      }
+      document.documentElement.toggleAttribute('data-scene-text-hidden', values.textOpacity === 0);
+      window.__sceneryPreferences = values;
+    }
+    apply();
+    if (!window.__sceneryListeners) {
+      window.__sceneryListeners = true;
+      document.addEventListener('astro:after-swap', () => apply());
+      window.addEventListener('storage', (event) => {
+        if (event.key === null || event.key === 'appearance-scenery') {
+          apply(true);
+          window.dispatchEvent(new Event('scenery-change'));
+        }
+      });
+    }
+  })();
+</script>

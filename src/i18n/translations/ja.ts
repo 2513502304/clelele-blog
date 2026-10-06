@@ -124,7 +124,7 @@ export const uiStrings: UIStrings = {
   'gallery.generationPromptShow': '全文を表示',
   'gallery.generationPromptCollapse': '折りたたむ',
   'gallery.generationPromptCopy': '生成プロンプトをコピー',
-  'gallery.title': 'Image Style Prompt Gallery',
+  'gallery.title': '画像スタイル・プロンプトギャラリー',
   'gallery.kicker': 'Reference image to reusable prompt',
   'gallery.description':
     '参考画像から抽出した、GPT-Image、Nano Banana、PixAI、Midjourney、NovelAI、Flux 向けの再利用可能な中国語画像スタイル prompt を集めた個人アーカイブです。',

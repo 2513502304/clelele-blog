@@ -36,9 +36,10 @@ const href = data && localizedPath(routeBuilder(Routes.Post, data), locale);
 const pageStatsConfig = href ? createArticleStatsConfig(href) : null;
 ---
 
-<div data-profile-asset style={{ height: `${COVER_VIEWPORT_HEIGHT * 100}dvh`, maxHeight: `${COVER_MAX_HEIGHT}px` }} class="group/profile relative flex z-0 overflow-hidden">
-  <div class="absolute inset-0 h-full bg-black/40"></div>
-  <div class="absolute inset-0 bottom-[8dvh] flex flex-col items-center justify-center px-5 text-white">
+<div data-profile-asset style={{ height: `${COVER_VIEWPORT_HEIGHT * 100}dvh`, maxHeight: `${COVER_MAX_HEIGHT}px` }} class="site-banner group/profile relative flex z-0 overflow-hidden">
+  <div class="banner-mask"></div>
+  <div class="banner-tint" aria-hidden="true"></div>
+  <div class="banner-copy absolute inset-0 bottom-[8dvh] flex flex-col items-center justify-center px-5 text-white">
     {
       title ? (
         <h1
@@ -96,8 +97,7 @@ const pageStatsConfig = href ? createArticleStatsConfig(href) : null;
         </>
       ) : (
         <>
-          <h2 class="shadow-text font-chill-round text-5xl/[1.2]">{siteConfig?.alternate}</h2>
-          <h1 class="shadow-text font-chill-round mt-3 text-5xl/[1.2] font-bold tracking-widest">{siteConfig?.title}</h1>
+          <h1 class="shadow-text font-chill-round text-5xl/[1.2] font-bold tracking-widest">{siteConfig?.title}</h1>
           <p class="shadow-text mt-5 text-sm">= {siteConfig?.subtitle} =</p>
         </>
       )
@@ -110,7 +110,7 @@ const pageStatsConfig = href ? createArticleStatsConfig(href) : null;
     <img
       src={siteAssetUrl(assetSlot)}
       alt="cover"
-      class="h-full w-full object-cover"
+      class="banner-image h-full w-full object-cover"
       loading="eager"
       fetchpriority="high"
       decoding="async"

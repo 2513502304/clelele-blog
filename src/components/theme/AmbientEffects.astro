@@ -1,0 +1,41 @@
+<canvas id="ambient-effects" aria-hidden="true"></canvas>
+<style>
+  #ambient-effects { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 20; }
+  @media print { #ambient-effects { display: none; } }
+</style>
+<script>
+  import { getSceneryPreferences } from './scenery-preferences';
+  // Lazy loading keeps the default, effects-off page free of rendering work.
+  let dispose: (() => void) | undefined;
+  let generation = 0;
+  async function mount() {
+    const ticket = ++generation;
+    dispose?.();
+    dispose = undefined;
+    const canvas = document.querySelector<HTMLCanvasElement>('#ambient-effects');
+    if (!canvas || getSceneryPreferences().effect === 'none') return;
+    try {
+      const { startAtmosphere } = await import('./ambient-renderer');
+      if (ticket === generation && canvas.isConnected) {
+        delete canvas.dataset.error;
+        dispose = startAtmosphere(canvas);
+        window.dispatchEvent(new Event('scenery-status'));
+      }
+    } catch {
+      // A missing optional chunk must not break the page; a later selection can retry.
+      if (ticket === generation && canvas.isConnected) {
+        canvas.dataset.error = 'load';
+        window.dispatchEvent(new Event('scenery-status'));
+      }
+    }
+  }
+  function preferencesChanged() {
+    // An active renderer updates its own settings. A cold renderer is created once when enabled.
+    if (!dispose) void mount();
+  }
+  window.addEventListener('scenery-change', preferencesChanged);
+  document.addEventListener('astro:before-swap', () => { generation++; dispose?.(); dispose = undefined; });
+  document.addEventListener('astro:page-load', mount);
+  if (document.readyState !== 'loading') void mount();
+  else document.addEventListener('DOMContentLoaded', mount, { once: true });
+</script>
