@@ -38,7 +38,15 @@ export function openCodexArchiveClient(
     }
     pending.clear();
   };
-  child.on('error', (error) => fail(new Error(`无法启动 Codex CLI (${error.code ?? 'unknown'})；请确认 codex 已安装。`)));
+  child.on('error', (error) =>
+    fail(
+      new Error(
+        error.code === 'ENOENT'
+          ? '找不到 Codex CLI；请确认 codex 已安装并在 PATH 中。'
+          : `无法启动 Codex CLI (${error.code ?? 'unknown'})。`,
+      ),
+    ),
+  );
   child.on('exit', () => fail(new Error('Codex app-server 已退出，无法确认归档结果。')));
   child.stdin.on('error', () => fail(new Error('Codex app-server 连接已断开，无法确认归档结果。')));
   lines.on('line', (line) => {

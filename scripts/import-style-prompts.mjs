@@ -214,15 +214,16 @@ async function readSessionItems(sessionPath) {
     const base = header?.historyBase;
     let ordinal = 0,
       bytes = 0;
-    if (base && files.length > 1) {
+    if (base) {
       const key = checkpointKey(base.thread_id, base.end_ordinal_exclusive, base.end_byte_offset);
-      if (base.thread_id !== header.id || !checkpoints.has(key))
+      const checkpoint = checkpoints.get(key);
+      if (!checkpoint || checkpoint.sessionId !== header.id)
         throw new Error(`${path.basename(file)}: cannot verify history_base; include its history with --search-all.`);
       // A resumed segment can branch BEFORE the preceding file's abandoned tail. Restore
       // only pairing state at that exact prefix; keep successful imports from all segments.
-      extractor.restore(checkpoints.get(key));
+      extractor.restore(checkpoint.state);
       ordinal = base.end_ordinal_exclusive;
-      bytes = base.end_byte_offset;
+      // Ordinals continue across segments; byte offsets are local to each physical file.
     }
     const input = createReadStream(file, { encoding: 'utf8' });
     const lines = createInterface({ input, crlfDelay: Infinity });
@@ -242,8 +243,8 @@ async function readSessionItems(sessionPath) {
         }
         extractor.consume({ index, record, ...(Array.isArray(sessionPath) ? { sourceSession: path.basename(file) } : {}) });
         ordinal++;
-        const key = checkpointKey(header?.id, ordinal, bytes);
-        if (wanted.has(key)) checkpoints.set(key, extractor.snapshot());
+        const key = checkpointKey(header?.segmentId, ordinal, bytes);
+        if (wanted.has(key)) checkpoints.set(key, { sessionId: header.id, state: extractor.snapshot() });
       }
     } finally {
       lines.close();

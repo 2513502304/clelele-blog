@@ -135,6 +135,7 @@ describe('failed-turn retries', () => {
         },
       };
       await fs.writeFile(b, `${[header, start('retry'), output('retry')].map(JSON.stringify).join('\n')}\n`);
+      await assert.rejects(readSessionItems(b), /history_base.*--search-all/);
       const [item] = await readSessionItems([a, b]);
       assert.ok(item);
       assert.deepEqual(item.images, ['data:image/png;base64,YQ==']);
@@ -144,6 +145,46 @@ describe('failed-turn retries', () => {
       header.payload.history_base.end_byte_offset++;
       await fs.writeFile(b, [header, start('retry'), output('retry')].map(JSON.stringify).join('\n'));
       await assert.rejects(readSessionItems([a, b]), /history|历史/i);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('follows three segments using segment IDs, cumulative ordinals and file-local byte offsets', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'gallery-retry-chain-'));
+    const id = '01a0df23-90af-7e71-8b57-77f4b4be0faa';
+    const second = '01a0ed6e-e4d9-7671-bf5d-f71f207d7ac6';
+    const third = '01a0f2ba-100e-76d3-8b7a-ba406545a9bf';
+    const file = (day, suffix) => path.join(dir, `rollout-2026-09-${day}T03-14-05-${suffix}.jsonl`);
+    const a = file('27', id),
+      b = file('29', `${id}_${second}`),
+      c = file('30', `${id}_${third}`);
+    const encode = (records) => `${records.map(JSON.stringify).join('\n')}\n`;
+    const header = (base) => ({ type: 'session_meta', payload: { id, history_base: base } });
+    const prefixA = encode([header(null), start('a'), input('a'), failed('a')]);
+    const prefixB = encode([
+      header({ thread_id: id, end_ordinal_exclusive: 4, end_byte_offset: Buffer.byteLength(prefixA) }),
+      start('b'),
+      failed('b'),
+    ]);
+    try {
+      await fs.writeFile(a, prefixA);
+      await fs.writeFile(b, prefixB + encode([start('abandoned'), input('abandoned', 'Yg=='), event('turn_aborted')]));
+      await fs.writeFile(
+        c,
+        encode([
+          header({ thread_id: second, end_ordinal_exclusive: 7, end_byte_offset: Buffer.byteLength(prefixB) }),
+          start('c'),
+          output('c'),
+        ]),
+      );
+      const items = await readSessionItems([a, b, c]);
+      assert.equal(items.length, 1);
+      assert.deepEqual(items[0].images, ['data:image/png;base64,YQ==']);
+      assert.equal(items[0].sourceSession, path.basename(a));
+      assert.equal(items[0].promptSession, path.basename(c));
+      assert.equal(items[0].sourceLine, 3);
+      assert.equal(items[0].promptLine, 3);
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
     }

@@ -16,8 +16,14 @@ export async function sessionHeader(file, required = true) {
       if (!line.trim()) continue;
       const record = JSON.parse(line);
       if (record.type !== 'session_meta' || !new RegExp(`^${UUID}$`, 'i').test(record.payload?.id ?? '')) break;
+      const id = record.payload.id.toLowerCase();
+      const name = path.basename(file);
       return {
-        id: record.payload.id.toLowerCase(),
+        id,
+        // Continuation headers retain the conversation ID, while history_base can point
+        // to the previous segment's trailing UUID. This never expands session membership.
+        segmentId:
+          rolloutName.exec(name)?.[1].toLowerCase() === id ? name.match(new RegExp(UUID, 'gi')).at(-1).toLowerCase() : id,
         timestamp: record.payload.timestamp ?? '',
         historyBase: record.payload.history_base ?? null,
       };

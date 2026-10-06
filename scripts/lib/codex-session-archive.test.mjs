@@ -9,6 +9,7 @@ import { findSessionFiles } from './codex-session-files.mjs';
 
 const id = '01a0f275-1553-7fe2-a469-1a9fd0f3da5f';
 
+/** Keep discovery and file-change checks real without touching the user's Codex home. */
 async function fixture(run) {
   const home = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'gallery-archive-')));
   const file = path.join(home, 'sessions', `rollout-2026-10-02T18-45-35-${id}.jsonl`);
@@ -22,6 +23,7 @@ async function fixture(run) {
   }
 }
 
+/** Deliver input only after the question is written, including EOF and concurrent edits. */
 function terminal(answer, beforeAnswer = () => {}) {
   const input = new PassThrough();
   input.isTTY = true;
@@ -40,6 +42,7 @@ function terminal(answer, beforeAnswer = () => {}) {
   return { input, output, log() {} };
 }
 
+/** Model the protocol's archive/readback transition; never spawn or mutate real Codex. */
 function fakeClient(context, failure) {
   const calls = [];
   let archived = false;
@@ -70,17 +73,42 @@ function fakeClient(context, failure) {
   };
 }
 
-it('never opens Codex for dry runs, incomplete/empty imports or noninteractive input', async () => {
-  for (const options of [{ verified: false }, { verified: true, dryRun: true }, { verified: true }]) {
+it('never asks or opens Codex for dry runs or incomplete/empty imports even in a terminal', async () => {
+  for (const options of [{ verified: false }, { dryRun: true }])
+    await fixture(async (context) => {
+      assert.equal(
+        await archiveImportedSession(
+          { ...context, ...options },
+          {
+            ...terminal('y', () => assert.fail('must not ask for confirmation')),
+            connect() {
+              assert.fail('must not open Codex before successful publication');
+            },
+          },
+        ),
+        false,
+      );
+    });
+});
+
+it('never opens Codex if either input or output is noninteractive after a verified import', async () => {
+  for (const [inputTTY, outputTTY] of [
+    [false, true],
+    [true, false],
+    [false, false],
+  ]) {
     assert.equal(
-      await archiveImportedSession(options, {
-        input: {},
-        output: {},
-        log() {},
-        connect() {
-          assert.fail();
+      await archiveImportedSession(
+        { verified: true },
+        {
+          input: { isTTY: inputTTY },
+          output: { isTTY: outputTTY },
+          log() {},
+          connect() {
+            assert.fail();
+          },
         },
-      }),
+      ),
       false,
     );
   }
