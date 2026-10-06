@@ -10,7 +10,8 @@ import { readStyleGalleryImageDimensions } from '../src/lib/style-gallery-image-
 import { sanitizeImportedOriginalPrompt, sanitizeImportedPrompt } from '../src/lib/style-gallery-prompt-sanitize.ts';
 import { isValidGalleryTag, MAX_GALLERY_TAGS_PER_ITEM, normalizeGalleryTag } from '../src/lib/style-gallery-tags.ts';
 import { computeStyleGalleryVisualFeaturesFromBytes } from '../src/lib/style-gallery-visual-feature-node.ts';
-import { findSessionFiles } from './lib/codex-session-files.mjs';
+import { archiveImportedSession, snapshotSessionFiles } from './lib/codex-session-archive.mjs';
+import { findSessionFiles, sessionHeader } from './lib/codex-session-files.mjs';
 import { configureEnvironmentProxy } from './lib/environment-proxy.mjs';
 import {
   describeImportContext,
@@ -52,6 +53,7 @@ function parseArgs(argv) {
   let promptModel = null;
   let dryRun = false;
   let searchAll = false;
+  let archive = false;
   let help = false;
   const tags = [];
   for (let index = 0; index < argv.length; index++) {
@@ -59,6 +61,7 @@ function parseArgs(argv) {
     if (arg === '--help' || arg === '-h') help = true;
     else if (arg === '--dry-run') dryRun = true;
     else if (arg === '--search-all') searchAll = true;
+    else if (arg === '--archive') archive = true;
     else if (arg === '--metadata-only' || arg === '--update-metadata-only') metadataOnly = true;
     else if (arg === '--overwrite-tag') overwriteTag = true;
     else if (arg === '--overwrite-images') overwriteImages = true;
@@ -80,6 +83,7 @@ function parseArgs(argv) {
   if (metadataOnly && overwriteImages) throw new Error('--overwrite-images cannot be combined with --metadata-only.');
   return {
     overwriteImages,
+    archive,
     apiBaseUrl: apiBaseUrl.replace(/\/$/, ''),
     dryRun,
     help,
@@ -195,13 +199,41 @@ function apiImagePath(kind, fileName) {
  */
 async function readSessionItems(sessionPath) {
   const extractor = createItemExtractor();
-  for (const file of Array.isArray(sessionPath) ? sessionPath : [sessionPath]) {
+  const files = Array.isArray(sessionPath) ? sessionPath : [sessionPath];
+  const headers = await Promise.all(files.map((file) => sessionHeader(file, false)));
+  const checkpointKey = (id, ordinal, bytes) => `${id}:${ordinal}:${bytes}`;
+  const wanted = new Set(
+    headers.flatMap((header) => {
+      const base = header?.historyBase;
+      return base ? [checkpointKey(base.thread_id, base.end_ordinal_exclusive, base.end_byte_offset)] : [];
+    }),
+  );
+  const checkpoints = new Map();
+  for (const [fileIndex, file] of files.entries()) {
+    const header = headers[fileIndex];
+    const base = header?.historyBase;
+    let ordinal = 0,
+      bytes = 0;
+    if (base) {
+      const key = checkpointKey(base.thread_id, base.end_ordinal_exclusive, base.end_byte_offset);
+      const checkpoint = checkpoints.get(key);
+      if (!checkpoint || checkpoint.sessionId !== header.id)
+        throw new Error(`${path.basename(file)}: cannot verify history_base; include its history with --search-all.`);
+      // A resumed segment can branch BEFORE the preceding file's abandoned tail. Restore
+      // only pairing state at that exact prefix; keep successful imports from all segments.
+      extractor.restore(checkpoint.state);
+      ordinal = base.end_ordinal_exclusive;
+      // Ordinals continue across segments; byte offsets are local to each physical file.
+    }
     const input = createReadStream(file, { encoding: 'utf8' });
     const lines = createInterface({ input, crlfDelay: Infinity });
     let index = 0;
     try {
       for await (const line of lines) {
         index++;
+        // Codex rollouts use UTF-8 LF-terminated records. Both counters must match the
+        // declared prefix, so a truncated/rewritten history fails closed before writes.
+        bytes += Buffer.byteLength(line) + 1;
         if (!line.trim()) continue;
         let record;
         try {
@@ -210,6 +242,9 @@ async function readSessionItems(sessionPath) {
           throw new Error(`Failed to parse JSONL line ${index} in ${path.basename(file)}: ${error.message}`);
         }
         extractor.consume({ index, record, ...(Array.isArray(sessionPath) ? { sourceSession: path.basename(file) } : {}) });
+        ordinal++;
+        const key = checkpointKey(header?.segmentId, ordinal, bytes);
+        if (wanted.has(key)) checkpoints.set(key, { sessionId: header.id, state: extractor.snapshot() });
       }
     } finally {
       lines.close();
@@ -263,10 +298,13 @@ function desktopImageEnvelopePaths(text, imageCount) {
       text.replace(/\r\n?/g, '\n').trim(),
     );
   if (!match || !imageCount) return null;
-  const entries = match[1].split('\n').filter((line) => line.trim());
+  const entries = match[1]
+    .trim()
+    .split(/\n\s*\n|\n(?=## )/)
+    .filter((line) => line.trim());
   if (entries.length !== imageCount) return null;
   const paths = entries.map((line) => {
-    const entry = /^## (.+): ([^\r\n]+)$/.exec(line);
+    const entry = /^## (.+): ([^\r\n]+)(?:\nImage attachment: true)?$/.exec(line);
     return entry && path.isAbsolute(entry[2]) && path.basename(entry[2]) === entry[1] && /\.(?:jpe?g|png|webp)$/i.test(entry[2])
       ? entry[2]
       : null;
@@ -314,7 +352,7 @@ function responseItemOutput(payload) {
  * 同一输入可能同时写入 `event_msg` 的 UI 图片和 `response_item:message` 的模型图片。
  * 有 UI 内嵌图时优先保留其字节，否则使用模型图片。`item_completed` 与 `user_message.local_images`
  * 及完整的 Desktop 文件说明只补充经过同一输入和路径双重校验的原始附件，不创建额外配对。task_complete 和压缩副本也不重复导入；
- * task 边界会清空未完成配对，避免上一轮图片被错误关联到下一轮回复。
+ * 普通 task 边界清空配对；显式报错后的无新输入重试可沿用尚未回答的图片，新请求立即终止继承。
  */
 function extractItems(records) {
   const extractor = createItemExtractor();
@@ -371,23 +409,40 @@ function createItemExtractor() {
   const items = [];
   let pendingInput = null;
   let currentModel = null;
+  let currentTurnId = null;
+  let retryInput = null;
+  let inheritedRetry = false;
   function consume({ index, record, sourceSession }) {
     const payload = record?.payload;
     if (!payload || typeof payload !== 'object') return;
     if (record.type === 'event_msg' && payload.type === 'task_started') {
-      pendingInput = null;
+      pendingInput = payload.turn_id ? retryInput : null;
+      inheritedRetry = !!pendingInput;
+      retryInput = null;
+      currentTurnId = payload.turn_id ?? null;
       currentModel = null;
       return;
     }
     if (record.type === 'event_msg' && payload.type === 'task_complete') {
+      // Only explicit failure can carry an unanswered image into a no-input retry.
+      // A new user input replaces it; a completed/cancelled turn never leaves a candidate.
+      retryInput = payload.error && payload.turn_id === currentTurnId ? pendingInput : null;
       pendingInput = null;
+      return;
+    }
+    if (record.type === 'event_msg' && payload.type === 'turn_aborted') {
+      pendingInput = retryInput = null;
+      inheritedRetry = false;
       return;
     }
     if (record.type === 'turn_context' && typeof payload.model === 'string' && payload.model.trim()) {
       currentModel = payload.model.trim();
+      if (inheritedRetry && pendingInput) pendingInput = { ...pendingInput, model: currentModel };
       return;
     }
     if (record.type === 'event_msg' && payload.type === 'user_message' && Array.isArray(payload.images)) {
+      retryInput = null;
+      inheritedRetry = false;
       const images = payload.images.filter((value) => typeof value === 'string' && value.startsWith('data:image/'));
       const originalPrompt = sanitizeOriginalPrompt(typeof payload.message === 'string' ? payload.message : '');
       // A UI projection has no turn_id in current Desktop JSONL. Bind it only once to the
@@ -427,6 +482,8 @@ function createItemExtractor() {
     if (record.type === 'response_item') {
       const input = responseItemInput(payload);
       if (input) {
+        retryInput = null;
+        inheritedRetry = false;
         pendingInput = {
           images: input.images,
           attachmentPaths: input.attachmentPaths,
@@ -438,6 +495,19 @@ function createItemExtractor() {
           model: currentModel,
         };
         return;
+      }
+      if ((inheritedRetry || retryInput) && payload.type === 'message' && payload.role === 'user') {
+        const kinds = payload.internal_chat_message_metadata_passthrough?.content_item_kinds;
+        // Desktop injects ambient page context as role=user; only its explicit metadata
+        // distinguishes it from a new human text request. Unknown text cancels recovery.
+        const ambient =
+          Array.isArray(kinds) &&
+          kinds.length &&
+          kinds.every((kind) => typeof kind === 'string' && kind.startsWith('additional_content.'));
+        if (!ambient) {
+          pendingInput = retryInput = null;
+          inheritedRetry = false;
+        }
       }
     }
     // UI projections never create another item. Associate originals only when both the turn
@@ -486,7 +556,13 @@ function createItemExtractor() {
         : record.type === 'response_item'
           ? responseItemOutput(payload)
           : null;
-    if (pendingInput && typeof message === 'string' && message.includes(PLACEHOLDER)) {
+    const outputTurn = payload.turn_id ?? payload.internal_chat_message_metadata_passthrough?.turn_id;
+    if (
+      pendingInput &&
+      (!outputTurn || !currentTurnId || outputTurn === currentTurnId) &&
+      typeof message === 'string' &&
+      message.includes(PLACEHOLDER)
+    ) {
       items.push({
         ...pendingInput,
         prompt: normalizePrompt(message),
@@ -494,9 +570,26 @@ function createItemExtractor() {
         ...(sourceSession ? { promptSession: sourceSession } : {}),
       });
       pendingInput = null;
+      retryInput = null;
+      inheritedRetry = false;
     }
   }
-  return { items, consume };
+  return {
+    items,
+    consume,
+    snapshot: () => ({
+      pendingInput: pendingInput && { ...pendingInput },
+      retryInput: retryInput && { ...retryInput },
+      currentModel,
+      currentTurnId,
+      inheritedRetry,
+    }),
+    restore: (state) => {
+      ({ currentModel, currentTurnId, inheritedRetry } = state);
+      pendingInput = state.pendingInput && { ...state.pendingInput };
+      retryInput = state.retryInput && { ...state.retryInput };
+    },
+  };
 }
 
 /** Restore exact original bytes before identity lookup. Missing archived attachments fall back
@@ -887,8 +980,19 @@ function sleep(ms) {
 }
 
 async function main() {
-  const { apiBaseUrl, dryRun, help, metadataOnly, overwriteTag, overwriteImages, promptModel, sessionPath, searchAll, tags } =
-    parseArgs(process.argv.slice(2));
+  const {
+    apiBaseUrl,
+    dryRun,
+    help,
+    metadataOnly,
+    overwriteTag,
+    overwriteImages,
+    promptModel,
+    sessionPath,
+    searchAll,
+    archive,
+    tags,
+  } = parseArgs(process.argv.slice(2));
   if (help || !sessionPath) {
     (help ? console.log : console.error)(usage());
     process.exit(help ? 0 : 1);
@@ -898,8 +1002,11 @@ async function main() {
   if (!token) throw new Error('STYLE_GALLERY_UPLOAD_TOKEN is required, including read-only identity planning.');
   const absoluteSessionPath = path.resolve(sessionPath);
   console.log(describeImportContext({ overwriteImages, dryRun, metadataOnly, overwriteTag, tags, apiBaseUrl }));
-  const selection = searchAll ? await findSessionFiles(absoluteSessionPath) : { files: [absoluteSessionPath] };
-  if (searchAll)
+  // Archiving a thread affects all its continuations, so never archive after a partial file selection.
+  const selection = searchAll || archive ? await findSessionFiles(absoluteSessionPath) : { files: [absoluteSessionPath] };
+  const archiveSnapshot = archive && !dryRun ? await snapshotSessionFiles(selection) : null;
+  if (archive) console.log('[归档] --archive 自动包含 --search-all；全部导入成功后另行询问 y/n，失败不归档。');
+  if (searchAll || archive)
     console.log(
       `\n[会话范围] ${selection.id}：在活动和归档目录找到 ${selection.files.length} 份 JSONL，按时间合并导入；相同图片/Prompt 仍只写入一次。`,
     );
@@ -1028,6 +1135,7 @@ async function main() {
       console.log(
         `Dry run: would ${overwriteTag ? 'replace tags with' : 'add'} ${tags.map((tag) => `#${tag}`).join(' ')} to ${prepared.sourceSlugs.length} source(s), including duplicates.`,
       );
+    if (archive) await archiveImportedSession({ selection, dryRun: true });
     return;
   }
   // Reserve confirmed aliases before publishing new items. If a response/process is lost after
@@ -1168,6 +1276,19 @@ async function main() {
       },
     );
   }
+  if (archive) {
+    const verified =
+      extractedItems.length > 0 &&
+      !prepared.skippedNewMetadata &&
+      extractedItems.every((item, index) =>
+        published[index]?.item?.prompts.some((entry) => entry.prompt === normalizePrompt(item.prompt)),
+      );
+    try {
+      await archiveImportedSession({ selection, snapshot: archiveSnapshot, verified });
+    } catch (error) {
+      throw new Error(`图片、Prompt 和标签已上传成功；归档未完成：${error.message}`, { cause: error });
+    }
+  }
 }
 
 /** Only proven original recovery can replace an existing card; missing attachments never downgrade it. */
@@ -1280,6 +1401,8 @@ npm run import:style-prompts -- <session.jsonl> --prompt-model='gpt-5.6-sol'
 npm run import:style-prompts -- <session.jsonl> --tag "溶图" --tag "现实"
 # 同一会话的任意续接文件均可作为入口；搜索活动与归档目录，一起导入并追加标签。
 npm run import:style-prompts -- <session.jsonl> --search-all --tag "插画"
+# 成功后在交互式终端确认 y/n；自动搜索全部续接文件，失败、试跑或非交互输入不归档。
+npm run import:style-prompts -- <session.jsonl> --tag "插画" --archive
 npm run import:style-prompts -- <session.jsonl> --tag "溶图" --tag "现实" --overwrite-tag
 
 # 默认保留已发布图片身份；--overwrite-images 才会迁移可恢复的原始附件，URL 尾缀同步更新为新 hash，保留导入日期、Prompt、标签、示例和点赞。

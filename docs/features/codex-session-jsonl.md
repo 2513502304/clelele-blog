@@ -536,9 +536,9 @@ assistant message 还可能带 `phase`。`phase = "commentary"` 是中间进度�
 
 | 目标 | 优先来源 | 兜底来源 | 原因 |
 | --- | --- | --- | --- |
-| task group 边界 | `event_msg.payload.type = "task_started"` / `"task_complete"` | 文件开头到结尾 | 这是用户一轮任务的自然边界 |
+| task group 边界 | `task_started` / `task_complete` 与错误状态 | 旧版无边界记录按输入配对 | 明确失败后的无新输入重试可延续配对；新请求、成功结束和取消清空配对 |
 | 用户原始输入 | 同一 task 中带图片的 `event_msg.user_message.message` 或 `response_item.message role=user` 的 `input_text` | 无图片的 user message 不作为原始请求 | 两种来源随 Codex 版本变化；skill 注入也可能伪装成 user role |
-| 用户上传图片 | `event_msg.user_message.images[]` 或 `response_item.message.content[].input_image` | 不读取 `item_completed` / `compacted` 副本 | 组内只消费一份 canonical 图片数组 |
+| 用户上传图片 | 同一输入核对后的 UI 图片（`user_message` / `item_completed.UserMessage`） | `response_item.message.content[].input_image` | UI 与模型投影只对应一张卡片；不读取 `compacted` 历史副本 |
 | assistant 最终 prompt | `event_msg.agent_message.message` 或 `response_item.message role=assistant, phase=final_answer` | `task_complete.last_agent_message` 仅用于缺损记录诊断 | 两种 canonical 来源随版本变化；不能重复产出 |
 | 工具调用 | `response_item.function_call` | 无 | 工具调用只在 response item 中结构化保存 |
 | 工具输出 | `response_item.function_call_output` | 无 | 可用于审计，不适合默认展示 |
@@ -582,8 +582,8 @@ assistant message 还可能带 `phase`。`phase = "commentary"` 是中间进度�
 
 1. 流式读取 JSONL，不要为了预览把整份文件和所有 base64 都塞进浏览器。
 2. 只从 task group 的原始用户输入里取图片，跳过 `compacted`。
-3. 同时兼容旧 `event_msg` 和新 `response_item` 消息格式；忽略 `item_completed`、`task_complete` 中的重复内容，
-   并在 task 边界清空未完成配对，禁止跨轮关联。
+3. 同时兼容旧 `event_msg` 和新 `response_item` 消息格式。同一输入的 UI 图片可补充原图和附件路径，但不另建卡片；`task_complete` 的回复副本不重复导入。
+   普通任务边界清空配对。明确报错后，如果下一次尝试没有新用户输入，可以继续使用尚未获得回复的图片；新图片、新文字请求、成功结束或取消都会终止这种继承。
 4. 用图片 bytes 的 SHA-256 做去重。多图 item 用多个图片 hash 拼成 group hash。
 5. 允许一个 item 持有多张参考图。
 6. 保存 `originalPrompt`，但把指向本地 `SKILL.md` 的绝对路径脱敏成 `/skill-name`。
@@ -597,6 +597,23 @@ assistant message 还可能带 `phase`。`phase = "commentary"` 是中间进度�
 ```bash
 npm run import:style-prompts -- /path/to/rollout-session.jsonl
 ```
+
+### 重试、续接文件与归档
+
+网络错误或模型繁忙不等于这张图片最终没有得到回复。Codex 重试时可能只记录新任务和 assistant 回复，不再保存一次用户图片。导入器会保留明确失败、尚未回答的图片，直到重试产生符合模板的最终 Prompt。始终没有输出的失败输入不会上传；中途提交另一张图片时，旧图片也不会借用新图片的回复。
+
+会话可能拆成多份 JSONL。使用 `--search-all` 可以从其中任意一份查找同一会话的活动和归档文件。如果续接文件带有 `history_base`，配对状态从它指定的历史位置恢复。旧文件末尾可能包含已经放弃的尝试，因此不能直接将两份文件首尾拼接后配对。单独传入一份依赖前文的续接文件时，也需要加上 `--search-all`；找不到它所引用的历史位置，脚本会在上传前停止，不会猜测对应图片。
+
+多次续接时，`history_base.thread_id` 可能指向上一段文件的独立 ID；记录序号接着前文累计，但字节偏移只计算被引用的那一份文件。导入器同时核对这两个位置，并确认各段仍属于同一会话，防止把旧文件中已放弃的输入带入重试。
+
+```bash
+npm run import:style-prompts -- /path/to/rollout-session.jsonl --search-all --tag "插画"
+npm run import:style-prompts -- /path/to/rollout-session.jsonl --tag "插画" --archive
+```
+
+`--archive` 自动搜索整条会话的续接文件，因为归档影响整条会话。图片、Prompt 回读、身份记录和标签全部处理成功后，脚本才在终端显示会话名称与 ID，询问是否归档。输入 `y` 执行；输入 `n`、直接回车或结束输入都会取消，已上传的内容保留。
+
+这项功能需要本机安装 `codex` 命令，归档通过 Codex 自己的 `thread/archive` 接口完成，不直接修改数据库或搬动 JSONL。全部记录都已发布的重复导入也可以确认归档。`--dry-run`、没有可导入记录、只完成部分导入、上传或标签写入失败，以及非交互终端，都不会归档。上传期间或确认前会话文件发生变化时，也会停止归档，避免漏掉新增内容。归档请求超时不会自动重发；此时上传结果仍在，请先去 Codex 核对会话状态。
 
 只更新已有 item 的 metadata：
 
