@@ -123,7 +123,7 @@ export const uiStrings = {
   'gallery.generationPromptShow': '展开全文',
   'gallery.generationPromptCollapse': '收起全文',
   'gallery.generationPromptCopy': '复制全部生成图片 prompt',
-  'gallery.title': 'Image Style Prompt Gallery',
+  'gallery.title': '图像风格提示词画廊',
   'gallery.kicker': 'Reference image to reusable prompt',
   'gallery.description':
     '收藏从参考图反推出的中文风格提示词，每张图都对应一段可直接复制到 GPT-Image、Nano Banana、PixAI、Midjourney、NovelAI 或 Flux 的 prompt。',

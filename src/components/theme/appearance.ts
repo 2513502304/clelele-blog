@@ -1,4 +1,5 @@
 import { DEFAULT_READING, getReadingPreferences, setReadingPreferences } from './reading-preferences';
+import { DEFAULT_SCENERY, setSceneryPreferences } from './scenery-preferences';
 /** Palettes change color and typography only; navigation, image rendering and Gallery data stay untouched. */
 export const APPEARANCES = [
   { id: 'original', zh: '原色日常', en: 'Original', ja: 'オリジナル', color: '#f5dfe5', ink: '#bc5268' },
@@ -100,6 +101,7 @@ export function setAppearance(appearance: Appearance, animate = true) {
 
 /** Reset reading independently of light/dark mode, without replaying an in-flight snapshot. */
 export function resetAppearance() {
+  setSceneryPreferences(DEFAULT_SCENERY);
   setReadingPreferences(DEFAULT_READING);
   setAppearance('original', false);
 }

@@ -1,0 +1,116 @@
+/* These layers apply only to covers, never to Gallery originals or the site navigation. */
+.site-banner {
+  isolation: isolate;
+  background: var(--gradient-bg-start);
+}
+.banner-image {
+  opacity: calc(var(--scene-image-opacity, 100) / 100);
+  filter: brightness(calc(var(--scene-brightness, 100) / 100)) contrast(calc(var(--scene-contrast, 100) / 100))
+    saturate(calc(var(--scene-saturation, 100) / 100)) blur(calc(var(--scene-blur, 0) * 1px));
+  object-position: calc(var(--scene-focus-x, 50) * 1%) calc(var(--scene-focus-y, 50) * 1%);
+}
+.banner-mask {
+  position: absolute;
+  inset: 0;
+  background: #10131a;
+  opacity: calc(var(--scene-mask, 40) / 100);
+  pointer-events: none;
+}
+:root[data-scene-mask-style="gradient"] .banner-mask {
+  background: linear-gradient(180deg, #0c1120 0%, rgb(12 17 32 / 20%) 40%, rgb(12 17 32 / 55%) 72%, #0c1120 100%);
+}
+:root[data-scene-mask-style="vignette"] .banner-mask {
+  background: radial-gradient(ellipse at center, rgb(12 17 32 / 12%) 8%, rgb(12 17 32 / 45%) 50%, #0c1120 100%);
+}
+.banner-copy {
+  --banner-ink: #fff;
+  --banner-font: var(--reading-font, inherit);
+  color: var(--banner-ink);
+  opacity: calc(var(--scene-text-opacity, 100) / 100);
+}
+.banner-copy h1 {
+  font-size: calc(clamp(1.5rem, 4vw, 3rem) * var(--scene-text-size, 100) / 100);
+  font-weight: var(--scene-text-weight, 700);
+  letter-spacing: calc(var(--scene-text-spacing, 4) * 0.01em);
+  font-family: var(--banner-font);
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+.banner-copy :is(h1, p, .shadow-text) {
+  text-shadow:
+    0 2px 4px rgb(0 0 0 / calc(var(--scene-text-shadow, 50) / 100)),
+    0 8px 24px rgb(0 0 0 / calc(var(--scene-text-shadow, 50) / 200));
+}
+:root[data-scene-text-color="ink"] .banner-copy {
+  --banner-ink: #18212f;
+}
+:root[data-scene-text-color="theme"] .banner-copy {
+  --banner-ink: hsl(var(--foreground));
+}
+:root[data-scene-text-font="round"] .banner-copy {
+  --banner-font: "寒蝉全圆体", sans-serif;
+}
+:root[data-scene-text-font="serif"] .banner-copy {
+  --banner-font: "Songti SC", "Noto Serif CJK SC", Georgia, serif;
+}
+/* An explicit banner font wins over reading fonts and paper-theme heading rules. */
+:root[data-scene-text-font]:not([data-scene-text-font="theme"]) .banner-copy h1 {
+  font-family: var(--banner-font);
+}
+.site-banner .wave-wrap {
+  pointer-events: none;
+}
+:root[data-scene-edge="straight"] .site-banner .wave-wrap {
+  display: none;
+}
+:root[data-scene-edge="fade"] .site-banner .wave-wrap {
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    color-mix(in srgb, var(--gradient-bg-start) 55%, transparent) 55%,
+    var(--gradient-bg-start)
+  );
+}
+:root[data-scene-edge="fade"] .site-banner .wave {
+  visibility: hidden;
+}
+:root[data-reading-motion="reduced"] .site-banner .wave-wrap .wave .parallax > use {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .site-banner .wave-wrap .wave .parallax > use {
+    animation: none;
+  }
+}
+
+/* A low-opacity color wash grades the image without tinting text or navigation. */
+.banner-tint {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+:root[data-scene-tone="warm"] .banner-tint {
+  background: linear-gradient(135deg, rgb(255 198 110 / 16%), rgb(191 80 64 / 9%));
+}
+:root[data-scene-tone="cool"] .banner-tint {
+  background: linear-gradient(135deg, rgb(49 119 178 / 15%), rgb(129 136 209 / 10%));
+}
+:root[data-scene-text-hidden] .banner-copy {
+  visibility: hidden;
+}
+:root[data-scene-text-weight="400"] {
+  --scene-text-weight: 400;
+}
+:root[data-scene-text-weight="500"] {
+  --scene-text-weight: 500;
+}
+:root[data-scene-text-weight="600"] {
+  --scene-text-weight: 600;
+}
+:root[data-scene-text-weight="700"] {
+  --scene-text-weight: 700;
+}
+:root[data-scene-text-weight="800"] {
+  --scene-text-weight: 800;
+}

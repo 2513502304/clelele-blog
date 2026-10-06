@@ -2,9 +2,9 @@ import { Icon } from '@iconify/react';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useDraggablePanel } from '@/hooks/useDraggablePanel';
-import { usePointerRange } from '@/hooks/usePointerRange';
 import { useTranslation } from '@/hooks/useTranslation';
 import { APPEARANCES, type Appearance, resetAppearance, setAppearance } from './appearance';
+import { NumericSetting } from './NumericSetting';
 import {
   DEFAULT_READING,
   getReadingPreferences,
@@ -12,6 +12,7 @@ import {
   type ReadingPreferences,
   setReadingPreferences,
 } from './reading-preferences';
+import { SceneryControls } from './SceneryControls';
 import './theme-settings.css';
 
 const labels = {
@@ -60,7 +61,7 @@ function ThemePanel({ onClose }: { onClose: () => void }) {
   const text = labels[lang];
   const [appearance, select] = useState<Appearance>('original');
   const [reading, updateReading] = useState(DEFAULT_READING);
-  const [tab, setTab] = useState<'palette' | 'reading'>('palette');
+  const [tab, setTab] = useState<'palette' | 'reading' | 'banner' | 'effects'>('palette');
   const [expanded, expand] = useState(true);
   const heading = useRef<HTMLButtonElement>(null);
   const drag = useDraggablePanel();
@@ -132,6 +133,12 @@ function ThemePanel({ onClose }: { onClose: () => void }) {
             <button type="button" aria-pressed={tab === 'reading'} onClick={() => setTab('reading')}>
               {lang === 'zh' ? '阅读与界面' : lang === 'ja' ? '文字と表示' : 'Reading & layout'}
             </button>
+            <button type="button" aria-pressed={tab === 'banner'} onClick={() => setTab('banner')}>
+              {lang === 'zh' ? '横幅' : lang === 'ja' ? 'バナー' : 'Banner'}
+            </button>
+            <button type="button" aria-pressed={tab === 'effects'} onClick={() => setTab('effects')}>
+              {lang === 'zh' ? '氛围' : lang === 'ja' ? '効果' : 'Effects'}
+            </button>
           </fieldset>
           <section className="appearance-scroll" data-panel-scroll tabIndex={expanded ? 0 : -1} aria-label={text.palette}>
             <div hidden={tab !== 'palette'}>
@@ -166,7 +173,8 @@ function ThemePanel({ onClose }: { onClose: () => void }) {
             <div hidden={tab !== 'reading'}>
               <ReadingControls value={reading} onChange={configure} lang={lang} />
             </div>
-            <p className="appearance-caption">{text.light}</p>
+            {(tab === 'banner' || tab === 'effects') && <SceneryControls tab={tab} lang={lang} />}
+            {tab === 'reading' && <p className="appearance-caption">{text.light}</p>}
           </section>
           <footer className="appearance-footer">
             <span title={text.hint}>
@@ -236,62 +244,6 @@ const readingLabels = {
     ],
   },
 };
-
-/** Allow incomplete numeric typing; update valid values live and clamp the remaining draft only on blur. */
-function NumericSetting({
-  name,
-  value,
-  min,
-  max,
-  step,
-  suffix = '',
-  onChange,
-}: {
-  name: string;
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  suffix?: string;
-  onChange: (value: number) => void;
-}) {
-  const range = usePointerRange(onChange);
-  const [draft, setDraft] = useState(String(value));
-  useEffect(() => setDraft(String(value)), [value]);
-  return (
-    <div className="appearance-numeric">
-      <label>
-        <span>{name}</span>
-        <span>
-          <input
-            type="number"
-            aria-label={name}
-            min={min}
-            max={max}
-            step={step}
-            value={draft}
-            onChange={(event) => {
-              setDraft(event.currentTarget.value);
-              const number = event.currentTarget.valueAsNumber;
-              if (Number.isFinite(number) && number >= min && number <= max) onChange(number);
-            }}
-            onBlur={() => {
-              const number = draft.trim() ? Number(draft) : value;
-              const next = Number.isFinite(number) ? Math.max(min, Math.min(max, number)) : value;
-              setDraft(String(next));
-              onChange(next);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') event.currentTarget.blur();
-            }}
-          />
-          {suffix}
-        </span>
-      </label>
-      <input type="range" aria-label={`${name} slider`} min={min} max={max} step={step} value={value} {...range} />
-    </div>
-  );
-}
 
 /** Present independently persisted reading choices using the same bounds as the pre-paint bootstrap. */
 function ReadingControls({

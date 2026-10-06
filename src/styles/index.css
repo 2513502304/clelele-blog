@@ -29,3 +29,5 @@
 @import "./theme/appearance.css";
 @import "./components/gallery-controls.css";
 @import "./components/gallery-surfaces.css";
+
+@import "./components/banner-appearance.css";
