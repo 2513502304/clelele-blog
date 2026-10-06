@@ -8,7 +8,7 @@ const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 const rolloutName = new RegExp(`^rollout-\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}-(${UUID})(?:_${UUID})*\\.jsonl$`, 'i');
 
 /** Read only the header, never the images or private conversation bodies during discovery. */
-async function sessionHeader(file) {
+export async function sessionHeader(file, required = true) {
   const input = createReadStream(file, { encoding: 'utf8' });
   const lines = createInterface({ input, crlfDelay: Infinity });
   try {
@@ -16,9 +16,14 @@ async function sessionHeader(file) {
       if (!line.trim()) continue;
       const record = JSON.parse(line);
       if (record.type !== 'session_meta' || !new RegExp(`^${UUID}$`, 'i').test(record.payload?.id ?? '')) break;
-      return { id: record.payload.id.toLowerCase(), timestamp: record.payload.timestamp ?? '' };
+      return {
+        id: record.payload.id.toLowerCase(),
+        timestamp: record.payload.timestamp ?? '',
+        historyBase: record.payload.history_base ?? null,
+      };
     }
-    throw new Error('Missing session_meta.id');
+    if (required) throw new Error('Missing session_meta.id');
+    return null;
   } catch (error) {
     throw new Error(`${path.basename(file)}: cannot verify session identity (${error.message}).`);
   } finally {
@@ -28,7 +33,7 @@ async function sessionHeader(file) {
 }
 
 /** A supplied active/archive path determines its Codex home; copied files use the configured home. */
-function inferCodexHome(file) {
+export function inferCodexHome(file) {
   let directory = path.dirname(file);
   while (path.dirname(directory) !== directory) {
     if (['sessions', 'archived_sessions'].includes(path.basename(directory))) return path.dirname(directory);
