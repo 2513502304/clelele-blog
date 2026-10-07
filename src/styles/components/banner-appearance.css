@@ -13,7 +13,7 @@
   position: absolute;
   inset: 0;
   background: #10131a;
-  opacity: calc(var(--scene-mask, 40) / 100);
+  opacity: calc(var(--scene-mask, 30) / 100);
   pointer-events: none;
 }
 :root[data-scene-mask-style="gradient"] .banner-mask {
@@ -22,16 +22,28 @@
 :root[data-scene-mask-style="vignette"] .banner-mask {
   background: radial-gradient(ellipse at center, rgb(12 17 32 / 12%) 8%, rgb(12 17 32 / 45%) 50%, #0c1120 100%);
 }
+:root[data-scene-mask-style="top"] .banner-mask {
+  background: linear-gradient(#10131a, rgb(16 19 26 / 55%) 30%, transparent 85%);
+}
+:root[data-scene-mask-style="bottom"] .banner-mask {
+  background: linear-gradient(0deg, #10131a, rgb(16 19 26 / 55%) 30%, transparent 85%);
+}
+:root[data-scene-mask-style="spotlight"] .banner-mask {
+  background: radial-gradient(ellipse 55% 85% at 50% 35%, transparent 5%, rgb(16 19 26 / 35%) 55%, #10131a);
+}
+:root[data-scene-mask-style="mist"] .banner-mask {
+  background: linear-gradient(135deg, #fff9ee, rgb(237 239 250 / 40%) 50%, #eef5f9);
+}
 .banner-copy {
   --banner-ink: #fff;
   --banner-font: var(--reading-font, inherit);
   color: var(--banner-ink);
-  opacity: calc(var(--scene-text-opacity, 100) / 100);
+  opacity: calc(var(--scene-text-opacity, 70) / 100);
 }
 .banner-copy h1 {
   font-size: calc(clamp(1.5rem, 4vw, 3rem) * var(--scene-text-size, 100) / 100);
   font-weight: var(--scene-text-weight, 700);
-  letter-spacing: calc(var(--scene-text-spacing, 4) * 0.01em);
+  letter-spacing: calc(var(--scene-text-spacing, 5) * 0.01em);
   font-family: var(--banner-font);
   line-height: 1.3;
   overflow-wrap: anywhere;
@@ -39,8 +51,8 @@
 }
 .banner-copy :is(h1, p, .shadow-text) {
   text-shadow:
-    0 2px 4px rgb(0 0 0 / calc(var(--scene-text-shadow, 50) / 100)),
-    0 8px 24px rgb(0 0 0 / calc(var(--scene-text-shadow, 50) / 200));
+    0 2px 4px rgb(0 0 0 / calc(var(--scene-text-shadow, 30) / 100)),
+    0 8px 24px rgb(0 0 0 / calc(var(--scene-text-shadow, 30) / 200));
 }
 :root[data-scene-text-color="ink"] .banner-copy {
   --banner-ink: #18212f;
@@ -64,7 +76,7 @@
 :root[data-scene-edge="straight"] .site-banner .wave-wrap {
   display: none;
 }
-:root[data-scene-edge="fade"] .site-banner .wave-wrap {
+:root[data-scene-edge="fade"] :is(.site-banner .wave-wrap, .banner-edge-preview) {
   background: linear-gradient(
     to bottom,
     transparent,
@@ -72,8 +84,42 @@
     var(--gradient-bg-start)
   );
 }
-:root[data-scene-edge="fade"] .site-banner .wave {
+:root[data-scene-edge]:not([data-scene-edge="wave"]) .site-banner .wave {
   visibility: hidden;
+}
+/* Structural edges share their geometry with the small settings preview. */
+:root:is([data-scene-edge="arc"], [data-scene-edge="diagonal"], [data-scene-edge="layered"])
+  :is(.site-banner .wave-wrap, .banner-edge-preview) {
+  background: var(--gradient-bg-start);
+}
+:root[data-scene-edge="arc"] :is(.site-banner .wave-wrap, .banner-edge-preview) {
+  clip-path: ellipse(65% 100% at 50% 100%);
+}
+:root[data-scene-edge="diagonal"] :is(.site-banner .wave-wrap, .banner-edge-preview) {
+  clip-path: polygon(0 90%, 100% 0, 100% 100%, 0 100%);
+}
+:root[data-scene-edge="layered"] :is(.site-banner .wave-wrap, .banner-edge-preview) {
+  background: linear-gradient(
+    170deg,
+    transparent 30%,
+    color-mix(in srgb, var(--gradient-bg-start) 50%, transparent) 30% 50%,
+    var(--gradient-bg-start) 50%
+  );
+  clip-path: polygon(0 40%, 25% 65%, 62% 12%, 100% 55%, 100% 100%, 0 100%);
+}
+:root[data-scene-edge="mist"] :is(.site-banner .wave-wrap, .banner-edge-preview) {
+  height: 24%;
+  background: linear-gradient(
+    transparent,
+    color-mix(in srgb, var(--gradient-bg-start) 20%, transparent) 28%,
+    color-mix(in srgb, var(--gradient-bg-start) 65%, transparent) 65%,
+    var(--gradient-bg-start)
+  );
+  backdrop-filter: blur(10px);
+  mask-image: linear-gradient(transparent, #000 80%);
+}
+:root[data-scene-edge="straight"] .banner-edge-preview {
+  display: none;
 }
 :root[data-reading-motion="reduced"] .site-banner .wave-wrap .wave .parallax > use {
   animation: none;

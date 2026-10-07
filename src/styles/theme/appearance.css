@@ -329,16 +329,32 @@ html[data-appearance]:not([data-appearance="original"]) textarea::placeholder {
 /* Light belongs to the shared canvas, not the perimeter of a rectangular content
    sheet. Both pools begin transparent below the cover and gather around the artwork
    and reading columns. Rem-sized pools stay stable as infinite galleries grow. */
-html[data-appearance]:not([data-appearance="original"]) .page-reading-layout {
+html:is(
+  [data-appearance]:not([data-appearance="original"]),
+  [data-scene-ambient-light="halo"],
+  [data-scene-ambient-light="wash"]
+)
+.page-reading-layout {
   background-image:
     radial-gradient(ellipse 38% 28rem at 62% 28rem, hsl(var(--card) / 80%), hsl(var(--card) / 36%) 52%, transparent),
     radial-gradient(ellipse 30% 24rem at 30% 46rem, hsl(var(--control) / 38%), transparent);
 }
-html[data-appearance]:not([data-appearance="original"]) main .shadow-box.bg-gradient-start {
+html:is(
+    [data-appearance]:not([data-appearance="original"]),
+    [data-scene-ambient-light="halo"],
+    [data-scene-ambient-light="wash"]
+  )
+  main
+  .shadow-box.bg-gradient-start {
   background: transparent;
   box-shadow: none;
 }
-html[data-appearance]:not([data-appearance="original"]) .page-home-sider {
+html:is(
+    [data-appearance]:not([data-appearance="original"]),
+    [data-scene-ambient-light="halo"],
+    [data-scene-ambient-light="wash"]
+  )
+  .page-home-sider {
   /* The old vertical drop shadow creates a seam across the feathered reading edge. */
   box-shadow: none;
 }

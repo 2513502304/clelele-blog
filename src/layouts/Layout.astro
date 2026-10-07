@@ -3,6 +3,7 @@ import type { HomeSiderType } from '@constants/enum';
 import type { BlogPost } from 'types/blog';
 import AmbientEffects from '../components/theme/AmbientEffects.astro';
 import AppearanceInit from '../components/theme/AppearanceInit.astro';
+import BannerAmbientLight from '../components/theme/BannerAmbientLight.astro';
 import SceneryInit from '../components/theme/SceneryInit.astro';
 
 interface Props {
@@ -352,6 +353,7 @@ const keywords = keywordsOverride || siteConfig.keywords || [siteConfig.title];
     <ChristmasEffects transition:persist="christmas-snowfall" />
     <AmbientEffects />
     <div id="appearance-stage" class="flex min-h-screen flex-col text-black dark:text-white">
+      <BannerAmbientLight />
       <Header isPostPage={isPostPage} tocNumbering={post?.data.tocNumbering ?? true} />
       <main class="relative flex grow flex-col gap-4">
         {(<slot />)}

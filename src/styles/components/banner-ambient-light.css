@@ -1,0 +1,48 @@
+/* The static light sits inside the theme snapshot, behind page content rather than over it. */
+#appearance-stage {
+  position: relative;
+  isolation: isolate;
+}
+#banner-ambient-light {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  visibility: hidden;
+  opacity: calc(var(--scene-light-opacity, 55) / 100);
+}
+:root:not([data-scene-ambient-light="off"]) #banner-ambient-light[data-ready] {
+  visibility: visible;
+}
+#banner-ambient-light canvas {
+  width: 100%;
+  height: 100%;
+  transform: scale(calc(1.12 + var(--scene-light-spread, 55) * 0.007));
+  /* The light palette maps source colors into pastels; even a black cover cannot darken the reading canvas. */
+  filter: blur(calc(12px + var(--scene-light-blur, 55) * 0.9px)) saturate(calc(var(--scene-saturation, 100) / 80))
+    brightness(calc(var(--scene-brightness, 100) / 100)) contrast(0.12) brightness(1.8);
+}
+:root[data-scene-ambient-light="halo"] #banner-ambient-light {
+  mask-image: radial-gradient(ellipse at 50% 30%, transparent 10%, rgb(0 0 0 / 25%) 45%, #000 90%);
+}
+:root[data-scene-ambient-light="wash"] #banner-ambient-light {
+  mask-image: linear-gradient(#000, rgb(0 0 0 / 80%) 60%, rgb(0 0 0 / 55%));
+}
+@media print {
+  #banner-ambient-light {
+    display: none;
+  }
+}
+
+/* Let the light cross layout boundaries. Individual reading cards retain their surfaces. */
+:root:is([data-scene-ambient-light="halo"], [data-scene-ambient-light="wash"]) {
+  .site-banner {
+    mask-image: linear-gradient(#000 calc(100% - 100px), transparent);
+  }
+}
+:root.dark #banner-ambient-light canvas {
+  /* Bound the final light range even at 100% strength so long pages keep readable text. */
+  filter: blur(calc(12px + var(--scene-light-blur, 55) * 0.9px)) saturate(calc(var(--scene-saturation, 100) / 80))
+    brightness(calc(var(--scene-brightness, 100) / 100)) contrast(0.4) brightness(0.3);
+}

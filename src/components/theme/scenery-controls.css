@@ -5,7 +5,7 @@
 .scenery-preview {
   position: relative;
   isolation: isolate;
-  height: 132px;
+  aspect-ratio: 3;
   border-radius: 16px;
   overflow: hidden;
   background: hsl(var(--background));
@@ -38,6 +38,72 @@
   font-size: 9px;
   letter-spacing: 0.06em;
   text-shadow: 0 1px 5px #000;
+}
+.banner-edge-preview {
+  position: absolute;
+  inset: auto 0 0;
+  height: 18%;
+  background: var(--gradient-bg-start);
+}
+:root[data-scene-edge="wave"] .banner-edge-preview {
+  clip-path: ellipse(70% 70% at 65% 100%);
+}
+.scenery-axis-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  opacity: 0.65;
+}
+.scenery-light-modes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  min-width: 0;
+}
+.scenery-light-modes button {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  font-size: 11px;
+  text-align: center;
+  border-radius: 12px;
+}
+.scenery-light-art {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  border-radius: 12px;
+  height: 66px;
+  background: hsl(var(--muted));
+  border: 1px solid hsl(var(--border));
+}
+.scenery-light-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: blur(10px) saturate(1.4);
+  transform: scale(1.3);
+  opacity: 0.75;
+}
+.scenery-light-art i {
+  position: absolute;
+  inset: 16px 22%;
+  border-radius: 5px;
+  background: hsl(var(--card) / 75%);
+  box-shadow: 0 2px 6px rgb(0 0 0 / 12%);
+}
+.scenery-light-off img {
+  visibility: hidden;
+}
+.scenery-light-halo i {
+  background: hsl(var(--card));
+}
+.scenery-light-modes [aria-pressed="true"] .scenery-light-art {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 3px;
+}
+.scenery-light-group > .appearance-caption {
+  margin: 0;
 }
 .scenery-controls .appearance-section-label {
   margin: 0;

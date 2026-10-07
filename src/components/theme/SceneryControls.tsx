@@ -42,7 +42,7 @@ export function SceneryControls({ tab, lang }: { tab: 'banner' | 'effects'; lang
   const [value, setValue] = useState(getSceneryPreferences);
   const [reduced, setReduced] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
-  const [preview, setPreview] = useState({ src: '', title: '' });
+  const [preview, setPreview] = useState({ src: '', title: '', ratio: 3, cropX: false, cropY: false });
   useEffect(() => {
     const motion = matchMedia('(prefers-reduced-motion: reduce)');
     const sync = () => {
@@ -55,16 +55,35 @@ export function SceneryControls({ tab, lang }: { tab: 'banner' | 'effects'; lang
     title?.querySelectorAll('svg').forEach((icon) => {
       icon.remove();
     });
-    setPreview({
-      src: image?.currentSrc || image?.src || '',
-      title: title?.textContent?.trim() || 'clelele',
-    });
+    // Use the actual cover ratio: a decorative thumbnail with a different crop is misleading.
+    const updatePreview = () => {
+      const ratio = image?.clientHeight ? image.clientWidth / image.clientHeight : 3;
+      const naturalRatio = image?.naturalHeight ? image.naturalWidth / image.naturalHeight : ratio;
+      setPreview({
+        src: image?.currentSrc || image?.src || '',
+        title: title?.textContent?.trim() || 'clelele',
+        ratio,
+        cropX: naturalRatio > ratio + 0.01,
+        cropY: naturalRatio < ratio - 0.01,
+      });
+    };
+    const resize = new ResizeObserver(updatePreview);
+    const source = new MutationObserver(updatePreview);
+    if (image) {
+      resize.observe(image);
+      source.observe(image, { attributes: true, attributeFilter: ['src', 'srcset'] });
+      image.addEventListener('load', updatePreview);
+    }
+    updatePreview();
     sync();
     window.addEventListener('scenery-change', sync);
     window.addEventListener('scenery-status', sync);
     window.addEventListener('reading-change', sync);
     motion.addEventListener('change', sync);
     return () => {
+      resize.disconnect();
+      source.disconnect();
+      image?.removeEventListener('load', updatePreview);
       window.removeEventListener('scenery-change', sync);
       window.removeEventListener('scenery-status', sync);
       window.removeEventListener('reading-change', sync);
@@ -112,13 +131,14 @@ export function SceneryControls({ tab, lang }: { tab: 'banner' | 'effects'; lang
     <div className="scenery-controls">
       {tab === 'banner' ? (
         <>
-          <div className="scenery-preview" aria-hidden="true">
+          <div className="scenery-preview" aria-hidden="true" style={{ aspectRatio: preview.ratio }}>
             {preview.src && <img className="banner-image" src={preview.src} alt="" />}
             <div className="banner-mask" />
             <div className="banner-tint" />
             <div className="banner-copy">
               <h1>{preview.title}</h1>
             </div>
+            <div className="banner-edge-preview" />
             <span className="scenery-preview-label">{copy.preview}</span>
           </div>
           <p className="appearance-section-label">
@@ -151,6 +171,36 @@ export function SceneryControls({ tab, lang }: { tab: 'banner' | 'effects'; lang
             {choice('maskStyle')}
             {choice('edge')}
           </section>
+          <section className="scenery-group scenery-light-group">
+            <h3>
+              <Icon icon="ri:rainbow-line" />
+              {copy.ambientHeading}
+            </h3>
+            <p className="appearance-caption">{copy.ambientHint}</p>
+            <fieldset className="scenery-light-modes" aria-label={copy.ambientLight}>
+              {SCENERY_RULES.ambientLight.values.map((mode, i) => (
+                <button
+                  key={mode}
+                  type="button"
+                  aria-pressed={value.ambientLight === mode}
+                  onClick={() => change({ ambientLight: mode })}
+                >
+                  <span className={`scenery-light-art scenery-light-${mode}`} aria-hidden="true">
+                    {preview.src && <img src={preview.src} alt="" />}
+                    <i />
+                  </span>
+                  <span>{copy.choices.ambientLight[i]}</span>
+                </button>
+              ))}
+            </fieldset>
+            {value.ambientLight !== 'off' && (
+              <>
+                {numeric('lightOpacity')}
+                {numeric('lightBlur')}
+                {numeric('lightSpread')}
+              </>
+            )}
+          </section>
           <details className="scenery-group">
             <summary>
               {copy.advanced}
@@ -162,8 +212,23 @@ export function SceneryControls({ tab, lang }: { tab: 'banner' | 'effects'; lang
               {numeric('contrast')}
               {numeric('saturation')}
               {numeric('blur', 'px')}
-              {numeric('focusX')}
-              {numeric('focusY')}
+              <p className="appearance-caption">{copy.framingHint}</p>
+              <div>
+                {numeric('focusX')}
+                <p className="scenery-axis-labels">
+                  <span>{copy.left}</span>
+                  <span>{copy.right}</span>
+                </p>
+                {!preview.cropX && <p className="appearance-caption">{copy.noCropX}</p>}
+              </div>
+              <div>
+                {numeric('focusY')}
+                <p className="scenery-axis-labels">
+                  <span>{copy.top}</span>
+                  <span>{copy.bottom}</span>
+                </p>
+                {!preview.cropY && <p className="appearance-caption">{copy.noCropY}</p>}
+              </div>
             </div>
           </details>
           <details className="scenery-group">

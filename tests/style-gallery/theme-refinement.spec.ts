@@ -108,6 +108,8 @@ test('masonry and grouping remain visibly selected in every palette and mode', a
 });
 
 test('the reading edge fades through intermediate pixels, without a hard rectangle', async ({ page }, testInfo) => {
+  // This samples a static surface; decorative petals must not contaminate its pixel gradient.
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto(detail, { waitUntil: 'domcontentloaded' });
   const surface = page.locator('.page-reading-layout');
   await page.addStyleTag({ content: '*,*::before,*::after{transition:none!important}' });

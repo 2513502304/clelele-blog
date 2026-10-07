@@ -1,0 +1,56 @@
+<div id="banner-ambient-light" aria-hidden="true"><canvas width="96" height="64"></canvas></div>
+<script>
+  import { getSceneryPreferences } from './scenery-preferences';
+
+  let cleanup: (() => void) | undefined;
+  /** Project the current cover once at low resolution. No pixel readback, extra download or animation loop. */
+  function mount() {
+    cleanup?.();
+    const layer = document.querySelector<HTMLElement>('#banner-ambient-light');
+    const canvas = layer?.querySelector('canvas');
+    const image = document.querySelector<HTMLImageElement>('.site-banner .banner-image');
+    const context = canvas?.getContext('2d');
+    if (!layer || !canvas || !image || !context) return;
+    let drawnSource = '';
+    const draw = () => {
+      layer.removeAttribute('data-ready');
+      const prefs = getSceneryPreferences();
+      if (prefs.ambientLight === 'off' || !image.complete || !image.naturalWidth) return;
+      const width = image.clientWidth;
+      const height = image.clientHeight;
+      if (!width || !height) return;
+      // Match object-fit: cover and its crop position before diffusing colors across the page.
+      const scale = Math.max(width / image.naturalWidth, height / image.naturalHeight);
+      const cropWidth = width / scale;
+      const cropHeight = height / scale;
+      const sourceKey = [image.currentSrc, width, height, prefs.focusX, prefs.focusY].join('|');
+      // Typography, particles and CSS light controls do not require repainting the source.
+      if (sourceKey !== drawnSource) {
+        context.clearRect(0, 0, 96, 64);
+        context.drawImage(image, (image.naturalWidth - cropWidth) * prefs.focusX / 100,
+          (image.naturalHeight - cropHeight) * prefs.focusY / 100, cropWidth, cropHeight, 0, 0, 96, 64);
+        drawnSource = sourceKey;
+      }
+      layer.setAttribute('data-ready', 'true');
+    };
+    const resized = new ResizeObserver(draw);
+    const source = new MutationObserver(draw);
+    resized.observe(image);
+    source.observe(image, { attributes: true, attributeFilter: ['src', 'srcset'] });
+    image.addEventListener('load', draw);
+    image.addEventListener('error', draw);
+    window.addEventListener('scenery-change', draw);
+    draw();
+    cleanup = () => {
+      resized.disconnect();
+      source.disconnect();
+      image.removeEventListener('load', draw);
+      image.removeEventListener('error', draw);
+      window.removeEventListener('scenery-change', draw);
+    };
+  }
+  document.addEventListener('astro:before-swap', () => { cleanup?.(); cleanup = undefined; });
+  document.addEventListener('astro:page-load', mount);
+  if (document.readyState !== 'loading') mount();
+  else document.addEventListener('DOMContentLoaded', mount, { once: true });
+</script>
