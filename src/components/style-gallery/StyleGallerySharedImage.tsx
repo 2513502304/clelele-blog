@@ -32,7 +32,9 @@ export default function StyleGallerySharedImage({
   const [subscribedUrl, setSubscribedUrl] = useState<{ source: string; url: string } | null>(null);
   const [fallbackSource, setFallbackSource] = useState<string | null>(null);
   const displayed = useRef<{ source: string; url: string } | null>(null);
-  const reusableUrl = getReusableStyleGalleryImageUrl(source, loadedSources.has(source));
+  // A shared history entry does not mean this DOM instance has loaded. New
+  // mounts need a valid URL; only this instance's ref may pin an expired one.
+  const reusableUrl = getReusableStyleGalleryImageUrl(source, false);
   // 状态必须与 canonical source 绑定。虚拟列表复用 React 节点时，旧 source 的 URL 不能短暂提交到新图片，
   // 否则 callback ref 会把旧 URL 错误登记为新 source 已加载。
   const renderedUrl =

@@ -49,7 +49,8 @@ export function getCachedStyleGalleryImageUrl(source: string): string | undefine
  * 2. 没有可见卡片时优先复用已经加载完成的 HF 签名 URL，再使用已加载的 canonical URL；
  * 3. 未加载过的 canonical URL 不得伪装成 resolved，否则会跳过后续图片的批量签名与预加载。
  *
- * `sourceLoaded` 必须来自真实 img onLoad，而不是“元素已经挂载”的推断。
+ * `sourceLoaded` 用于接收当前已显示图片的 Lightbox，不代表新 img 已完成加载。
+ * 新挂载的图片必须传 false；现存 img 应通过自己的 ref 保留已经显示的 URL。
  */
 export function getReusableStyleGalleryImageUrl(source: string, sourceLoaded: boolean): string | undefined {
   const cachedUrl = getCachedStyleGalleryImageUrl(source);

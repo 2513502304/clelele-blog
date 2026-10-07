@@ -214,6 +214,7 @@ test('signature expiry refreshes future requests without replacing a displayed c
     now += 101;
     assert.equal(getCachedStyleGalleryImageUrl(SOURCE), undefined);
     assert.equal(getReusableStyleGalleryImageUrl(SOURCE, true), first);
+    assert.equal(getReusableStyleGalleryImageUrl(SOURCE, false), undefined, 'new mounts cannot reuse an expired signature');
     const refreshed = (await resolveStyleGalleryImageUrls([SOURCE]))[SOURCE];
     assert.notEqual(refreshed, first);
     assert.equal(getReusableStyleGalleryImageUrl(SOURCE, false), refreshed, 'new loads use the valid signature');

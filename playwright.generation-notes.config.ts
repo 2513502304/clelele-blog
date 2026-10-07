@@ -11,6 +11,7 @@ export default defineConfig({
     'banner-atmosphere.spec.ts',
     'banner-ambient-light.spec.ts',
     'gallery-scroll-cache.spec.ts',
+    'shared-image-expiry.spec.ts',
     'appearance-help.spec.ts',
     'collections.spec.ts',
     'collection-media.spec.ts',
@@ -28,6 +29,7 @@ export default defineConfig({
       name: 'webkit',
       testMatch: [
         'profile-crop.spec.ts',
+        'shared-image-expiry.spec.ts',
         'appearance.spec.ts',
         'banner-atmosphere.spec.ts',
         'banner-ambient-light.spec.ts',
