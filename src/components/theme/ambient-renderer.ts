@@ -22,6 +22,7 @@ export function startAtmosphere(canvas: HTMLCanvasElement): () => void {
     time = 0;
   let particles: Particle[] = [];
   let previousEffect = prefs.effect;
+  let particleSettings = '';
   const makeParticle = (): Particle => ({
     x: Math.random() * width,
     y: Math.random() * height,
@@ -32,6 +33,11 @@ export function startAtmosphere(canvas: HTMLCanvasElement): () => void {
   });
   function configure() {
     prefs = getSceneryPreferences();
+    const settings = `${prefs.effect}:${prefs.density}:${prefs.speed}:${prefs.effectOpacity}:${width}:${height}`;
+    // Banner color/typography sliders share this event. They must not clear or
+    // restart an unrelated particle frame on every pointer movement.
+    if (settings === particleSettings) return;
+    particleSettings = settings;
     if (previousEffect !== prefs.effect) {
       particles = [];
       previousEffect = prefs.effect;
@@ -52,6 +58,7 @@ export function startAtmosphere(canvas: HTMLCanvasElement): () => void {
     canvas.height = Math.round(height * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     particles = [];
+    particleSettings = '';
     configure();
   }
   function canAnimate() {
@@ -63,12 +70,15 @@ export function startAtmosphere(canvas: HTMLCanvasElement): () => void {
     );
   }
   function schedule() {
+    const running = canAnimate();
+    canvas.dataset.running = String(running);
+    // Reading settings fire for font and spacing changes too. Preserve the
+    // existing clock unless visibility or a motion preference actually changes.
+    if (Boolean(frame) === running) return;
     cancelAnimationFrame(frame);
     frame = 0;
     last = 0;
     ctx.clearRect(0, 0, width, height);
-    const running = canAnimate();
-    canvas.dataset.running = String(running);
     if (running) frame = requestAnimationFrame(draw);
   }
   function glow(x: number, y: number, radius: number, color: string) {

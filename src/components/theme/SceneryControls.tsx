@@ -1,6 +1,8 @@
 import { Icon } from '@iconify/react';
 import { useEffect, useState } from 'react';
+import { AmbientLightControls } from './AmbientLightControls';
 import { NumericSetting } from './NumericSetting';
+import { SettingHelp } from './SettingHelp';
 import { sceneryCopy } from './scenery-copy';
 import {
   DEFAULT_SCENERY,
@@ -42,7 +44,7 @@ export function SceneryControls({ tab, lang }: { tab: 'banner' | 'effects'; lang
   const [value, setValue] = useState(getSceneryPreferences);
   const [reduced, setReduced] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
-  const [preview, setPreview] = useState({ src: '', title: '' });
+  const [preview, setPreview] = useState({ src: '', title: '', ratio: 3, cropX: false, cropY: false });
   useEffect(() => {
     const motion = matchMedia('(prefers-reduced-motion: reduce)');
     const sync = () => {
@@ -55,16 +57,35 @@ export function SceneryControls({ tab, lang }: { tab: 'banner' | 'effects'; lang
     title?.querySelectorAll('svg').forEach((icon) => {
       icon.remove();
     });
-    setPreview({
-      src: image?.currentSrc || image?.src || '',
-      title: title?.textContent?.trim() || 'clelele',
-    });
+    // Use the actual cover ratio: a decorative thumbnail with a different crop is misleading.
+    const updatePreview = () => {
+      const ratio = image?.clientHeight ? image.clientWidth / image.clientHeight : 3;
+      const naturalRatio = image?.naturalHeight ? image.naturalWidth / image.naturalHeight : ratio;
+      setPreview({
+        src: image?.currentSrc || image?.src || '',
+        title: title?.textContent?.trim() || 'clelele',
+        ratio,
+        cropX: naturalRatio > ratio + 0.01,
+        cropY: naturalRatio < ratio - 0.01,
+      });
+    };
+    const resize = new ResizeObserver(updatePreview);
+    const source = new MutationObserver(updatePreview);
+    if (image) {
+      resize.observe(image);
+      source.observe(image, { attributes: true, attributeFilter: ['src', 'srcset'] });
+      image.addEventListener('load', updatePreview);
+    }
+    updatePreview();
     sync();
     window.addEventListener('scenery-change', sync);
     window.addEventListener('scenery-status', sync);
     window.addEventListener('reading-change', sync);
     motion.addEventListener('change', sync);
     return () => {
+      resize.disconnect();
+      source.disconnect();
+      image?.removeEventListener('load', updatePreview);
       window.removeEventListener('scenery-change', sync);
       window.removeEventListener('scenery-status', sync);
       window.removeEventListener('reading-change', sync);
@@ -87,6 +108,7 @@ export function SceneryControls({ tab, lang }: { tab: 'banner' | 'effects'; lang
       <NumericSetting
         key={key}
         name={copy[key]}
+        help={{ setting: key, lang }}
         value={value[key]}
         {...SCENERY_RULES[key]}
         suffix={suffix}
@@ -96,8 +118,11 @@ export function SceneryControls({ tab, lang }: { tab: 'banner' | 'effects'; lang
   }
   function choice(key: ChoiceKey) {
     return (
-      <label className="appearance-choice" key={key}>
-        <span>{copy[key]}</span>
+      <div className="appearance-choice" key={key}>
+        <span className="setting-label">
+          {copy[key]}
+          <SettingHelp label={copy[key]} setting={key} lang={lang} />
+        </span>
         <select aria-label={copy[key]} value={value[key]} onChange={(e) => change({ [key]: e.currentTarget.value })}>
           {SCENERY_RULES[key].values.map((v, i) => (
             <option key={v} value={v}>
@@ -105,24 +130,28 @@ export function SceneryControls({ tab, lang }: { tab: 'banner' | 'effects'; lang
             </option>
           ))}
         </select>
-      </label>
+      </div>
     );
   }
   return (
     <div className="scenery-controls">
       {tab === 'banner' ? (
         <>
-          <div className="scenery-preview" aria-hidden="true">
+          <div className="scenery-preview" aria-hidden="true" style={{ aspectRatio: preview.ratio }}>
             {preview.src && <img className="banner-image" src={preview.src} alt="" />}
             <div className="banner-mask" />
             <div className="banner-tint" />
             <div className="banner-copy">
               <h1>{preview.title}</h1>
             </div>
+            <div className="banner-edge-preview" />
             <span className="scenery-preview-label">{copy.preview}</span>
           </div>
           <p className="appearance-section-label">
-            <span>{copy.looks}</span>
+            <span className="setting-label">
+              {copy.looks}
+              <SettingHelp label={copy.looks} setting="looks" lang={lang} />
+            </span>
             <span>01 — 06</span>
           </p>
           <fieldset className="scenery-looks" aria-label={copy.looks}>
@@ -151,6 +180,7 @@ export function SceneryControls({ tab, lang }: { tab: 'banner' | 'effects'; lang
             {choice('maskStyle')}
             {choice('edge')}
           </section>
+          <AmbientLightControls value={value} change={change} lang={lang} image={preview.src} />
           <details className="scenery-group">
             <summary>
               {copy.advanced}
@@ -162,8 +192,23 @@ export function SceneryControls({ tab, lang }: { tab: 'banner' | 'effects'; lang
               {numeric('contrast')}
               {numeric('saturation')}
               {numeric('blur', 'px')}
-              {numeric('focusX')}
-              {numeric('focusY')}
+              <p className="appearance-caption">{copy.framingHint}</p>
+              <div>
+                {numeric('focusX')}
+                <p className="scenery-axis-labels">
+                  <span>{copy.left}</span>
+                  <span>{copy.right}</span>
+                </p>
+                {!preview.cropX && <p className="appearance-caption">{copy.noCropX}</p>}
+              </div>
+              <div>
+                {numeric('focusY')}
+                <p className="scenery-axis-labels">
+                  <span>{copy.top}</span>
+                  <span>{copy.bottom}</span>
+                </p>
+                {!preview.cropY && <p className="appearance-caption">{copy.noCropY}</p>}
+              </div>
             </div>
           </details>
           <details className="scenery-group">
@@ -187,7 +232,14 @@ export function SceneryControls({ tab, lang }: { tab: 'banner' | 'effects'; lang
         <>
           <div className="scenery-effect-heading">
             <span>ATMOSPHERE</span>
-            <h3>{copy.effects[SCENERY_RULES.effect.values.indexOf(value.effect)]}</h3>
+            <h3 className="setting-label">
+              {copy.effects[SCENERY_RULES.effect.values.indexOf(value.effect)]}
+              <SettingHelp
+                label={lang === 'zh' ? '页面特效' : lang === 'ja' ? 'ページ効果' : 'Page effects'}
+                setting="effect"
+                lang={lang}
+              />
+            </h3>
             <p>{copy.effectHint}</p>
           </div>
           <fieldset

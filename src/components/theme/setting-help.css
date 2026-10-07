@@ -1,0 +1,54 @@
+.setting-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.setting-help-trigger {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid hsl(var(--foreground) / 22%);
+  background: hsl(var(--card) / 55%);
+  color: hsl(var(--foreground) / 75%);
+  font:
+    600 12px / 1 system-ui,
+    sans-serif;
+  cursor: help;
+}
+.setting-help-trigger:is(:hover, :focus-visible) {
+  color: hsl(var(--primary));
+  border-color: currentColor;
+}
+.setting-help-trigger:focus-visible {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 2px;
+}
+.setting-help-popup {
+  z-index: 90;
+  width: min(304px, calc(100vw - 24px));
+  max-height: min(260px, calc(100dvh - 24px));
+  overflow: auto;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid hsl(var(--foreground) / 15%);
+  background: linear-gradient(140deg, hsl(var(--card)), hsl(var(--background)));
+  box-shadow: 0 8px 32px hsl(var(--foreground) / 16%);
+  color: hsl(var(--foreground));
+  font:
+    13px / 1.65 system-ui,
+    sans-serif;
+  letter-spacing: normal;
+  text-align: start;
+}
+.setting-help-popup strong {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: 650;
+}
+.setting-help-popup p {
+  margin: 0;
+}

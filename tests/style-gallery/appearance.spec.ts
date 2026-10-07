@@ -281,12 +281,31 @@ test('independent reading controls drag, type, persist and reset without moving 
 });
 
 test('diagonal reveal has old upper-left and new lower-right pixels after scrolling', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('appearance-scenery', JSON.stringify({ effect: 'none' })));
   await page.goto('/image-style-prompt-gallery/examples', { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: '主题与阅读', exact: true }).click();
   await page.evaluate(() => scrollTo(0, 480));
-  await page.getByRole('button', { name: '花间手记', exact: true }).click();
+  const sharp = (await import('sharp')).default;
+  // With ambient light enabled, outer corners reflect the image rather than the
+  // palette. Compare actual themed surfaces against both settled page snapshots.
+  const colors = async () => {
+    const { data, info } = await sharp(await page.screenshot({ scale: 'css' }))
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const at = (x: number, y: number) =>
+      Array.from(data.subarray((y * info.width + x) * info.channels, (y * info.width + x) * info.channels + 3));
+    return [at(200, 80), at(800, 800)];
+  };
+  const delta = (a: number[], b: number[]) => Math.max(...a.map((v, i) => Math.abs(v - b[i])));
+  await page.getByRole('button', { name: '蓝调印刷', exact: true }).click();
   await expect(page.locator('html')).not.toHaveClass(/appearance-transition/);
-  await page.getByRole('button', { name: '海盐来信', exact: true }).click();
+  const blueprint = await colors();
+  await page.getByRole('button', { name: '纸上画廊', exact: true }).click();
+  await expect(page.locator('html')).not.toHaveClass(/appearance-transition/);
+  const paper = await colors();
+  expect(delta(blueprint[0], paper[0])).toBeGreaterThan(8);
+  expect(delta(blueprint[1], paper[1])).toBeGreaterThan(8);
+  await page.getByRole('button', { name: '蓝调印刷', exact: true }).click();
   await page.waitForFunction(() =>
     document.getAnimations().some((a) => a instanceof CSSAnimation && a.animationName === 'appearance-diagonal'),
   );
@@ -298,16 +317,10 @@ test('diagonal reveal has old upper-left and new lower-right pixels after scroll
     animation.pause();
     animation.currentTime = 250;
   });
-  const sharp = (await import('sharp')).default;
-  const { data, info } = await sharp(await page.screenshot({ path: '/tmp/appearance-diagonal-verified.png', scale: 'css' }))
-    .raw()
-    .toBuffer({ resolveWithObject: true });
-  const color = (x: number, y: number) =>
-    Array.from(data.subarray((y * info.width + x) * info.channels, (y * info.width + x) * info.channels + 3));
-  const oldCorner = color(20, 80),
-    newCorner = color(800, 800);
-  expect(oldCorner[0] - oldCorner[2]).toBeGreaterThan(10);
-  expect(newCorner[2] - newCorner[0]).toBeGreaterThan(10);
+  const during = await colors();
+  expect(delta(during[0], paper[0])).toBeLessThanOrEqual(5);
+  expect(delta(during[1], blueprint[1])).toBeLessThanOrEqual(5);
+  await page.screenshot({ path: '/tmp/appearance-diagonal-verified.png', scale: 'css' });
   // The live settings remain visible and clickable during the paused snapshot.
   await page.getByRole('button', { name: '阅读与界面', exact: true }).click();
   await expect(page.getByRole('spinbutton', { name: '字号', exact: true })).toBeVisible();
