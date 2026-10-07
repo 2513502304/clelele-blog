@@ -263,12 +263,12 @@
   line-height: var(--reading-leading);
   margin-top: 8px;
 }
-.appearance-numeric > label {
+.appearance-numeric-heading {
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
-.appearance-numeric label > span:last-child {
+.appearance-numeric-heading > span:last-child {
   display: flex;
   align-items: center;
   gap: 4px;

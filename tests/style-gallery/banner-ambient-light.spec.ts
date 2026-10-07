@@ -87,9 +87,10 @@ test('projection controls drag, persist and remain independent of banner and the
   await panel.getByRole('button', { name: '阅读与界面', exact: true }).click();
   await panel.getByRole('combobox', { name: '控制面板', exact: true }).selectOption('solid');
   const background = await page
-    .locator('.page-reading-stage')
-    .evaluate((el) => getComputedStyle(el, '::before').backgroundImage);
-  expect(background).not.toMatch(/rgba\(/);
+    .locator('#banner-ambient-light')
+    .evaluate((el) => getComputedStyle(el, '::after').backgroundImage);
+  // The opaque reading fill is the first layer; the independent tint beneath it may be translucent.
+  expect(background).toMatch(/^linear-gradient\(rgb\([\d, ]+\), rgb\([\d, ]+\)\)/);
   await panel.getByRole('button', { name: '横幅', exact: true }).click();
   await panel.getByRole('button', { name: '关闭', exact: true }).click();
   await expect(page.locator('#banner-ambient-light')).toHaveCSS('visibility', 'hidden');
@@ -243,4 +244,61 @@ test('saved banner choices remain intact and reset adopts the seven new defaults
     lightThemeBlend: 0,
   });
   await expect(page.locator('#banner-ambient-light')).toHaveCSS('visibility', 'visible');
+});
+
+test('long galleries share one stable light field across sidebar and content during scrolling', async ({
+  page,
+  browserName,
+}) => {
+  await page.goto('/image-style-prompt-gallery', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('#banner-ambient-light')).toHaveCSS('visibility', 'visible');
+  // Isolate the material from card/text pixels, retaining the actual layout and its
+  // backgrounds. The old full-document veil was missed by one-card fixtures.
+  await page.addStyleTag({ content: '.page-reading-stage{min-height:60000px}.page-reading-layout>*{visibility:hidden}' });
+  await page.evaluate(() => window.scrollTo(0, 4000));
+  const cdp = browserName === 'chromium' ? await page.context().newCDPSession(page) : undefined;
+  const sample = async () => {
+    // Playwright's document-coordinate screenshot clip races compositor scrolling
+    // in Chromium and can return an entirely white image. Capture the viewport
+    // directly without a clip so this check actually observes the moving frame.
+    const shot = cdp
+      ? Buffer.from((await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false })).data, 'base64')
+      : await page.screenshot({ scale: 'css' });
+    const pixels = await sharp(shot).extract({ left: 160, top: 400, width: 700, height: 1 }).removeAlpha().raw().toBuffer();
+    const first = [...pixels.subarray(0, 3)];
+    const last = [...pixels.subarray(-3)];
+    expect(Math.max(...first.map((v, i) => Math.abs(v - last[i]))), 'sidebar has an extra opaque veil').toBeLessThan(4);
+    return first;
+  };
+  const stationary = await sample();
+  await page.mouse.move(800, 600);
+  for (let i = 0; i < 8; i++) await page.mouse.wheel(0, 1100);
+  const moving = await sample();
+  await page.waitForTimeout(250);
+  const settled = await sample();
+  for (const frame of [moving, settled]) {
+    expect(Math.max(...frame.map((v, i) => Math.abs(v - stationary[i])))).toBeLessThan(4);
+  }
+  const veil = await page.locator('.page-reading-stage').evaluate((el) => getComputedStyle(el, '::before').content);
+  expect(veil, 'no document-height masked material should be rasterized').toBe('none');
+});
+
+test('CSS-only light controls do not invalidate source readiness', async ({ page }) => {
+  await page.goto('/image-style-prompt-gallery');
+  await expect(page.locator('#banner-ambient-light')).toHaveCSS('visibility', 'visible');
+  await page.locator('[data-appearance-toggle]').click();
+  const panel = page.locator('.appearance-panel');
+  await panel.getByRole('button', { name: '横幅', exact: true }).click();
+  await page.locator('#banner-ambient-light').evaluate((el) => {
+    el.setAttribute('data-ready-mutations', '0');
+    const observer = new MutationObserver((records) => {
+      el.setAttribute('data-ready-mutations', String(Number(el.getAttribute('data-ready-mutations')) + records.length));
+    });
+    observer.observe(el, { attributes: true, attributeFilter: ['data-ready'] });
+  });
+  for (const value of ['15', '70', '30']) {
+    await panel.getByRole('spinbutton', { name: '柔化程度', exact: true }).fill(value);
+    await expect(page.locator('html')).toHaveCSS('--scene-light-blur', value);
+  }
+  await expect(page.locator('#banner-ambient-light')).toHaveAttribute('data-ready-mutations', '0');
 });

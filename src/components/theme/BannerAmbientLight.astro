@@ -12,13 +12,15 @@
     const context = canvas?.getContext('2d');
     if (!layer || !canvas || !image || !context) return;
     let drawnSource = '';
+    let projection = '';
+    const hide = () => layer.removeAttribute('data-ready');
     const draw = () => {
-      layer.removeAttribute('data-ready');
       const prefs = getSceneryPreferences();
-      if (prefs.ambientLight === 'off' || !image.complete || !image.naturalWidth) return;
+      projection = [prefs.ambientLight, prefs.focusX, prefs.focusY].join('|');
+      if (prefs.ambientLight === 'off' || !image.complete || !image.naturalWidth) return hide();
       const width = image.clientWidth;
       const height = image.clientHeight;
-      if (!width || !height) return;
+      if (!width || !height) return hide();
       // Match object-fit: cover and its crop position before diffusing colors across the page.
       const scale = Math.max(width / image.naturalWidth, height / image.naturalHeight);
       const cropWidth = width / scale;
@@ -31,7 +33,13 @@
           (image.naturalHeight - cropHeight) * prefs.focusY / 100, cropWidth, cropHeight, 0, 0, 96, 64);
         drawnSource = sourceKey;
       }
-      layer.setAttribute('data-ready', 'true');
+      if (!layer.hasAttribute('data-ready')) layer.setAttribute('data-ready', 'true');
+    };
+    // CSS-only sliders must not invalidate :has([data-ready]) or force a layout
+    // read after every pointer move. Source and size observers own image changes.
+    const preferencesChanged = () => {
+      const prefs = getSceneryPreferences();
+      if ([prefs.ambientLight, prefs.focusX, prefs.focusY].join('|') !== projection) draw();
     };
     const resized = new ResizeObserver(draw);
     const source = new MutationObserver(draw);
@@ -39,14 +47,14 @@
     source.observe(image, { attributes: true, attributeFilter: ['src', 'srcset'] });
     image.addEventListener('load', draw);
     image.addEventListener('error', draw);
-    window.addEventListener('scenery-change', draw);
+    window.addEventListener('scenery-change', preferencesChanged);
     draw();
     cleanup = () => {
       resized.disconnect();
       source.disconnect();
       image.removeEventListener('load', draw);
       image.removeEventListener('error', draw);
-      window.removeEventListener('scenery-change', draw);
+      window.removeEventListener('scenery-change', preferencesChanged);
     };
   }
   document.addEventListener('astro:before-swap', () => { cleanup?.(); cleanup = undefined; });

@@ -47,8 +47,7 @@ export const sceneryCopy = {
     ambientSoft: '柔和映色',
     ambientImmersive: '沉浸原色',
     ambientVivid: '浓郁光场',
-    ambientSurfaceHint:
-      '调整内容区域透出的环境光。卡片、长文和侧栏保留阅读底衬，不降低图片或文字的清晰度；不透明面板设置优先。',
+    ambientSurfaceHint: '侧栏与正文共用连续的阅读底衬。卡片和长文保留可读性保护，图片与文字保持清晰；不透明面板设置优先。',
     edge: '底部衔接',
     textOpacity: '文字不透明度',
     textSize: '标题大小',
@@ -127,7 +126,7 @@ export const sceneryCopy = {
     ambientImmersive: 'Immersive color',
     ambientVivid: 'Vivid light',
     ambientSurfaceHint:
-      'Surface fill changes backgrounds only. Articles and sidebars retain a reading veil; the solid-panel preference takes priority.',
+      'Sidebar and content share one continuous reading backing. Cards and articles retain contrast protection; solid panels take priority.',
     edge: 'Lower edge',
     textOpacity: 'Text opacity',
     textSize: 'Title size',
@@ -205,7 +204,7 @@ export const sceneryCopy = {
     ambientImmersive: '没入する原色',
     ambientVivid: '鮮やかな光',
     ambientSurfaceHint:
-      '背景だけを調整し、画像や文字の鮮明さは保ちます。長文とサイドバーの可読性、不透明パネル設定を優先します。',
+      'サイドバーと本文は連続した共通の下地を使います。カードと長文の可読性、画像の鮮明さを保ち、不透明設定を優先します。',
     edge: '下端',
     textOpacity: '文字の不透明度',
     textSize: 'タイトルサイズ',

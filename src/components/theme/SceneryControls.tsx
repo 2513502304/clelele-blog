@@ -2,6 +2,7 @@ import { Icon } from '@iconify/react';
 import { useEffect, useState } from 'react';
 import { AmbientLightControls } from './AmbientLightControls';
 import { NumericSetting } from './NumericSetting';
+import { SettingHelp } from './SettingHelp';
 import { sceneryCopy } from './scenery-copy';
 import {
   DEFAULT_SCENERY,
@@ -107,6 +108,7 @@ export function SceneryControls({ tab, lang }: { tab: 'banner' | 'effects'; lang
       <NumericSetting
         key={key}
         name={copy[key]}
+        help={{ setting: key, lang }}
         value={value[key]}
         {...SCENERY_RULES[key]}
         suffix={suffix}
@@ -116,8 +118,11 @@ export function SceneryControls({ tab, lang }: { tab: 'banner' | 'effects'; lang
   }
   function choice(key: ChoiceKey) {
     return (
-      <label className="appearance-choice" key={key}>
-        <span>{copy[key]}</span>
+      <div className="appearance-choice" key={key}>
+        <span className="setting-label">
+          {copy[key]}
+          <SettingHelp label={copy[key]} setting={key} lang={lang} />
+        </span>
         <select aria-label={copy[key]} value={value[key]} onChange={(e) => change({ [key]: e.currentTarget.value })}>
           {SCENERY_RULES[key].values.map((v, i) => (
             <option key={v} value={v}>
@@ -125,7 +130,7 @@ export function SceneryControls({ tab, lang }: { tab: 'banner' | 'effects'; lang
             </option>
           ))}
         </select>
-      </label>
+      </div>
     );
   }
   return (
@@ -143,7 +148,10 @@ export function SceneryControls({ tab, lang }: { tab: 'banner' | 'effects'; lang
             <span className="scenery-preview-label">{copy.preview}</span>
           </div>
           <p className="appearance-section-label">
-            <span>{copy.looks}</span>
+            <span className="setting-label">
+              {copy.looks}
+              <SettingHelp label={copy.looks} setting="looks" lang={lang} />
+            </span>
             <span>01 — 06</span>
           </p>
           <fieldset className="scenery-looks" aria-label={copy.looks}>
@@ -224,7 +232,14 @@ export function SceneryControls({ tab, lang }: { tab: 'banner' | 'effects'; lang
         <>
           <div className="scenery-effect-heading">
             <span>ATMOSPHERE</span>
-            <h3>{copy.effects[SCENERY_RULES.effect.values.indexOf(value.effect)]}</h3>
+            <h3 className="setting-label">
+              {copy.effects[SCENERY_RULES.effect.values.indexOf(value.effect)]}
+              <SettingHelp
+                label={lang === 'zh' ? '页面特效' : lang === 'ja' ? 'ページ効果' : 'Page effects'}
+                setting="effect"
+                lang={lang}
+              />
+            </h3>
             <p>{copy.effectHint}</p>
           </div>
           <fieldset

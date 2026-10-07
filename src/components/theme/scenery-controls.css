@@ -224,7 +224,7 @@
 .scenery-group .appearance-choice select {
   max-width: 165px;
 }
-.scenery-group .appearance-numeric label > span:last-child {
+.scenery-group .appearance-numeric-heading > span:last-child {
   white-space: nowrap;
 }
 .scenery-group .appearance-numeric input[type="number"] {

@@ -1,5 +1,6 @@
 import { Icon } from '@iconify/react';
 import { NumericSetting } from './NumericSetting';
+import { SettingHelp } from './SettingHelp';
 import { sceneryCopy } from './scenery-copy';
 import { SCENERY_RULES, type SceneryPreferences } from './scenery-preferences';
 
@@ -39,6 +40,7 @@ export function AmbientLightControls({
     <NumericSetting
       key={key}
       name={copy[key]}
+      help={{ setting: key, lang }}
       value={value[key]}
       {...SCENERY_RULES[key]}
       suffix="%"
@@ -50,6 +52,7 @@ export function AmbientLightControls({
       <h3>
         <Icon icon="ri:rainbow-line" />
         {copy.ambientHeading}
+        <SettingHelp label={copy.ambientLight} setting="ambientLight" lang={lang} />
       </h3>
       <p className="appearance-caption">{copy.ambientHint}</p>
       <fieldset className="scenery-light-modes" aria-label={copy.ambientLight}>
@@ -70,6 +73,12 @@ export function AmbientLightControls({
       </fieldset>
       {value.ambientLight !== 'off' && (
         <>
+          <p className="appearance-section-label">
+            <span className="setting-label">
+              {copy.ambientLooks}
+              <SettingHelp label={copy.ambientLooks} setting="ambientLooks" lang={lang} />
+            </span>
+          </p>
           <fieldset className="ambient-recipes" aria-label={copy.ambientLooks}>
             {looks.map(({ label, values }, i) => (
               <button
@@ -115,8 +124,11 @@ export function AmbientLightControls({
               {numeric('lightSaturation')}
               {numeric('lightThemeBlend')}
               {numeric('lightFeather')}
-              <label className="appearance-choice">
-                <span>{copy.lightDirection}</span>
+              <div className="appearance-choice">
+                <span className="setting-label">
+                  {copy.lightDirection}
+                  <SettingHelp label={copy.lightDirection} setting="lightDirection" lang={lang} />
+                </span>
                 <select
                   aria-label={copy.lightDirection}
                   value={value.lightDirection}
@@ -128,7 +140,7 @@ export function AmbientLightControls({
                     </option>
                   ))}
                 </select>
-              </label>
+              </div>
             </div>
           </details>
           <details className="scenery-group">
