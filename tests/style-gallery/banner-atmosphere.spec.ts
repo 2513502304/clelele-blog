@@ -426,10 +426,13 @@ test('landscape framing matches the visible cover instead of an overflowing imag
   expect(preview.width / preview.height).toBeCloseTo(cover.width / cover.height, 1);
 });
 
-test('maximum ambient strength keeps long-page text readable with black and white source images', async ({ page }) => {
+test('a reader-selected protective surface keeps text readable even with black and white source images', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.addInitScript(() =>
-    localStorage.setItem('appearance-scenery', JSON.stringify({ ambientLight: 'wash', lightOpacity: 100, effect: 'none' })),
+    localStorage.setItem(
+      'appearance-scenery',
+      JSON.stringify({ ambientLight: 'wash', lightOpacity: 100, lightSurface: 88, effect: 'none' }),
+    ),
   );
   let fill = '#000';
   await page.route('**/*', (r) =>

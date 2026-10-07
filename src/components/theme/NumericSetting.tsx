@@ -38,7 +38,6 @@ export function NumericSetting({
           <input
             id={id}
             type="number"
-            aria-label={name}
             min={min}
             max={max}
             step={step}

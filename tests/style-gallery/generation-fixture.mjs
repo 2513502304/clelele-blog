@@ -66,6 +66,22 @@ const objects = {
     groups: [{ sourceSlug: slug, examples: examples.map((example) => ({ ...example, likedBy: [] })) }],
   },
 };
+// Opt-in large catalog for real progressive-rendering tests; keep all existing
+// detail/profile fixtures unchanged and all storage traffic on the .invalid host.
+if (process.env.GALLERY_SCROLL_FIXTURE === '1') {
+  const catalog = objects['metadata/catalog-v5.json'];
+  const template = catalog.items[0];
+  catalog.items = Array.from({ length: 192 }, (_, index) => {
+    const id = (index + 1).toString(16).padStart(12, '0');
+    return {
+      ...template,
+      slug: `2026-10-01-${id}`,
+      sourceImage: `/api/style-gallery/image/source/${id}.webp`,
+      imageHash: id.padStart(64, '0'),
+      sourceImageDimensions: { width: 1664, height: 2432 },
+    };
+  });
+}
 const profileKey = `images/${'c'.repeat(64)}.png`;
 const historyKey = `images/${'d'.repeat(64)}.png`;
 objects['profile.v1.json'] = {

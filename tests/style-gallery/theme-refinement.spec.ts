@@ -25,7 +25,15 @@ test('three-row notes scroll independently by wheel and keyboard in both layouts
     await note.scrollIntoViewIfNeeded();
     await expect(note).toHaveCSS('overflow-y', 'auto');
     expect(await note.evaluate((el) => el.clientHeight / parseFloat(getComputedStyle(el).lineHeight))).toBeCloseTo(3, 1);
-    // Hover may finish bringing the new grid layout into view before the wheel gesture.
+    // Images and smooth scrolling can move the target after hover. Wait for the
+    // actual layout to settle, then aim the wheel at the note's current position.
+    await expect
+      .poll(async () => {
+        const before = await note.boundingBox();
+        await page.waitForTimeout(80);
+        return JSON.stringify(await note.boundingBox()) === JSON.stringify(before);
+      })
+      .toBe(true);
     await note.hover();
     const scroll = await page.evaluate(() => window.scrollY);
     await page.mouse.wheel(0, 100);

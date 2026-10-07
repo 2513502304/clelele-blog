@@ -31,6 +31,11 @@ const routes = [
 ];
 test('all palettes keep page/control surfaces related across routes and light/dark modes', async ({ page }) => {
   test.setTimeout(300000);
+  // This checks the palette's own gradient. Ambient-on palette integration has
+  // separate coverage in banner-ambient-light.spec.ts and intentionally replaces it.
+  await page.addInitScript(() =>
+    localStorage.setItem('appearance-scenery', JSON.stringify({ ambientLight: 'off', effect: 'none' })),
+  );
   await page.route('**/*', (r) =>
     r.request().resourceType() === 'image'
       ? r.fulfill({
@@ -119,7 +124,10 @@ test('all palettes keep page/control surfaces related across routes and light/da
     });
     await page.evaluate(() => window.scrollTo(0, 550));
     await page.waitForTimeout(350); // Allow color transitions to settle before visual inspection.
-    await page.screenshot({ animations: 'disabled', path: `/tmp/theme-route-${route.replaceAll('/', '_') || 'home'}.png` });
+    await page.screenshot({
+      animations: 'disabled',
+      path: test.info().outputPath(`theme-route-${route.replaceAll('/', '_') || 'home'}.png`),
+    });
   }
 });
 

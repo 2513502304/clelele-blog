@@ -157,7 +157,11 @@ test('ambient materials preserve palette and selected controls on gallery and ne
       document.documentElement.classList.remove('dark');
       document.documentElement.dataset.appearance = 'paper';
     });
-    await page.screenshot({ path: `/tmp/ambient-${path.split('/').pop()}.png`, scale: 'css', animations: 'disabled' });
+    await page.screenshot({
+      path: test.info().outputPath(`ambient-${path.split('/').pop()}.png`),
+      scale: 'css',
+      animations: 'disabled',
+    });
   }
 });
 
@@ -181,7 +185,7 @@ test('mobile reading veils stay within the viewport and settings remain independ
   if (!bounds) throw new Error('Missing settings');
   expect(bounds.x).toBeGreaterThanOrEqual(0);
   expect(bounds.x + bounds.width).toBeLessThanOrEqual(390);
-  await page.screenshot({ path: '/tmp/ambient-mobile-settings.png', scale: 'css', animations: 'disabled' });
+  await page.screenshot({ path: test.info().outputPath('ambient-mobile-settings.png'), scale: 'css', animations: 'disabled' });
 });
 
 test('about-page fog has no sidebar top seam or separate article edge', async ({ page }) => {
@@ -272,8 +276,26 @@ test('long galleries share one stable light field across sidebar and content dur
   };
   const stationary = await sample();
   await page.mouse.move(800, 600);
-  for (let i = 0; i < 8; i++) await page.mouse.wheel(0, 1100);
-  const moving = await sample();
+  const initialY = await page.evaluate(() => scrollY);
+  // Keep input arriving while taking the viewport sample. Position assertions on
+  // both sides reject a swallowed wheel or a screenshot of an already-settled page.
+  let continueScrolling = true;
+  const scrolling = (async () => {
+    while (continueScrolling) {
+      await page.mouse.wheel(0, 350);
+      await page.waitForTimeout(35);
+    }
+  })();
+  let moving: number[];
+  try {
+    await expect.poll(() => page.evaluate(() => scrollY)).toBeGreaterThan(initialY);
+    const movingY = await page.evaluate(() => scrollY);
+    moving = await sample();
+    await expect.poll(() => page.evaluate(() => scrollY)).toBeGreaterThan(movingY);
+  } finally {
+    continueScrolling = false;
+    await scrolling;
+  }
   await page.waitForTimeout(250);
   const settled = await sample();
   for (const frame of [moving, settled]) {
@@ -281,6 +303,60 @@ test('long galleries share one stable light field across sidebar and content dur
   }
   const veil = await page.locator('.page-reading-stage').evaluate((el) => getComputedStyle(el, '::before').content);
   expect(veil, 'no document-height masked material should be rasterized').toBe('none');
+});
+
+test('mist feathers a local backing only behind light banner titles', async ({ page }) => {
+  await page.goto('/about');
+  const title = page.locator('.banner-copy h1');
+  const backing = () => title.evaluate((el) => getComputedStyle(el, '::before').backgroundImage);
+  await page.evaluate(() => {
+    document.documentElement.dataset.sceneMaskStyle = 'mist';
+    document.documentElement.dataset.sceneTextColor = 'white';
+  });
+  expect(await backing()).toContain('radial-gradient');
+  await page.evaluate(() => {
+    document.documentElement.dataset.sceneTextColor = 'ink';
+  });
+  expect(await backing()).toBe('none');
+  await page.evaluate(() => {
+    document.documentElement.classList.add('dark');
+    document.documentElement.dataset.sceneTextColor = 'theme';
+  });
+  expect(await backing()).toContain('radial-gradient');
+  await page.evaluate(() => {
+    document.documentElement.dataset.sceneMaskStyle = 'uniform';
+  });
+  expect(await backing()).toBe('none');
+});
+
+test('home and About project the same material for the same image and surface setting', async ({ page }) => {
+  const samples: Buffer[] = [];
+  for (const path of ['/', '/about']) {
+    await page.goto(path, { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#banner-ambient-light')).toHaveCSS('visibility', 'visible');
+    await page.addStyleTag({
+      content: '*,*::before,*::after{transition:none!important}.page-reading-layout>*{visibility:hidden}',
+    });
+    for (const dark of [false, true]) {
+      for (const surface of [0, 35, 88]) {
+        await page.evaluate(
+          ({ dark, surface }) => {
+            document.documentElement.classList.toggle('dark', dark);
+            document.documentElement.style.setProperty('--scene-light-surface', String(surface));
+          },
+          { dark, surface },
+        );
+        const shot = await page.screenshot({ clip: { x: 160, y: 760, width: 700, height: 1 }, scale: 'css' });
+        const pixels = await sharp(shot).removeAlpha().raw().toBuffer();
+        if (path === '/') samples.push(pixels);
+        else {
+          const home = samples.shift();
+          if (!home) throw new Error('Missing home sample');
+          expect(Math.max(...pixels.map((value, index) => Math.abs(value - home[index])))).toBeLessThan(4);
+        }
+      }
+    }
+  }
 });
 
 test('CSS-only light controls do not invalidate source readiness', async ({ page }) => {

@@ -10,6 +10,7 @@ export default defineConfig({
     'appearance.spec.ts',
     'banner-atmosphere.spec.ts',
     'banner-ambient-light.spec.ts',
+    'gallery-scroll-cache.spec.ts',
     'appearance-help.spec.ts',
     'collections.spec.ts',
     'collection-media.spec.ts',

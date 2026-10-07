@@ -60,6 +60,21 @@
 :root[data-scene-text-color="theme"] .banner-copy {
   --banner-ink: hsl(var(--foreground));
 }
+/* Pale mist and light ink need local contrast, without darkening the artwork
+   or replacing the reader's chosen text color. Feather the backing at every edge. */
+:root[data-scene-mask-style="mist"][data-scene-text-color="white"] .banner-copy h1,
+:root.dark[data-scene-mask-style="mist"][data-scene-text-color="theme"] .banner-copy h1 {
+  position: relative;
+  isolation: isolate;
+  &::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    inset: -1.3em -2em;
+    pointer-events: none;
+    background: radial-gradient(ellipse, rgb(12 17 32 / 80%) 12%, rgb(12 17 32 / 55%) 48%, transparent 72%);
+  }
+}
 :root[data-scene-text-font="round"] .banner-copy {
   --banner-font: "寒蝉全圆体", sans-serif;
 }

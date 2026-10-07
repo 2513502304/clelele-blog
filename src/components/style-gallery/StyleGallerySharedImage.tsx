@@ -5,7 +5,7 @@ import {
   rememberLoadedStyleGalleryImage,
   subscribeStyleGalleryImageSource,
 } from '@lib/style-gallery-image-client';
-import { type ImgHTMLAttributes, useCallback, useEffect, useState } from 'react';
+import { type ImgHTMLAttributes, useCallback, useEffect, useRef, useState } from 'react';
 import type { StyleGalleryImageDimensions } from '@/types/style-gallery';
 
 interface StyleGallerySharedImageProps extends Omit<ImgHTMLAttributes<HTMLImageElement>, 'src' | 'onLoad' | 'onError'> {
@@ -31,11 +31,18 @@ export default function StyleGallerySharedImage({
 }: StyleGallerySharedImageProps) {
   const [subscribedUrl, setSubscribedUrl] = useState<{ source: string; url: string } | null>(null);
   const [fallbackSource, setFallbackSource] = useState<string | null>(null);
+  const displayed = useRef<{ source: string; url: string } | null>(null);
   const reusableUrl = getReusableStyleGalleryImageUrl(source, loadedSources.has(source));
   // 状态必须与 canonical source 绑定。虚拟列表复用 React 节点时，旧 source 的 URL 不能短暂提交到新图片，
   // 否则 callback ref 会把旧 URL 错误登记为新 source 已加载。
   const renderedUrl =
-    fallbackSource === source ? source : subscribedUrl?.source === source ? subscribedUrl.url : (reusableUrl ?? source);
+    fallbackSource === source
+      ? source
+      : displayed.current?.source === source
+        ? displayed.current.url
+        : subscribedUrl?.source === source
+          ? subscribedUrl.url
+          : (reusableUrl ?? source);
 
   useEffect(() => {
     return subscribeStyleGalleryImageSource(source, (loadedUrl) => {
@@ -47,7 +54,12 @@ export default function StyleGallerySharedImage({
   }, [renderedUrl, source]);
 
   const remember = useCallback(
-    (image: HTMLImageElement | null) => rememberLoadedStyleGalleryImage(loadedSources, source, image, renderedUrl),
+    (image: HTMLImageElement | null) => {
+      // An append, signature refresh or another view of this source must not
+      // replace this mounted image's successful URL and start a second load.
+      if (image?.complete && image.naturalWidth > 0) displayed.current = { source, url: renderedUrl };
+      rememberLoadedStyleGalleryImage(loadedSources, source, image, renderedUrl);
+    },
     [loadedSources, renderedUrl, source],
   );
 
@@ -75,6 +87,7 @@ export default function StyleGallerySharedImage({
       onLoad={(event) => remember(event.currentTarget)}
       onError={() => {
         if (renderedUrl === source) return;
+        displayed.current = null;
         invalidateStyleGalleryImageUrl(source);
         setFallbackSource(source);
       }}

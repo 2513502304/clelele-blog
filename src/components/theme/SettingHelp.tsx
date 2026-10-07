@@ -13,6 +13,8 @@ import { useFloatingUI } from '@/hooks/useFloatingUI';
 import { type HelpKey, type HelpLanguage, settingHelpCopy } from './setting-help-copy';
 import './setting-help.css';
 
+const helpPrefixes = { zh: '说明', en: 'Help', ja: '説明' } satisfies Record<HelpLanguage, string>;
+
 /** Portal outside the scrolling/dragging panel; only an open explanation observes its position. */
 export function SettingHelp({ label, setting, lang }: { label: string; setting: HelpKey; lang: HelpLanguage }) {
   const [open, setOpen] = useState(false);
@@ -43,7 +45,7 @@ export function SettingHelp({ label, setting, lang }: { label: string; setting: 
         className="setting-help-trigger"
         data-setting-help={setting}
         data-panel-no-drag
-        aria-label={`${label} — ?`}
+        aria-label={`${helpPrefixes[lang]}: ${label}`}
       >
         ?
       </button>

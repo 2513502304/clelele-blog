@@ -86,10 +86,8 @@ html:is([data-scene-ambient-light="halo"], [data-scene-ambient-light="wash"]):ha
     box-shadow: none;
   }
   --ambient-reading: var(--ambient-surface);
-  /* Long-form text needs stronger protection, shared across both columns. */
-  &:has(.page-reading-stage .prose) {
-    --ambient-reading: max(0.88, var(--ambient-surface));
-  }
+  /* A route's content must not silently change the reader's surface setting.
+     Home, About and articles share this one feathered viewport material. */
   .page-reading-layout {
     background-image: none;
   }

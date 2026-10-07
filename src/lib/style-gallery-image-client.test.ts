@@ -199,6 +199,34 @@ test('refreshes expired or explicitly invalidated signed URLs without dropping u
   }
 });
 
+test('signature expiry refreshes future requests without replacing a displayed card cache key', async () => {
+  const previousFetch = globalThis.fetch;
+  const previousNow = Date.now;
+  let now = 1_000;
+  let requests = 0;
+  Date.now = () => now;
+  globalThis.fetch = async () =>
+    Response.json({ images: { [SOURCE]: `https://s3.example.test/signed-${++requests}` }, expiresAt: now + 100 });
+  resetStyleGalleryImageUrlCache();
+  try {
+    const first = (await resolveStyleGalleryImageUrls([SOURCE]))[SOURCE];
+    rememberLoadedStyleGalleryImage(new Set(), SOURCE, { complete: true, naturalWidth: 1024 }, first);
+    now += 101;
+    assert.equal(getCachedStyleGalleryImageUrl(SOURCE), undefined);
+    assert.equal(getReusableStyleGalleryImageUrl(SOURCE, true), first);
+    const refreshed = (await resolveStyleGalleryImageUrls([SOURCE]))[SOURCE];
+    assert.notEqual(refreshed, first);
+    assert.equal(getReusableStyleGalleryImageUrl(SOURCE, false), refreshed, 'new loads use the valid signature');
+    assert.equal(getReusableStyleGalleryImageUrl(SOURCE, true), first, 'displayed cards keep their successful URL');
+    invalidateStyleGalleryImageUrl(SOURCE);
+    assert.equal(getReusableStyleGalleryImageUrl(SOURCE, true), SOURCE, 'a real error still recovers through the proxy');
+  } finally {
+    resetStyleGalleryImageUrlCache();
+    globalThis.fetch = previousFetch;
+    Date.now = previousNow;
+  }
+});
+
 test('retries transient signing failures without retrying invalid requests', async () => {
   const previousFetch = globalThis.fetch;
   let requests = 0;

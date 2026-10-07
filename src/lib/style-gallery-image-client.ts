@@ -37,7 +37,8 @@ export function getCachedStyleGalleryImageUrl(source: string): string | undefine
   if (cached.expiresAt === null || cached.expiresAt > Date.now()) return cached.url;
   signedUrlCache.delete(source);
   if (loadedUrlBySource.get(source) === cached.url) loadedUrlBySource.delete(source);
-  if (displayedUrlBySource.get(source) === cached.url) displayedUrlBySource.delete(source);
+  // Expiry gates new requests, not an image already painted by the browser. Keep
+  // its exact cache key until a real image error explicitly invalidates it.
   return undefined;
 }
 

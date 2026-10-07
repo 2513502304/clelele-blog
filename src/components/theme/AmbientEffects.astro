@@ -5,7 +5,7 @@
 </style>
 <script>
   import { getSceneryPreferences } from './scenery-preferences';
-  // Lazy loading keeps the default, effects-off page free of rendering work.
+  // Lazy loading keeps an effects-off page free of rendering work.
   let dispose: (() => void) | undefined;
   let generation = 0;
   async function mount() {

@@ -46,6 +46,7 @@ test('every setting has contextual help; hover and Escape do not change preferen
     expect(keys.has(key), key).toBe(true);
   await panel.getByRole('button', { name: '横幅', exact: true }).click();
   const help = panel.locator('[data-setting-help="lightBlur"]');
+  await expect(help).toHaveAccessibleName('说明: 柔化程度');
   await help.hover();
   const popup = page.locator('.setting-help-popup[role="tooltip"]');
   await expect(popup).toContainText('越大越朦胧');
@@ -79,6 +80,9 @@ for (const [locale, tab, phrase] of [
     await page.locator('[data-appearance-toggle]').click();
     const panel = page.locator('.appearance-panel');
     await panel.getByRole('button', { name: tab, exact: true }).click();
+    await expect(panel.locator('[data-setting-help="fontSize"]')).toHaveAccessibleName(
+      locale === 'en' ? 'Help: Text size' : '説明: 文字サイズ',
+    );
     await panel.locator('[data-setting-help="fontSize"]').click();
     const popup = page.locator('.setting-help-popup[role="tooltip"]');
     await expect(popup).toContainText(phrase);
