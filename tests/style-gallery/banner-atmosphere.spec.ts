@@ -463,8 +463,11 @@ test('maximum ambient strength keeps long-page text readable with black and whit
         return Array.from(context.getImageData(0, 0, 1, 1).data).slice(0, 3);
       });
       expect(foreground).toHaveLength(3);
+      // Contrast belongs to the reading surface, not the deliberately colorful outer gutter.
+      const prose = await page.locator('main .prose').boundingBox();
+      if (!prose) throw new Error('Missing reading surface');
       const screenshot = await page.screenshot({
-        clip: { x: 20, y: 300, width: 1, height: 1 },
+        clip: { x: Math.round(prose.x) - 4, y: 300, width: 1, height: 1 },
         scale: 'css',
         animations: 'disabled',
       });

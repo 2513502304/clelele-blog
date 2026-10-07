@@ -335,3 +335,29 @@
   height: 50px;
   max-width: 100%;
 }
+
+.ambient-recipes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  min-width: 0;
+}
+.ambient-recipes button {
+  display: grid;
+  gap: 6px;
+  padding: 10px 4px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 10px;
+  background: linear-gradient(145deg, hsl(var(--card) / 75%), hsl(var(--muted) / 40%));
+  font-size: 10px;
+}
+.ambient-recipes button > span {
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  opacity: 0.55;
+}
+.ambient-recipes button[aria-pressed="true"] {
+  background: hsl(var(--primary));
+  border-color: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}

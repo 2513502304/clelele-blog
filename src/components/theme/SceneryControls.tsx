@@ -1,5 +1,6 @@
 import { Icon } from '@iconify/react';
 import { useEffect, useState } from 'react';
+import { AmbientLightControls } from './AmbientLightControls';
 import { NumericSetting } from './NumericSetting';
 import { sceneryCopy } from './scenery-copy';
 import {
@@ -171,36 +172,7 @@ export function SceneryControls({ tab, lang }: { tab: 'banner' | 'effects'; lang
             {choice('maskStyle')}
             {choice('edge')}
           </section>
-          <section className="scenery-group scenery-light-group">
-            <h3>
-              <Icon icon="ri:rainbow-line" />
-              {copy.ambientHeading}
-            </h3>
-            <p className="appearance-caption">{copy.ambientHint}</p>
-            <fieldset className="scenery-light-modes" aria-label={copy.ambientLight}>
-              {SCENERY_RULES.ambientLight.values.map((mode, i) => (
-                <button
-                  key={mode}
-                  type="button"
-                  aria-pressed={value.ambientLight === mode}
-                  onClick={() => change({ ambientLight: mode })}
-                >
-                  <span className={`scenery-light-art scenery-light-${mode}`} aria-hidden="true">
-                    {preview.src && <img src={preview.src} alt="" />}
-                    <i />
-                  </span>
-                  <span>{copy.choices.ambientLight[i]}</span>
-                </button>
-              ))}
-            </fieldset>
-            {value.ambientLight !== 'off' && (
-              <>
-                {numeric('lightOpacity')}
-                {numeric('lightBlur')}
-                {numeric('lightSpread')}
-              </>
-            )}
-          </section>
+          <AmbientLightControls value={value} change={change} lang={lang} image={preview.src} />
           <details className="scenery-group">
             <summary>
               {copy.advanced}

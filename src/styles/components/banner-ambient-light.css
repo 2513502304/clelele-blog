@@ -1,4 +1,5 @@
-/* The static light sits inside the theme snapshot, behind page content rather than over it. */
+/* Project the cover's own colors once. Filters affect only this low-resolution canvas,
+   never artwork or the content tree; scrolling needs no JS or animation loop. */
 #appearance-stage {
   position: relative;
   isolation: isolate;
@@ -10,39 +11,139 @@
   overflow: hidden;
   pointer-events: none;
   visibility: hidden;
-  opacity: calc(var(--scene-light-opacity, 55) / 100);
+  opacity: calc(var(--scene-light-opacity, 85) / 100);
+  --light-edge: calc(var(--scene-light-feather, 30) * 0.3%);
+  --light-mode-mask: linear-gradient(#000, #000);
+  --light-direction-mask: linear-gradient(#000, #000);
+  mask-image:
+    var(--light-mode-mask), var(--light-direction-mask),
+    radial-gradient(ellipse at center, #000 calc(100% - var(--light-edge)), rgb(0 0 0 / 55%) 100%);
+  mask-composite: intersect;
 }
-:root:not([data-scene-ambient-light="off"]) #banner-ambient-light[data-ready] {
+:root:is([data-scene-ambient-light="halo"], [data-scene-ambient-light="wash"]) #banner-ambient-light[data-ready] {
   visibility: visible;
 }
 #banner-ambient-light canvas {
   width: 100%;
   height: 100%;
-  transform: scale(calc(1.12 + var(--scene-light-spread, 55) * 0.007));
-  /* The light palette maps source colors into pastels; even a black cover cannot darken the reading canvas. */
-  filter: blur(calc(12px + var(--scene-light-blur, 55) * 0.9px)) saturate(calc(var(--scene-saturation, 100) / 80))
-    brightness(calc(var(--scene-brightness, 100) / 100)) contrast(0.12) brightness(1.8);
+  transform: scale(calc(1.18 + var(--scene-light-spread, 55) * 0.005));
+  filter: blur(calc(8px + var(--scene-light-blur, 35) * 1.1px)) saturate(calc(var(--scene-light-saturation, 100) / 100))
+    brightness(calc(var(--scene-light-brightness, 100) / 100)) contrast(calc(var(--scene-light-contrast, 100) / 100));
+}
+#banner-ambient-light::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: hsl(var(--background) / calc(var(--scene-light-theme-blend, 10) / 100));
 }
 :root[data-scene-ambient-light="halo"] #banner-ambient-light {
-  mask-image: radial-gradient(ellipse at 50% 30%, transparent 10%, rgb(0 0 0 / 25%) 45%, #000 90%);
+  --light-mode-mask: radial-gradient(
+    ellipse at 50% 30%,
+    transparent calc(10% + var(--light-edge) / 2),
+    rgb(0 0 0 / 25%) 45%,
+    #000 90%
+  );
 }
-:root[data-scene-ambient-light="wash"] #banner-ambient-light {
-  mask-image: linear-gradient(#000, rgb(0 0 0 / 80%) 60%, rgb(0 0 0 / 55%));
+:root[data-scene-light-direction="sides"] #banner-ambient-light {
+  --light-direction-mask: linear-gradient(
+    90deg,
+    #000,
+    transparent calc(35% + var(--light-edge) / 2),
+    transparent calc(65% - var(--light-edge) / 2),
+    #000
+  );
+}
+:root[data-scene-light-direction="top"] #banner-ambient-light {
+  --light-direction-mask: linear-gradient(#000, #000 calc(40% - var(--light-edge)), transparent 100%);
+}
+:root[data-scene-light-direction="bottom"] #banner-ambient-light {
+  --light-direction-mask: linear-gradient(transparent 0%, #000 calc(60% + var(--light-edge)), #000);
+}
+
+/* Apply translucent materials only while a source is ready. Broken images and Off
+   restore the exact palette. A local reading veil preserves contrast without bleaching
+   the entire projected image (including at the bottom of long articles). */
+html:is([data-scene-ambient-light="halo"], [data-scene-ambient-light="wash"]):has(#banner-ambient-light[data-ready]) {
+  --ambient-surface: calc(var(--scene-light-surface, 35) / 100);
+  --ambient-halo: calc(var(--scene-light-text-shadow, 20) / 100);
+  .site-banner {
+    mask-image: linear-gradient(#000 calc(100% - 100px), transparent);
+  }
+  main .shadow-box.bg-gradient-start {
+    background: transparent;
+    box-shadow: none;
+  }
+  .page-home-sider {
+    box-shadow: none;
+  }
+  .page-reading-layout {
+    background-image: none;
+  }
+  .page-reading-layout > .grow,
+  .page-home-sider,
+  .prose {
+    position: relative;
+    isolation: isolate;
+  }
+  .page-home-sider {
+    position: sticky;
+  }
+  .page-reading-layout > .grow::before,
+  .page-home-sider::before,
+  .prose::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background: hsl(var(--card) / var(--ambient-surface));
+    /* Two smooth masks feather the material, leaving no rectangular page seam. */
+    mask-image:
+      linear-gradient(90deg, transparent, #000 24px, #000 calc(100% - 24px), transparent),
+      linear-gradient(transparent, #000 64px, #000 calc(100% - 48px), transparent);
+    mask-composite: intersect;
+  }
+  .page-home-sider::before {
+    background: hsl(var(--card) / max(0.88, var(--ambient-surface)));
+    mask-image: linear-gradient(
+      90deg,
+      transparent,
+      rgb(0 0 0 / 30%) 16px,
+      #000 44px,
+      #000 calc(100% - 44px),
+      rgb(0 0 0 / 30%) calc(100% - 16px),
+      transparent
+    );
+  }
+  .prose::before {
+    inset: -32px;
+    background: hsl(var(--card) / max(0.92, var(--ambient-surface)));
+    mask-image:
+      linear-gradient(90deg, transparent, #000 24px, #000 calc(100% - 24px), transparent),
+      linear-gradient(transparent, #000 24px, #000 calc(100% - 24px), transparent);
+  }
+  @media (max-width: 767px) {
+    .prose::before {
+      /* Mobile content has narrower gutters: keep the veil inside them. */
+      inset-inline: -8px;
+      mask-image:
+        linear-gradient(90deg, transparent, #000 6px, #000 calc(100% - 6px), transparent),
+        linear-gradient(transparent, #000 24px, #000 calc(100% - 24px), transparent);
+    }
+  }
+  .page-reading-layout :is(.bg-card, .bg-white, .bg-background):not(button, input, select, textarea, [role="dialog"]) {
+    background-color: hsl(var(--card) / max(0.78, var(--ambient-surface)));
+    background-image: linear-gradient(145deg, hsl(var(--card) / 25%), transparent 65%);
+  }
+  .page-reading-layout :is(h1, h2, h3, p, label, figcaption) {
+    text-shadow: 0 1px 5px hsl(var(--card) / var(--ambient-halo));
+  }
+  &[data-reading-transparency="solid"] {
+    --ambient-surface: 1;
+  }
 }
 @media print {
   #banner-ambient-light {
     display: none;
   }
-}
-
-/* Let the light cross layout boundaries. Individual reading cards retain their surfaces. */
-:root:is([data-scene-ambient-light="halo"], [data-scene-ambient-light="wash"]) {
-  .site-banner {
-    mask-image: linear-gradient(#000 calc(100% - 100px), transparent);
-  }
-}
-:root.dark #banner-ambient-light canvas {
-  /* Bound the final light range even at 100% strength so long pages keep readable text. */
-  filter: blur(calc(12px + var(--scene-light-blur, 55) * 0.9px)) saturate(calc(var(--scene-saturation, 100) / 80))
-    brightness(calc(var(--scene-brightness, 100) / 100)) contrast(0.4) brightness(0.3);
 }
