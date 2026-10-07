@@ -87,15 +87,13 @@ test('projection controls drag, persist and remain independent of banner and the
   await panel.getByRole('button', { name: '阅读与界面', exact: true }).click();
   await panel.getByRole('combobox', { name: '控制面板', exact: true }).selectOption('solid');
   const background = await page
-    .locator('.page-reading-layout > .grow')
-    .evaluate((el) => getComputedStyle(el, '::before').backgroundColor);
+    .locator('.page-reading-stage')
+    .evaluate((el) => getComputedStyle(el, '::before').backgroundImage);
   expect(background).not.toMatch(/rgba\(/);
   await panel.getByRole('button', { name: '横幅', exact: true }).click();
   await panel.getByRole('button', { name: '关闭', exact: true }).click();
   await expect(page.locator('#banner-ambient-light')).toHaveCSS('visibility', 'hidden');
-  expect(await page.locator('.page-reading-layout > .grow').evaluate((el) => getComputedStyle(el, '::before').content)).toBe(
-    'none',
-  );
+  expect(await page.locator('.page-reading-stage').evaluate((el) => getComputedStyle(el, '::before').content)).toBe('none');
 });
 
 test('ambient materials preserve palette and selected controls on gallery and nested detail pages', async ({ page }) => {
@@ -183,4 +181,66 @@ test('mobile reading veils stay within the viewport and settings remain independ
   expect(bounds.x).toBeGreaterThanOrEqual(0);
   expect(bounds.x + bounds.width).toBeLessThanOrEqual(390);
   await page.screenshot({ path: '/tmp/ambient-mobile-settings.png', scale: 'css', animations: 'disabled' });
+});
+
+test('about-page fog has no sidebar top seam or separate article edge', async ({ page }) => {
+  await page.goto('/about', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('#banner-ambient-light')).toHaveCSS('visibility', 'visible');
+  await page.addStyleTag({ content: '*,*::before,*::after{transition:none!important}' });
+  const side = await page.locator('.page-home-sider:visible').boundingBox();
+  const prose = await page.locator('main .prose').boundingBox();
+  if (!side || !prose) throw new Error('Missing reading columns');
+  // Sample empty strips across the exact old material boundaries, not attributes
+  // or screenshot corners. A uniform source makes any sudden jump a UI seam.
+  const strips = [
+    { x: Math.round(side.x + side.width / 2), y: Math.round(side.y) - 8, width: 1, height: 16 },
+    { x: Math.round(prose.x) - 45, y: Math.round(side.y) + 12, width: 70, height: 1 },
+  ];
+  for (const dark of [false, true]) {
+    for (const theme of ['original', 'paper', 'blueprint']) {
+      await page.evaluate(
+        ({ dark, theme }) => {
+          document.documentElement.classList.toggle('dark', dark);
+          document.documentElement.dataset.appearance = theme;
+        },
+        { dark, theme },
+      );
+      for (const clip of strips) {
+        const shot = await page.screenshot({ clip, scale: 'css', animations: 'disabled' });
+        const { data, info } = await sharp(shot).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+        const jumps: number[] = [];
+        for (let i = info.channels; i < data.length; i++) jumps.push(Math.abs(data[i] - data[i - info.channels]));
+        expect(Math.max(...jumps), `${theme} dark=${dark} at ${JSON.stringify(clip)}`).toBeLessThanOrEqual(4);
+      }
+    }
+  }
+});
+
+test('saved banner choices remain intact and reset adopts the seven new defaults', async ({ page }) => {
+  const previous = {
+    maskStyle: 'vignette',
+    edge: 'wave',
+    ambientLight: 'off',
+    lightOpacity: 55,
+    lightBlur: 65,
+    lightSpread: 70,
+    lightThemeBlend: 25,
+  };
+  await page.addInitScript((previous) => localStorage.setItem('appearance-scenery', JSON.stringify(previous)), previous);
+  await page.goto('/about', { waitUntil: 'domcontentloaded' });
+  expect(await page.evaluate(() => window.__sceneryPreferences)).toMatchObject(previous);
+  await page.getByRole('button', { name: '主题与阅读', exact: true }).click();
+  const panel = page.locator('.appearance-panel');
+  await panel.getByRole('button', { name: '横幅', exact: true }).click();
+  await panel.getByRole('button', { name: '重置横幅', exact: true }).click();
+  expect(await page.evaluate(() => window.__sceneryPreferences)).toMatchObject({
+    maskStyle: 'mist',
+    edge: 'mist',
+    ambientLight: 'wash',
+    lightOpacity: 100,
+    lightBlur: 30,
+    lightSpread: 0,
+    lightThemeBlend: 0,
+  });
+  await expect(page.locator('#banner-ambient-light')).toHaveCSS('visibility', 'visible');
 });

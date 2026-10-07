@@ -217,8 +217,13 @@ test('fresh defaults match the requested screenshots without overriding saved ch
   const expected = {
     imageOpacity: 100,
     mask: 30,
-    maskStyle: 'vignette',
-    edge: 'wave',
+    maskStyle: 'mist',
+    edge: 'mist',
+    ambientLight: 'wash',
+    lightOpacity: 100,
+    lightBlur: 30,
+    lightSpread: 0,
+    lightThemeBlend: 0,
     tone: 'warm',
     brightness: 100,
     contrast: 100,
@@ -254,6 +259,7 @@ test('fresh defaults match the requested screenshots without overriding saved ch
 });
 
 test('static image light paints once, follows source changes and survives navigation', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('appearance-scenery', JSON.stringify({ ambientLight: 'off' })));
   await page.addInitScript(() => {
     const original = CanvasRenderingContext2D.prototype.drawImage;
     CanvasRenderingContext2D.prototype.drawImage = function (...args: [CanvasImageSource, ...number[]]) {

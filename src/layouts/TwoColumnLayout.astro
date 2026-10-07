@@ -15,12 +15,15 @@ const { className, post } = Astro.props;
 
 <div class="flex flex-col">
   <slot name="cover" />
-  <div class={cn('page-reading-layout mx-auto md:mx-0 flex w-full items-start justify-center md:w-full', MAX_WIDTH.content, className)}>
-    <slot name="sider" />
-    <div class="flex min-w-0 grow flex-col gap-8 md:w-full">
-      <slot />
-      <PostFooter post={post} />
-      <Footer />
+  <!-- The full-width stage lets ambient fog cross both columns without a card-shaped edge. -->
+  <div class="page-reading-stage">
+    <div class={cn('page-reading-layout mx-auto md:mx-0 flex w-full items-start justify-center md:w-full', MAX_WIDTH.content, className)}>
+      <slot name="sider" />
+      <div class="flex min-w-0 grow flex-col gap-8 md:w-full">
+        <slot />
+        <PostFooter post={post} />
+        <Footer />
+      </div>
     </div>
   </div>
 </div>
