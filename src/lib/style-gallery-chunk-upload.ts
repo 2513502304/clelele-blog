@@ -1,5 +1,5 @@
 // 单文件上限由服务端组合时的内存占用和当前产品需求控制，而不是 Vercel 单请求体上限。
-export const MAX_STYLE_GALLERY_EXAMPLE_FILE_SIZE = 12 * 1024 * 1024;
+export const MAX_STYLE_GALLERY_EXAMPLE_FILE_SIZE = 64 * 1024 * 1024;
 // 4.25 MiB 低于 Vercel Function 约 4.5 MB 的请求体上限；小文件直传，大文件复用该值分块。
 export const STYLE_GALLERY_DIRECT_UPLOAD_MAX_SIZE = (17 * 1024 * 1024) / 4;
 export const STYLE_GALLERY_UPLOAD_CHUNK_SIZE = STYLE_GALLERY_DIRECT_UPLOAD_MAX_SIZE;

@@ -10,6 +10,7 @@ import {
   getStyleGalleryUploadPartCount,
   getStyleGalleryUploadPartKey,
   isStyleGalleryUploadId,
+  MAX_STYLE_GALLERY_EXAMPLE_FILE_SIZE,
   MAX_STYLE_GALLERY_UPLOAD_PARTS,
   STYLE_GALLERY_DIRECT_UPLOAD_MAX_SIZE,
   STYLE_GALLERY_UPLOAD_CHUNK_SIZE,
@@ -333,15 +334,23 @@ describe('style gallery chunk uploads', () => {
     assert.equal(STYLE_GALLERY_UPLOAD_CHUNK_SIZE, STYLE_GALLERY_DIRECT_UPLOAD_MAX_SIZE);
     assert.equal(getStyleGalleryUploadPartCount(STYLE_GALLERY_UPLOAD_CHUNK_SIZE), 1);
     assert.equal(getStyleGalleryUploadPartCount(STYLE_GALLERY_UPLOAD_CHUNK_SIZE + 1), 2);
-    assert.equal(getStyleGalleryUploadPartCount(12 * 1024 * 1024), MAX_STYLE_GALLERY_UPLOAD_PARTS);
+    assert.equal(MAX_STYLE_GALLERY_EXAMPLE_FILE_SIZE, 64 * 1024 * 1024);
+    assert.equal(MAX_STYLE_GALLERY_UPLOAD_PARTS, 16);
+    assert.equal(getStyleGalleryUploadPartCount(12 * 1024 * 1024 + 1), 3);
+    assert.equal(getStyleGalleryUploadPartCount(16 * 1024 * 1024), 4);
+    assert.equal(getStyleGalleryUploadPartCount(MAX_STYLE_GALLERY_EXAMPLE_FILE_SIZE), MAX_STYLE_GALLERY_UPLOAD_PARTS);
     assert.throws(() => getStyleGalleryUploadPartCount(0), /Invalid style gallery upload size/);
-    assert.throws(() => getStyleGalleryUploadPartCount(12 * 1024 * 1024 + 1), /Invalid style gallery upload size/);
+    assert.throws(
+      () => getStyleGalleryUploadPartCount(MAX_STYLE_GALLERY_EXAMPLE_FILE_SIZE + 1),
+      /Invalid style gallery upload size/,
+    );
   });
 
   it('uses traversal-safe temporary object keys', () => {
     const uploadId = '019f4f58-103a-7ac1-9f5e-6e27c9712154';
     assert.equal(isStyleGalleryUploadId(uploadId), true);
     assert.equal(getStyleGalleryUploadPartKey(uploadId, 2), 'examples/uploads/019f4f58103a7ac19f5e6e27c9712154/02.part');
+    assert.equal(getStyleGalleryUploadPartKey(uploadId, 15), 'examples/uploads/019f4f58103a7ac19f5e6e27c9712154/15.part');
     assert.equal(isStyleGalleryUploadId('../metadata/catalog.json'), false);
     assert.throws(() => getStyleGalleryUploadPartKey('../metadata/catalog.json', 0), /Invalid style gallery upload ID/);
     assert.throws(() => getStyleGalleryUploadPartKey(uploadId, MAX_STYLE_GALLERY_UPLOAD_PARTS), /part index/);
