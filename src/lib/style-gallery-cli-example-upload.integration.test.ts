@@ -34,18 +34,20 @@ function createVisualFeature(imageHash: string): StyleGalleryVisualFeature {
 }
 
 describe('style gallery example upload CLI integration', () => {
-  it('uploads image bytes directly to HF and commits successful files when a sibling fails', async () => {
+  it('uploads original PNGs above 12 MiB directly to HF and commits successful files when a sibling fails', async () => {
     const note = `${'保留原角色特征与清晰的赛璐璐阴影。'.repeat(80)}\n\nSoft daylight.\nEND`;
     const directory = await mkdtemp(path.join(tmpdir(), 'style-gallery-cli-'));
-    const goodBytes = await sharp({ create: { width: 120, height: 80, channels: 3, background: 'red' } })
-      .webp()
+    // Uncompressed PNG is a real decodable image above the former 12 MiB guard.
+    const goodBytes = await sharp({ create: { width: 2400, height: 2000, channels: 3, background: 'red' } })
+      .png({ compressionLevel: 0 })
       .toBuffer();
     const failedBytes = await sharp({ create: { width: 80, height: 120, channels: 3, background: 'blue' } })
       .webp()
       .toBuffer();
+    assert.ok(goodBytes.length > 12 * 1024 * 1024);
     const goodHash = createHash('sha256').update(goodBytes).digest('hex');
     const failedHash = createHash('sha256').update(failedBytes).digest('hex');
-    const goodPath = path.join(directory, 'good.webp');
+    const goodPath = path.join(directory, 'good.png');
     const failedPath = path.join(directory, 'failed.webp');
     await Promise.all([writeFile(goodPath, goodBytes), writeFile(failedPath, failedBytes)]);
 
@@ -91,16 +93,16 @@ describe('style gallery example upload CLI integration', () => {
         const body = JSON.parse((await readBody(request)).toString('utf8'));
         if (body.action === 'prepare') {
           assert.equal(body.note, note);
-          assert.deepEqual(body.files[0].dimensions, { width: 120, height: 80 });
+          assert.deepEqual(body.files[0].dimensions, { width: 2400, height: 2000 });
           sendJson(response, {
             uploads: body.files.map(
-              (file: { imageHash: string; dimensions: { width: number; height: number } }, index: number) => ({
+              (file: { imageHash: string; type: string; dimensions: { width: number; height: number } }, index: number) => ({
                 imageHash: file.imageHash,
                 duplicate: false,
                 exists: false,
                 example: {
                   id: `example-${index}`,
-                  src: `/api/style-gallery/image/examples/images/${file.imageHash}.webp`,
+                  src: `/api/style-gallery/image/examples/images/${file.imageHash}.${file.type === 'image/png' ? 'png' : 'webp'}`,
                   alt: 'PixAI example',
                   model: 'PixAI',
                   note: body.note,
@@ -115,7 +117,7 @@ describe('style gallery example upload CLI integration', () => {
         }
         if (body.action === 'merge') {
           assert.equal(body.examples[0].note, note);
-          assert.deepEqual(body.examples[0].dimensions, { width: 120, height: 80 });
+          assert.deepEqual(body.examples[0].dimensions, { width: 2400, height: 2000 });
           assert.deepEqual(
             body.visualRecords.map((record: { feature: { imageHash: string }; imageId: string }) => ({
               imageHash: record.feature.imageHash,
@@ -211,7 +213,7 @@ describe('style gallery example upload CLI integration', () => {
       );
 
       assert.equal(code, 1);
-      assert.deepEqual(uploaded.get(`${goodHash}.webp`), goodBytes);
+      assert.deepEqual(uploaded.get(`${goodHash}.png`), goodBytes);
       assert.equal((await sharp(thumbnails.get(`${goodHash}.webp`)).metadata()).format, 'webp');
       assert.equal(catalogRequests, 2);
       assert.deepEqual(mergedHashes, [goodHash]);
@@ -229,7 +231,7 @@ describe('style gallery example upload CLI integration', () => {
       );
       assert.equal(mismatched, 1);
       assert.deepEqual(mergedHashes, [goodHash]);
-      assert.deepEqual(uploaded.get(`${goodHash}.webp`), goodBytes);
+      assert.deepEqual(uploaded.get(`${goodHash}.png`), goodBytes);
     } finally {
       globalThis.fetch = previousFetch;
       for (const name of envNames) {

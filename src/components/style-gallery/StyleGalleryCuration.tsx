@@ -31,7 +31,7 @@ function labels(locale: string) {
         failed: '保存失败，请重试。',
         conflict: '该提示词已被修改或与另一候选重复。请保留草稿，刷新后核对。',
         discard: '放弃尚未保存的修改？',
-        format: 'JPG / PNG / WebP，每张最大 12 MB，最多 20 张',
+        format: `JPG / PNG / WebP，每张最大 ${MAX_STYLE_GALLERY_EXAMPLE_FILE_SIZE / 1024 / 1024} MiB，最多 20 张`,
         indexFailed: '图片已收藏，标签或视觉索引未完成。再次保存即可重试。',
       }
     : {
@@ -52,7 +52,7 @@ function labels(locale: string) {
         failed: 'Unable to save. Please retry.',
         conflict: 'This prompt changed or duplicates another variant. Keep your draft and reload to compare.',
         discard: 'Discard unsaved changes?',
-        format: 'JPG / PNG / WebP, up to 12 MB each, 20 images maximum',
+        format: `JPG / PNG / WebP, up to ${MAX_STYLE_GALLERY_EXAMPLE_FILE_SIZE / 1024 / 1024} MiB each, 20 images maximum`,
         indexFailed: 'Image saved; tags or visual index incomplete. Save again to retry.',
       };
 }

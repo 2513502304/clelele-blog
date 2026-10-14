@@ -22,6 +22,9 @@ import {
 import sharp from 'sharp';
 import { z } from 'zod';
 
+// Raising the file-size ceiling must not also raise concurrent storage downloads.
+const UPLOAD_ASSEMBLY_DOWNLOAD_CONCURRENCY = 3;
+
 const imageHashSchema = z.string().regex(/^[a-f0-9]{64}$/i);
 const uploadIdSchema = z.string().refine(isStyleGalleryUploadId, 'Invalid style gallery upload ID.');
 const uploadPartSchema = z.object({
@@ -177,7 +180,7 @@ async function handleCompleteUpload(rawBody: unknown, kind: 'source' | 'example'
     return Response.json({ key: finalKey, imageHash: body.imageHash, reused: true });
   }
 
-  const chunks = await mapWithConcurrency(parts, MAX_STYLE_GALLERY_UPLOAD_PARTS, async (part) => {
+  const chunks = await mapWithConcurrency(parts, UPLOAD_ASSEMBLY_DOWNLOAD_CONCURRENCY, async (part) => {
     const key = getStyleGalleryUploadPartKey(body.uploadId, part.index);
     const bytes = await getStyleGalleryObjectBytes(key);
     if (!bytes) throw new Error(`Upload part ${part.index + 1} is missing.`);
