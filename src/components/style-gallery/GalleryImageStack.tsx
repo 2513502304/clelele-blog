@@ -7,17 +7,20 @@ export default function GalleryImageStack({
   onOpen,
   label,
   badge,
+  originalSource,
 }: {
   images: { key: string; content: ReactNode }[];
   onOpen: () => void;
   label: string;
   badge: ReactNode;
+  originalSource?: string;
 }) {
   const reducedMotion = useReducedMotion();
   return (
     <button
       type="button"
       onClick={onOpen}
+      data-gallery-original={originalSource}
       aria-label={label}
       data-reduced-motion={reducedMotion || undefined}
       className="gallery-source-stack relative block aspect-[4/5] w-full overflow-hidden bg-muted/40 focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-[-2px]"

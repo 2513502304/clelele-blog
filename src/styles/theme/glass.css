@@ -102,6 +102,14 @@
   }
 }
 
+/* A long gallery can contain thousands of glass badges. Retain their tint and
+   all card content, but release offscreen backdrop surfaces. The grid observes
+   a generous margin, so visible controls keep the same glass treatment. */
+[data-gallery-layout] > [data-gallery-near-viewport="false"] :is(.glass-image-action, .gallery-tag, .gallery-image-badge) {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
 /* Preserve contrast when the user requests less transparency or higher contrast. */
 @media (prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active) {
   .glass-surface,

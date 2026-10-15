@@ -9,12 +9,14 @@
 import { ErrorBoundary, InlineErrorFallback } from '@components/common';
 import { FloatingFocusManager, FloatingPortal, useDismiss, useFloating, useInteractions, useRole } from '@floating-ui/react';
 import { useBackdropClickDismiss } from '@hooks/useBackdropClickDismiss';
+import { useGalleryLightboxIntent } from '@hooks/useGalleryLightboxIntent';
 import { useKeyboardShortcut } from '@hooks/useKeyboardShortcut';
 import { useLightboxImageDownload } from '@hooks/useLightboxImageDownload';
 import { useTranslation } from '@hooks/useTranslation';
 import { useZoomPan } from '@hooks/useZoomPan';
 import { Icon } from '@iconify/react';
 import { createImageLightboxDownloadAction } from '@lib/image-lightbox-download';
+import { discardCachedLightboxImage } from '@lib/lightbox-image-cache';
 import { getLive2DFocusNodes, isLive2DOwnedTarget } from '@lib/live2d/focus-scope';
 import {
   getReusableStyleGalleryImageUrl,
@@ -194,6 +196,7 @@ function LightboxImageStage({
         transition={{ opacity: { duration: shouldReduceMotion || sourceWasLoaded ? 0 : 0.2 } }}
         onLoad={(event) => void finishSourceLoad(event.currentTarget)}
         onError={() => {
+          discardCachedLightboxImage(sourceSrc);
           if (image.resolvedSrc && sourceSrc === image.resolvedSrc) {
             // 直连签名持续失败时本次 popup 不再重签；页面缓存的 canonical URL 失败则允许改走签名恢复。
             if (image.resolvedSrc !== image.src) {
@@ -275,6 +278,7 @@ export default function ImageLightbox() {
   const shouldReduceMotion = useReducedMotion();
   const data = useStore($imageLightboxData);
   const isOpen = data !== null;
+  useGalleryLightboxIntent(!isOpen);
   const currentImage = data?.images[data.currentIndex];
   const currentLike = currentImage?.like;
   const currentCopy = currentImage?.copy;

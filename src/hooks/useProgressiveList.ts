@@ -42,6 +42,9 @@ export function useProgressiveList<T>(items: T[], options: ProgressiveListOption
     [batchSize, initialCount, items.length, resetKey],
   );
 
+  // Fast scrolling can leave the sentinel inside the margin after an append.
+  // Re-observe the new extent instead of requiring an exit/re-entry.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: visibleCount changes the observed layout, not the target node.
   useEffect(() => {
     const target = loadMoreRef.current;
     if (!hasMore || !target || typeof IntersectionObserver === 'undefined') return;
@@ -53,7 +56,7 @@ export function useProgressiveList<T>(items: T[], options: ProgressiveListOption
     );
     observer.observe(target);
     return () => observer.disconnect();
-  }, [hasMore, loadMore, rootMargin]);
+  }, [hasMore, loadMore, rootMargin, visibleCount]);
 
   const visibleItems = useMemo(() => items.slice(0, visibleCount), [items, visibleCount]);
   return { hasMore, loadMore, loadMoreRef, revealThrough, visibleItems };

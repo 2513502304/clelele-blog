@@ -1,4 +1,5 @@
 import { type ImageDownloadProgress, readImageDownload } from '@lib/image-download-progress';
+import { cacheLightboxImage, getCachedLightboxImage } from '@lib/lightbox-image-cache';
 import { isStyleGalleryImagePreloading, isStyleGalleryImageUrlLoaded } from '@lib/style-gallery-image-client';
 import { useEffect, useState } from 'react';
 
@@ -17,22 +18,26 @@ function canTrackDownload(source: string): boolean {
 
 /** Track only cold originals; native cards/preloads keep their existing requests and cached image URLs. */
 export function useLightboxImageDownload(source: string) {
-  const [initial] = useState(() => ({ source, track: canTrackDownload(source) }));
+  const [initial] = useState(() => ({ source, blob: getCachedLightboxImage(source), track: canTrackDownload(source) }));
   const [download, setDownload] = useState<{ src?: string; progress?: ImageDownloadProgress }>({});
   // A failed signed URL falls back through the existing native image error path, without another stream retry.
   const track = initial.track && initial.source === source;
+  const cachedBlob = initial.source === source ? initial.blob : undefined;
   useEffect(() => {
-    if (!track) return;
+    if (!track && !cachedBlob) return;
     const controller = new AbortController();
     let objectUrl: string | undefined;
-    void fetch(source, { signal: controller.signal, credentials: 'same-origin', priority: 'high' })
-      .then((response) =>
-        readImageDownload(response, controller.signal, (progress) => {
-          if (!controller.signal.aborted) setDownload({ progress });
-        }),
-      )
+    const responseBlob = cachedBlob
+      ? Promise.resolve(cachedBlob)
+      : fetch(source, { signal: controller.signal, credentials: 'same-origin', priority: 'high' }).then((response) =>
+          readImageDownload(response, controller.signal, (progress) => {
+            if (!controller.signal.aborted) setDownload({ progress });
+          }),
+        );
+    void responseBlob
       .then((blob) => {
         if (controller.signal.aborted) return;
+        cacheLightboxImage(source, blob);
         objectUrl = URL.createObjectURL(blob);
         setDownload((current) => ({ ...current, src: objectUrl }));
       })
@@ -44,6 +49,6 @@ export function useLightboxImageDownload(source: string) {
       controller.abort();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [source, track]);
-  return track ? download : { src: source };
+  }, [cachedBlob, source, track]);
+  return track || cachedBlob ? download : { src: source };
 }

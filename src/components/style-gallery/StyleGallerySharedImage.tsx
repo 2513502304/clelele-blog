@@ -10,6 +10,8 @@ import type { StyleGalleryImageDimensions } from '@/types/style-gallery';
 
 interface StyleGallerySharedImageProps extends Omit<ImgHTMLAttributes<HTMLImageElement>, 'src' | 'onLoad' | 'onError'> {
   source: string;
+  /** Optional stored preview; a missing derivative falls back to the untouched original. */
+  previewSource?: string;
   loadedSources: Set<string>;
   alt: string;
   dimensions?: StyleGalleryImageDimensions;
@@ -22,13 +24,16 @@ interface StyleGallerySharedImageProps extends Omit<ImgHTMLAttributes<HTMLImageE
  * as decoded. Completed images retain their URL when refreshed signatures arrive.
  */
 export default function StyleGallerySharedImage({
-  source,
+  source: originalSource,
+  previewSource,
   loadedSources,
   alt,
   dimensions,
   naturalAspect,
   ...imageProps
 }: StyleGallerySharedImageProps) {
+  const [failedPreview, setFailedPreview] = useState<string | null>(null);
+  const source = previewSource && failedPreview !== previewSource ? previewSource : originalSource;
   const [subscribedUrl, setSubscribedUrl] = useState<{ source: string; url: string } | null>(null);
   const [fallbackSource, setFallbackSource] = useState<string | null>(null);
   const displayed = useRef<{ source: string; url: string } | null>(null);
@@ -55,14 +60,30 @@ export default function StyleGallerySharedImage({
     });
   }, [renderedUrl, source]);
 
+  const recover = useCallback(() => {
+    if (renderedUrl === source) {
+      if (source !== originalSource && previewSource) setFailedPreview(previewSource);
+      return;
+    }
+    displayed.current = null;
+    invalidateStyleGalleryImageUrl(source);
+    setFallbackSource(source);
+  }, [originalSource, previewSource, renderedUrl, source]);
+
   const remember = useCallback(
     (image: HTMLImageElement | null) => {
+      // SSR images may fail before React attaches onError. Treat the completed
+      // broken image identically to a later error, including missing previews.
+      if (image?.complete && image.naturalWidth === 0) {
+        recover();
+        return;
+      }
       // An append, signature refresh or another view of this source must not
       // replace this mounted image's successful URL and start a second load.
       if (image?.complete && image.naturalWidth > 0) displayed.current = { source, url: renderedUrl };
       rememberLoadedStyleGalleryImage(loadedSources, source, image, renderedUrl);
     },
-    [loadedSources, renderedUrl, source],
+    [loadedSources, recover, renderedUrl, source],
   );
 
   return (
@@ -87,12 +108,7 @@ export default function StyleGallerySharedImage({
       src={renderedUrl}
       alt={alt}
       onLoad={(event) => remember(event.currentTarget)}
-      onError={() => {
-        if (renderedUrl === source) return;
-        displayed.current = null;
-        invalidateStyleGalleryImageUrl(source);
-        setFallbackSource(source);
-      }}
+      onError={recover}
     />
   );
 }

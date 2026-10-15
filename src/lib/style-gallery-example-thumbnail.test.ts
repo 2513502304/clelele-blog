@@ -6,10 +6,29 @@ import { getUnreferencedStyleGalleryExampleAssetKeys } from './style-gallery-exa
 import {
   getStyleGalleryExampleThumbnailKey,
   getStyleGalleryExampleThumbnailSource,
+  getStyleGalleryImagePreviewSource,
   isAllowedStyleGalleryImageKey,
 } from './style-gallery-image-key';
 
 const hash = 'a'.repeat(64);
+test('display previews preserve schema-valid legacy and external originals instead of throwing', () => {
+  for (const source of [
+    '/api/style-gallery/image/source/legacy-file.png',
+    '/api/style-gallery/image/thumb/aaaaaaaaaaaa.webp',
+    'https://images.example.com/legacy.png',
+    '/api/style-gallery/image/examples/images/%broken.png',
+  ])
+    assert.equal(getStyleGalleryImagePreviewSource(source), source);
+  assert.equal(
+    getStyleGalleryImagePreviewSource(`/api/style-gallery/image/examples/images/${hash}.jpg`),
+    `/api/style-gallery/image/examples/thumbs/${hash}.webp`,
+  );
+  assert.equal(
+    getStyleGalleryImagePreviewSource('/api/style-gallery/image/source/aaaaaaaaaaaa.png'),
+    '/api/style-gallery/image/thumb/aaaaaaaaaaaa.webp',
+  );
+});
+
 test('derived thumbnail keys do not widen public signing to arbitrary bucket objects', () => {
   const source = `/api/style-gallery/image/examples/images/${hash}.png`;
   assert.equal(getStyleGalleryExampleThumbnailKey(source), `examples/thumbs/${hash}.webp`);

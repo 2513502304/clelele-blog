@@ -362,6 +362,7 @@ function StyleGalleryImageIndexContent({
                   <button
                     type="button"
                     onClick={() => openSourceLightbox(item)}
+                    data-gallery-original={item.sourceImage}
                     className="group/index-lightbox absolute top-1 left-1 z-10 flex min-h-5 min-w-7 cursor-zoom-in items-center justify-center rounded-sm bg-black/65 px-1 py-0.5 font-mono text-[9px] text-white tabular-nums transition hover:bg-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
                     aria-label={`${labels.openImage}: ${item.title}`}
                     title={labels.openImage}

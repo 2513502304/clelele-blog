@@ -115,6 +115,40 @@ test('profile refresh indicator settles on success and failure without hiding ex
   }
 });
 
+test('sidebar collapse handles delayed copies and page navigation without rebinding or toggling another sidebar', async ({
+  page,
+}) => {
+  await page.goto('/image-style-prompt-gallery');
+  const sidebar = page.locator('.page-home-sider:visible [data-home-info-container]');
+  const trigger = sidebar.locator('[data-collapse-trigger]');
+  await trigger.click();
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+  await expect(sidebar.locator('[data-collapse-content]')).not.toHaveAttribute('inert');
+  await trigger.focus();
+  await page.keyboard.press('Enter');
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  await expect(sidebar.locator('[data-collapse-content]')).toHaveAttribute('inert');
+
+  // A late drawer copy must work on its very first click, even with the same IDs.
+  const expanded = await sidebar.evaluate((node) => {
+    const copy = node.cloneNode(true) as HTMLElement;
+    document.body.append(copy);
+    const button = copy.querySelector<HTMLButtonElement>('[data-collapse-trigger]');
+    button?.click();
+    const expanded = button?.getAttribute('aria-expanded');
+    copy.remove();
+    return expanded;
+  });
+  expect(expanded).toBe('true');
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  // The optional Live2D overlay can cover this lower navigation link.
+  await sidebar.locator('a[href="/about"]').focus();
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(/\/about\/?$/);
+  await trigger.click();
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+});
+
 test('rating batches settle independently and stop spinning for absent or failed scores', async ({ page }) => {
   await page.route('**/api/hpoi?**', (route) =>
     route.fulfill({

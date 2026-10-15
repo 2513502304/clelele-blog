@@ -6,6 +6,8 @@ import StyleGalleryVisualFilter, {
 import { Icon } from '@iconify/react';
 import { createStyleGalleryDateRangeMatcher, getStyleGalleryDateKey } from '@lib/style-gallery-date-range';
 import type { StyleGalleryDateRangeLabels } from '@lib/style-gallery-date-range-labels';
+import { getReusableStyleGalleryImageUrl } from '@lib/style-gallery-image-client';
+import { getStyleGalleryImagePreviewSource } from '@lib/style-gallery-image-key';
 import {
   createStyleGallerySourceLightboxData,
   getStyleGalleryLightboxElementId,
@@ -275,7 +277,12 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
         gallerySourceSlug: candidate.slug,
         src: candidate.sourceImage,
         sourceLoaded: loadedSourceImages.has(candidate.sourceImage),
-        previewSrc: candidate.sourceImage,
+        previewSrc:
+          getReusableStyleGalleryImageUrl(
+            getStyleGalleryImagePreviewSource(candidate.sourceImage),
+            loadedSourceImages.has(getStyleGalleryImagePreviewSource(candidate.sourceImage)),
+          ) ?? getStyleGalleryImagePreviewSource(candidate.sourceImage),
+        dimensions: candidate.dimensions,
         alt: candidate.sourceImageAlt ?? candidate.title,
         getPrompt: () =>
           getSelectedStyleGalleryPrompt(candidate.slug) ??
@@ -477,6 +484,7 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
               <a href={`${galleryBasePath}/${item.slug}`} data-astro-prefetch="false" className="block h-full w-full">
                 <StyleGallerySharedImage
                   source={item.sourceImage}
+                  previewSource={getStyleGalleryImagePreviewSource(item.sourceImage)}
                   dimensions={item.dimensions}
                   naturalAspect={masonry}
                   loadedSources={loadedSourceImages}
@@ -515,6 +523,7 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
               <button
                 type="button"
                 onClick={() => openSourceLightbox(item)}
+                data-gallery-original={item.sourceImage}
                 className="glass-image-action absolute top-2 left-2 z-10 flex size-9 cursor-zoom-in items-center justify-center rounded-lg text-white transition hover:bg-black/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
                 aria-label={`${labels.openImage}: ${item.title}`}
                 title={labels.openImage}

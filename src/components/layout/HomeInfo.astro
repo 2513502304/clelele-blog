@@ -138,96 +138,25 @@ const sections = [
   }
 </style>
 <script>
-  let collapseMutationObserver: MutationObserver | null = null;
-
-  function initCollapsible() {
-    // 找到所有 HomeInfo 容器
-    const containers = document.querySelectorAll('[data-home-info-container]');
-
-    containers.forEach((container) => {
-      const triggers = container.querySelectorAll('[data-collapse-trigger]');
-
-      triggers.forEach((trigger) => {
-        const targetId = trigger.getAttribute('data-collapse-trigger');
-        if (!targetId) return;
-
-        // 检查是否已经初始化过
-        if (trigger.hasAttribute('data-initialized')) return;
-        trigger.setAttribute('data-initialized', 'true');
-
-        // 在当前容器内查找对应的元素
-        const content = container.querySelector(`[data-collapse-content="${targetId}"]`) as HTMLElement;
-        const icon = trigger.querySelector(`[data-collapse-icon="${targetId}"]`) as HTMLElement;
-
-        if (!content || !icon) return;
-
-        trigger.addEventListener('click', (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-
-          const isExpanded = trigger.getAttribute('aria-expanded') === 'true';
-
-          if (isExpanded) {
-            // 折叠
-            content.classList.add('collapse-hidden');
-            content.inert = true;
-            icon.style.transform = 'rotate(0deg)';
-            trigger.setAttribute('aria-expanded', 'false');
-          } else {
-            // 展开
-            content.classList.remove('collapse-hidden');
-            content.inert = false;
-            icon.style.transform = 'rotate(180deg)';
-            trigger.setAttribute('aria-expanded', 'true');
-          }
-        });
-      });
-    });
-  }
-
-  function cleanupObserver() {
-    if (collapseMutationObserver) {
-      collapseMutationObserver.disconnect();
-      collapseMutationObserver = null;
-    }
-  }
-
-  function setupObserver() {
-    // 先清理旧的观察器
-    cleanupObserver();
-
-    // 支持 MobileDrawer 延迟加载
-    collapseMutationObserver = new MutationObserver((mutations) => {
-      mutations.forEach((mutation) => {
-        if (mutation.addedNodes.length) {
-          setTimeout(initCollapsible, 100);
-        }
-      });
-    });
-
-    collapseMutationObserver.observe(document.body, {
-      childList: true,
-      subtree: true,
-    });
-  }
-
-  // 初始化
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-      initCollapsible();
-      setupObserver();
-    });
-  } else {
-    initCollapsible();
-    setupObserver();
-  }
-
-  // 支持 Astro 的视图过渡
-  document.addEventListener('astro:page-load', () => {
-    initCollapsible();
-    setupObserver();
+  // This Astro module runs once. Delegation also covers delayed mobile drawers
+  // and swapped pages, without rescanning the document for every gallery append.
+  document.addEventListener('click', (event) => {
+    const trigger = event.target instanceof Element
+      ? event.target.closest<HTMLElement>('button[data-collapse-trigger]')
+      : null;
+    const container = trigger?.closest('[data-home-info-container]');
+    const targetId = trigger?.dataset.collapseTrigger;
+    if (!trigger || !container || !targetId) return;
+    // Drawers can contain another copy of the sidebar; resolve within its owner.
+    const content = container.querySelector<HTMLElement>(`[data-collapse-content="${CSS.escape(targetId)}"]`);
+    const icon = trigger.querySelector<HTMLElement>('[data-collapse-icon]');
+    if (!content || !icon) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const expanded = trigger.getAttribute('aria-expanded') !== 'true';
+    content.classList.toggle('collapse-hidden', !expanded);
+    content.inert = !expanded;
+    icon.style.transform = expanded ? 'rotate(180deg)' : 'rotate(0deg)';
+    trigger.setAttribute('aria-expanded', String(expanded));
   });
-
-  // 页面切换前清理观察器
-  document.addEventListener('astro:before-swap', cleanupObserver);
 </script>
