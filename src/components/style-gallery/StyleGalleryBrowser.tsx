@@ -6,6 +6,8 @@ import StyleGalleryVisualFilter, {
 import { Icon } from '@iconify/react';
 import { createStyleGalleryDateRangeMatcher, getStyleGalleryDateKey } from '@lib/style-gallery-date-range';
 import type { StyleGalleryDateRangeLabels } from '@lib/style-gallery-date-range-labels';
+import { getReusableStyleGalleryImageUrl } from '@lib/style-gallery-image-client';
+import { getStyleGallerySourceThumbnail } from '@lib/style-gallery-image-key';
 import {
   createStyleGallerySourceLightboxData,
   getStyleGalleryLightboxElementId,
@@ -275,7 +277,12 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
         gallerySourceSlug: candidate.slug,
         src: candidate.sourceImage,
         sourceLoaded: loadedSourceImages.has(candidate.sourceImage),
-        previewSrc: candidate.sourceImage,
+        previewSrc:
+          getReusableStyleGalleryImageUrl(
+            getStyleGallerySourceThumbnail(candidate.sourceImage),
+            loadedSourceImages.has(getStyleGallerySourceThumbnail(candidate.sourceImage)),
+          ) ?? getStyleGallerySourceThumbnail(candidate.sourceImage),
+        dimensions: candidate.dimensions,
         alt: candidate.sourceImageAlt ?? candidate.title,
         getPrompt: () =>
           getSelectedStyleGalleryPrompt(candidate.slug) ??
@@ -477,6 +484,7 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
               <a href={`${galleryBasePath}/${item.slug}`} data-astro-prefetch="false" className="block h-full w-full">
                 <StyleGallerySharedImage
                   source={item.sourceImage}
+                  previewSource={getStyleGallerySourceThumbnail(item.sourceImage)}
                   dimensions={item.dimensions}
                   naturalAspect={masonry}
                   loadedSources={loadedSourceImages}
