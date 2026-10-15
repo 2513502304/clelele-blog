@@ -134,8 +134,8 @@ export interface StyleGalleryImagePreload {
   source: string;
   /** 本轮实际下载的签名直连地址。 */
   url: string;
-  /** 当前导航附近使用高优先级，其余保持自动调度，避免大批预载抢占当前图片。 */
-  priority?: 'high' | 'auto';
+  /** 当前导航附近使用 high，明确的悬停意图使用 low，其余保持 auto，避免抢占可见图片。 */
+  priority?: 'high' | 'auto' | 'low';
 }
 
 function retainPreload(url: string, image: HTMLImageElement): void {

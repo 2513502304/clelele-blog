@@ -29,6 +29,17 @@ export function getStyleGallerySourceThumbnail(source: string): string {
   return `/api/style-gallery/image/thumb/${match[1]}.webp`;
 }
 
+/** Legacy/external display sources may lack a derivative; rendering must retain their original URL. */
+export function getStyleGalleryImagePreviewSource(source: string): string {
+  try {
+    return parseStyleGalleryImageApiPath(source)?.startsWith('examples/images/')
+      ? getStyleGalleryExampleThumbnailSource(source)
+      : getStyleGallerySourceThumbnail(source);
+  } catch {
+    return source;
+  }
+}
+
 /** 从站内图片 API 地址恢复 HF object key；外部 URL 与非 Gallery 路径不会进入签名队列。 */
 export function parseStyleGalleryImageApiPath(value: string): string | null {
   let key: string;

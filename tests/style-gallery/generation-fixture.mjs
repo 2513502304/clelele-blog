@@ -81,6 +81,19 @@ if (process.env.GALLERY_SCROLL_FIXTURE === '1') {
       sourceImageDimensions: { width: 1664, height: 2432 },
     };
   });
+  objects['examples/index-v2.json'].groups = catalog.items.map((entry, index) => ({
+    sourceSlug: entry.slug,
+    examples: examples.map((example, offset) => {
+      const imageHash = (index * examples.length + offset + 1).toString(16).padStart(64, '0');
+      return {
+        ...example,
+        id: `scroll-${index}-${offset}`,
+        imageHash,
+        src: `/api/style-gallery/image/examples/images/${imageHash}.png`,
+        likedBy: [],
+      };
+    }),
+  }));
 }
 const profileKey = `images/${'c'.repeat(64)}.png`;
 const historyKey = `images/${'d'.repeat(64)}.png`;

@@ -8,7 +8,7 @@ import { createStyleGalleryDateRangeMatcher, getStyleGalleryDateKey } from '@lib
 import type { StyleGalleryDateRangeLabels } from '@lib/style-gallery-date-range-labels';
 import { createStyleGalleryExampleQueryMatcher } from '@lib/style-gallery-example-search';
 import { getReusableStyleGalleryImageUrl } from '@lib/style-gallery-image-client';
-import { getStyleGalleryExampleThumbnailSource } from '@lib/style-gallery-image-key';
+import { getStyleGalleryImagePreviewSource } from '@lib/style-gallery-image-key';
 import {
   createStyleGalleryCopyAction,
   createStyleGalleryDeleteAction,
@@ -114,7 +114,6 @@ function StyleGalleryExamplesOverviewContent({
   const [examples, setExamples] = useState(initialExamples);
   // 不放进 state：加载完成只影响下一次打开 Lightbox，不应让数千张卡片重新渲染。
   const loadedExampleSources = useRef(new Set<string>());
-  const loadedExampleThumbnails = useRef(new Set<string>());
   const [uploadToken, setUploadToken] = useState('');
   const [platform, setPlatform] = useQueryState('platform', parseAsString.withDefault('all'));
   const [query, setQuery] = useQueryState('q', parseAsString.withDefault(''));
@@ -257,9 +256,9 @@ function StyleGalleryExamplesOverviewContent({
       resolvedSrc: getReusableStyleGalleryImageUrl(candidate.src, loadedExampleSources.current.has(candidate.src)),
       previewSrc:
         getReusableStyleGalleryImageUrl(
-          getStyleGalleryExampleThumbnailSource(candidate.src),
-          loadedExampleThumbnails.current.has(getStyleGalleryExampleThumbnailSource(candidate.src)),
-        ) ?? (grouped ? getStyleGalleryExampleThumbnailSource(candidate.src) : undefined),
+          getStyleGalleryImagePreviewSource(candidate.src),
+          loadedExampleSources.current.has(getStyleGalleryImagePreviewSource(candidate.src)),
+        ) ?? getStyleGalleryImagePreviewSource(candidate.src),
       alt: `${candidate.sourceTitle} ${candidate.model}`,
       source: {
         hash: getStyleGallerySourceHash(candidate),
@@ -504,7 +503,7 @@ function StyleGalleryExamplesOverviewContent({
                             ? 'グループのいいね合計'
                             : 'Total group likes'
                       }
-                      loadedSources={loadedExampleThumbnails.current}
+                      loadedSources={loadedExampleSources.current}
                       onOpen={() => openLightbox(example, stack)}
                       label={`${getStyleGallerySourceHash(example)} · ${stack.length}`}
                       eager={index < EAGER_EXAMPLE_COUNT}
@@ -514,10 +513,12 @@ function StyleGalleryExamplesOverviewContent({
                       <button
                         type="button"
                         onClick={() => openLightbox(example)}
+                        data-gallery-original={example.src}
                         className="group block w-full cursor-zoom-in overflow-hidden bg-muted text-left"
                       >
                         <StyleGallerySharedImage
                           source={example.src}
+                          previewSource={getStyleGalleryImagePreviewSource(example.src)}
                           dimensions={example.dimensions}
                           naturalAspect={masonry}
                           loadedSources={loadedExampleSources.current}

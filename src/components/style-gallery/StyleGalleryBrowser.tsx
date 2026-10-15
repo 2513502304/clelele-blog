@@ -7,7 +7,7 @@ import { Icon } from '@iconify/react';
 import { createStyleGalleryDateRangeMatcher, getStyleGalleryDateKey } from '@lib/style-gallery-date-range';
 import type { StyleGalleryDateRangeLabels } from '@lib/style-gallery-date-range-labels';
 import { getReusableStyleGalleryImageUrl } from '@lib/style-gallery-image-client';
-import { getStyleGallerySourceThumbnail } from '@lib/style-gallery-image-key';
+import { getStyleGalleryImagePreviewSource } from '@lib/style-gallery-image-key';
 import {
   createStyleGallerySourceLightboxData,
   getStyleGalleryLightboxElementId,
@@ -279,9 +279,9 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
         sourceLoaded: loadedSourceImages.has(candidate.sourceImage),
         previewSrc:
           getReusableStyleGalleryImageUrl(
-            getStyleGallerySourceThumbnail(candidate.sourceImage),
-            loadedSourceImages.has(getStyleGallerySourceThumbnail(candidate.sourceImage)),
-          ) ?? getStyleGallerySourceThumbnail(candidate.sourceImage),
+            getStyleGalleryImagePreviewSource(candidate.sourceImage),
+            loadedSourceImages.has(getStyleGalleryImagePreviewSource(candidate.sourceImage)),
+          ) ?? getStyleGalleryImagePreviewSource(candidate.sourceImage),
         dimensions: candidate.dimensions,
         alt: candidate.sourceImageAlt ?? candidate.title,
         getPrompt: () =>
@@ -484,7 +484,7 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
               <a href={`${galleryBasePath}/${item.slug}`} data-astro-prefetch="false" className="block h-full w-full">
                 <StyleGallerySharedImage
                   source={item.sourceImage}
-                  previewSource={getStyleGallerySourceThumbnail(item.sourceImage)}
+                  previewSource={getStyleGalleryImagePreviewSource(item.sourceImage)}
                   dimensions={item.dimensions}
                   naturalAspect={masonry}
                   loadedSources={loadedSourceImages}
@@ -523,6 +523,7 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
               <button
                 type="button"
                 onClick={() => openSourceLightbox(item)}
+                data-gallery-original={item.sourceImage}
                 className="glass-image-action absolute top-2 left-2 z-10 flex size-9 cursor-zoom-in items-center justify-center rounded-lg text-white transition hover:bg-black/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
                 aria-label={`${labels.openImage}: ${item.title}`}
                 title={labels.openImage}

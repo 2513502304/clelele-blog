@@ -3,6 +3,7 @@ import { useGalleryMarquee } from '@hooks/useGalleryMarquee';
 import { Icon } from '@iconify/react';
 import { downloadStyleGalleryImages } from '@lib/style-gallery-batch-download';
 import { getReusableStyleGalleryImageUrl } from '@lib/style-gallery-image-client';
+import { getStyleGalleryImagePreviewSource } from '@lib/style-gallery-image-key';
 import {
   createStyleGalleryCopyAction,
   createStyleGalleryDeleteAction,
@@ -217,6 +218,12 @@ function StyleGalleryExamplesContent({
       generationPlatform: candidate.model,
       generationPromptInitiallyExpanded: revealPrompt && candidate.id === example.id,
       src: candidate.src,
+      dimensions: candidate.dimensions,
+      previewSrc:
+        getReusableStyleGalleryImageUrl(
+          getStyleGalleryImagePreviewSource(candidate.src),
+          loadedExampleSources.current.has(getStyleGalleryImagePreviewSource(candidate.src)),
+        ) ?? getStyleGalleryImagePreviewSource(candidate.src),
       resolvedSrc: getReusableStyleGalleryImageUrl(candidate.src, loadedExampleSources.current.has(candidate.src)),
       alt: candidate.alt ?? candidate.model ?? 'Generated example',
       source,
@@ -889,11 +896,13 @@ function StyleGalleryExamplesContent({
                         <button
                           type="button"
                           onClick={() => openExampleLightbox(example, platformExamples)}
+                          data-gallery-original={example.src}
                           className="group absolute inset-0 block h-full w-full cursor-zoom-in overflow-hidden text-left"
                           aria-label={`Open ${example.alt ?? example.model ?? 'generated example'} preview`}
                         >
                           <StyleGallerySharedImage
                             source={example.src}
+                            previewSource={getStyleGalleryImagePreviewSource(example.src)}
                             loadedSources={loadedExampleSources.current}
                             alt={example.alt ?? example.model ?? 'Generated example'}
                             width={example.dimensions?.width || 1}

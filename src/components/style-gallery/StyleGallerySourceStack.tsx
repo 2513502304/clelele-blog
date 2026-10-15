@@ -1,5 +1,5 @@
 import { Icon } from '@iconify/react';
-import { getStyleGalleryExampleThumbnailSource } from '@lib/style-gallery-image-key';
+import { getStyleGalleryImagePreviewSource } from '@lib/style-gallery-image-key';
 import type { StyleGalleryExampleOverviewItem } from '@/types/style-gallery';
 import GalleryImageStack from './GalleryImageStack';
 import StyleGallerySharedImage from './StyleGallerySharedImage';
@@ -25,12 +25,14 @@ export default function StyleGallerySourceStack({
   return (
     <GalleryImageStack
       onOpen={onOpen}
+      originalSource={examples[0]?.src}
       label={`${label} · ${likesLabel}: ${likeCount}`}
       images={examples.slice(0, 3).map((example) => ({
         key: example.id,
         content: (
           <StyleGallerySharedImage
-            source={getStyleGalleryExampleThumbnailSource(example.src)}
+            source={example.src}
+            previewSource={getStyleGalleryImagePreviewSource(example.src)}
             loadedSources={loadedSources}
             alt=""
             aria-hidden="true"

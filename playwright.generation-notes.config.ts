@@ -13,6 +13,7 @@ export default defineConfig({
     'gallery-scroll-cache.spec.ts',
     'gallery-scroll-layout.spec.ts',
     'shared-image-expiry.spec.ts',
+    'example-preview-loading.spec.ts',
     'appearance-help.spec.ts',
     'collections.spec.ts',
     'collection-media.spec.ts',
@@ -31,6 +32,7 @@ export default defineConfig({
       testMatch: [
         'profile-crop.spec.ts',
         'shared-image-expiry.spec.ts',
+        'example-preview-loading.spec.ts',
         'gallery-scroll-layout.spec.ts',
         'appearance.spec.ts',
         'banner-atmosphere.spec.ts',
