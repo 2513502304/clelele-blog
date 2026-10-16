@@ -88,7 +88,9 @@ export async function setGalleryTags(
   const mutation = galleryTagMutationSchema.parse(input);
   const slugs = 'slugs' in mutation ? mutation.slugs : [mutation.slug];
   const { tags } = mutation;
-  const catalog = await getStyleGalleryCatalog();
+  // An import may publish through another worker. Mutation validation must see its
+  // new sources immediately and must not accept deleted sources from a stale cache.
+  const catalog = await getStyleGalleryCatalog({ fresh: true });
   const known = new Set(catalog.items.map((item) => item.slug));
   if (slugs.some((slug) => !known.has(slug))) throw new GalleryTagWriteError('Style not found.', 404);
   for (let attempt = 0; attempt < 6; attempt++) {
