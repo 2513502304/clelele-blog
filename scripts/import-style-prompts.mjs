@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import crypto from 'node:crypto';
-import { createReadStream } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
@@ -11,7 +10,7 @@ import { sanitizeImportedOriginalPrompt, sanitizeImportedPrompt } from '../src/l
 import { isValidGalleryTag, MAX_GALLERY_TAGS_PER_ITEM, normalizeGalleryTag } from '../src/lib/style-gallery-tags.ts';
 import { computeStyleGalleryVisualFeaturesFromBytes } from '../src/lib/style-gallery-visual-feature-node.ts';
 import { archiveImportedSession, snapshotSessionFiles } from './lib/codex-session-archive.mjs';
-import { findSessionFiles, sessionHeader } from './lib/codex-session-files.mjs';
+import { createSessionReadStream, findSessionFiles, resolveSessionPath, sessionHeader } from './lib/codex-session-files.mjs';
 import { configureEnvironmentProxy } from './lib/environment-proxy.mjs';
 import {
   describeImportContext,
@@ -199,7 +198,7 @@ function apiImagePath(kind, fileName) {
  */
 async function readSessionItems(sessionPath) {
   const extractor = createItemExtractor();
-  const files = Array.isArray(sessionPath) ? sessionPath : [sessionPath];
+  const files = await Promise.all((Array.isArray(sessionPath) ? sessionPath : [sessionPath]).map(resolveSessionPath));
   const headers = await Promise.all(files.map((file) => sessionHeader(file, false)));
   const checkpointKey = (id, ordinal, bytes) => `${id}:${ordinal}:${bytes}`;
   const wanted = new Set(
@@ -225,7 +224,7 @@ async function readSessionItems(sessionPath) {
       ordinal = base.end_ordinal_exclusive;
       // Ordinals continue across segments; byte offsets are local to each physical file.
     }
-    const input = createReadStream(file, { encoding: 'utf8' });
+    const input = createSessionReadStream(file);
     const lines = createInterface({ input, crlfDelay: Infinity });
     let index = 0;
     try {
@@ -1000,7 +999,7 @@ async function main() {
   configureEnvironmentProxy();
   const token = process.env.STYLE_GALLERY_UPLOAD_TOKEN;
   if (!token) throw new Error('STYLE_GALLERY_UPLOAD_TOKEN is required, including read-only identity planning.');
-  const absoluteSessionPath = path.resolve(sessionPath);
+  const absoluteSessionPath = await resolveSessionPath(path.resolve(sessionPath));
   console.log(describeImportContext({ overwriteImages, dryRun, metadataOnly, overwriteTag, tags, apiBaseUrl }));
   // Archiving a thread affects all its continuations, so never archive after a partial file selection.
   const selection = searchAll || archive ? await findSessionFiles(absoluteSessionPath) : { files: [absoluteSessionPath] };

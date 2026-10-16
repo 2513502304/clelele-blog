@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { PassThrough, Writable } from 'node:stream';
 import { it } from 'node:test';
+import { zstdCompressSync } from 'node:zlib';
 import { archiveImportedSession, openCodexArchiveClient, snapshotSessionFiles } from './codex-session-archive.mjs';
 import { findSessionFiles } from './codex-session-files.mjs';
 
@@ -119,6 +120,17 @@ it('requires explicit y after success, archives once, and confirms the archived 
     const client = fakeClient(context);
     assert.equal(await archiveImportedSession(context, { ...terminal('y'), connect: client.connect }), true);
     assert.deepEqual(client.calls, ['initialize', 'read', 'archive', 'read', 'close']);
+  }));
+
+it('verifies a compressed rollout when Codex still reports its original .jsonl path', async () =>
+  fixture(async (context) => {
+    await fs.writeFile(`${context.file}.zst`, zstdCompressSync(await fs.readFile(context.file)));
+    await fs.rm(context.file);
+    context.selection = await findSessionFiles(context.file, context.home);
+    context.snapshot = await snapshotSessionFiles(context.selection);
+    const client = fakeClient(context);
+    assert.equal(await archiveImportedSession(context, { ...terminal('y'), connect: client.connect }), true);
+    assert.equal(client.calls.filter((call) => call === 'archive').length, 1);
   }));
 
 it('n, empty and invalid confirmation leave the uploaded conversation active', async () => {

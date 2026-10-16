@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { createInterface as createPrompt } from 'node:readline/promises';
-import { findSessionFiles, inferCodexHome } from './codex-session-files.mjs';
+import { findSessionFiles, inferCodexHome, resolveSessionPath } from './codex-session-files.mjs';
 
 /** Fingerprint every segment before upload; do not archive a conversation edited meanwhile. */
 export async function snapshotSessionFiles(selection) {
@@ -127,7 +127,7 @@ export async function archiveImportedSession(
       log(`[归档] ${selection.id} 已归档。`);
       return false;
     }
-    if (!selection.files.includes(await fs.realpath(thread.path)))
+    if (!selection.files.includes(await resolveSessionPath(thread.path)))
       throw new Error('Codex 当前使用的会话文件不在本次导入范围内，未归档。');
     if (thread.status?.type === 'active') throw new Error('Codex 会话仍在运行，未归档。');
     // JSON quoting prevents a user-controlled title from injecting terminal control sequences.
