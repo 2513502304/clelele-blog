@@ -59,7 +59,7 @@ export function describeImportContext({ overwriteImages, dryRun, metadataOnly, o
 /** The help page shares the startup explanation and adds commands, prerequisites and less common options. */
 export function describeImportHelp() {
   return [
-    '用法：npm run import:style-prompts -- <codex-session.jsonl> [选项]',
+    '用法：npm run import:style-prompts -- <codex-session.jsonl 或 .jsonl.zst> [选项]',
     describeImportContext(),
     '',
     '[开始之前]',
@@ -67,6 +67,7 @@ export function describeImportHelp() {
     '  --dry-run 也需要 token，因为它会只读查询线上图片身份；--help 不需要 token、JSONL 文件或网络访问。',
     '  JSONL 必须包含图片和对应反推回复；提取器按现有的中文主体占位符模板识别回复，不是任意聊天记录的批量上传器。',
     '  会话文件会逐行读取；图片数据仍会占用内存。脚本只读取会话中经核对的附件路径，不会扫描电脑寻找同名文件。',
+    '  支持 Codex 的 .jsonl.zst 压缩会话，流式解压且不写临时副本；旧 .jsonl 路径缺失时自动查找同路径的 .jsonl.zst。--search-all 同时搜索两种格式。',
     '',
     '[常用选项]',
     '  --dry-run                只检查并显示计划，不上传或修改线上数据。',

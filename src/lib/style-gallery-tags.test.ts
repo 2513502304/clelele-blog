@@ -4,7 +4,7 @@ import type { APIContext, AstroCookies } from 'astro';
 import { GET, PUT } from '../pages/api/style-gallery/tags';
 import { setStyleGallerySession } from './style-gallery-github-auth';
 import { STYLE_GALLERY_PLATFORMS } from './style-gallery-platforms';
-import { invalidateStyleGalleryStoreCache } from './style-gallery-store';
+import { getStyleGalleryCatalog, invalidateStyleGalleryStoreCache } from './style-gallery-store';
 import { GalleryTagWriteError, galleryTagMutationSchema, getGalleryTagIndex, setGalleryTags } from './style-gallery-tag-store';
 import { galleryTagMatches, getGalleryTagVocabulary, normalizeGalleryTag } from './style-gallery-tags';
 
@@ -133,6 +133,33 @@ describe('shared gallery categories', () => {
   });
   it('supports an empty installation without migrating any item', async () => {
     assert.deepEqual(await getGalleryTagIndex(), { version: 1, items: {} });
+  });
+  it('tags a source just published by another worker despite a warm catalog cache', async () => {
+    await getStyleGalleryCatalog({ fresh: true });
+    catalog.items.push({ ...catalog.items[0], slug: 'new-source', title: 'new-source' });
+    try {
+      const result = await setGalleryTags({ slugs: ['new-source'], tags: ['插画'] });
+      assert.deepEqual(result.items['new-source'], ['插画']);
+      assert.equal(writes, 1);
+    } finally {
+      catalog.items.pop();
+      invalidateStyleGalleryStoreCache();
+    }
+  });
+  it('rejects a source removed by another worker despite a warm catalog cache', async () => {
+    await getStyleGalleryCatalog({ fresh: true });
+    const removed = catalog.items.pop();
+    assert.ok(removed);
+    try {
+      await assert.rejects(
+        setGalleryTags({ slugs: [removed.slug], tags: ['插画'] }),
+        (error: unknown) => error instanceof GalleryTagWriteError && error.status === 404,
+      );
+      assert.equal(writes, 0);
+    } finally {
+      catalog.items.push(removed);
+      invalidateStyleGalleryStoreCache();
+    }
   });
   it('isolates tag invalidation from SSR and never republishes another worker’s stale snapshot', async () => {
     const first = await GET(context({}));

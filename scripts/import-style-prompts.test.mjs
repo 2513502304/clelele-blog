@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, it } from 'node:test';
+import { zstdCompressSync } from 'node:zlib';
 import sharp from 'sharp';
 import { assertStyleGalleryItemConsistency } from '../src/lib/style-gallery-assets.ts';
 import {
@@ -142,6 +143,14 @@ describe('failed-turn retries', () => {
       assert.equal(item.sourceSession, 'a.jsonl');
       assert.equal(item.promptSession, 'b.jsonl');
       assert.equal(item.sourceLine, 3);
+      // Compression changes physical storage only; history offsets still count original bytes.
+      await fs.writeFile(`${a}.zst`, zstdCompressSync(await fs.readFile(a)));
+      await fs.rm(a);
+      const compressed = await readSessionItems([a, b]);
+      assert.deepEqual(compressed, [{ ...item, sourceSession: 'a.jsonl.zst' }]);
+      const completeFrame = zstdCompressSync(await fs.readFile(b));
+      await fs.writeFile(`${b}.zst`, completeFrame.subarray(0, completeFrame.length - 1));
+      await assert.rejects(readSessionItems([a, `${b}.zst`]));
       header.payload.history_base.end_byte_offset++;
       await fs.writeFile(b, [header, start('retry'), output('retry')].map(JSON.stringify).join('\n'));
       await assert.rejects(readSessionItems([a, b]), /history|历史/i);
@@ -185,6 +194,14 @@ describe('failed-turn retries', () => {
       assert.equal(items[0].promptSession, path.basename(c));
       assert.equal(items[0].sourceLine, 3);
       assert.equal(items[0].promptLine, 3);
+      for (const file of [a, b, c]) {
+        await fs.writeFile(`${file}.zst`, zstdCompressSync(await fs.readFile(file)));
+        await fs.rm(file);
+      }
+      const compressed = await readSessionItems([a, b, c]);
+      assert.deepEqual(compressed, [
+        { ...items[0], sourceSession: `${path.basename(a)}.zst`, promptSession: `${path.basename(c)}.zst` },
+      ]);
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
     }
