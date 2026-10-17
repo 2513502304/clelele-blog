@@ -38,8 +38,9 @@ for (const path of [
     await openGallery(page, path);
     const trigger = page.locator(`[data-gallery-original="${original}"]`);
     await trigger.scrollIntoViewIfNeeded();
-    await expect(trigger.locator('img')).toHaveAttribute('src', thumb);
-    await expect.poll(() => trigger.locator('img').evaluate((el: HTMLImageElement) => el.naturalWidth)).toBe(640);
+    const cardImage = trigger.locator('..').locator('img').first();
+    await expect(cardImage).toHaveAttribute('src', thumb);
+    await expect.poll(() => cardImage.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBe(640);
     expect(originalRequests).toBe(0);
     // Programmatic click excludes the separate hover-preload path from this cold-cache test.
     await trigger.evaluate((el: HTMLButtonElement) => el.click());
@@ -67,7 +68,7 @@ test('missing example previews fall back to the original without changing the ca
     return route.continue();
   });
   await openGallery(page, '/image-style-prompt-gallery/examples?grouped=false');
-  const image = page.locator(`[data-gallery-original="${original}"] img`);
+  const image = page.locator(`[data-gallery-original="${original}"]`).locator('..').locator('img').first();
   await expect(image).toHaveAttribute('src', original);
   await expect.poll(() => image.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBe(1280);
   const ratio = await image.evaluate((el) => el.clientWidth / el.clientHeight);
@@ -96,11 +97,11 @@ test('intent preload is cancelled on leave/scroll and a click joins a single in-
   await expect(page.locator('astro-island[component-url*="ImageLightbox"]')).not.toHaveAttribute('ssr');
   await trigger.dispatchEvent('pointerover', { pointerType: 'mouse' });
   await trigger.dispatchEvent('pointerout', { pointerType: 'mouse' });
-  await page.waitForTimeout(350);
+  await page.waitForTimeout(500);
   expect(originalRequests).toEqual([]);
   await trigger.dispatchEvent('pointerover', { pointerType: 'mouse' });
   await page.evaluate(() => document.dispatchEvent(new Event('scroll')));
-  await page.waitForTimeout(350);
+  await page.waitForTimeout(500);
   expect(originalRequests).toEqual([]);
   await trigger.focus();
   await expect.poll(() => originalRequests.length).toBe(1);
@@ -125,9 +126,58 @@ test('data saver does not preload full images on hover', async ({ page }) => {
   await openGallery(page, '/image-style-prompt-gallery/examples?grouped=false');
   await expect(page.locator('astro-island[component-url*="ImageLightbox"]')).not.toHaveAttribute('ssr');
   await page.locator(`[data-gallery-original="${original}"]`).dispatchEvent('pointerover', { pointerType: 'mouse' });
-  await page.waitForTimeout(350);
+  await page.waitForTimeout(500);
   expect(requests).toBe(0);
 });
+
+for (const path of [
+  '/image-style-prompt-gallery/index',
+  '/image-style-prompt-gallery',
+  '/image-style-prompt-gallery/examples',
+  '/image-style-prompt-gallery/examples?grouped=false',
+  '/image-style-prompt-gallery/2026-09-23-35dc5191ccad',
+]) {
+  test(`${path}: only deliberate zoom intent preloads an original`, async ({ page }) => {
+    const source =
+      path.includes('examples') || path.includes('2026-09-23') ? original : '/api/style-gallery/image/source/35dc5191ccad.png';
+    let requests = 0;
+    await page.route(/^https?:\/\//, (route) => {
+      const url = new URL(route.request().url());
+      if (url.pathname === source) requests++;
+      if (url.pathname.startsWith('/api/style-gallery/image/'))
+        return route.fulfill({ contentType: 'image/svg+xml', body: svg(640, 960) });
+      if (route.request().resourceType() === 'image' || url.pathname.includes('/api/live2d')) return route.abort();
+      return route.continue();
+    });
+    await openGallery(page, path);
+    const zoom = page.locator(`[data-gallery-original="${source}"]`).first();
+    await expect(zoom.locator('xpath=ancestor::astro-island')).not.toHaveAttribute('ssr');
+    await zoom.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(220);
+    // Hovering the large image is not a request for full-resolution bytes.
+    await zoom.locator('..').locator('img').first().dispatchEvent('pointerover', { pointerType: 'mouse' });
+    await page.waitForTimeout(500);
+    expect(requests).toBe(0);
+    await zoom.dispatchEvent('pointerover', { pointerType: 'touch' });
+    await page.waitForTimeout(500);
+    expect(requests).toBe(0);
+    // A card scrolling beneath a stationary pointer must not restart the dwell timer.
+    await page.evaluate(() => document.dispatchEvent(new Event('scroll')));
+    await zoom.dispatchEvent('pointerover', { pointerType: 'mouse' });
+    await page.waitForTimeout(500);
+    expect(requests).toBe(0);
+    await zoom.dispatchEvent('pointerover', { pointerType: 'mouse' });
+    await page.waitForTimeout(500);
+    expect(requests).toBe(0);
+    // Real movement after scrolling can establish a fresh intent without re-entering.
+    await zoom.dispatchEvent('pointermove', { pointerType: 'mouse', movementX: 2 });
+    await expect.poll(() => requests).toBe(1);
+    await zoom.evaluate((el: HTMLButtonElement) => el.click());
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await expect(page.getByRole('dialog').getByRole('progressbar')).toHaveCount(0);
+    expect(requests).toBe(1);
+  });
+}
 
 test('an HTTP success with corrupt image bytes is not retained across viewer opens', async ({ page }) => {
   let requests = 0;

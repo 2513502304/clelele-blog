@@ -201,6 +201,7 @@ export default defineConfig({
           if (command === 'dev') {
             injectRoute({ pattern: '/design-lab', entrypoint: './src/dev/design-lab.astro' });
             injectRoute({ pattern: '/sidebar-lab', entrypoint: './src/dev/sidebar-lab.astro' });
+            injectRoute({ pattern: '/gallery-card-lab', entrypoint: './src/dev/gallery-card-lab.astro' });
           }
         },
       },
