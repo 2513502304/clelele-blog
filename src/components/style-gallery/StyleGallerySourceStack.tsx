@@ -25,7 +25,6 @@ export default function StyleGallerySourceStack({
   return (
     <GalleryImageStack
       onOpen={onOpen}
-      originalSource={examples[0]?.src}
       label={`${label} · ${likesLabel}: ${likeCount}`}
       images={examples.slice(0, 3).map((example) => ({
         key: example.id,

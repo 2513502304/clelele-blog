@@ -10,11 +10,17 @@ export function useGalleryLightboxIntent(enabled: boolean): void {
     let timer: ReturnType<typeof setTimeout> | undefined;
     let active = true;
     let focusIntent = false;
+    let lastScroll = -Infinity;
+    let waitingForPointerMove = false;
     const cancel = () => clearTimeout(timer);
     // Keyboard focus may scroll its target into view. That is an intentional
     // preview request; ordinary pointer hover must still cancel during scrolling.
     const onScroll = () => {
-      if (!focusIntent) cancel();
+      lastScroll = performance.now();
+      if (!focusIntent) {
+        cancel();
+        waitingForPointerMove = true;
+      }
     };
     const schedule = (event: Event) => {
       if (event instanceof PointerEvent && event.pointerType !== 'mouse') return;
@@ -27,6 +33,13 @@ export function useGalleryLightboxIntent(enabled: boolean): void {
       }
       cancel();
       focusIntent = event.type === 'focusin';
+      // Scrolling can put a new button under a stationary mouse and synthesize
+      // pointerover. Require a quiet interval and a real move before re-arming.
+      if (!focusIntent && (performance.now() - lastScroll < 180 || (waitingForPointerMove && event.type !== 'pointermove'))) {
+        waitingForPointerMove = true;
+        return;
+      }
+      waitingForPointerMove = false;
       const connection = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
       if (downloading.current || document.hidden || connection?.saveData || /(^|-)2g$/.test(connection?.effectiveType ?? ''))
         return;
@@ -39,7 +52,10 @@ export function useGalleryLightboxIntent(enabled: boolean): void {
         void preloadStyleGalleryImages([{ source, url, priority: 'low' }]).finally(() => {
           downloading.current = false;
         });
-      }, 250);
+      }, 350);
+    };
+    const move = (event: PointerEvent) => {
+      if (waitingForPointerMove && (event.movementX || event.movementY)) schedule(event);
     };
     const leave = (event: PointerEvent) => {
       const target = event.target instanceof Element ? event.target.closest('[data-gallery-original]') : null;
@@ -47,6 +63,7 @@ export function useGalleryLightboxIntent(enabled: boolean): void {
     };
     document.addEventListener('pointerover', schedule);
     document.addEventListener('pointerout', leave);
+    document.addEventListener('pointermove', move);
     document.addEventListener('focusin', schedule);
     document.addEventListener('focusout', cancel);
     document.addEventListener('scroll', onScroll, { passive: true, capture: true });
@@ -56,6 +73,7 @@ export function useGalleryLightboxIntent(enabled: boolean): void {
       cancel();
       document.removeEventListener('pointerover', schedule);
       document.removeEventListener('pointerout', leave);
+      document.removeEventListener('pointermove', move);
       document.removeEventListener('focusin', schedule);
       document.removeEventListener('focusout', cancel);
       document.removeEventListener('scroll', onScroll, true);

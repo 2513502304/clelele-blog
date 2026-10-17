@@ -1,0 +1,94 @@
+---
+import { getStyleGalleryExampleOverview } from '@lib/style-gallery';
+import { getStyleGalleryImagePreviewSource } from '@lib/style-gallery-image-key';
+import { Icon } from 'astro-icon/components';
+import { APPEARANCES } from '../components/theme/appearance';
+import '../styles/theme/shadcn.css';
+import '../styles/theme/index.css';
+import '../styles/theme/appearance.css';
+import '../styles/gallery-card-lab.css';
+
+// A read-only, development-only comparison. Reuse the same thumbnails in every
+// concept so image choice cannot disguise differences in card hierarchy.
+const overview = await getStyleGalleryExampleOverview();
+const first = overview.find((item) => item.dimensions && item.dimensions.height > item.dimensions.width) ?? overview[0];
+const examples = overview.filter((item) => item.sourceSlug === first?.sourceSlug);
+const cover = examples[0];
+const images = examples.slice(0, 4);
+const concepts = [
+  {
+    id: 'edge',
+    letter: 'A',
+    title: '影像优先',
+    note: '推荐',
+    description: '接近预览页的轻量延伸。图片占满卡面，叠层只露出薄薄的页边；来源与平台收进一条紧凑的信息栏。',
+    cost: '折叠最多 3 张缩略图 · 展开 1 张',
+  },
+  {
+    id: 'contact',
+    letter: 'B',
+    title: '联系印样',
+    note: '便于比较',
+    description: '封面下露出同组的三张小样，一眼看出这个系列的变化。组数从图片上移入信息栏，减少画面上的标签。',
+    cost: '折叠最多 4 张缩略图 · 展开 1 张',
+  },
+  {
+    id: 'folio',
+    letter: 'C',
+    title: '薄页相册',
+    note: '更有收藏感',
+    description: '保留窄装裱边，取消扇形大角度倾斜。页码、细线与小字标签形成更安静的相册秩序。',
+    cost: '折叠最多 3 张缩略图 · 展开 1 张',
+  },
+];
+const hash = cover?.sourceSlug.split('-').at(-1) ?? '—';
+---
+<!doctype html>
+<html lang="zh-CN" data-appearance="original">
+  <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><meta name="robots" content="noindex,nofollow" /><title>Sub-gallery · 卡片设计对比</title></head>
+  <body>
+    <header class="lab-header">
+      <div><span class="eyebrow">CLELELE / COLLECTION STUDIES</span><h1>让图片成为收藏的主角。</h1><p>同一组图片，三种信息层级。沿用现有主题；这是设计预览。</p></div>
+      <div class="theme-controls"><label>外观主题<select id="palette">{APPEARANCES.map(p => <option value={p.id}>{p.zh}</option>)}</select></label><button id="dark" type="button" aria-pressed="false"><Icon name="ri:moon-line" />深色</button></div>
+    </header>
+    <div class="lab-toolbar"><div class="mode-controls" role="group" aria-label="同源折叠预览"><button type="button" data-mode="grouped" aria-pressed="true"><Icon name="ri:stack-line" />同源折叠</button><button type="button" data-mode="flat" aria-pressed="false"><Icon name="ri:layout-grid-line" />逐张展开</button></div><span>放大按钮固定可见 · 缩略图浏览 · 原图按意图加载</span></div>
+    <main class="concepts">
+      {concepts.map(concept => <section class="concept" data-concept={concept.id}>
+        <header class="concept-title"><span class="letter">{concept.letter}</span><h2>{concept.title}</h2><span class="concept-note">{concept.note}</span></header>
+        <div class="stage">
+          {cover ? <article class="study-card">
+            <div class="cover-area">
+              {concept.id !== 'contact' && images.slice(1, 3).reverse().map((item, i) => <div class={`back-sheet sheet-${i}`} aria-hidden="true"><img src={getStyleGalleryImagePreviewSource(item.src)} alt="" /></div>)}
+              <div class="cover"><img src={getStyleGalleryImagePreviewSource(cover.src)} alt="生成图片卡片设计示意" class="hero-image" /><button type="button" class="zoom" aria-label="查看缩略图示意" title="实际页面在停留后预加载原图"><Icon name="ri:zoom-in-line" /></button><div class="image-footer"><span class="sample-tags"># 插画</span><span class="count group-only"><Icon name="ri:stack-line" />{examples.length}</span><button type="button" class="like" aria-label="点赞外观示意" aria-pressed="false"><Icon name="ri:heart-line" /><span>0</span></button></div></div>
+            </div>
+            {concept.id === 'contact' && <div class="contact-strip group-only">{images.slice(1).map((item, i) => <div><img src={getStyleGalleryImagePreviewSource(item.src)} alt={`同组小样 ${i + 2}`} /><span>0{i + 2}</span></div>)}</div>}
+            <div class="card-info"><div class="caption"><span class="platform">{cover.model || 'Generated'}</span><span class="edition group-only">{examples.length} 个演绎</span><time>{cover.uploadedAt?.slice(0, 10).replaceAll('-', '.')}</time></div><div class="source"><img src={cover.sourceImage} alt="来源缩略图" /><div><span class="source-label">来源模板</span><strong>{hash}</strong></div><Icon name="ri:arrow-right-up-line" /></div></div>
+            <div class="folio-foot"><span>COLLECTION / 001</span><span class="sample-tags">插画</span></div>
+          </article> : <p>没有可用于预览的图片。</p>}
+        </div>
+        <div class="concept-copy"><p>{concept.description}</p><span>{concept.cost}</span></div>
+      </section>)}
+    </main>
+    <footer class="lab-footer"><p>图片、标签与日期仅用于展示布局。正式卡片保留原有筛选、选择、点赞与来源跳转。</p><p>建议选 A：保持大图与瀑布流的连续感，装饰和解码开销都较少。</p></footer>
+    <dialog id="preview"><form method="dialog"><button type="submit" aria-label="关闭预览"><Icon name="ri:close-line" /></button></form><img alt="缩略图设计预览" /><p>这里只展示已有缩略图，不请求原图。</p></dialog>
+    <script>
+      const root = document.documentElement;
+      document.querySelector<HTMLSelectElement>('#palette')!.addEventListener('change', event => { root.dataset.appearance = (event.target as HTMLSelectElement).value; });
+      document.querySelector('#dark')!.addEventListener('click', event => { (event.currentTarget as HTMLButtonElement).setAttribute('aria-pressed', String(root.classList.toggle('dark'))); });
+      document.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach(button => button.addEventListener('click', () => {
+        document.body.dataset.mode = button.dataset.mode;
+        document.querySelectorAll('[data-mode]').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
+      }));
+      document.querySelectorAll<HTMLButtonElement>('.like').forEach(button => button.addEventListener('click', () => {
+        const pressed = button.getAttribute('aria-pressed') !== 'true';
+        button.setAttribute('aria-pressed', String(pressed));
+        button.querySelector('span')!.textContent = pressed ? '1' : '0';
+      }));
+      const dialog = document.querySelector<HTMLDialogElement>('#preview')!;
+      document.querySelectorAll<HTMLButtonElement>('.zoom').forEach(button => button.addEventListener('click', () => {
+        dialog.querySelector('img')!.src = button.parentElement!.querySelector('img')!.src;
+        dialog.showModal();
+      }));
+    </script>
+  </body>
+</html>

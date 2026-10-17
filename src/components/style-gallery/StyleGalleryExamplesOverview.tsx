@@ -37,6 +37,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useProgressiveList } from '@/hooks/useProgressiveList';
 import { getStyleGallerySourceCards, getStyleGallerySourceHash } from '@/lib/style-gallery-source-groups';
 import type { StyleGalleryExampleOverviewItem } from '@/types/style-gallery';
+import GalleryZoomButton from './GalleryZoomButton';
 import StyleGalleryGrid, { StyleGalleryLayoutToggle, useStyleGalleryLayout } from './StyleGalleryGrid';
 import {
   createStyleGalleryLightboxLikeAction,
@@ -513,7 +514,6 @@ function StyleGalleryExamplesOverviewContent({
                       <button
                         type="button"
                         onClick={() => openLightbox(example)}
-                        data-gallery-original={example.src}
                         className="group block w-full cursor-zoom-in overflow-hidden bg-muted text-left"
                       >
                         <StyleGallerySharedImage
@@ -538,6 +538,14 @@ function StyleGalleryExamplesOverviewContent({
                         className="gallery-image-badge absolute right-2 bottom-2 z-10"
                       />
                     </>
+                  )}
+                  {!tagSelection.enabled && (
+                    <GalleryZoomButton
+                      source={example.src}
+                      title={example.sourceTitle}
+                      locale={locale}
+                      onOpen={() => openLightbox(example, stack)}
+                    />
                   )}
                   {tagSelection.checkbox(example.sourceSlug)}
                   <GalleryTagPills

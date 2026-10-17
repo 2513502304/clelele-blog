@@ -37,6 +37,7 @@ import { NuqsAdapter } from 'nuqs/adapters/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { StyleGalleryExample, StyleGalleryExampleView, StyleGalleryImageDimensions } from '@/types/style-gallery';
 import GallerySelectionDock from './GallerySelectionDock';
+import GalleryZoomButton from './GalleryZoomButton';
 import StyleGalleryGrid, { StyleGalleryLayoutToggle, useStyleGalleryLayout } from './StyleGalleryGrid';
 import {
   createStyleGalleryLightboxLikeAction,
@@ -896,7 +897,6 @@ function StyleGalleryExamplesContent({
                         <button
                           type="button"
                           onClick={() => openExampleLightbox(example, platformExamples)}
-                          data-gallery-original={example.src}
                           className="group absolute inset-0 block h-full w-full cursor-zoom-in overflow-hidden text-left"
                           aria-label={`Open ${example.alt ?? example.model ?? 'generated example'} preview`}
                         >
@@ -912,6 +912,14 @@ function StyleGalleryExamplesContent({
                             className="h-full w-full object-cover transition duration-200 group-hover:scale-105"
                           />
                         </button>
+                        {!selectionMode && (
+                          <GalleryZoomButton
+                            source={example.src}
+                            title={example.alt ?? example.model ?? 'Generated example'}
+                            locale={locale}
+                            onOpen={() => openExampleLightbox(example, platformExamples)}
+                          />
+                        )}
                         <label className="absolute top-2 left-2 flex size-8 cursor-pointer items-center justify-center rounded-md bg-card/90 shadow">
                           <input
                             type="checkbox"
