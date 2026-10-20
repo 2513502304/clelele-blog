@@ -36,9 +36,11 @@ import { useReducedMotion } from 'motion/react';
 import { parseAsString, parseAsStringLiteral, useQueryState, useQueryStates } from 'nuqs';
 import { NuqsAdapter } from 'nuqs/adapters/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useGalleryOriginalPosition } from '@/hooks/useGalleryOriginalPosition';
 import { useProgressiveList } from '@/hooks/useProgressiveList';
 import type { StyleGalleryImageDimensions } from '@/types/style-gallery';
 import { Dialog, DialogContent } from '../ui/dialog';
+import GalleryLocateButton from './GalleryLocateButton';
 import StyleGalleryCuration from './StyleGalleryCuration';
 import StyleGalleryGrid, { StyleGalleryLayoutToggle, useStyleGalleryLayout } from './StyleGalleryGrid';
 import { StyleGalleryPromptChooser } from './StyleGalleryPromptChooser';
@@ -233,6 +235,15 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
     // “全部显示”仍必须按滚动渐进挂载；全量 Catalog 在客户端不等于一次创建全部图片节点。
     resetKey: `${tag}\u0000${query.trim().toLowerCase()}\u0000${dateFrom}\u0000${dateTo}\u0000${sortKey}\u0000${sortDirection}\u0000${visualRevision}`,
   });
+  const originalPosition = useGalleryOriginalPosition({
+    items: filteredItems,
+    visibleCount: visibleItems.length,
+    revealThrough,
+    matchesTarget: (item, slug) => item.slug === slug,
+    elementId: (item) => getStyleGalleryLightboxElementId('preview-source', item.slug),
+    hasVisualFilter: visualMatches !== null,
+    clearVisualFilter: () => setVisualMatches(null),
+  });
 
   /** 复用 hover 预取与点击请求，避免同一 item 在请求尚未完成时重复访问 Vercel/HF。 */
   const loadPromptChoices = useCallback(
@@ -389,6 +400,7 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
         {/* 三个 Gallery 工具栏保持同一信息顺序：筛选与实时结果数在左，排序在右；不能因删减控件把整组筛选推到右侧。 */}
         <div className="mt-4 flex flex-wrap items-center gap-2 border-rose-100 border-t pt-4 dark:border-gray-800">
           <StyleGalleryVisualFilter
+            key={originalPosition.visualResetKey}
             scope="source"
             labels={labels.visualFilter}
             triggerClassName="h-10"
@@ -530,6 +542,14 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
               >
                 <Icon icon="ri:zoom-in-line" className="size-4" />
               </button>
+              {originalPosition.hasFilters && !tagSelection.enabled && (
+                <GalleryLocateButton
+                  locale={locale}
+                  title={item.title}
+                  onLocate={() => originalPosition.locateOriginal(item.slug)}
+                  className="top-2 left-13"
+                />
+              )}
               <button
                 type="button"
                 onClick={() => copyPrompt(item)}

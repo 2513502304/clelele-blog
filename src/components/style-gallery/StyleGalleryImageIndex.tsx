@@ -29,8 +29,10 @@ import { parseAsString, parseAsStringLiteral, useQueryState, useQueryStates } fr
 import { NuqsAdapter } from 'nuqs/adapters/react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { InlineSpinner } from '@/components/ui/InlineSpinner';
+import { useGalleryOriginalPosition } from '@/hooks/useGalleryOriginalPosition';
 import { useProgressiveList } from '@/hooks/useProgressiveList';
 import type { StyleGalleryCardData } from '@/types/style-gallery';
+import GalleryLocateButton from './GalleryLocateButton';
 import StyleGalleryCuration from './StyleGalleryCuration';
 import { useGalleryTagSelection } from './StyleGalleryTagSelection';
 import { GalleryTagEditor, GalleryTagFilter } from './StyleGalleryTags';
@@ -187,6 +189,15 @@ function StyleGalleryImageIndexContent({
     resetKey: `${tag}\u0000${query.trim().toLowerCase()}\u0000${dateFrom}\u0000${dateTo}\u0000${sortKey}\u0000${sortDirection}\u0000${visualRevision}`,
     rootMargin: '-120px 0px',
   });
+  const originalPosition = useGalleryOriginalPosition({
+    items: visibleItems,
+    visibleCount: renderedItems.length,
+    revealThrough,
+    matchesTarget: (item, slug) => item.slug === slug,
+    elementId: (item) => getStyleGalleryLightboxElementId('index-source', item.slug),
+    hasVisualFilter: visualMatches !== null,
+    clearVisualFilter: () => setVisualMatches(null),
+  });
 
   function openSourceLightbox(item: StyleGalleryCardData) {
     const data = createStyleGallerySourceLightboxData(
@@ -255,6 +266,7 @@ function StyleGalleryImageIndexContent({
         </label>
 
         <StyleGalleryVisualFilter
+          key={originalPosition.visualResetKey}
           scope="source"
           labels={labels.visualFilter}
           onResults={(matches) => {
@@ -375,6 +387,15 @@ function StyleGalleryImageIndexContent({
                       className="hidden size-3 group-hover/index-lightbox:block group-focus-visible/index-lightbox:block"
                     />
                   </button>
+                )}
+                {originalPosition.hasFilters && !tagSelection.enabled && (
+                  <GalleryLocateButton
+                    locale={locale}
+                    title={item.title}
+                    onLocate={() => originalPosition.locateOriginal(item.slug)}
+                    compact
+                    className="top-7 left-1"
+                  />
                 )}
                 {item.imageCount > 1 && (
                   <span

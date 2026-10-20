@@ -34,9 +34,11 @@ import { openModal } from '@store/modal';
 import { parseAsBoolean, parseAsString, parseAsStringLiteral, useQueryState, useQueryStates } from 'nuqs';
 import { NuqsAdapter } from 'nuqs/adapters/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useGalleryOriginalPosition } from '@/hooks/useGalleryOriginalPosition';
 import { useProgressiveList } from '@/hooks/useProgressiveList';
 import { getStyleGallerySourceCards, getStyleGallerySourceHash } from '@/lib/style-gallery-source-groups';
 import type { StyleGalleryExampleOverviewItem } from '@/types/style-gallery';
+import GalleryLocateButton from './GalleryLocateButton';
 import GalleryZoomButton from './GalleryZoomButton';
 import StyleGalleryGrid, { StyleGalleryLayoutToggle, useStyleGalleryLayout } from './StyleGalleryGrid';
 import {
@@ -313,6 +315,15 @@ function StyleGalleryExamplesOverviewContent({
     batchSize: EXAMPLE_BATCH_SIZE,
     resetKey: `${tag}\u0000${platform}\u0000${query.trim().toLowerCase()}\u0000${dateFrom}\u0000${dateTo}\u0000${sortKey}\u0000${sortDirection}\u0000${visualRevision}`,
   });
+  const originalPosition = useGalleryOriginalPosition({
+    items: sourceCards,
+    visibleCount: visibleItems.length,
+    revealThrough,
+    matchesTarget: (card, id) => card.example.id === id || Boolean(card.stack?.some((example) => example.id === id)),
+    elementId: (card) => getStyleGalleryLightboxElementId('overview-example', card.example.id),
+    hasVisualFilter: visualMatches !== null,
+    clearVisualFilter: () => setVisualMatches(null),
+  });
 
   function refreshLikeSortCounts() {
     setLikeSortCounts(Object.fromEntries(examples.map((example) => [example.id, likes.getCount(example.id)])));
@@ -363,6 +374,7 @@ function StyleGalleryExamplesOverviewContent({
         </label>
         <div className="mt-3 flex flex-wrap items-center gap-2 border-border border-t pt-3">
           <StyleGalleryVisualFilter
+            key={originalPosition.visualResetKey}
             scope="example"
             labels={labels.visualFilter}
             onResults={(matches) => {
@@ -545,6 +557,14 @@ function StyleGalleryExamplesOverviewContent({
                       title={example.sourceTitle}
                       locale={locale}
                       onOpen={() => openLightbox(example, stack)}
+                    />
+                  )}
+                  {originalPosition.hasFilters && !tagSelection.enabled && (
+                    <GalleryLocateButton
+                      locale={locale}
+                      title={example.sourceTitle}
+                      onLocate={() => originalPosition.locateOriginal(example.id)}
+                      className="top-2 left-2"
                     />
                   )}
                   {tagSelection.checkbox(example.sourceSlug)}
