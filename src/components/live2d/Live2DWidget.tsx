@@ -15,7 +15,7 @@ import type { Live2DCatalog, Live2DVoiceIndex } from '@lib/live2d/types';
 import { live2dVoiceAudioPreloader, live2dVoiceIndexCache } from '@lib/live2d/voice-index';
 import { useStore } from '@nanostores/react';
 import { $live2dState, live2dActions } from '@store/live2d';
-import { $activeModal } from '@store/modal';
+import { $activeModal, closeModal, openModal } from '@store/modal';
 import { $activePlayerId, claimActivePlayer, releaseActivePlayer } from '@store/player';
 import { type CSSProperties, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -41,6 +41,8 @@ const Live2DCanvas = lazy(async () => {
   const module = await import('./Live2DCanvas');
   return { default: module.Live2DCanvas };
 });
+
+const Live2DStudio = lazy(async () => ({ default: (await import('./Live2DStudio')).Live2DStudio }));
 
 function textLabel(values: Record<string, string>, locale: string): string {
   return values[locale] ?? values.zh ?? values.en ?? Object.values(values)[0] ?? '';
@@ -89,11 +91,24 @@ function Live2DWidgetContent({
     motions: {},
     expressions: [],
   });
+  const [studioHost, setStudioHost] = useState<HTMLDivElement | null>(null);
+  const studioOpen = modal.type === 'live2dStudio';
   const [userPaused, setUserPaused] = useState(false);
   const [selectedMotion, setSelectedMotion] = useState('');
   const [selectedExpression, setSelectedExpression] = useState('');
   const [catalog, setCatalog] = useState<Live2DCatalog>(live2dCatalog);
   const [voiceIndex, setVoiceIndex] = useState<{ releaseId: string; value: Live2DVoiceIndex } | null>(null);
+  useEffect(() => {
+    if (!studioOpen) {
+      setStudioHost(null);
+      return;
+    }
+    const close = () => {
+      if ($activeModal.get().type === 'live2dStudio') closeModal();
+    };
+    document.addEventListener('astro:before-preparation', close);
+    return () => document.removeEventListener('astro:before-preparation', close);
+  }, [studioOpen]);
   const orderedSelections = useMemo(() => getLive2DCatalogSelections(catalog), [catalog]);
 
   const stopAudio = useCallback(() => {
@@ -131,7 +146,9 @@ function Live2DWidgetContent({
   const character = resolvedSelection?.character;
   const costume = resolvedSelection?.costume;
   const characterName = character ? textLabel(character.label, locale) : t('live2d.character');
-  const activeVoiceIndex = voiceIndex && character?.voice?.releaseId === voiceIndex.releaseId ? voiceIndex.value : null;
+  // GBP voice mappings contain GBP motion names, which do not exist in native Our Notes prefabs.
+  const characterVoice = costume?.entryPath.endsWith('.native.json') ? undefined : character?.voice;
+  const activeVoiceIndex = voiceIndex && characterVoice?.releaseId === voiceIndex.releaseId ? voiceIndex.value : null;
   const rendererSelection = useMemo(
     () =>
       costume
@@ -174,7 +191,6 @@ function Live2DWidgetContent({
     return () => controller.abort();
   }, [rendererStarted]);
 
-  const characterVoice = character?.voice;
   useEffect(() => {
     const voice = characterVoice;
     let active = true;
@@ -306,6 +322,7 @@ function Live2DWidgetContent({
   }, [state.avoidanceHidden, state.preferences.hidden, state.rendererStatus, stopTransientInteraction]);
 
   useEffect(() => {
+    if (state.rendererStatus !== 'ready') return;
     const syncRendererActivity = () => {
       const temporarilyFrozen = document.hidden || state.preferences.hidden || state.avoidanceHidden;
       // 智能避让和浏览器后台只冻结现有 WebGL 实例。suspend() 会销毁 core，恢复时即使
@@ -315,7 +332,7 @@ function Live2DWidgetContent({
     syncRendererActivity();
     document.addEventListener('visibilitychange', syncRendererActivity);
     return () => document.removeEventListener('visibilitychange', syncRendererActivity);
-  }, [state.avoidanceHidden, state.preferences.hidden, userPaused]);
+  }, [state.avoidanceHidden, state.preferences.hidden, state.rendererStatus, userPaused]);
 
   useEffect(() => {
     if (!state.preferences.audioEnabled) stopTransientInteraction();
@@ -387,7 +404,9 @@ function Live2DWidgetContent({
       }
       if (phase === 'ready') {
         rendererRef.current?.setEffects(effectsRef.current);
-        rendererRef.current?.setPointerTracking(state.preferences.pointerTrackingEnabled && !pointerInsidePanel.current);
+        rendererRef.current?.setPointerTracking(
+          !studioOpen && state.preferences.pointerTrackingEnabled && !pointerInsidePanel.current,
+        );
         setModelControls({
           motions: rendererRef.current?.getMotions() ?? {},
           expressions: rendererRef.current?.getExpressions() ?? [],
@@ -399,7 +418,7 @@ function Live2DWidgetContent({
         }
       }
     },
-    [state.preferences.pointerTrackingEnabled, stopTransientInteraction],
+    [studioOpen, state.preferences.pointerTrackingEnabled, stopTransientInteraction],
   );
 
   const interact = useCallback(
@@ -542,17 +561,20 @@ function Live2DWidgetContent({
 
   useEffect(() => {
     if (!state.activePanel) pointerInsidePanel.current = false;
-    rendererRef.current?.setPointerTracking(state.preferences.pointerTrackingEnabled && !pointerInsidePanel.current);
-  }, [state.activePanel, state.preferences.pointerTrackingEnabled]);
+    // Keep pose editing stable while the pointer operates studio controls.
+    rendererRef.current?.setPointerTracking(
+      !studioOpen && state.preferences.pointerTrackingEnabled && !pointerInsidePanel.current,
+    );
+  }, [studioOpen, state.activePanel, state.preferences.pointerTrackingEnabled]);
 
   const setPanelPointerPresence = useCallback(
     (inside: boolean) => {
       if (pointerInsidePanel.current === inside) return;
       pointerInsidePanel.current = inside;
       // Only panel hover suppresses tracking. Merely opening a panel must not disable gaze elsewhere.
-      rendererRef.current?.setPointerTracking(state.preferences.pointerTrackingEnabled && !inside);
+      rendererRef.current?.setPointerTracking(!studioOpen && state.preferences.pointerTrackingEnabled && !inside);
     },
-    [state.preferences.pointerTrackingEnabled],
+    [studioOpen, state.preferences.pointerTrackingEnabled],
   );
 
   const isPanelTarget = (target: EventTarget | null) => target instanceof Element && target.closest('.live2d-panel') !== null;
@@ -630,6 +652,9 @@ function Live2DWidgetContent({
   } as CSSProperties;
   const labels = {
     toolbar: t('live2d.toolbar'),
+    studio: t('live2d.studio.title'),
+    source: t('live2d.studio.source'),
+    all: t('live2d.studio.all'),
     previous: t('live2d.previous'),
     next: t('live2d.next'),
     characters: t('live2d.characters'),
@@ -683,6 +708,7 @@ function Live2DWidgetContent({
     <div
       ref={setRootNode}
       className="live2d-root"
+      data-studio-open={studioOpen || undefined}
       style={rootStyle}
       data-phase={state.rendererStatus}
       data-live2d-policy={state.preferences.displayPolicy}
@@ -701,6 +727,8 @@ function Live2DWidgetContent({
         {rendererStarted && (
           <Suspense fallback={null}>
             <Live2DCanvas
+              key={costume.entryPath.endsWith('.native.json') ? 'native' : 'cubism'}
+              studioHost={studioHost}
               selection={rendererSelection}
               active
               retryNonce={retryNonce}
@@ -771,6 +799,11 @@ function Live2DWidgetContent({
         onCharacters={() => live2dActions.setActivePanel(state.activePanel === 'picker' ? null : 'picker')}
         onAnimations={() => live2dActions.setActivePanel(state.activePanel === 'animations' ? null : 'animations')}
         onSettings={() => live2dActions.setActivePanel(state.activePanel === 'settings' ? null : 'settings')}
+        onStudio={() => {
+          live2dActions.setActivePanel(null);
+          stopTransientInteraction();
+          openModal('live2dStudio');
+        }}
         onHide={() => live2dActions.setManualHidden(true)}
       />
       {state.activePanel === 'picker' && (
@@ -815,6 +848,33 @@ function Live2DWidgetContent({
           onPreset={live2dActions.setPreset}
           onClose={() => live2dActions.setActivePanel(null)}
         />
+      )}
+      {studioOpen && (
+        <Suspense fallback={<div className="live2d-status">{t('live2d.loading')}</div>}>
+          <Live2DStudio
+            renderer={rendererRef.current}
+            ready={state.rendererStatus === 'ready'}
+            failed={state.rendererStatus === 'recoverable'}
+            onRetry={() => setRetryNonce((n) => n + 1)}
+            catalog={catalog}
+            selection={state.preferences.selection}
+            name={characterName}
+            paused={userPaused}
+            selectedMotion={selectedMotion}
+            selectedExpression={selectedExpression}
+            onMotion={selectMotion}
+            onResetMotion={resetMotion}
+            onExpression={selectExpression}
+            onSelect={live2dActions.select}
+            onHost={setStudioHost}
+            onPause={togglePause}
+            onClose={() => {
+              setStudioHost(null);
+              if ($activeModal.get().type === 'live2dStudio') closeModal();
+              surfaceRef.current?.focus();
+            }}
+          />
+        </Suspense>
       )}
       <span className="sr-only" aria-live="polite">
         {state.rendererStatus === 'ready' ? t('live2d.ready', { name: characterName }) : ''}

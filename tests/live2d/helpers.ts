@@ -32,7 +32,8 @@ export function isLive2DTransferUrl(rawUrl: string): boolean {
   const isSourceRendererModule =
     pathname.endsWith('/src/components/live2d/Live2DCanvas.tsx') || pathname.endsWith('/src/lib/live2d/renderer.ts');
   const isBuiltRendererChunk = /\/_astro\/(?:Live2DCanvas|renderer)[.-][^/]+\.js$/i.test(pathname);
-  return isProxiedAsset || isDirectBestdoriAsset || isSourceRendererModule || isBuiltRendererChunk;
+  const isNativeRuntime = pathname.startsWith('/vendor/ournotes-player-');
+  return isProxiedAsset || isDirectBestdoriAsset || isSourceRendererModule || isBuiltRendererChunk || isNativeRuntime;
 }
 
 export function live2dRequests(page: Page): string[] {

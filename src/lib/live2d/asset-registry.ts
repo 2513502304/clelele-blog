@@ -1,6 +1,7 @@
 import anonManifestData from '../../data/live2d/manifests/9e95d66201f07e339bd5542b1dd0d67ae1bd0b0f9b14a7335ca0bad6bd5916ad.json';
 import anonSrManifestData from '../../data/live2d/manifests/63efa2f7902818e27ad2c3ec71b3cbcc6c83ee4b4c8c4176b2e7f764422f3e85.json';
 import tomoriManifestData from '../../data/live2d/manifests/c282ced11b66f7f30488ba356deab4bffa3e27a734478b929093140b69ffe349.json';
+import ourNotesManifestData from '../../data/live2d/manifests/d5eadf497778106f46fa76ba5e4685f3d0a3fa7eeae0b2d20a22d18ec13c81e4.json';
 import tomoriSrManifestData from '../../data/live2d/manifests/d5628c18018a77031a8df09e24002c5b76c3de65378464a755b75a52327b56a0.json';
 import { assertCostumeMatchesManifest, live2dCatalog } from './catalog';
 import { type Live2DManifestObject, type Live2DPackageManifest, live2dPackageManifestSchema } from './types';
@@ -8,9 +9,13 @@ import { type Live2DManifestObject, type Live2DPackageManifest, live2dPackageMan
 /** Vercel 对流式 Function 响应的当前上限为 20 MB；保持常量而非允许环境变量放大。 */
 export const LIVE2D_MAX_ASSET_BYTES = 20_000_000;
 
-const packageManifests = [anonManifestData, anonSrManifestData, tomoriManifestData, tomoriSrManifestData].map((manifest) =>
-  live2dPackageManifestSchema.parse(manifest),
-);
+const packageManifests = [
+  anonManifestData,
+  anonSrManifestData,
+  tomoriManifestData,
+  tomoriSrManifestData,
+  ourNotesManifestData,
+].map((manifest) => live2dPackageManifestSchema.parse(manifest));
 const manifestByRelease = new Map<string, Live2DPackageManifest>(
   packageManifests.map((manifest) => [manifest.releaseId, manifest]),
 );

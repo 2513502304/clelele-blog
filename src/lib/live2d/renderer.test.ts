@@ -331,3 +331,31 @@ test('suspend releases the model and resume reloads the latest selection', async
   assert.equal(renderer.getPhase(), 'ready');
   renderer.destroy();
 });
+
+test('context restoration waits for asynchronous native disposal before creating a new core', async () => {
+  const old = new FakeCore();
+  const next = new FakeCore();
+  let finishDisposal!: () => void;
+  const disposal = new Promise<void>((resolve) => {
+    finishDisposal = resolve;
+  });
+  old.destroy = () => disposal;
+  let creations = 0;
+  const target = canvas();
+  const renderer = new Live2DRenderer({ canvas: target, createCore: async () => (++creations === 1 ? old : next) });
+  const loading = renderer.load(selection('context'));
+  await new Promise((resolve) => setImmediate(resolve));
+  old.resolveCurrent?.();
+  await loading;
+  target.dispatchEvent(new Event('webglcontextlost', { cancelable: true }));
+  target.dispatchEvent(new Event('webglcontextrestored'));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(creations, 1);
+  finishDisposal();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(creations, 2);
+  next.resolveCurrent?.();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(renderer.getPhase(), 'ready');
+  renderer.destroy();
+});

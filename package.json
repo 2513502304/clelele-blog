@@ -22,6 +22,7 @@
     "publish:live2d-models": "node --use-env-proxy --env-file-if-exists=.env.local --import tsx scripts/live2d/publish-models.ts",
     "publish:live2d-bootstrap": "node --use-env-proxy --env-file-if-exists=.env.local --import tsx scripts/live2d/publish-bootstrap-metadata.ts",
     "sync:live2d-bestdori": "node --use-env-proxy --env-file-if-exists=.env.local --import tsx scripts/live2d/sync-bestdori-models.ts",
+    "sync:live2d-our-notes": "node --use-env-proxy --env-file-if-exists=.env.local --import tsx scripts/live2d/sync-our-notes-models.ts",
     "build": "astro build",
     "preview": "astro preview",
     "astro": "astro",

@@ -1,6 +1,7 @@
 import type { Live2DRendererPhase, Live2DRendererSelection } from '@lib/live2d/renderer';
 import { Live2DRenderer } from '@lib/live2d/renderer';
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 interface Props {
   selection: Live2DRendererSelection;
@@ -9,14 +10,25 @@ interface Props {
   onPhase: (phase: Live2DRendererPhase, error?: unknown) => void;
   onTap: (area: string) => void;
   onRenderer: (renderer: Live2DRenderer | null) => void;
+  studioHost?: HTMLElement | null;
 }
 
 /** Canvas owns exactly one renderer for the lifetime of the persistent React island. */
-export function Live2DCanvas({ selection, active, retryNonce, onPhase, onTap, onRenderer }: Props) {
+export function Live2DCanvas({ selection, active, retryNonce, onPhase, onTap, onRenderer, studioHost }: Props) {
+  const [container] = useState(() => Object.assign(document.createElement('div'), { className: 'live2d-canvas-host' }));
+  const anchorRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef<Live2DRenderer | null>(null);
   const onPhaseRef = useRef(onPhase);
   const onTapRef = useRef(onTap);
+  // Move the same portal container, preserving its canvas, decoded assets and WebGL context.
+  useLayoutEffect(() => {
+    const anchor = anchorRef.current;
+    (studioHost ?? anchor)?.append(container);
+    return () => {
+      if (anchor) anchor.append(container);
+    };
+  }, [container, studioHost]);
   useEffect(() => {
     onPhaseRef.current = onPhase;
     onTapRef.current = onTap;
@@ -45,5 +57,10 @@ export function Live2DCanvas({ selection, active, retryNonce, onPhase, onTap, on
     });
   }, [active, retryNonce, selection]);
 
-  return <canvas ref={canvasRef} className="live2d-canvas" />;
+  return (
+    <>
+      <div ref={anchorRef} className="live2d-canvas-anchor" />
+      {createPortal(<canvas ref={canvasRef} className="live2d-canvas" />, container)}
+    </>
+  );
 }

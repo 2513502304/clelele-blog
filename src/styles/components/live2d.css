@@ -646,3 +646,34 @@
     animation: none;
   }
 }
+
+/* The studio owns the existing canvas host, while the companion controls remain mounted. */
+.live2d-canvas-anchor,
+.live2d-canvas-host {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.live2d-root[data-studio-open="true"] > .live2d-stage,
+.live2d-root[data-studio-open="true"] > .live2d-controls-shell {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.live2d-source-filter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.3rem 0 0.7rem;
+  font-size: 0.8rem;
+}
+.live2d-source-filter select {
+  max-width: 65%;
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.45rem;
+  padding: 0.4rem;
+  background: hsl(var(--background));
+  color: inherit;
+}

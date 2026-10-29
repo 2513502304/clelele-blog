@@ -20,6 +20,8 @@ import {
 
 export interface PublishOptions {
   packageRoot: string;
+  /** Native Our Notes packages retain their original descriptor instead of a converted model.json. */
+  entryPath?: string;
   characterId: string;
   characterLabels: Record<string, string>;
   costumeId: string;
@@ -142,6 +144,7 @@ export function parseArguments(arguments_: string[]): PublishOptions {
   if (!Number.isFinite(scale) || scale <= 0) throw new Error('--scale must be a positive number.');
   return {
     packageRoot: path.resolve(required('--package')),
+    entryPath: values.get('--entry-path'),
     characterId: required('--character-id'),
     characterLabels: parseLabels(required('--character-labels'), '--character-labels'),
     costumeId: required('--costume-id'),
@@ -554,7 +557,7 @@ export async function publishLive2DModel(
 ): Promise<{ releaseId: string; objectCount: number; totalBytes: number; costume: Live2DCostume }> {
   const { client, manifest, provenancePath } = await publishImmutablePackage({
     ...options,
-    entryPath: 'model.json',
+    entryPath: options.entryPath ?? 'model.json',
     converterOptions: {
       coreAudioRemoved: true,
       approvedAudio: [...options.approvedAudio].sort(),
