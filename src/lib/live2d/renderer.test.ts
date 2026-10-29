@@ -359,3 +359,60 @@ test('context restoration waits for asynchronous native disposal before creating
   assert.equal(renderer.getPhase(), 'ready');
   renderer.destroy();
 });
+
+test('failed native cleanup cannot retain a dead core or suppress the recoverable state', async () => {
+  const broken = new FakeCore();
+  broken.load = async () => {
+    throw new Error('load failed');
+  };
+  broken.destroy = () => {
+    throw new Error('dispose failed');
+  };
+  const replacement = new FakeCore();
+  let creations = 0;
+  const phases: string[] = [];
+  const renderer = new Live2DRenderer({
+    canvas: canvas(),
+    createCore: async () => (++creations === 1 ? broken : replacement),
+    onPhase: (p) => phases.push(p),
+  });
+  await assert.rejects(renderer.load(selection('broken')), /load failed/);
+  assert.equal(phases.at(-1), 'recoverable');
+  const retry = renderer.load(selection('retry'));
+  await new Promise((resolve) => setImmediate(resolve));
+  replacement.resolveCurrent?.();
+  await retry;
+  assert.equal(creations, 2);
+  renderer.destroy();
+});
+
+test('pause cancels speculative motions and resume skips successfully warmed URLs', async () => {
+  const core = new FakeCore();
+  core.getMotions = () => ({ idle: ['first.mtn', 'second.mtn'] });
+  const calls: string[] = [];
+  const signals: AbortSignal[] = [];
+  const renderer = new Live2DRenderer({
+    canvas: canvas(),
+    createCore: async () => core,
+    motionPrefetchConcurrency: 1,
+    prefetchMotion: async (url, signal) => {
+      calls.push(url);
+      signals.push(signal);
+      if (url.endsWith('second.mtn'))
+        await new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve(), { once: true }));
+    },
+  });
+  const load = renderer.load(selection('prefetch'));
+  await new Promise((resolve) => setImmediate(resolve));
+  core.resolveCurrent?.();
+  await load;
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(calls.length, 2);
+  renderer.setPlaybackPaused(true);
+  assert.equal(signals[1].aborted, true);
+  renderer.setPlaybackPaused(false);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(calls.filter((u) => u.endsWith('first.mtn')).length, 1);
+  assert.equal(calls.filter((u) => u.endsWith('second.mtn')).length, 2);
+  renderer.destroy();
+});

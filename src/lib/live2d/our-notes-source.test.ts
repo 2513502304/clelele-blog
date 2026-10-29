@@ -57,3 +57,20 @@ test('stage aliases still resolve to the same existing character across games', 
   };
   assert.equal(ourNotesIdentity(model, catalog).characterId, 'bestdori-41');
 });
+
+test('regional partial names merge by locale for both a model and its character group', () => {
+  const models = mergeOurNotesIndexes([
+    { site: 'https://jp.test', models: [{ id: 'adv_live2d_anon_002_spring', group: '002_adv', names: { ja: '千早 愛音' } }] },
+    {
+      site: 'https://en.test',
+      models: [
+        { id: 'adv_live2d_anon_002_spring', group: '002_adv', names: { en: 'Anon' } },
+        { id: 'adv_live2d_anon_002_glasses', group: '002_live', names: { en: 'Anon Chihaya' } },
+      ],
+    },
+  ]);
+  assert.ok(models.every((m) => m.names?.ja === '千早 愛音'));
+  assert.equal(models.find((m) => m.id.endsWith('spring'))?.names?.en, 'Anon');
+  const catalog = { version: 1 as const, characters: [{ id: 'chihaya-anon', label: { ja: '千早愛音' }, costumes: [] }] };
+  assert.ok(models.every((m) => ourNotesIdentity(m, catalog).characterId === 'chihaya-anon'));
+});

@@ -1,5 +1,8 @@
 /* Scoped studio surfaces use the blog palette; stage colors are deliberate export settings. */
 .live2d-studio {
+  /* The opaque editor needs no full-screen backdrop sampling of the animated blog. */
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   width: min(94vw, 1280px);
   max-width: 1280px;
   height: min(88dvh, 900px);
@@ -15,6 +18,10 @@
   pointer-events: auto;
   /* Dialog's shared duration must not tween geometry and repeatedly resize WebGL on viewport changes. */
   transition-property: background-color, color, opacity;
+}
+
+.live2d-studio input[type="range"] {
+  touch-action: none;
 }
 .live2d-studio-header {
   display: flex;
@@ -306,7 +313,10 @@
 }
 @media (max-width: 760px) {
   .live2d-studio {
-    width: 100vw;
+    top: 0;
+    left: 0;
+    translate: none;
+    width: 100%;
     height: 100dvh;
     max-height: 100dvh;
     border-radius: 0;

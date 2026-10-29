@@ -3,11 +3,12 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { gunzipSync } from 'node:zlib';
 import { createHfS3Client } from '../../src/lib/hf-s3';
 import { LIVE2D_MAX_ASSET_BYTES } from '../../src/lib/live2d/asset-registry';
+import { LIVE2D_NATIVE_CATALOG_KEY } from '../../src/lib/live2d/metadata-store';
 import { nativeModelAssets, nativeModelManifestSchema } from '../../src/lib/live2d/native-package';
 import { mergeOurNotesIndexes, ourNotesIdentity } from '../../src/lib/live2d/our-notes-source';
+import { assertNativeAssetBytes } from '../../src/lib/live2d/package-manifest';
 import { live2dCatalogSchema } from '../../src/lib/live2d/types';
 import { configureEnvironmentProxy } from '../lib/environment-proxy.mjs';
 import { commitRemoteCatalogUpdates, getPublisherConfig, type Live2DCatalogUpdate, publishLive2DModel } from './publish-models';
@@ -65,11 +66,9 @@ async function cachedAsset(site: string, asset: { path: string; size: number; de
   const match = /^assets\/([a-f0-9]{64})\.[a-z0-9.]+$/.exec(asset.path);
   if (!match || asset.size > LIVE2D_MAX_ASSET_BYTES) throw new Error(`Invalid native asset: ${asset.path}`);
   const valid = (bytes: Uint8Array) => {
-    if (bytes.length !== asset.size) return false;
     try {
-      // bdon names gzip objects by the decoded content hash, not the compressed transport bytes.
-      const decoded = asset.path.endsWith('.gz') ? gunzipSync(bytes, { maxOutputLength: 50_000_000 }) : bytes;
-      return decoded.length === asset.decodedSize && sha256(decoded) === match[1];
+      assertNativeAssetBytes(asset, bytes);
+      return true;
     } catch {
       return false;
     }
@@ -179,9 +178,9 @@ async function main() {
     }
   });
   let catalogCommitted = false;
-  // Publish the catalog only after the matching blog runtime has deployed; old clients cannot read native models.
+  // Native-capable servers merge this separate catalog; old production clients keep reading GBP only.
   if (commitCatalog && !failures.length) {
-    await commitRemoteCatalogUpdates(updates);
+    await commitRemoteCatalogUpdates(updates, [], { catalogKey: LIVE2D_NATIVE_CATALOG_KEY });
     catalogCommitted = true;
     console.log(`Cataloged ${updates.length} Our Notes models.`);
   }

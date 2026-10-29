@@ -84,10 +84,16 @@ export function createOurNotesCore(canvas: HTMLCanvasElement): Live2DCore {
     }
   };
   const resize = () => {
-    const rect = canvas.getBoundingClientRect();
-    const ratio = Math.min(window.devicePixelRatio || 1, 1.5);
-    if (rect.width && rect.height)
-      session?.resize(Math.round(canvas.clientWidth * ratio), Math.round(canvas.clientHeight * ratio));
+    const width = canvas.clientWidth,
+      height = canvas.clientHeight;
+    if (!width || !height) return;
+    // Match the pinned legacy engine: at most 1.5 DPR and 1.5M pixels, independent of CSS zoom.
+    const ratio = Math.min(window.devicePixelRatio || 1, 1.5, Math.sqrt(1_500_000 / (width * height)));
+    const pixelWidth = Math.max(1, Math.floor(width * ratio)),
+      pixelHeight = Math.max(1, Math.floor(height * ratio));
+    // A replacement session has its own requested size even when it reuses an already-sized canvas.
+    // Runtime.resize only updates that request; its renderer already skips unchanged GL allocations.
+    session?.resize(pixelWidth, pixelHeight);
     if (paused && !pendingStep) session?.render();
   };
   const move = (event: PointerEvent) => {

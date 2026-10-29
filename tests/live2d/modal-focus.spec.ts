@@ -19,6 +19,8 @@ async function openImmersiveModal(page: Page, modal: ImmersiveModal): Promise<vo
 }
 
 test.beforeEach(async ({ page }) => {
+  // Navigation prefetch is unrelated to modal lifecycle and must not depend on the remote gallery catalog.
+  await page.route('**/image-style-prompt-gallery', (route) => route.fulfill({ status: 200, body: '' }));
   await page.goto('/post/markdown-features');
   await waitForLive2DReady(page);
 });
@@ -43,7 +45,7 @@ test('smart policy hides for each immersive modal and restores without a duplica
 
 test('always-visible policy keeps Live2D focus inside the modal scope and scopes Escape', async ({ page }) => {
   await page.getByRole('button', { name: 'Live2D 设置' }).click();
-  await page.getByRole('radio', { name: '始终显示' }).check();
+  await page.getByRole('button', { name: '始终显示', exact: true }).click();
   await page.getByRole('button', { name: 'Live2D 设置' }).click();
   for (const modal of immersiveModals) {
     await openImmersiveModal(page, modal);

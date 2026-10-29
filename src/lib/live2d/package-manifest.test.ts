@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { gzipSync } from 'node:zlib';
 import {
   assertLive2DManifestReleaseId,
   buildLive2DPackageManifest,
@@ -122,26 +124,40 @@ test('packages native Our Notes compressed and split assets without losing shade
   const root = await mkdtemp(path.join(os.tmpdir(), 'live2d-native-'));
   await mkdir(path.join(root, 'assets'));
   const files = ['model.json.gz', 'model.moc3.gz', 'shader.glsl.gz', 'texture.png', 'nodes.json.gz'];
-  for (const file of files) await writeFile(path.join(root, 'assets', file), file);
-  await writeFile(
-    path.join(root, 'model.native.json'),
-    JSON.stringify({
-      format: 3,
-      id: 'anon',
-      files: {
-        'model.json': { asset: 'assets/model.json.gz', size: 100, stored: 13 },
-        'model.moc3': { asset: 'assets/model.moc3.gz', size: 100, stored: 13 },
-        'shader.glsl': { asset: 'assets/shader.glsl.gz', size: 100, stored: 13 },
-        'texture.png': { asset: 'assets/texture.png', size: 11 },
-        'prefab.json': { parts: [['nodes', 'assets/nodes.json.gz', 100, 13]], size: 110 },
-      },
-    }),
-  );
+  const assets = [];
+  for (const file of files) {
+    const decoded = Buffer.from(file);
+    const bytes = file.endsWith('.gz') ? gzipSync(decoded) : decoded;
+    const name = `${createHash('sha256').update(decoded).digest('hex')}.${file.split('.').slice(1).join('.')}`;
+    await writeFile(path.join(root, 'assets', name), bytes);
+    assets.push({ asset: `assets/${name}`, size: decoded.length, stored: bytes.length });
+  }
+  const source = {
+    format: 3,
+    id: 'anon',
+    files: {
+      'model.json': assets[0],
+      'model.moc3': assets[1],
+      'shader.glsl': assets[2],
+      'texture.png': assets[3],
+      'prefab.json': { parts: [['nodes', assets[4].asset, assets[4].size, assets[4].stored]], size: assets[4].size },
+    },
+  };
+  await writeFile(path.join(root, 'model.native.json'), JSON.stringify(source));
   const { manifest } = await buildLive2DPackageManifest(root, { entryPath: 'model.native.json' });
-  assert.deepEqual(
-    manifest.objects.map((o) => o.path).sort(),
-    [...files.map((f) => `assets/${f}`), 'model.native.json'].sort(),
-  );
+  assert.deepEqual(manifest.objects.map((o) => o.path).sort(), [...assets.map((a) => a.asset), 'model.native.json'].sort());
+  for (const change of ['stored', 'decoded', 'hash', 'gzip']) {
+    const broken = structuredClone(source);
+    if (change === 'stored') broken.files['model.json'].stored++;
+    if (change === 'decoded') broken.files['model.json'].size++;
+    if (change === 'hash' || change === 'gzip') {
+      const bytes = change === 'gzip' ? Buffer.from('broken gzip') : gzipSync(Buffer.from('incorrect content'));
+      await writeFile(path.join(root, assets[0].asset), bytes);
+      broken.files['model.json'].stored = bytes.length;
+    }
+    await writeFile(path.join(root, 'model.native.json'), JSON.stringify(broken));
+    await assert.rejects(buildLive2DPackageManifest(root, { entryPath: 'model.native.json' }));
+  }
   await writeFile(
     path.join(root, 'model.native.json'),
     JSON.stringify({ format: 3, files: { a: { asset: '../outside.moc3', size: 1 } } }),

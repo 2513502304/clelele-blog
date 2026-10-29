@@ -32,7 +32,7 @@
     "test:character-quote": "node --import tsx --test src/lib/character-quote.test.ts",
     "test:style-gallery:browser": "playwright test --config playwright.gallery.config.ts",
     "test:style-gallery": "node --import tsx --test scripts/import-style-prompts.test.mjs scripts/lib/codex-session-files.test.mjs scripts/lib/codex-session-archive.test.mjs scripts/lib/environment-proxy.test.mjs src/lib/style-gallery*.test.ts",
-    "test:live2d": "node --import tsx --test src/lib/hf-s3.test.ts src/lib/live2d/*.test.ts src/store/live2d.test.ts src/store/player.test.ts",
+    "test:live2d": "node --import tsx --test src/lib/hf-s3.test.ts src/lib/live2d/*.test.ts src/store/live2d.test.ts src/store/player.test.ts src/store/page-activity.test.ts",
     "test:live2d:browser": "playwright test tests/live2d",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",

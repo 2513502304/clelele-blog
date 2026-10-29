@@ -16,6 +16,7 @@ import { live2dVoiceAudioPreloader, live2dVoiceIndexCache } from '@lib/live2d/vo
 import { useStore } from '@nanostores/react';
 import { $live2dState, live2dActions } from '@store/live2d';
 import { $activeModal, closeModal, openModal } from '@store/modal';
+import { $backgroundLive2DPaused } from '@store/page-activity';
 import { $activePlayerId, claimActivePlayer, releaseActivePlayer } from '@store/player';
 import { type CSSProperties, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -59,6 +60,7 @@ function Live2DWidgetContent({
   const { t, locale } = useTranslation();
   const state = useStore($live2dState);
   const modal = useStore($activeModal);
+  const backgroundPaused = useStore($backgroundLive2DPaused);
   const activePlayerId = useStore($activePlayerId);
   const rootRef = useRef<HTMLDivElement>(null);
   const surfaceRef = useRef<HTMLButtonElement>(null);
@@ -145,6 +147,15 @@ function Live2DWidgetContent({
       : null);
   const character = resolvedSelection?.character;
   const costume = resolvedSelection?.costume;
+  // A partial/offline catalog may temporarily use a fallback, but must never erase the saved choice.
+  // Controls describe the model actually on canvas; only an explicit selection changes preferences.
+  const activeSelection = useMemo(
+    () => ({
+      characterId: character?.id ?? defaultCharacterId,
+      costumeId: costume?.id ?? defaultCostumeId,
+    }),
+    [character?.id, costume?.id, defaultCharacterId, defaultCostumeId],
+  );
   const characterName = character ? textLabel(character.label, locale) : t('live2d.character');
   // GBP voice mappings contain GBP motion names, which do not exist in native Our Notes prefabs.
   const characterVoice = costume?.entryPath.endsWith('.native.json') ? undefined : character?.voice;
@@ -174,17 +185,13 @@ function Live2DWidgetContent({
   }, [audioEnabled, defaultCharacterId, defaultCostumeId, displayPolicy]);
 
   useEffect(() => {
-    live2dActions.reconcileSelection(orderedSelections, {
-      characterId: defaultCharacterId,
-      costumeId: defaultCostumeId,
-    });
-  }, [defaultCharacterId, defaultCostumeId, orderedSelections]);
-
-  useEffect(() => {
     if (!rendererStarted) return;
     const controller = new AbortController();
     void fetchLive2DCatalog(fetch, controller.signal)
-      .then(setCatalog)
+      .then((next) => {
+        if (controller.signal.aborted) return;
+        setCatalog(next);
+      })
       .catch(() => {
         // 静态 bootstrap 已经可用；远程目录网络失败不应中断当前模型和页面交互。
       });
@@ -212,13 +219,13 @@ function Live2DWidgetContent({
   }, [characterVoice, state.rendererStatus]);
 
   useEffect(() => {
-    if (!activeVoiceIndex || !characterVoice || !state.preferences.audioEnabled) return;
+    if (!activeVoiceIndex || !characterVoice || !state.preferences.audioEnabled || backgroundPaused) return;
     const controller = new AbortController();
     let cancelled = false;
     let idleHandle: number | null = null;
     const prefetch = () => {
       idleHandle = null;
-      if (!cancelled) {
+      if (!cancelled && !document.hidden) {
         void live2dVoiceAudioPreloader.prefetch(activeVoiceIndex, characterVoice.releaseId, {
           signal: controller.signal,
         });
@@ -235,7 +242,7 @@ function Live2DWidgetContent({
       }
       controller.abort();
     };
-  }, [activeVoiceIndex, characterVoice, state.preferences.audioEnabled]);
+  }, [activeVoiceIndex, characterVoice, state.preferences.audioEnabled, backgroundPaused]);
 
   useEffect(() => {
     const update = () => {
@@ -274,10 +281,10 @@ function Live2DWidgetContent({
   }, []);
 
   useEffect(() => {
-    if (state.viewportMode !== 'desktop' || rendererStarted) return;
+    if (state.viewportMode !== 'desktop' || rendererStarted || backgroundPaused) return;
     let cancelled = false;
     const start = () => {
-      if (!cancelled && live2dActions.scheduleDesktopIdleLoad()) setRendererStarted(true);
+      if (!cancelled && !document.hidden && live2dActions.scheduleDesktopIdleLoad()) setRendererStarted(true);
     };
     const timeout = window.setTimeout(() => {
       if ('requestIdleCallback' in window) window.requestIdleCallback(start, { timeout: 1200 });
@@ -287,7 +294,7 @@ function Live2DWidgetContent({
       cancelled = true;
       window.clearTimeout(timeout);
     };
-  }, [desktopIdleDelayMs, rendererStarted, state.viewportMode]);
+  }, [desktopIdleDelayMs, rendererStarted, state.viewportMode, backgroundPaused]);
 
   useEffect(() => {
     if (state.loadIntent !== 'none') setRendererStarted(true);
@@ -324,7 +331,7 @@ function Live2DWidgetContent({
   useEffect(() => {
     if (state.rendererStatus !== 'ready') return;
     const syncRendererActivity = () => {
-      const temporarilyFrozen = document.hidden || state.preferences.hidden || state.avoidanceHidden;
+      const temporarilyFrozen = document.hidden || backgroundPaused || state.preferences.hidden || state.avoidanceHidden;
       // 智能避让和浏览器后台只冻结现有 WebGL 实例。suspend() 会销毁 core，恢复时即使
       // 命中 HTTP 缓存也必须重新解析 moc/纹理，造成用户看到重复 loading。
       rendererRef.current?.setPlaybackPaused(temporarilyFrozen || userPaused);
@@ -332,7 +339,7 @@ function Live2DWidgetContent({
     syncRendererActivity();
     document.addEventListener('visibilitychange', syncRendererActivity);
     return () => document.removeEventListener('visibilitychange', syncRendererActivity);
-  }, [state.avoidanceHidden, state.preferences.hidden, state.rendererStatus, userPaused]);
+  }, [backgroundPaused, state.avoidanceHidden, state.preferences.hidden, state.rendererStatus, userPaused]);
 
   useEffect(() => {
     if (!state.preferences.audioEnabled) stopTransientInteraction();
@@ -526,9 +533,9 @@ function Live2DWidgetContent({
     if (!frame) return;
     const anchor = document.createElement('a');
     anchor.href = frame;
-    anchor.download = `${state.preferences.selection.characterId}-${state.preferences.selection.costumeId}.png`;
+    anchor.download = `${activeSelection.characterId}-${activeSelection.costumeId}.png`;
     anchor.click();
-  }, [state.preferences.selection.characterId, state.preferences.selection.costumeId]);
+  }, [activeSelection]);
 
   const selectMotion = useCallback((group: string, index: number) => {
     selectedMotionRef.current = {
@@ -581,9 +588,7 @@ function Live2DWidgetContent({
 
   const cycle = (direction: -1 | 1) => {
     const current = orderedSelections.findIndex(
-      (entry) =>
-        entry.characterId === state.preferences.selection.characterId &&
-        entry.costumeId === state.preferences.selection.costumeId,
+      (entry) => entry.characterId === activeSelection.characterId && entry.costumeId === activeSelection.costumeId,
     );
     const next = orderedSelections[(Math.max(current, 0) + direction + orderedSelections.length) % orderedSelections.length];
     if (next) live2dActions.select(next);
@@ -810,7 +815,7 @@ function Live2DWidgetContent({
         <Live2DModelPicker
           catalog={catalog}
           locale={locale}
-          selected={state.preferences.selection}
+          selected={activeSelection}
           title={t('live2d.characters')}
           labels={labels}
           onSelect={live2dActions.select}
@@ -857,7 +862,7 @@ function Live2DWidgetContent({
             failed={state.rendererStatus === 'recoverable'}
             onRetry={() => setRetryNonce((n) => n + 1)}
             catalog={catalog}
-            selection={state.preferences.selection}
+            selection={activeSelection}
             name={characterName}
             paused={userPaused}
             selectedMotion={selectedMotion}

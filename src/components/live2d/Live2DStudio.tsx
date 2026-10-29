@@ -1,4 +1,5 @@
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@components/ui/dialog';
+import { usePointerRange } from '@hooks/usePointerRange';
 import { useTranslation } from '@hooks/useTranslation';
 import { Icon } from '@iconify/react';
 import type { Live2DRenderer } from '@lib/live2d/renderer';
@@ -29,6 +30,22 @@ interface Props {
 }
 const initialScene: StudioScene = { background: 'paper', filter: 'original', zoom: 100, x: 0, y: 0, speaker: '', dialogue: '' };
 
+/** Keep pointer capture on the same input throughout React updates; native input still handles keyboard changes. */
+function StudioRange({
+  onValue,
+  ...props
+}: {
+  min: number;
+  max: number;
+  step: number;
+  value: number;
+  'aria-label': string;
+  onValue: (value: number) => void;
+}) {
+  const pointer = usePointerRange(onValue);
+  return <input type="range" {...props} {...pointer} />;
+}
+
 /** A deliberately local editor: one existing renderer, model-bounded edits, no uploads or frame polling. */
 export function Live2DStudio({
   renderer,
@@ -51,7 +68,12 @@ export function Live2DStudio({
 }: Props) {
   const { t, locale } = useTranslation();
   const [tab, setTab] = useState<'model' | 'pose' | 'scene'>('model');
-  const [source, setSource] = useState('our-notes');
+  const [source, setSource] = useState(() => {
+    const current = catalog.characters
+      .find((c) => c.id === selection.characterId)
+      ?.costumes.find((c) => c.id === selection.costumeId);
+    return current ? (current.entryPath.endsWith('.native.json') ? 'our-notes' : 'bestdori') : 'all';
+  });
   const [query, setQuery] = useState('');
   const [paramQuery, setParamQuery] = useState('');
   const [limit, setLimit] = useState(24);
@@ -137,6 +159,7 @@ export function Live2DStudio({
   };
   return (
     <Dialog
+      keepLive2DActive
       open
       onOpenChange={(open) => {
         if (!open) onClose();
@@ -332,14 +355,13 @@ export function Live2DStudio({
                     <label className="live2d-studio-parameter" key={p.id}>
                       <span title={p.id}>{p.id}</span>
                       <output>{(overrides[p.id] ?? p.value).toFixed(2)}</output>
-                      <input
-                        type="range"
+                      <StudioRange
                         aria-label={p.id}
                         min={p.min}
                         max={p.max}
                         step={(p.max - p.min) / 200 || 1}
                         value={overrides[p.id] ?? p.value}
-                        onChange={(e) => updatePose({ ...overrides, [p.id]: Number(e.target.value) })}
+                        onValue={(value) => updatePose({ ...overrides, [p.id]: value })}
                       />
                     </label>
                   ))}
@@ -421,12 +443,13 @@ export function Live2DStudio({
                     <label className="live2d-studio-parameter" key={key}>
                       <span>{t(`live2d.studio.${key}`)}</span>
                       <output>{scene[key]}%</output>
-                      <input
-                        type="range"
+                      <StudioRange
+                        aria-label={t(`live2d.studio.${key}`)}
                         min={key === 'zoom' ? 50 : -40}
                         max={key === 'zoom' ? 180 : 40}
+                        step={1}
                         value={scene[key]}
-                        onChange={(e) => updateScene(key, Number(e.target.value))}
+                        onValue={(value) => updateScene(key, value)}
                       />
                     </label>
                   ))}

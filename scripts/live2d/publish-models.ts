@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import { createHfS3Client, type HfS3Config, HfS3ConflictError } from '../../src/lib/hf-s3';
 import { getLive2DObjectKey, live2dCatalog } from '../../src/lib/live2d/catalog';
-import { LIVE2D_CATALOG_KEY } from '../../src/lib/live2d/metadata-store';
+import { LIVE2D_CATALOG_KEY, LIVE2D_NATIVE_CATALOG_KEY } from '../../src/lib/live2d/metadata-store';
 import { buildLive2DPackageManifest, serializeLive2DManifest } from '../../src/lib/live2d/package-manifest';
 import {
   type Live2DCatalog,
@@ -298,7 +298,12 @@ export async function updateRemoteCatalog(
   options: Pick<PublishOptions, 'characterId' | 'characterLabels' | 'replace' | 'replaceInteractions'>,
   costume: Live2DCostume,
 ): Promise<void> {
-  await updateRemoteCatalogBatch(client, [{ options, costume }], []);
+  await updateRemoteCatalogBatch(
+    client,
+    [{ options, costume }],
+    [],
+    costume.entryPath.endsWith('.native.json') ? LIVE2D_NATIVE_CATALOG_KEY : LIVE2D_CATALOG_KEY,
+  );
 }
 
 /**
@@ -309,18 +314,23 @@ export async function updateRemoteCatalogBatch(
   client: ReturnType<typeof createHfS3Client>,
   updates: readonly Live2DCatalogUpdate[],
   voiceUpdates: readonly Live2DVoiceCatalogUpdate[] = [],
+  catalogKey: typeof LIVE2D_CATALOG_KEY | typeof LIVE2D_NATIVE_CATALOG_KEY = LIVE2D_CATALOG_KEY,
 ): Promise<void> {
   if (updates.length === 0 && voiceUpdates.length === 0) return;
   for (let attempt = 1; attempt <= 5; attempt += 1) {
-    const snapshot = await client.get(LIVE2D_CATALOG_KEY);
-    const catalog = snapshot ? live2dCatalogSchema.parse(JSON.parse(new TextDecoder().decode(snapshot.bytes))) : live2dCatalog;
+    const snapshot = await client.get(catalogKey);
+    const catalog = snapshot
+      ? live2dCatalogSchema.parse(JSON.parse(new TextDecoder().decode(snapshot.bytes)))
+      : catalogKey === LIVE2D_NATIVE_CATALOG_KEY
+        ? { version: 1 as const, characters: [] }
+        : live2dCatalog;
     const nextCatalog = upsertCatalogBatch(catalog, updates, voiceUpdates);
     if (isDeepStrictEqual(catalog, nextCatalog)) return;
     if (snapshot && !snapshot.etag) throw new Error('Remote Live2D catalog response did not include an ETag.');
     const bytes = new TextEncoder().encode(`${JSON.stringify(nextCatalog, null, 2)}\n`);
     try {
       await client.put(
-        LIVE2D_CATALOG_KEY,
+        catalogKey,
         bytes,
         'application/json',
         snapshot?.etag ? { ifMatch: snapshot.etag } : { ifNoneMatch: '*' },
@@ -336,7 +346,9 @@ export async function updateRemoteCatalogBatch(
 export async function commitRemoteCatalogUpdates(
   updates: readonly Live2DCatalogUpdate[],
   voiceUpdates: readonly Live2DVoiceCatalogUpdate[] = [],
-  behavior: Pick<PublishBehavior, 'requestAttempts' | 'requestTimeoutMs' | 'transferTimeoutMs'> = {},
+  behavior: Pick<PublishBehavior, 'requestAttempts' | 'requestTimeoutMs' | 'transferTimeoutMs'> & {
+    catalogKey?: typeof LIVE2D_CATALOG_KEY | typeof LIVE2D_NATIVE_CATALOG_KEY;
+  } = {},
 ): Promise<void> {
   if (updates.length === 0 && voiceUpdates.length === 0) return;
   const client = createHfS3Client(getPublisherConfig(), {
@@ -344,7 +356,7 @@ export async function commitRemoteCatalogUpdates(
     requestTimeoutMs: behavior.requestTimeoutMs ?? 120_000,
     transferTimeoutMs: behavior.transferTimeoutMs ?? 120_000,
   });
-  await updateRemoteCatalogBatch(client, updates, voiceUpdates);
+  await updateRemoteCatalogBatch(client, updates, voiceUpdates, behavior.catalogKey);
 }
 
 /** Removes superseded character aliases with the same optimistic concurrency contract as catalog publishing. */

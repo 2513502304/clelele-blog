@@ -138,6 +138,7 @@ export class Live2DRenderer {
   private playbackPaused = false;
   private contextLost = false;
   private lastSelection: Live2DRendererSelection | null = null;
+  private readonly warmedMotions = new Set<string>();
   private motionPrefetchController: AbortController | null = null;
   private cancelScheduledMotionPrefetch: (() => void) | null = null;
 
@@ -186,6 +187,7 @@ export class Live2DRenderer {
   load(selection: Live2DRendererSelection): Promise<void> {
     if (this.destroyed) return Promise.reject(abortError('Live2D renderer is destroyed.'));
     this.cancelMotionPrefetch();
+    this.warmedMotions.clear();
     this.lastSelection = selection;
     if (this.contextLost) return Promise.reject(abortError('Live2D WebGL context is currently lost.'));
     const generation = ++this.generation;
@@ -225,8 +227,7 @@ export class Live2DRenderer {
         // 失败或超时的 l2d core 可能保留部分纹理和未完成回调。展示重试入口前先销毁，
         // 确保下一代加载从干净实例开始，也避免旧 loaded 事件污染新模型状态。
         if (core && this.core === core) {
-          await core.destroy();
-          this.core = null;
+          await this.disposeCore();
         }
         if (!this.destroyed && !this.suspended && generation === this.generation) {
           this.setPhase('recoverable', error);
@@ -245,6 +246,7 @@ export class Live2DRenderer {
    */
   private scheduleMotionPrefetch(core: Live2DCore, selection: Live2DRendererSelection, generation: number): void {
     this.cancelMotionPrefetch();
+    if (this.playbackPaused) return;
     const urls = [
       ...new Set(
         Object.values(core.getMotions())
@@ -253,12 +255,13 @@ export class Live2DRenderer {
           .map((motionPath) => resolveMotionUrl(selection.entryPath, motionPath)),
       ),
     ];
-    if (urls.length === 0) return;
+    const pending = urls.filter((url) => !this.warmedMotions.has(url));
+    if (pending.length === 0) return;
 
     this.cancelScheduledMotionPrefetch = scheduleIdleTask(() => {
       this.cancelScheduledMotionPrefetch = null;
-      if (!this.destroyed && !this.suspended && generation === this.generation) {
-        this.startMotionPrefetch(urls, generation);
+      if (!this.destroyed && !this.suspended && !this.playbackPaused && generation === this.generation) {
+        this.startMotionPrefetch(pending, generation);
       }
     });
   }
@@ -282,6 +285,7 @@ export class Live2DRenderer {
         if (!url) return;
         try {
           await prefetch(url, controller.signal);
+          if (!controller.signal.aborted && generation === this.generation) this.warmedMotions.add(url);
         } catch (error) {
           if (controller.signal.aborted) return;
           // 预热是尽力而为；失败的动作仍保留 l2d 原有的按需加载兜底路径。
@@ -351,8 +355,13 @@ export class Live2DRenderer {
     if (this.playbackPaused === paused) return;
     this.playbackPaused = paused;
     if (this.phase !== 'ready') return;
-    if (paused) this.core?.pauseRendering?.();
-    else this.core?.resumeRendering?.();
+    if (paused) {
+      this.cancelMotionPrefetch();
+      this.core?.pauseRendering?.();
+    } else {
+      this.core?.resumeRendering?.();
+      if (this.core && this.lastSelection) this.scheduleMotionPrefetch(this.core, this.lastSelection, this.generation);
+    }
   }
 
   /** Captures the transparent canvas before pause or user download without another network read. */
@@ -380,8 +389,7 @@ export class Live2DRenderer {
       .catch(() => undefined)
       .then(async () => {
         if (this.suspended && !this.destroyed) {
-          await this.core?.destroy();
-          this.core = null;
+          await this.disposeCore();
         }
       });
   }
@@ -426,6 +434,17 @@ export class Live2DRenderer {
     this.resizeObserver.observe(this.options.canvas);
   }
 
+  /** Detach first: rejected async native disposal must not leave a destroyed instance reusable. */
+  private async disposeCore(): Promise<void> {
+    const core = this.core;
+    this.core = null;
+    try {
+      await core?.destroy();
+    } catch (error) {
+      console.warn('[Live2D] Core cleanup failed.', error);
+    }
+  }
+
   /** Marks teardown immediately and queues WebGL cleanup after any in-flight upstream mutation. */
   destroy(): void {
     if (this.destroyed) return;
@@ -442,8 +461,7 @@ export class Live2DRenderer {
     this.tail = this.tail
       .catch(() => undefined)
       .then(async () => {
-        await this.core?.destroy();
-        this.core = null;
+        await this.disposeCore();
       });
   }
 }

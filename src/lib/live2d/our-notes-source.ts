@@ -21,14 +21,20 @@ export function mergeOurNotesIndexes(sources: Array<{ site: string; models: unkn
     for (const value of source.models) {
       const model = entrySchema.parse(value);
       const previous = models.get(model.id);
-      models.set(model.id, { ...previous, ...model, names: model.names ?? previous?.names, site: source.site });
+      models.set(model.id, { ...previous, ...model, names: { ...previous?.names, ...model.names }, site: source.site });
     }
   }
   const namesByCharacter = new Map<string, Record<string, string>>();
   for (const model of models.values())
-    if (model.group && model.names) namesByCharacter.set(model.group.replace(/_(adv|live)$/, ''), model.names);
+    if (model.group && model.names) {
+      const key = model.group.replace(/_(adv|live)$/, '');
+      namesByCharacter.set(key, { ...namesByCharacter.get(key), ...model.names });
+    }
   return [...models.values()]
-    .map((model) => ({ ...model, names: model.names ?? namesByCharacter.get(model.group?.replace(/_(adv|live)$/, '') ?? '') }))
+    .map((model) => ({
+      ...model,
+      names: { ...namesByCharacter.get(model.group?.replace(/_(adv|live)$/, '') ?? ''), ...model.names },
+    }))
     .sort((a, b) => a.id.localeCompare(b.id));
 }
 

@@ -363,18 +363,6 @@ const keywords = keywordsOverride || siteConfig.keywords || [siteConfig.title];
           <GlobalBGMPlayer client:only="react" audioGroups={bgmConfig.audio} metingApi={bgmConfig.metingApi} />
         </div>
       )}
-      {live2dEnabled && (
-        <div transition:persist="live2d-character-widget">
-          <Live2DWidget
-            client:only="react"
-            defaultCharacterId={live2dConfig.defaultCharacterId}
-            defaultCostumeId={live2dConfig.defaultCostumeId}
-            desktopIdleDelayMs={live2dConfig.desktopIdleDelayMs}
-            displayPolicy={live2dConfig.displayPolicy}
-            audioEnabled={live2dConfig.audioEnabled}
-          />
-        </div>
-      )}
       <FloatingGroup client:only="react" />
       <MobileDrawer type={siderType} post={post} />
       <SearchDialog client:idle />
@@ -385,6 +373,19 @@ const keywords = keywordsOverride || siteConfig.keywords || [siteConfig.title];
       <Toaster client:idle />
       <AnnouncementProvider />
     </div>
+    {/* Share the body stacking context with modal portals so always-visible controls remain reachable. */}
+    {live2dEnabled && (
+      <div transition:persist="live2d-character-widget">
+        <Live2DWidget
+          client:only="react"
+          defaultCharacterId={live2dConfig.defaultCharacterId}
+          defaultCostumeId={live2dConfig.defaultCostumeId}
+          desktopIdleDelayMs={live2dConfig.desktopIdleDelayMs}
+          displayPolicy={live2dConfig.displayPolicy}
+          audioEnabled={live2dConfig.audioEnabled}
+        />
+      </div>
+    )}
   </body>
 </html>
 
