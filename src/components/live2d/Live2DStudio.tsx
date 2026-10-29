@@ -1,10 +1,11 @@
+import { Live2DLoadStatus } from '@components/live2d/Live2DLoadStatus';
 import { Live2DStudioScene } from '@components/live2d/Live2DStudioScene';
 import { StudioRange } from '@components/live2d/StudioRange';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@components/ui/dialog';
 import { useStudioViewport } from '@hooks/useStudioViewport';
 import { useTranslation } from '@hooks/useTranslation';
 import { Icon } from '@iconify/react';
-import type { Live2DRenderer } from '@lib/live2d/renderer';
+import type { Live2DLoadProgress, Live2DRenderer } from '@lib/live2d/renderer';
 import { downloadStudioFile, exportStudioScene, INITIAL_STUDIO_SCENE, STUDIO_BACKGROUNDS } from '@lib/live2d/studio-export';
 import { studioActionLabel, studioParameterLabel } from '@lib/live2d/studio-labels';
 import { parseStudioPose, studioFilterCss } from '@lib/live2d/studio-state';
@@ -16,6 +17,7 @@ interface Props {
   renderer: Live2DRenderer | null;
   ready: boolean;
   failed: boolean;
+  progress: Live2DLoadProgress | null;
   onRetry: () => void;
   catalog: Live2DCatalog;
   catalogNotice?: string;
@@ -39,6 +41,7 @@ export function Live2DStudio({
   renderer,
   ready,
   failed,
+  progress,
   onRetry,
   catalog,
   catalogNotice,
@@ -229,8 +232,7 @@ export function Live2DStudio({
                 }}
               />
               {!ready && (
-                <output className="live2d-studio-loading">
-                  <Icon icon="ri:loader-4-line" />
+                <div className="live2d-studio-loading">
                   {failed ? (
                     <>
                       <span>{t('live2d.failed')}</span>
@@ -239,9 +241,9 @@ export function Live2DStudio({
                       </button>
                     </>
                   ) : (
-                    t('live2d.loading')
+                    <Live2DLoadStatus progress={progress} />
                   )}
-                </output>
+                </div>
               )}
               {scene.dialogue && (
                 <div className="live2d-studio-dialogue">

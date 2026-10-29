@@ -1,3 +1,5 @@
+import { fetchNativeAsset } from './native-asset-fetch';
+import { enableNativeMipmaps } from './native-texture-sampling';
 import { type NativeRuntime, type NativeSession, nativeParameters } from './our-notes-runtime-types';
 import type { Live2DCore } from './renderer';
 import { clampParameterOverrides } from './studio-state';
@@ -110,15 +112,33 @@ export function createOurNotesCore(canvas: HTMLCanvasElement): Live2DCore {
     await previous?.dispose();
   };
   const core: Live2DCore = {
-    async load({ path }) {
+    async load({ path, onProgress }) {
       loading = true;
-      await release();
+      const released = release();
+      // Install the new signal before awaiting old GPU teardown so rapid selection can cancel it.
       controller = new AbortController();
       const signal = controller.signal;
+      await released;
+      signal.throwIfAborted();
       const lib = await loadRuntime();
       signal.throwIfAborted();
       const url = new URL(path, window.location.href);
-      const assets = await lib.AssetStore.fromManifest(url.href, { signal, base: new URL('./', url).href, concurrency: 4 });
+      const assets = await lib.AssetStore.fromManifest(url.href, {
+        signal,
+        base: new URL('./', url).href,
+        concurrency: 4,
+        fetch: fetchNativeAsset,
+        onProgress: (loaded, total) => onProgress?.({ stage: 'download', loaded, total }),
+      });
+      onProgress?.({ stage: 'initialize', loaded: 0, total: 0 });
+      // The public asset reader supplies fresh parsed descriptors. Adjust sampling only; keep the
+      // pinned player artifact and original textures unchanged. Its GL resource tracker owns mips.
+      const readJson = assets.json.bind(assets);
+      assets.json = (path) => {
+        const value = readJson(path);
+        enableNativeMipmaps(value);
+        return value;
+      };
       signal.throwIfAborted();
       const gl = canvas.getContext('webgl2', {
         alpha: true,
@@ -153,6 +173,9 @@ export function createOurNotesCore(canvas: HTMLCanvasElement): Live2DCore {
       for (const listener of listeners.get('loaded') ?? []) listener();
       loading = false;
       start();
+    },
+    cancelLoading() {
+      if (loading) controller.abort();
     },
     resize,
     async destroy() {

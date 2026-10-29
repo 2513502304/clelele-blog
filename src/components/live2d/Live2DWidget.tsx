@@ -1,6 +1,7 @@
 import { ErrorBoundary } from '@components/common';
 import { Live2DAnimationPanel } from '@components/live2d/Live2DAnimationPanel';
 import { Live2DControls } from '@components/live2d/Live2DControls';
+import { Live2DLoadStatus } from '@components/live2d/Live2DLoadStatus';
 import { Live2DModelPicker } from '@components/live2d/Live2DModelPicker';
 import { Live2DSettings } from '@components/live2d/Live2DSettings';
 import { useTranslation } from '@hooks/useTranslation';
@@ -10,7 +11,7 @@ import { markLive2DEscapeHandled, registerLive2DFocusNode } from '@lib/live2d/fo
 import { classifyLive2DPointerMovement } from '@lib/live2d/geometry';
 import { Live2DInteractionGeneration, resolveLive2DPlayback, textDialogueDuration } from '@lib/live2d/interactions';
 import type { Live2DDisplayPolicy } from '@lib/live2d/preferences';
-import type { Live2DRenderer, Live2DRendererPhase } from '@lib/live2d/renderer';
+import type { Live2DLoadProgress, Live2DRenderer, Live2DRendererPhase } from '@lib/live2d/renderer';
 import type { Live2DCatalog, Live2DVoiceIndex } from '@lib/live2d/types';
 import { live2dVoiceAudioPreloader, live2dVoiceIndexCache } from '@lib/live2d/voice-index';
 import { useStore } from '@nanostores/react';
@@ -93,6 +94,7 @@ function Live2DWidgetContent({
     motions: {},
     expressions: [],
   });
+  const [loadProgress, setLoadProgress] = useState<Live2DLoadProgress | null>(null);
   const [studioHost, setStudioHost] = useState<HTMLDivElement | null>(null);
   const studioOpen = modal.type === 'live2dStudio';
   const [userPaused, setUserPaused] = useState(false);
@@ -412,6 +414,7 @@ function Live2DWidgetContent({
 
   const handlePhase = useCallback(
     (phase: Live2DRendererPhase, error?: unknown) => {
+      if (phase === 'loading') setLoadProgress(null);
       if (phase === 'recoverable' && import.meta.env.DEV) {
         console.error('[Live2D] Renderer entered a recoverable state.', error);
       }
@@ -751,6 +754,7 @@ function Live2DWidgetContent({
               active
               retryNonce={retryNonce}
               onPhase={handlePhase}
+              onProgress={setLoadProgress}
               onTap={interact}
               onRenderer={keepRenderer}
             />
@@ -782,7 +786,11 @@ function Live2DWidgetContent({
             }
           }}
         />
-        {state.rendererStatus === 'loading' && <div className="live2d-status">{t('live2d.loading')}</div>}
+        {state.rendererStatus === 'loading' && !studioOpen && (
+          <div className="live2d-status">
+            <Live2DLoadStatus progress={loadProgress} />
+          </div>
+        )}
         {state.rendererStatus === 'recoverable' && (
           <div className="live2d-status live2d-error" role="alert">
             <span>{t('live2d.failed')}</span>
@@ -875,6 +883,7 @@ function Live2DWidgetContent({
             renderer={rendererRef.current}
             ready={state.rendererStatus === 'ready'}
             failed={state.rendererStatus === 'recoverable'}
+            progress={loadProgress}
             onRetry={() => setRetryNonce((n) => n + 1)}
             catalog={catalog}
             catalogNotice={catalogNotice}

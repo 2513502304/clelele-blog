@@ -226,6 +226,8 @@ export const uiStrings = {
   'live2d.close': '关闭面板',
   'live2d.loading': '正在载入角色…',
   'live2d.ready': '{name}已载入',
+  'live2d.downloading': '正在读取角色资源…',
+  'live2d.initializing': '资源已就绪，正在初始化模型…',
   'live2d.failed': '角色载入失败',
   'live2d.retry': '重试',
   'live2d.catalogLoading': '正在加载完整角色目录…',

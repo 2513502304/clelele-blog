@@ -10,16 +10,24 @@ export interface Live2DRendererSelection {
   position: [number, number];
 }
 
+export interface Live2DLoadProgress {
+  stage: 'download' | 'initialize';
+  loaded: number;
+  total: number;
+}
+
 type Live2DCoreEvent = 'tap' | 'loaded';
 
 export interface Live2DCore {
   load(options: {
     path: string;
+    onProgress?: (progress: Live2DLoadProgress) => void;
     scale?: number;
     position?: [number, number];
     volume?: number;
     logLevel?: 'error' | 'warn' | 'info' | 'trace';
   }): Promise<void>;
+  cancelLoading?(): void;
   resize(): void;
   destroy(): void | Promise<void>;
   getParams(): unknown[];
@@ -45,6 +53,7 @@ export interface Live2DRendererOptions {
   prefetchMotion?: (url: string, signal: AbortSignal) => Promise<void>;
   motionPrefetchConcurrency?: number;
   onPhase?: (phase: Live2DRendererPhase, error?: unknown) => void;
+  onProgress?: (progress: Live2DLoadProgress) => void;
   onTap?: (areaName: string) => void;
 }
 
@@ -120,8 +129,8 @@ function scheduleIdleTask(task: () => void): () => void {
  * Serializes model mutations around the unmodified upstream renderer.
  *
  * `l2d` owns Cubism's global runtime and cannot cancel a load in progress. A generation
- * therefore discards superseded results, while the queue ensures a newer model never mutates
- * the same WebGL state concurrently. Network deadlines remain in the same-origin asset route,
+ * therefore discards superseded results. Native downloads can be cancelled early; the queue
+ * still prevents newer models from mutating the same WebGL state concurrently. Network deadlines remain in the same-origin asset route,
  * where they can actually abort the origin request.
  */
 export class Live2DRenderer {
@@ -193,6 +202,7 @@ export class Live2DRenderer {
     this.lastSelection = selection;
     if (this.contextLost) return Promise.reject(abortError('Live2D WebGL context is currently lost.'));
     const generation = ++this.generation;
+    if (this.phase === 'loading') this.core?.cancelLoading?.();
     const run = async (): Promise<void> => {
       if (this.destroyed || this.suspended || generation !== this.generation) {
         throw abortError('Live2D selection was superseded.');
@@ -206,6 +216,14 @@ export class Live2DRenderer {
         await withLoadDeadline(
           core.load({
             path: selection.entryPath,
+            onProgress: (progress) => {
+              if (this.destroyed || this.suspended || generation !== this.generation) return;
+              try {
+                this.options.onProgress?.(progress);
+              } catch {
+                /* UI cannot fail a model load. */
+              }
+            },
             scale: selection.scale,
             position: selection.position,
             volume: 0,

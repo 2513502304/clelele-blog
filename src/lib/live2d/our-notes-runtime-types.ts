@@ -35,7 +35,16 @@ export interface NativeSession {
 }
 export interface NativeRuntime {
   AssetStore: {
-    fromManifest(url: string, options: { signal: AbortSignal; base: string; concurrency: number }): Promise<unknown>;
+    fromManifest(
+      url: string,
+      options: {
+        signal: AbortSignal;
+        base: string;
+        concurrency: number;
+        fetch: typeof fetch;
+        onProgress: (loaded: number, total: number) => void;
+      },
+    ): Promise<{ json(path: string): unknown }>;
   };
   ModelSession: {
     create(options: { gl: WebGL2RenderingContext; assets: unknown; width: number; height: number }): Promise<NativeSession>;

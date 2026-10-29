@@ -228,6 +228,8 @@ export const uiStrings: UIStrings = {
   'live2d.close': 'パネルを閉じる',
   'live2d.loading': 'キャラクターを読み込み中…',
   'live2d.ready': '{name}の準備ができました',
+  'live2d.downloading': 'キャラクター素材を読み込み中…',
+  'live2d.initializing': '素材の準備完了、モデルを初期化中…',
   'live2d.failed': 'キャラクターを読み込めませんでした',
   'live2d.retry': '再試行',
   'live2d.catalogLoading': '全キャラクターの一覧を読み込み中…',

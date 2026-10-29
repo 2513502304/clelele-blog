@@ -20,6 +20,22 @@ test('native studio reuses one canvas and model, pauses GPU draws, and exports a
     position: [0, 0],
     interactions: [],
   });
+  const secondRelease = '57c68c1f193973ae296e989493384291b7d3a35df8aec66718465382b9934a2f';
+  catalog.characters[0].costumes.push({
+    ...catalog.characters[0].costumes[catalog.characters[0].costumes.length - 1],
+    id: 'our-notes-cache-fixture',
+    label: { zh: 'Our Notes 缓存测试', en: 'Cache fixture', ja: 'Cache fixture' },
+    releaseId: secondRelease,
+    entryPath: `releases/${secondRelease}/model.native.json`,
+  });
+  let shaderAttempts = 0;
+  let failedShader = '';
+  await page.route('**/api/live2d-assets/**/assets/*.glsl*', (route) => {
+    failedShader ||= route.request().url();
+    if (route.request().url() === failedShader && ++shaderAttempts <= 2)
+      return route.fulfill({ status: 502, body: 'Transient upstream failure' });
+    return route.continue();
+  });
   let catalogRequests = 0;
   await page.route('**/api/live2d/catalog*', (route) => {
     catalogRequests++;
@@ -32,6 +48,28 @@ test('native studio reuses one canvas and model, pauses GPU draws, and exports a
   await page.route('**/image-style-prompt-gallery', (route) => route.fulfill({ status: 200, body: '' }));
   // Measure native WebGL draws without depending on private renderer state or a second animation loop.
   await page.addInitScript(() => {
+    const textures = new Set<WebGLTexture>();
+    let mipmaps = 0;
+    Object.defineProperty(window, '__nativeTextures', { get: () => textures.size });
+    Object.defineProperty(window, '__nativeMipmaps', { get: () => mipmaps });
+    const gl = WebGL2RenderingContext.prototype;
+    const createTexture = gl.createTexture;
+    const deleteTexture = gl.deleteTexture;
+    const generateMipmap = gl.generateMipmap;
+    gl.createTexture = function () {
+      const texture = createTexture.call(this);
+      if (texture && this.canvas instanceof HTMLCanvasElement && this.canvas.classList.contains('live2d-canvas'))
+        textures.add(texture);
+      return texture;
+    };
+    gl.deleteTexture = function (texture) {
+      if (texture) textures.delete(texture);
+      return deleteTexture.call(this, texture);
+    };
+    gl.generateMipmap = function (target) {
+      mipmaps++;
+      return generateMipmap.call(this, target);
+    };
     let draws = 0;
     let frames = 0;
     let lastDraw = -Infinity;
@@ -73,7 +111,21 @@ test('native studio reuses one canvas and model, pauses GPU draws, and exports a
   await expect(page.locator('.live2d-catalog-notice')).toHaveCount(0);
   expect(catalogRequests).toBe(3);
   await page.getByRole('button', { name: 'Our Notes 测试服装', exact: false }).click();
+  await expect(page.locator('.live2d-studio-loading progress')).toBeVisible();
   await waitForLive2DReady(page);
+  expect(shaderAttempts).toBe(3);
+  const textureCount = await page.evaluate(() => Reflect.get(window, '__nativeTextures'));
+  expect(textureCount).toBeGreaterThan(0);
+  expect(await page.evaluate(() => Reflect.get(window, '__nativeMipmaps'))).toBeGreaterThan(0);
+  // Same content under another release reuses disk bytes; switching back downloads no asset again.
+  await page.getByRole('button', { name: 'Our Notes 缓存测试', exact: false }).click();
+  await waitForLive2DReady(page);
+  const beforeReturn = requests.length;
+  await page.getByRole('button', { name: 'Our Notes 测试服装', exact: false }).click();
+  await waitForLive2DReady(page);
+  expect(requests.slice(beforeReturn).filter((url) => url.includes('/assets/'))).toEqual([]);
+  expect(await page.evaluate(() => Reflect.get(window, '__nativeTextures'))).toBe(textureCount);
+  expect(shaderAttempts).toBe(3);
   await expect(page.locator('canvas.live2d-canvas')).toHaveCount(1);
   await measureFrameBudget(page, 'Our Notes');
   const canvas = await page.locator('canvas.live2d-canvas').elementHandle();

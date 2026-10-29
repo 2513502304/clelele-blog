@@ -228,6 +228,8 @@ export const uiStrings: UIStrings = {
   'live2d.close': 'Close panel',
   'live2d.loading': 'Loading character…',
   'live2d.ready': '{name} is ready',
+  'live2d.downloading': 'Loading character assets…',
+  'live2d.initializing': 'Assets ready, initializing model…',
   'live2d.failed': 'Character failed to load',
   'live2d.retry': 'Retry',
   'live2d.catalogLoading': 'Loading the full character catalog…',
