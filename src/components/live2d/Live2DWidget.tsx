@@ -99,6 +99,8 @@ function Live2DWidgetContent({
   const [selectedMotion, setSelectedMotion] = useState('');
   const [selectedExpression, setSelectedExpression] = useState('');
   const [catalog, setCatalog] = useState<Live2DCatalog>(live2dCatalog);
+  const [catalogStatus, setCatalogStatus] = useState<'loading' | 'ready' | 'failed'>('loading');
+  const [catalogAttempt, setCatalogAttempt] = useState(0);
   const [voiceIndex, setVoiceIndex] = useState<{ releaseId: string; value: Live2DVoiceIndex } | null>(null);
   useEffect(() => {
     if (!studioOpen) {
@@ -184,19 +186,27 @@ function Live2DWidgetContent({
     });
   }, [audioEnabled, defaultCharacterId, defaultCostumeId, displayPolicy]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: The explicit retry counter restarts the same request without reloading the model.
   useEffect(() => {
     if (!rendererStarted) return;
     const controller = new AbortController();
+    setCatalogStatus('loading');
     void fetchLive2DCatalog(fetch, controller.signal)
       .then((next) => {
         if (controller.signal.aborted) return;
         setCatalog(next);
+        setCatalogStatus('ready');
       })
       .catch(() => {
-        // 静态 bootstrap 已经可用；远程目录网络失败不应中断当前模型和页面交互。
+        // Keep the current model usable, but distinguish a missing remote catalog from an empty search.
+        if (!controller.signal.aborted) setCatalogStatus('failed');
       });
     return () => controller.abort();
-  }, [rendererStarted]);
+  }, [rendererStarted, catalogAttempt]);
+
+  const catalogNotice =
+    catalogStatus === 'ready' ? '' : t(`live2d.catalog${catalogStatus === 'failed' ? 'Failed' : 'Loading'}`);
+  const retryCatalog = catalogStatus === 'failed' ? () => setCatalogAttempt((n) => n + 1) : undefined;
 
   useEffect(() => {
     const voice = characterVoice;
@@ -524,9 +534,11 @@ function Live2DWidgetContent({
 
   const togglePause = useCallback(() => {
     const next = !userPaused;
-    rendererRef.current?.setPlaybackPaused(next);
+    rendererRef.current?.setPlaybackPaused(
+      next || document.hidden || backgroundPaused || state.preferences.hidden || state.avoidanceHidden,
+    );
     setUserPaused(next);
-  }, [userPaused]);
+  }, [userPaused, backgroundPaused, state.preferences.hidden, state.avoidanceHidden]);
 
   const downloadScreenshot = useCallback(() => {
     const frame = rendererRef.current?.captureFrame();
@@ -666,6 +678,7 @@ function Live2DWidgetContent({
     animations: t('live2d.animations'),
     settings: t('live2d.settings'),
     close: t('live2d.close'),
+    retry: t('live2d.retry'),
     hide: t('live2d.hide'),
     restore: t('live2d.restore'),
     audio: t('live2d.audio'),
@@ -814,6 +827,8 @@ function Live2DWidgetContent({
       {state.activePanel === 'picker' && (
         <Live2DModelPicker
           catalog={catalog}
+          catalogNotice={catalogNotice}
+          onRetryCatalog={retryCatalog}
           locale={locale}
           selected={activeSelection}
           title={t('live2d.characters')}
@@ -862,6 +877,8 @@ function Live2DWidgetContent({
             failed={state.rendererStatus === 'recoverable'}
             onRetry={() => setRetryNonce((n) => n + 1)}
             catalog={catalog}
+            catalogNotice={catalogNotice}
+            onRetryCatalog={retryCatalog}
             selection={activeSelection}
             name={characterName}
             paused={userPaused}

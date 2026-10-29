@@ -1,6 +1,6 @@
 import type { Live2DParameter } from './studio-state';
 
-/** Adapter contract pinned to ournotes-player 0.1.1; the shell never imports the runtime. */
+/** Adapter contract pinned to ournotes-player 0.1.8; the shell never imports the runtime. */
 export interface NativeCharacter {
   core: {
     parameters: {

@@ -244,7 +244,7 @@ test('aborts current motion prefetch when the renderer is suspended', async () =
   renderer.destroy();
 });
 
-test('soft pause preserves the loaded model and blocks motion mutations until resumed', async () => {
+test('soft pause preserves the model and applies only the latest motion intent once on resume', async () => {
   const core = new FakeCore();
   const renderer = new Live2DRenderer({ canvas: canvas(), createCore: async () => core });
   const loading = renderer.load(selection('playback'));
@@ -253,15 +253,31 @@ test('soft pause preserves the loaded model and blocks motion mutations until re
   await loading;
 
   renderer.setPlaybackPaused(true);
+  renderer.playMotion('smile', 0, 3);
   renderer.playMotion('angry', 1, 3);
   assert.equal(core.paused, 1);
   assert.equal(core.destroyed, 0);
   assert.deepEqual(core.playedMotions, []);
 
   renderer.setPlaybackPaused(false);
-  renderer.playMotion('angry', 1, 3);
+  renderer.setPlaybackPaused(false);
   assert.equal(core.resumed, 1);
   assert.deepEqual(core.playedMotions, [['angry', 1, 3]]);
+  renderer.setPlaybackPaused(true);
+  renderer.playMotion('smile', 0, 3);
+  renderer.resetMotion();
+  assert.equal(core.resetMotions, 0);
+  renderer.setPlaybackPaused(false);
+  assert.equal(core.resetMotions, 1);
+  assert.deepEqual(core.playedMotions, [['angry', 1, 3]]);
+  renderer.setPlaybackPaused(true);
+  renderer.playMotion('smile', 0, 3);
+  const next = renderer.load(selection('different-model'));
+  await new Promise((resolve) => setImmediate(resolve));
+  core.resolveCurrent?.();
+  await next;
+  renderer.setPlaybackPaused(false);
+  assert.deepEqual(core.playedMotions, [['angry', 1, 3]], 'pending actions cannot cross model generations');
   renderer.destroy();
 });
 

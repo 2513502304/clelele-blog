@@ -54,8 +54,38 @@ test('always-visible policy keeps Live2D focus inside the modal scope and scopes
     await expect(page.getByRole('dialog')).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(page.getByRole('dialog')).toBeVisible();
+    let deferredMotion = '';
+    if (modal === 'code') {
+      await page.getByRole('button', { name: '动作与表情' }).click();
+      const motion = page.locator('.live2d-select-field select').first();
+      deferredMotion = await motion
+        .locator('option')
+        .evaluateAll(
+          (options) => (options as HTMLOptionElement[]).find((option) => option.value.includes('\u0000'))?.value ?? '',
+        );
+      expect(deferredMotion).not.toBe('');
+      await page.evaluate(() => {
+        const events: string[] = [];
+        Object.assign(window, { deferredMotionEvents: events });
+        window.addEventListener('live2d:motionstart', (event) => events.push((event as CustomEvent).detail.group));
+      });
+      await motion.selectOption(deferredMotion);
+      const frozen = await page.locator('.live2d-canvas').evaluate((canvas) => (canvas as HTMLCanvasElement).toDataURL());
+      await page.waitForTimeout(200);
+      expect(await page.locator('.live2d-canvas').evaluate((canvas) => (canvas as HTMLCanvasElement).toDataURL())).toBe(frozen);
+      expect(await page.evaluate(() => (window as unknown as { deferredMotionEvents: string[] }).deferredMotionEvents)).toEqual(
+        [],
+      );
+      await page.keyboard.press('Escape');
+      await expect(page.getByRole('dialog')).toBeVisible();
+    }
     await page.keyboard.press('Escape');
     await expect(page.getByRole('dialog')).toHaveCount(0);
+    if (deferredMotion) {
+      await expect
+        .poll(() => page.evaluate(() => (window as unknown as { deferredMotionEvents: string[] }).deferredMotionEvents))
+        .toContain(deferredMotion.split('\u0000')[0]);
+    }
     await expect(page.locator('.live2d-root')).toHaveCount(1);
   }
 });

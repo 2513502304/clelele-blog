@@ -1,16 +1,29 @@
-import { STUDIO_FILTERS, type StudioFilter } from './studio-state';
+import { type StudioFilter, studioFilterCss } from './studio-state';
 
 export const STUDIO_BACKGROUNDS = { transparent: '', paper: '#f8f4f1', blush: '#eed9df', midnight: '#222731' } as const;
 export type StudioBackground = keyof typeof STUDIO_BACKGROUNDS;
 export interface StudioScene {
   background: StudioBackground;
   filter: StudioFilter;
+  filterStrength: number;
+  backgroundImage?: string;
   zoom: number;
   x: number;
   y: number;
   speaker: string;
   dialogue: string;
 }
+
+export const INITIAL_STUDIO_SCENE: StudioScene = {
+  background: 'paper',
+  filter: 'original',
+  filterStrength: 100,
+  zoom: 100,
+  x: 0,
+  y: 0,
+  speaker: '',
+  dialogue: '',
+};
 
 /** Export the same local canvas composition, without fetching a second model or external image. */
 export async function exportStudioScene(frame: string, scene: StudioScene, aspect: number): Promise<Blob> {
@@ -27,8 +40,17 @@ export async function exportStudioScene(frame: string, scene: StudioScene, aspec
     ctx.fillStyle = STUDIO_BACKGROUNDS[scene.background];
     ctx.fillRect(0, 0, w, h);
   }
+  if (scene.backgroundImage) {
+    const background = new Image();
+    background.src = scene.backgroundImage;
+    await background.decode();
+    const scale = Math.max(w / background.naturalWidth, h / background.naturalHeight);
+    const bw = background.naturalWidth * scale,
+      bh = background.naturalHeight * scale;
+    ctx.drawImage(background, (w - bw) / 2, (h - bh) / 2, bw, bh);
+  }
   ctx.save();
-  ctx.filter = STUDIO_FILTERS[scene.filter];
+  ctx.filter = studioFilterCss(scene.filter, scene.filterStrength);
   ctx.translate(w / 2 + (scene.x * w) / 100, h / 2 + (scene.y * h) / 100);
   ctx.scale(scene.zoom / 100, scene.zoom / 100);
   ctx.drawImage(image, -w / 2, -h / 2, w, h);

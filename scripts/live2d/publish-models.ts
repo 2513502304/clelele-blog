@@ -317,6 +317,11 @@ export async function updateRemoteCatalogBatch(
   catalogKey: typeof LIVE2D_CATALOG_KEY | typeof LIVE2D_NATIVE_CATALOG_KEY = LIVE2D_CATALOG_KEY,
 ): Promise<void> {
   if (updates.length === 0 && voiceUpdates.length === 0) return;
+  // Keep native descriptors out of the catalog consumed by legacy-only clients, even for batch callers.
+  for (const { costume } of updates) {
+    const expectedKey = costume.entryPath.endsWith('.native.json') ? LIVE2D_NATIVE_CATALOG_KEY : LIVE2D_CATALOG_KEY;
+    if (catalogKey !== expectedKey) throw new Error(`Costume ${costume.id} requires ${expectedKey}, not ${catalogKey}.`);
+  }
   for (let attempt = 1; attempt <= 5; attempt += 1) {
     const snapshot = await client.get(catalogKey);
     const catalog = snapshot

@@ -136,6 +136,7 @@ export class Live2DRenderer {
   private destroyed = false;
   private suspended = false;
   private playbackPaused = false;
+  private pendingMotion: Parameters<Live2DCore['playMotion']> | 'reset' | null = null;
   private contextLost = false;
   private lastSelection: Live2DRendererSelection | null = null;
   private readonly warmedMotions = new Set<string>();
@@ -188,6 +189,7 @@ export class Live2DRenderer {
     if (this.destroyed) return Promise.reject(abortError('Live2D renderer is destroyed.'));
     this.cancelMotionPrefetch();
     this.warmedMotions.clear();
+    this.pendingMotion = null;
     this.lastSelection = selection;
     if (this.contextLost) return Promise.reject(abortError('Live2D WebGL context is currently lost.'));
     const generation = ++this.generation;
@@ -306,11 +308,15 @@ export class Live2DRenderer {
   }
 
   playMotion(group: string, index?: number, priority?: number): void {
-    if (this.phase === 'ready' && !this.playbackPaused) this.core?.playMotion(group, index, priority);
+    if (this.phase !== 'ready') return;
+    if (this.playbackPaused) this.pendingMotion = [group, index, priority];
+    else this.core?.playMotion(group, index, priority);
   }
 
   resetMotion(): void {
-    if (this.phase === 'ready' && !this.playbackPaused) this.core?.resetMotion?.();
+    if (this.phase !== 'ready') return;
+    if (this.playbackPaused) this.pendingMotion = 'reset';
+    else this.core?.resetMotion?.();
   }
 
   setExpression(id: string): void {
@@ -360,6 +366,12 @@ export class Live2DRenderer {
       this.core?.pauseRendering?.();
     } else {
       this.core?.resumeRendering?.();
+      // Controls remain reachable above some dialogs. Defer only the latest intent without
+      // fetching motions or waking the hidden canvas, and discard it when switching models.
+      const pending = this.pendingMotion;
+      this.pendingMotion = null;
+      if (pending === 'reset') this.core?.resetMotion?.();
+      else if (pending) this.core?.playMotion(...pending);
       if (this.core && this.lastSelection) this.scheduleMotionPrefetch(this.core, this.lastSelection, this.generation);
     }
   }

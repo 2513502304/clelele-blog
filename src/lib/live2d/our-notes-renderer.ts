@@ -2,7 +2,7 @@ import { type NativeRuntime, type NativeSession, nativeParameters } from './our-
 import type { Live2DCore } from './renderer';
 import { clampParameterOverrides } from './studio-state';
 
-const VENDOR = '/vendor/ournotes-player-0.1.1';
+const VENDOR = '/vendor/ournotes-player-0.1.8';
 let runtime: Promise<NativeRuntime> | undefined;
 let coreScript: Promise<void> | undefined;
 

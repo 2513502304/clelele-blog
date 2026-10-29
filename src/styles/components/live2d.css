@@ -508,6 +508,21 @@
   text-align: center;
 }
 
+.live2d-catalog-notice {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+.live2d-catalog-notice button {
+  flex-shrink: 0;
+  padding: 0.35rem 0.65rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.5rem;
+  color: hsl(var(--primary));
+}
+
 .live2d-pagination {
   display: grid;
   grid-template-columns: 2rem minmax(0, 1fr) 2rem;

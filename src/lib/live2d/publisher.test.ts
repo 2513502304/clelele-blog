@@ -9,6 +9,7 @@ import {
   publishObjects,
   removeCatalogCharacters,
   updateRemoteCatalog,
+  updateRemoteCatalogBatch,
   upsertCatalog,
   upsertCatalogBatch,
   verifyRemoteObject,
@@ -133,6 +134,32 @@ test('single-model publication isolates native costumes from the legacy catalog'
     await updateRemoteCatalog(client, { characterId: 'anon', characterLabels: { zh: '爱音' }, replace: false }, costume);
     assert.deepEqual(writes, [expectedKey]);
   }
+});
+
+test('batch catalog rejects mixed engine descriptors before any remote read or write', async () => {
+  const client = {
+    get() {
+      assert.fail('mismatched batches must not read remote state');
+    },
+    put() {
+      assert.fail('mismatched batches must not publish');
+    },
+  } as unknown as Parameters<typeof updateRemoteCatalogBatch>[0];
+  const options = { characterId: 'anon', characterLabels: { zh: '爱音' }, replace: false };
+  const legacy = createCostume();
+  const native = { ...createCostume('our-notes'), entryPath: `releases/${releaseId}/model.native.json` };
+  await assert.rejects(updateRemoteCatalogBatch(client, [{ options, costume: native }]), /requires catalog-our-notes/);
+  await assert.rejects(
+    updateRemoteCatalogBatch(client, [{ options, costume: legacy }], [], 'catalog-our-notes.json'),
+    /requires catalog.json/,
+  );
+  await assert.rejects(
+    updateRemoteCatalogBatch(client, [
+      { options, costume: legacy },
+      { options, costume: native },
+    ]),
+    /requires catalog-our-notes/,
+  );
 });
 
 test('--replace updates only the matching costume and preserves its hand-tuned interactions', () => {

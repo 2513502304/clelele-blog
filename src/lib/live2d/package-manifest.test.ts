@@ -146,6 +146,14 @@ test('packages native Our Notes compressed and split assets without losing shade
   await writeFile(path.join(root, 'model.native.json'), JSON.stringify(source));
   const { manifest } = await buildLive2DPackageManifest(root, { entryPath: 'model.native.json' });
   assert.deepEqual(manifest.objects.map((o) => o.path).sort(), [...assets.map((a) => a.asset), 'model.native.json'].sort());
+  const aliased = structuredClone(source);
+  aliased.files['model.json'].asset = `./${assets[0].asset}`;
+  aliased.files['model.json'].stored++;
+  await writeFile(path.join(root, 'model.native.json'), JSON.stringify(aliased));
+  await assert.rejects(buildLive2DPackageManifest(root, { entryPath: 'model.native.json' }), /stored size\/path mismatch/);
+  const collision = { ...source, files: { ...source.files, alias: { ...assets[0], asset: `./${assets[0].asset}` } } };
+  await writeFile(path.join(root, 'model.native.json'), JSON.stringify(collision));
+  await assert.rejects(buildLive2DPackageManifest(root, { entryPath: 'model.native.json' }), /Duplicate native asset path/);
   for (const change of ['stored', 'decoded', 'hash', 'gzip']) {
     const broken = structuredClone(source);
     if (change === 'stored') broken.files['model.json'].stored++;

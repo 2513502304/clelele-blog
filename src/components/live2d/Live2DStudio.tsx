@@ -1,10 +1,13 @@
+import { Live2DStudioScene } from '@components/live2d/Live2DStudioScene';
+import { StudioRange } from '@components/live2d/StudioRange';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@components/ui/dialog';
-import { usePointerRange } from '@hooks/usePointerRange';
+import { useStudioViewport } from '@hooks/useStudioViewport';
 import { useTranslation } from '@hooks/useTranslation';
 import { Icon } from '@iconify/react';
 import type { Live2DRenderer } from '@lib/live2d/renderer';
-import { downloadStudioFile, exportStudioScene, STUDIO_BACKGROUNDS, type StudioScene } from '@lib/live2d/studio-export';
-import { parseStudioPose, STUDIO_FILTERS } from '@lib/live2d/studio-state';
+import { downloadStudioFile, exportStudioScene, INITIAL_STUDIO_SCENE, STUDIO_BACKGROUNDS } from '@lib/live2d/studio-export';
+import { studioActionLabel, studioParameterLabel } from '@lib/live2d/studio-labels';
+import { parseStudioPose, studioFilterCss } from '@lib/live2d/studio-state';
 import type { Live2DCatalog } from '@lib/live2d/types';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import '@styles/components/live2d-studio.css';
@@ -15,6 +18,8 @@ interface Props {
   failed: boolean;
   onRetry: () => void;
   catalog: Live2DCatalog;
+  catalogNotice?: string;
+  onRetryCatalog?: () => void;
   selection: { characterId: string; costumeId: string };
   name: string;
   paused: boolean;
@@ -28,23 +33,6 @@ interface Props {
   onClose: () => void;
   onPause: () => void;
 }
-const initialScene: StudioScene = { background: 'paper', filter: 'original', zoom: 100, x: 0, y: 0, speaker: '', dialogue: '' };
-
-/** Keep pointer capture on the same input throughout React updates; native input still handles keyboard changes. */
-function StudioRange({
-  onValue,
-  ...props
-}: {
-  min: number;
-  max: number;
-  step: number;
-  value: number;
-  'aria-label': string;
-  onValue: (value: number) => void;
-}) {
-  const pointer = usePointerRange(onValue);
-  return <input type="range" {...props} {...pointer} />;
-}
 
 /** A deliberately local editor: one existing renderer, model-bounded edits, no uploads or frame polling. */
 export function Live2DStudio({
@@ -53,6 +41,8 @@ export function Live2DStudio({
   failed,
   onRetry,
   catalog,
+  catalogNotice,
+  onRetryCatalog,
   selection,
   name,
   paused,
@@ -76,13 +66,41 @@ export function Live2DStudio({
   });
   const [query, setQuery] = useState('');
   const [paramQuery, setParamQuery] = useState('');
+  const [actionQuery, setActionQuery] = useState('');
+  const [compareOriginal, setCompareOriginal] = useState(false);
+  const [backgroundLoading, setBackgroundLoading] = useState(false);
   const [limit, setLimit] = useState(24);
   const [overrides, setOverrides] = useState<Record<string, number>>({});
-  const [scene, setScene] = useState(initialScene);
+  const [scene, setScene] = useState(INITIAL_STUDIO_SCENE);
   const [notice, setNotice] = useState('');
   const [exporting, setExporting] = useState(false);
+  const backgroundUrls = useRef(new Set<string>());
   const stageRef = useRef<HTMLDivElement>(null);
+  useStudioViewport(stageRef, ready, scene, setScene);
   const fileRef = useRef<HTMLInputElement>(null);
+  // Object URLs have a single owner and are released on replacement/reset/close.
+  useEffect(
+    () => () => {
+      if (scene.backgroundImage) {
+        URL.revokeObjectURL(scene.backgroundImage);
+        backgroundUrls.current.delete(scene.backgroundImage);
+      }
+    },
+    [scene.backgroundImage],
+  );
+  useEffect(
+    () => () => {
+      for (const url of backgroundUrls.current) URL.revokeObjectURL(url);
+      backgroundUrls.current.clear();
+    },
+    [],
+  );
+  const setBackground = (blob: Blob) => {
+    const url = URL.createObjectURL(blob);
+    // Own the URL immediately, even if the dialog closes before React commits the draft.
+    backgroundUrls.current.add(url);
+    setScene((current) => ({ ...current, backgroundImage: url }));
+  };
   const model = `${selection.characterId}/${selection.costumeId}`;
   const modelRef = useRef(model);
   modelRef.current = model;
@@ -117,12 +135,15 @@ export function Live2DStudio({
     [catalog, source, query],
   );
   const selectedCharacter = filtered.find((character) => character.id === selection.characterId);
-  const filteredParameters = parameters.filter((p) => p.min < p.max && p.id.toLowerCase().includes(paramQuery.toLowerCase()));
+  const filteredParameters = parameters.filter(
+    (p) => p.min < p.max && studioParameterLabel(p.id, locale).toLowerCase().includes(paramQuery.toLowerCase()),
+  );
   // biome-ignore lint/correctness/useExhaustiveDependencies: A new model invalidates the previous parameter draft.
   useEffect(() => {
     setOverrides({});
     setNotice('');
     setParamQuery('');
+    setActionQuery('');
     setLimit(24);
   }, [model]);
   useEffect(
@@ -135,8 +156,7 @@ export function Live2DStudio({
     setOverrides(next);
     renderer?.setParameters(next);
   };
-  const updateScene = <K extends keyof StudioScene>(key: K, value: StudioScene[K]) =>
-    setScene((current) => ({ ...current, [key]: value }));
+  const actionMatches = (id: string) => studioActionLabel(id, locale).toLowerCase().includes(actionQuery.toLowerCase());
   const exportImage = async () => {
     const frame = renderer?.captureFrame();
     const stage = stageRef.current;
@@ -147,7 +167,11 @@ export function Live2DStudio({
     setExporting(true);
     try {
       downloadStudioFile(
-        await exportStudioScene(frame, scene, stage.clientWidth / stage.clientHeight),
+        await exportStudioScene(
+          frame,
+          compareOriginal ? { ...scene, filter: 'original' } : scene,
+          stage.clientWidth / stage.clientHeight,
+        ),
         `${selection.costumeId}.png`,
       );
       setNotice(t('live2d.studio.exported'));
@@ -187,14 +211,20 @@ export function Live2DStudio({
             <div
               ref={stageRef}
               className="live2d-studio-stage"
+              role="application"
+              tabIndex={ready ? 0 : -1}
+              aria-label={t('live2d.studio.stage')}
+              aria-describedby="live2d-studio-gestures"
+              data-ready={ready}
               data-background={scene.background}
               style={{ backgroundColor: STUDIO_BACKGROUNDS[scene.background] }}
             >
+              {scene.backgroundImage && <img className="live2d-studio-background" src={scene.backgroundImage} alt="" />}
               <div
                 className="live2d-studio-model"
                 ref={onHost}
                 style={{
-                  filter: STUDIO_FILTERS[scene.filter],
+                  filter: compareOriginal ? 'none' : studioFilterCss(scene.filter, scene.filterStrength),
                   transform: `translate(${scene.x}%, ${scene.y}%) scale(${scene.zoom / 100})`,
                 }}
               />
@@ -220,6 +250,9 @@ export function Live2DStudio({
                 </div>
               )}
             </div>
+            <p id="live2d-studio-gestures" className="live2d-studio-gestures">
+              {t('live2d.studio.gestures')}
+            </p>
             <footer className="live2d-studio-preview-tools">
               <button type="button" onClick={onPause} disabled={!ready}>
                 <Icon icon={paused ? 'ri:play-line' : 'ri:pause-line'} />
@@ -229,7 +262,7 @@ export function Live2DStudio({
               <button
                 type="button"
                 className="live2d-studio-export"
-                disabled={!ready || exporting}
+                disabled={!ready || exporting || backgroundLoading}
                 onClick={() => void exportImage()}
               >
                 <Icon icon="ri:download-2-line" />
@@ -256,6 +289,16 @@ export function Live2DStudio({
                       <option value="bestdori">Girls Band Party · Bestdori</option>
                     </select>
                   </label>
+                  {catalogNotice && (
+                    <div className="live2d-catalog-notice" aria-live="polite">
+                      <span>{catalogNotice}</span>
+                      {onRetryCatalog && (
+                        <button type="button" onClick={onRetryCatalog}>
+                          {t('live2d.retry')}
+                        </button>
+                      )}
+                    </div>
+                  )}
                   <input
                     type="search"
                     aria-label={t('live2d.search')}
@@ -295,12 +338,19 @@ export function Live2DStudio({
                       </button>
                     ))}
                   </div>
-                  {!filtered.length && <p>{t('live2d.noResults')}</p>}
+                  {!filtered.length && !catalogNotice && <p>{t('live2d.noResults')}</p>}
                   <p className="live2d-studio-note">{t('live2d.studio.modelHelp')}</p>
                 </>
               )}
               {tab === 'pose' && (
                 <>
+                  <input
+                    type="search"
+                    aria-label={t('live2d.studio.searchActions')}
+                    placeholder={t('live2d.studio.searchActions')}
+                    value={actionQuery}
+                    onChange={(e) => setActionQuery(e.target.value)}
+                  />
                   <label>
                     {t('live2d.motion')}
                     <select
@@ -313,12 +363,14 @@ export function Live2DStudio({
                       }}
                     >
                       <option value="">{t('live2d.studio.choose')}</option>
-                      {motions.map((m) => (
-                        <option value={`${m.group}\u0000${m.index}`} key={`${m.group}:${m.index}`}>
-                          {m.group}
-                          {m.index ? ` ${m.index + 1}` : ''}
-                        </option>
-                      ))}
+                      {motions
+                        .filter((m) => actionMatches(m.group) || `${m.group}\u0000${m.index}` === selectedMotion)
+                        .map((m) => (
+                          <option value={`${m.group}\u0000${m.index}`} key={`${m.group}:${m.index}`}>
+                            {studioActionLabel(m.group, locale)}
+                            {m.index ? ` ${m.index + 1}` : ''}
+                          </option>
+                        ))}
                     </select>
                   </label>
                   <label>
@@ -329,9 +381,13 @@ export function Live2DStudio({
                       onChange={(e) => onExpression(e.target.value || undefined)}
                     >
                       <option value="">{t('live2d.defaultExpression')}</option>
-                      {expressions.map((id) => (
-                        <option key={id}>{id}</option>
-                      ))}
+                      {expressions
+                        .filter((id) => actionMatches(id) || id === selectedExpression)
+                        .map((id) => (
+                          <option key={id} value={id}>
+                            {studioActionLabel(id, locale)}
+                          </option>
+                        ))}
                     </select>
                   </label>
                   <div className="live2d-studio-section-title">
@@ -353,7 +409,7 @@ export function Live2DStudio({
                   />
                   {filteredParameters.slice(0, limit).map((p) => (
                     <label className="live2d-studio-parameter" key={p.id}>
-                      <span title={p.id}>{p.id}</span>
+                      <span title={studioParameterLabel(p.id, locale)}>{studioParameterLabel(p.id, locale)}</span>
                       <output>{(overrides[p.id] ?? p.value).toFixed(2)}</output>
                       <StudioRange
                         aria-label={p.id}
@@ -412,70 +468,17 @@ export function Live2DStudio({
                 </>
               )}
               {tab === 'scene' && (
-                <>
-                  <label>
-                    {t('live2d.studio.filter')}
-                    <select
-                      value={scene.filter}
-                      onChange={(e) => updateScene('filter', e.target.value as StudioScene['filter'])}
-                    >
-                      {Object.keys(STUDIO_FILTERS).map((f) => (
-                        <option value={f} key={f}>
-                          {t(`live2d.studio.filter.${f}` as 'live2d.studio.filter.original')}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    {t('live2d.studio.background')}
-                    <select
-                      value={scene.background}
-                      onChange={(e) => updateScene('background', e.target.value as StudioScene['background'])}
-                    >
-                      {Object.keys(STUDIO_BACKGROUNDS).map((b) => (
-                        <option value={b} key={b}>
-                          {t(`live2d.studio.background.${b}` as 'live2d.studio.background.paper')}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  {(['zoom', 'x', 'y'] as const).map((key) => (
-                    <label className="live2d-studio-parameter" key={key}>
-                      <span>{t(`live2d.studio.${key}`)}</span>
-                      <output>{scene[key]}%</output>
-                      <StudioRange
-                        aria-label={t(`live2d.studio.${key}`)}
-                        min={key === 'zoom' ? 50 : -40}
-                        max={key === 'zoom' ? 180 : 40}
-                        step={1}
-                        value={scene[key]}
-                        onValue={(value) => updateScene(key, value)}
-                      />
-                    </label>
-                  ))}
-                  <label>
-                    {t('live2d.studio.speaker')}
-                    <input
-                      maxLength={40}
-                      value={scene.speaker}
-                      placeholder={name}
-                      onChange={(e) => updateScene('speaker', e.target.value)}
-                    />
-                  </label>
-                  <label>
-                    {t('live2d.studio.dialogue')}
-                    <textarea
-                      rows={3}
-                      maxLength={160}
-                      value={scene.dialogue}
-                      onChange={(e) => updateScene('dialogue', e.target.value)}
-                    />
-                  </label>
-                  <button type="button" onClick={() => setScene(initialScene)}>
-                    {t('live2d.studio.resetScene')}
-                  </button>
-                  <p className="live2d-studio-note">{t('live2d.studio.sceneHelp')}</p>
-                </>
+                <Live2DStudioScene
+                  scene={scene}
+                  onBackground={setBackground}
+                  setScene={setScene}
+                  compareOriginal={compareOriginal}
+                  setCompareOriginal={setCompareOriginal}
+                  backgroundLoading={backgroundLoading}
+                  setBackgroundLoading={setBackgroundLoading}
+                  setNotice={setNotice}
+                  name={name}
+                />
               )}
             </div>
             <output className="live2d-studio-notice">{notice || t('live2d.studio.sessionOnly')}</output>

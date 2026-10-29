@@ -1,5 +1,15 @@
 import { expect, test } from '@playwright/test';
-import { expectNonBlankCanvas, live2dRequests, releaseIds, waitForLive2DReady } from './helpers';
+import bootstrapCatalog from '../../src/data/live2d/catalog.json' with { type: 'json' };
+import { expectNonBlankCanvas, fixtureCostume, live2dRequests, releaseIds, waitForLive2DReady } from './helpers';
+
+// Exercise real HF packages with a stable small picker. The production catalog grows independently.
+test.beforeEach(async ({ page }) => {
+  const catalog = structuredClone(bootstrapCatalog);
+  for (const character of catalog.characters)
+    character.costumes = character.costumes.filter((c) => !c.entryPath.endsWith('.native.json'));
+  await page.route('**/api/live2d/catalog*', (route) => route.fulfill({ json: catalog }));
+  await page.route('**/image-style-prompt-gallery', (route) => route.fulfill({ status: 200, body: '' }));
+});
 
 test('desktop defers the real model, renders nonblank pixels, and switches all four releases', async ({ page }) => {
   // This release gate intentionally cold-loads four remote packages in sequence; each individual
@@ -16,11 +26,13 @@ test('desktop defers the real model, renders nonblank pixels, and switches all f
   const groups = page.locator('.live2d-picker-group');
   await expect(groups).toHaveCount(2);
   const targets = [
-    { group: 0, button: 'SR 服装', releaseId: releaseIds.anonSr },
-    { group: 1, button: '默认', releaseId: releaseIds.tomoriDefault },
-    { group: 1, button: 'SR 服装', releaseId: releaseIds.tomoriSr },
+    { group: 0, button: fixtureCostume('chihaya-anon', 'live-sr-01').label.zh, releaseId: releaseIds.anonSr },
+    { group: 1, button: fixtureCostume('takamatsu-tomori', 'default').label.zh, releaseId: releaseIds.tomoriDefault },
+    { group: 1, button: fixtureCostume('takamatsu-tomori', 'live-sr-01').label.zh, releaseId: releaseIds.tomoriSr },
   ];
   for (const target of targets) {
+    const character = groups.nth(target.group).locator('.live2d-character-row');
+    if ((await character.getAttribute('aria-expanded')) !== 'true') await character.click();
     const entryResponse = page.waitForResponse(
       (response) => response.url().includes(`${target.releaseId}/model.json`) && response.status() === 200,
       { timeout: 90_000 },
@@ -72,7 +84,8 @@ test('manual motion selection interrupts immediately and pause preserves the cur
         window.addEventListener('live2d:motionstart', handleMotion);
       }),
   );
-  await motion.selectOption({ label: 'angry04' });
+  await expect(motion.locator('option').filter({ hasText: 'angry04' })).toContainText('生气');
+  await motion.selectOption('angry04\u00000');
   await expect(motion).toHaveValue('angry04\u00000');
   expect(await selectedMotionStarted).toBe('angry04');
 
@@ -115,17 +128,33 @@ test('manual motion selection interrupts immediately and pause preserves the cur
 });
 
 test('enabled character voice requests the audio paired with the visible dialogue', async ({ page }) => {
+  // Voice lives in a separate immutable package; the offline bootstrap deliberately has no voice index.
+  const voiceRelease = '8bd9cc3f540fdd018c3313199722827d1895c856f614ef204519d46d8fca6fbd';
+  const catalog = structuredClone(bootstrapCatalog);
+  Object.assign(catalog.characters[0], {
+    voice: {
+      releaseId: voiceRelease,
+      entryPath: `releases/${voiceRelease}/dialogues.json`,
+      packageBytes: 310581,
+      dialogueCount: 18,
+      provenancePath: `provenance/${voiceRelease}.json`,
+    },
+  });
+  await page.route('**/api/live2d/catalog*', (route) => route.fulfill({ json: catalog }));
+  const voiceIndex = page.waitForResponse(
+    (response) => response.url().includes(`${voiceRelease}/dialogues.json`) && response.ok(),
+  );
   await page.goto('/');
   await waitForLive2DReady(page);
+  await voiceIndex;
   await page.getByRole('button', { name: 'Live2D 设置' }).click();
   const audioSwitch = page.getByRole('switch', { name: '角色语音' });
-  await audioSwitch.click();
+  if ((await audioSwitch.getAttribute('aria-checked')) !== 'true') await audioSwitch.click();
   await expect(audioSwitch).toHaveAttribute('aria-checked', 'true');
 
-  const audioResponse = page.waitForResponse(
-    (response) => response.url().includes(`${releaseIds.anonDefault}/audio/`) && response.status() === 206,
-    { timeout: 30_000 },
-  );
+  const audioResponse = page.waitForResponse((response) => response.url().includes(`${voiceRelease}/audio/`) && response.ok(), {
+    timeout: 30_000,
+  });
   await page.locator('.live2d-interaction-surface').click({ position: { x: 140, y: 80 } });
   const response = await audioResponse;
 

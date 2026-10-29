@@ -8,6 +8,8 @@ const COSTUMES_PER_PAGE = 6;
 
 interface Props {
   catalog: Live2DCatalog;
+  catalogNotice?: string;
+  onRetryCatalog?: () => void;
   locale: string;
   selected: { characterId: string; costumeId: string };
   title: string;
@@ -61,7 +63,17 @@ function Pager({
   );
 }
 
-export function Live2DModelPicker({ catalog, locale, selected, title, labels, onSelect, onClose }: Props) {
+export function Live2DModelPicker({
+  catalog,
+  catalogNotice,
+  onRetryCatalog,
+  locale,
+  selected,
+  title,
+  labels,
+  onSelect,
+  onClose,
+}: Props) {
   const [query, setQuery] = useState('');
   const [source, setSource] = useState('all');
   const [expandedCharacter, setExpandedCharacter] = useState(selected.characterId);
@@ -110,6 +122,16 @@ export function Live2DModelPicker({ catalog, locale, selected, title, labels, on
 
   return (
     <Live2DPanel title={title} closeLabel={labels.close} onClose={onClose}>
+      {catalogNotice && (
+        <div className="live2d-catalog-notice" aria-live="polite">
+          <span>{catalogNotice}</span>
+          {onRetryCatalog && (
+            <button type="button" onClick={onRetryCatalog}>
+              {labels.retry}
+            </button>
+          )}
+        </div>
+      )}
       <label className="live2d-source-filter">
         {labels.source}
         <select value={source} onChange={(event) => setSource(event.target.value)}>
@@ -183,7 +205,7 @@ export function Live2DModelPicker({ catalog, locale, selected, title, labels, on
             </section>
           );
         })}
-        {filteredCharacters.length === 0 && <p className="live2d-empty">{labels.noResults}</p>}
+        {filteredCharacters.length === 0 && !catalogNotice && <p className="live2d-empty">{labels.noResults}</p>}
       </div>
       <Pager page={characterPage} pages={characterPageCount} labels={labels} onPage={setCharacterPage} />
     </Live2DPanel>

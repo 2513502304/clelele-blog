@@ -176,11 +176,15 @@ export async function buildLive2DPackageManifest(
   const approvedAudio = new Set([...(options.approvedAudio ?? [])].map(normalizeRelativePath));
   const sourceEntry = JSON.parse(await readFile(path.join(rootRealPath, entryPath), 'utf8')) as unknown;
   const references = new Map<string, string>();
-  const nativeAssets = new Map(
-    entryPath.endsWith('.native.json') ? nativeModelAssets(sourceEntry).map((a) => [a.path, a]) : [],
-  );
+  const nativeAssets = new Map<string, ReturnType<typeof nativeModelAssets>[number]>();
   if (entryPath.endsWith('.native.json')) {
-    for (const asset of nativeAssets.values()) addReference(references, asset.path);
+    for (const asset of nativeModelAssets(sourceEntry)) {
+      const normalized = normalizeRelativePath(asset.path);
+      if (nativeAssets.has(normalized)) throw new Error(`Duplicate native asset path after normalization: ${normalized}`);
+      // Byte verification uses the same canonical key as the package references below.
+      nativeAssets.set(normalized, { ...asset, path: normalized });
+      addReference(references, asset.path);
+    }
   } else collectReferences(sourceEntry, references);
   addReference(references, entryPath);
   // Approval controls package inclusion only; model-level sound bindings are always stripped below.
