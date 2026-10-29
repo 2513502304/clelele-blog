@@ -1,0 +1,428 @@
+/* Scoped studio surfaces use the blog palette; stage colors are deliberate export settings. */
+.live2d-studio {
+  /* The opaque editor needs no full-screen backdrop sampling of the animated blog. */
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  width: min(94vw, 1280px);
+  max-width: 1280px;
+  height: min(88dvh, 900px);
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 1.5rem;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  box-shadow: 0 24px 90px rgb(0 0 0 / 22%);
+  pointer-events: auto;
+  /* Dialog's shared duration must not tween geometry and repeatedly resize WebGL on viewport changes. */
+  transition-property: background-color, color, opacity;
+}
+
+.live2d-studio input[type="range"] {
+  touch-action: none;
+}
+.live2d-studio-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.35rem 1.6rem;
+  border-bottom: 1px solid hsl(var(--border));
+}
+.live2d-studio-title {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.live2d-studio-title > svg {
+  width: 2.6rem;
+  height: 2.6rem;
+  padding: 0.55rem;
+  border-radius: 0.85rem;
+  color: hsl(var(--primary));
+  background: color-mix(in srgb, hsl(var(--primary)) 12%, transparent);
+}
+.live2d-studio-title h2 {
+  font-size: 1.2rem;
+  letter-spacing: 0.03em;
+}
+.live2d-studio-title p {
+  margin-top: 0.45rem;
+  font-size: 0.8rem;
+  opacity: 0.65;
+}
+.live2d-studio button {
+  cursor: pointer;
+  transition:
+    background-color 0.16s,
+    color 0.16s;
+}
+.live2d-studio button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.live2d-studio button:focus-visible,
+.live2d-studio input:focus-visible,
+.live2d-studio select:focus-visible,
+.live2d-studio textarea:focus-visible {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 3px;
+}
+.live2d-studio-close {
+  padding: 0.5rem;
+  font-size: 1.5rem;
+  border-radius: 50%;
+}
+.live2d-studio-close:hover {
+  background: hsl(var(--muted));
+}
+.live2d-studio-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  min-height: 0;
+  flex: 1;
+}
+.live2d-studio-preview {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  padding: 1.2rem 1.6rem;
+  gap: 0.8rem;
+}
+.live2d-studio-caption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.8rem;
+}
+.live2d-studio-caption span:last-child {
+  font-size: 0.6rem;
+  letter-spacing: 0.14em;
+  opacity: 0.5;
+}
+.live2d-studio-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 0.85rem;
+  border: 1px solid hsl(var(--border));
+  isolation: isolate;
+  touch-action: none;
+  user-select: none;
+}
+.live2d-studio-stage[data-ready="true"] {
+  cursor: grab;
+}
+.live2d-studio-stage[data-dragging="true"] {
+  cursor: grabbing;
+}
+.live2d-studio-stage:focus-visible {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 2px;
+}
+.live2d-studio-gestures {
+  font-size: 0.7rem;
+  line-height: 1.5;
+  color: hsl(var(--muted-foreground));
+}
+.live2d-studio-stage[data-background="transparent"] {
+  background-image: conic-gradient(#ddd 25%, #fafafa 0 50%, #ddd 0 75%, #fafafa 0);
+  background-size: 24px 24px;
+}
+.live2d-studio-model {
+  position: absolute;
+  inset: 0;
+}
+.live2d-studio-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background: rgb(255 255 255 / 50%);
+  color: #333;
+}
+.live2d-studio-loading svg {
+  animation: studio-spin 1s linear infinite;
+}
+@keyframes studio-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.live2d-studio-dialogue {
+  position: absolute;
+  bottom: 5%;
+  left: 5%;
+  right: 5%;
+  padding: 1.1rem 1.5rem;
+  border-radius: 0.8rem;
+  background: rgb(25 27 36 / 86%);
+  color: white;
+  pointer-events: none;
+}
+.live2d-studio-dialogue strong {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: #f5b5c6;
+  font-size: 0.9rem;
+}
+.live2d-studio-dialogue p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  max-height: 7.5em;
+  overflow: hidden;
+}
+.live2d-studio-preview-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  font-size: 0.75rem;
+}
+.live2d-studio-preview-tools button {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.65rem 0.9rem;
+  border-radius: 0.6rem;
+  background: hsl(var(--muted));
+}
+.live2d-studio-preview-tools > span {
+  opacity: 0.5;
+}
+.live2d-studio-preview-tools .live2d-studio-export {
+  background: hsl(var(--primary));
+  color: white;
+}
+.live2d-studio-editor {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-left: 1px solid hsl(var(--border));
+  background: color-mix(in srgb, hsl(var(--muted)) 40%, hsl(var(--background)));
+}
+.live2d-studio-tabs {
+  display: flex;
+  margin: 1.1rem;
+  padding: 0.25rem;
+  gap: 0.2rem;
+  border-radius: 0.7rem;
+  background: hsl(var(--muted));
+}
+.live2d-studio-tabs button {
+  flex: 1;
+  padding: 0.6rem 0.2rem;
+  border-radius: 0.5rem;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+.live2d-studio-tabs button[aria-pressed="true"] {
+  background: hsl(var(--background));
+  color: hsl(var(--primary));
+  box-shadow: 0 2px 7px rgb(0 0 0 / 6%);
+}
+.live2d-studio-fields {
+  flex: 1;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 0.2rem 1.25rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  font-size: 0.82rem;
+}
+.live2d-studio-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+.live2d-studio-fields select,
+.live2d-studio-fields input:not([type="range"]):not([type="file"]),
+.live2d-studio-fields textarea {
+  min-width: 0;
+  width: 100%;
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.55rem;
+  padding: 0.65rem;
+  background: hsl(var(--background));
+  color: inherit;
+}
+.live2d-studio-fields select {
+  text-overflow: ellipsis;
+}
+.live2d-studio-fields input[type="range"] {
+  width: 100%;
+  accent-color: hsl(var(--primary));
+}
+.live2d-studio-costumes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.live2d-studio-costumes button {
+  text-align: left;
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.65rem;
+  padding: 0.8rem;
+  background: hsl(var(--background));
+}
+.live2d-studio-costumes button[aria-pressed="true"] {
+  border-color: hsl(var(--primary));
+  background: color-mix(in srgb, hsl(var(--primary)) 8%, hsl(var(--background)));
+}
+.live2d-studio-costumes small {
+  display: block;
+  opacity: 0.55;
+  margin-top: 0.25rem;
+}
+.live2d-studio-note {
+  font-size: 0.74rem;
+  line-height: 1.7;
+  opacity: 0.65;
+}
+.live2d-studio-section-title,
+.live2d-studio-file-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+.live2d-studio-section-title button,
+.live2d-studio-file-actions button {
+  color: hsl(var(--primary));
+  font-size: 0.75rem;
+  padding: 0.4rem;
+}
+.live2d-studio-fields .live2d-studio-parameter {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+}
+.live2d-studio-parameter span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.76rem;
+}
+.live2d-studio-parameter output {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.6;
+  font-size: 0.75rem;
+}
+.live2d-studio-parameter input {
+  grid-column: 1 / -1;
+}
+.live2d-studio-notice {
+  padding: 0.8rem 1.25rem;
+  min-height: 3.8rem;
+  border-top: 1px solid hsl(var(--border));
+  font-size: 0.7rem;
+  line-height: 1.6;
+  opacity: 0.65;
+}
+@media (max-width: 760px) {
+  .live2d-studio {
+    top: 0;
+    left: 0;
+    translate: none;
+    width: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
+  }
+  .live2d-studio-header {
+    padding: 0.8rem 1rem;
+  }
+  .live2d-studio-title p {
+    display: none;
+  }
+  .live2d-studio-workspace {
+    display: flex;
+    flex-direction: column;
+  }
+  .live2d-studio-preview {
+    flex: 0 0 45%;
+    padding: 0.7rem 1rem;
+  }
+  .live2d-studio-editor {
+    flex: 1;
+    border-left: 0;
+    border-top: 1px solid hsl(var(--border));
+  }
+  .live2d-studio-tabs {
+    margin: 0.5rem 1rem;
+  }
+  .live2d-studio-notice {
+    min-height: 0;
+    padding: 0.5rem 1rem;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .live2d-studio-loading svg {
+    animation: none;
+  }
+}
+
+.live2d-studio-background {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+.live2d-studio-filter-field {
+  min-width: 0;
+}
+.live2d-studio-filter-field legend {
+  margin-bottom: 0.65rem;
+}
+.live2d-studio-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+.live2d-studio-filter-grid button {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.3rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.65rem;
+  background: hsl(var(--background));
+  font-size: 0.72rem;
+}
+.live2d-studio-filter-grid button[aria-pressed="true"] {
+  border-color: hsl(var(--primary));
+  color: hsl(var(--primary));
+  box-shadow: 0 0 0 1px hsl(var(--primary));
+}
+.live2d-studio-filter-swatch {
+  display: grid;
+  place-items: center;
+  height: 2.8rem;
+  border-radius: 0.4rem;
+  background: linear-gradient(130deg, #b0ccbf, #eec7b6 55%, #acacd4);
+  color: #654d67;
+  font-size: 1.7rem;
+}
+.live2d-studio-compare {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.6rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.6rem;
+}
+.live2d-studio-compare[aria-pressed="true"] {
+  color: hsl(var(--primary));
+  background: hsl(var(--background));
+}

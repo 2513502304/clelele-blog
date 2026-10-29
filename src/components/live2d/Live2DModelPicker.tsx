@@ -8,6 +8,8 @@ const COSTUMES_PER_PAGE = 6;
 
 interface Props {
   catalog: Live2DCatalog;
+  catalogNotice?: string;
+  onRetryCatalog?: () => void;
   locale: string;
   selected: { characterId: string; costumeId: string };
   title: string;
@@ -61,21 +63,40 @@ function Pager({
   );
 }
 
-export function Live2DModelPicker({ catalog, locale, selected, title, labels, onSelect, onClose }: Props) {
+export function Live2DModelPicker({
+  catalog,
+  catalogNotice,
+  onRetryCatalog,
+  locale,
+  selected,
+  title,
+  labels,
+  onSelect,
+  onClose,
+}: Props) {
   const [query, setQuery] = useState('');
+  const [source, setSource] = useState('all');
   const [expandedCharacter, setExpandedCharacter] = useState(selected.characterId);
   const [characterPage, setCharacterPage] = useState(0);
   const [costumePages, setCostumePages] = useState<Record<string, number>>({});
 
   const filteredCharacters = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();
-    if (!normalized) return catalog.characters;
-    return catalog.characters.filter((character) => {
-      const characterLabels = Object.values(character.label);
-      const costumeLabels = character.costumes.flatMap((costume) => Object.values(costume.label));
-      return [...characterLabels, ...costumeLabels].some((value) => value.toLocaleLowerCase().includes(normalized));
-    });
-  }, [catalog.characters, query]);
+    return catalog.characters
+      .map((character) => ({
+        ...character,
+        costumes: character.costumes.filter(
+          (costume) => source === 'all' || costume.entryPath.endsWith('.native.json') === (source === 'our-notes'),
+        ),
+      }))
+      .filter((character) => {
+        if (!character.costumes.length) return false;
+        if (!normalized) return true;
+        const characterLabels = Object.values(character.label);
+        const costumeLabels = character.costumes.flatMap((costume) => Object.values(costume.label));
+        return [...characterLabels, ...costumeLabels].some((value) => value.toLocaleLowerCase().includes(normalized));
+      });
+  }, [catalog.characters, query, source]);
 
   const characterPageCount = Math.max(1, Math.ceil(filteredCharacters.length / CHARACTERS_PER_PAGE));
   const visibleCharacters = filteredCharacters.slice(
@@ -90,10 +111,10 @@ export function Live2DModelPicker({ catalog, locale, selected, title, labels, on
 
   useEffect(() => {
     if (query) return;
-    const selectedIndex = catalog.characters.findIndex((character) => character.id === selected.characterId);
+    const selectedIndex = filteredCharacters.findIndex((character) => character.id === selected.characterId);
     setExpandedCharacter(selected.characterId);
     if (selectedIndex >= 0) setCharacterPage(Math.floor(selectedIndex / CHARACTERS_PER_PAGE));
-  }, [catalog.characters, query, selected.characterId]);
+  }, [filteredCharacters, query, selected.characterId]);
 
   useEffect(() => {
     setCharacterPage((page) => clampPage(page, characterPageCount));
@@ -101,6 +122,24 @@ export function Live2DModelPicker({ catalog, locale, selected, title, labels, on
 
   return (
     <Live2DPanel title={title} closeLabel={labels.close} onClose={onClose}>
+      {catalogNotice && (
+        <div className="live2d-catalog-notice" aria-live="polite">
+          <span>{catalogNotice}</span>
+          {onRetryCatalog && (
+            <button type="button" onClick={onRetryCatalog}>
+              {labels.retry}
+            </button>
+          )}
+        </div>
+      )}
+      <label className="live2d-source-filter">
+        {labels.source}
+        <select value={source} onChange={(event) => setSource(event.target.value)}>
+          <option value="all">{labels.all}</option>
+          <option value="our-notes">Our Notes</option>
+          <option value="bestdori">Girls Band Party</option>
+        </select>
+      </label>
       <label className="live2d-search">
         <Icon icon="ri:search-line" aria-hidden="true" />
         <input
@@ -166,7 +205,7 @@ export function Live2DModelPicker({ catalog, locale, selected, title, labels, on
             </section>
           );
         })}
-        {filteredCharacters.length === 0 && <p className="live2d-empty">{labels.noResults}</p>}
+        {filteredCharacters.length === 0 && !catalogNotice && <p className="live2d-empty">{labels.noResults}</p>}
       </div>
       <Pager page={characterPage} pages={characterPageCount} labels={labels} onPage={setCharacterPage} />
     </Live2DPanel>

@@ -1,3 +1,6 @@
+import { createLive2DCore } from './create-core';
+import { clampParameterOverrides, type Live2DParameter } from './studio-state';
+
 export type Live2DRendererPhase = 'dormant' | 'loading' | 'ready' | 'recoverable' | 'destroyed';
 
 export interface Live2DRendererSelection {
@@ -7,19 +10,29 @@ export interface Live2DRendererSelection {
   position: [number, number];
 }
 
+export interface Live2DLoadProgress {
+  stage: 'download' | 'initialize';
+  loaded: number;
+  total: number;
+}
+
 type Live2DCoreEvent = 'tap' | 'loaded';
 
 export interface Live2DCore {
   load(options: {
     path: string;
+    onProgress?: (progress: Live2DLoadProgress) => void;
     scale?: number;
     position?: [number, number];
     volume?: number;
     logLevel?: 'error' | 'warn' | 'info' | 'trace';
   }): Promise<void>;
+  cancelLoading?(): void;
   resize(): void;
-  destroy(): void;
+  destroy(): void | Promise<void>;
   getParams(): unknown[];
+  setParams?(params: Record<string, number>): void;
+  captureFrame?(): string | null;
   getMotions(): Record<string, string[]>;
   getExpressions(): string[];
   playMotion(group: string, index?: number, priority?: number): void;
@@ -40,6 +53,7 @@ export interface Live2DRendererOptions {
   prefetchMotion?: (url: string, signal: AbortSignal) => Promise<void>;
   motionPrefetchConcurrency?: number;
   onPhase?: (phase: Live2DRendererPhase, error?: unknown) => void;
+  onProgress?: (progress: Live2DLoadProgress) => void;
   onTap?: (areaName: string) => void;
 }
 
@@ -70,75 +84,6 @@ async function withLoadDeadline(load: Promise<void>, timeoutMs: number, path: st
   } finally {
     if (timeoutId !== undefined) clearTimeout(timeoutId);
   }
-}
-
-async function defaultCreateCore(canvas: HTMLCanvasElement): Promise<Live2DCore> {
-  const { init } = await import('l2d');
-  const core = init(canvas) as unknown as
-    | (Live2DCore & {
-        _state?: {
-          l2d2Model?: {
-            _drawFrameId?: number | null;
-            isDrawStart?: boolean;
-            startDraw?: () => void;
-            live2DMgr?: {
-              getModel?: () => {
-                mainMotionManager?: { stopAllMotions?: () => void };
-                expressionManager?: { stopAllMotions?: () => void };
-              } | null;
-            };
-          } | null;
-          l2d6Model?: {
-            stop?: () => void;
-            run?: () => void;
-            _subdelegates?: Array<{
-              getLive2DManager?: () => {
-                _models?: Array<{
-                  _motionManager?: { stopAllMotions?: () => void };
-                  _expressionManager?: { stopAllMotions?: () => void };
-                }>;
-              };
-            }>;
-          } | null;
-        };
-      })
-    | null;
-  if (!core) throw new Error('Live2D renderer could not initialize the canvas.');
-
-  // l2d 2.1.1 只公开模型销毁能力，没有公开暂停接口。锁定版本的 Cubism
-  // 适配层保留了 RAF 控制器，因此可在不重载资产、不重置状态的情况下冻结模型。
-  // 升级 l2d 时必须用真实 Cubism 2/6 模型重新验证这些内部字段。
-  let renderingPaused = false;
-  core.pauseRendering = () => {
-    if (renderingPaused) return;
-    renderingPaused = true;
-    const cubism2 = core._state?.l2d2Model;
-    if (cubism2?._drawFrameId != null) cancelAnimationFrame(cubism2._drawFrameId);
-    if (cubism2) {
-      cubism2._drawFrameId = null;
-      cubism2.isDrawStart = false;
-    }
-    core._state?.l2d6Model?.stop?.();
-  };
-  core.resumeRendering = () => {
-    if (!renderingPaused) return;
-    renderingPaused = false;
-    core._state?.l2d2Model?.startDraw?.();
-    core._state?.l2d6Model?.run?.();
-  };
-  const getCubism6Model = () => core._state?.l2d6Model?._subdelegates?.[0]?.getLive2DManager?.()?._models?.[0];
-  // l2d 将 undefined 表情解释成“随机表情”，且没有公开默认态 API。停止当前
-  // manager 后，模型自己的更新循环会在下一帧恢复 idle 动作和未叠加表情的参数。
-  // 这里集中隔离锁定版 l2d 2.1.1 的内部字段，避免 UI 通过重载模型来重置状态。
-  core.resetMotion = () => {
-    core._state?.l2d2Model?.live2DMgr?.getModel?.()?.mainMotionManager?.stopAllMotions?.();
-    getCubism6Model()?._motionManager?.stopAllMotions?.();
-  };
-  core.resetExpression = () => {
-    core._state?.l2d2Model?.live2DMgr?.getModel?.()?.expressionManager?.stopAllMotions?.();
-    getCubism6Model()?._expressionManager?.stopAllMotions?.();
-  };
-  return core;
 }
 
 /**
@@ -184,8 +129,8 @@ function scheduleIdleTask(task: () => void): () => void {
  * Serializes model mutations around the unmodified upstream renderer.
  *
  * `l2d` owns Cubism's global runtime and cannot cancel a load in progress. A generation
- * therefore discards superseded results, while the queue ensures a newer model never mutates
- * the same WebGL state concurrently. Network deadlines remain in the same-origin asset route,
+ * therefore discards superseded results. Native downloads can be cancelled early; the queue
+ * still prevents newer models from mutating the same WebGL state concurrently. Network deadlines remain in the same-origin asset route,
  * where they can actually abort the origin request.
  */
 export class Live2DRenderer {
@@ -200,8 +145,10 @@ export class Live2DRenderer {
   private destroyed = false;
   private suspended = false;
   private playbackPaused = false;
+  private pendingMotion: Parameters<Live2DCore['playMotion']> | 'reset' | null = null;
   private contextLost = false;
   private lastSelection: Live2DRendererSelection | null = null;
+  private readonly warmedMotions = new Set<string>();
   private motionPrefetchController: AbortController | null = null;
   private cancelScheduledMotionPrefetch: (() => void) | null = null;
 
@@ -229,9 +176,11 @@ export class Live2DRenderer {
 
   private async ensureCore(): Promise<Live2DCore> {
     if (this.core) return this.core;
-    const core = await (this.options.createCore ?? defaultCreateCore)(this.options.canvas);
+    const core = this.options.createCore
+      ? await this.options.createCore(this.options.canvas)
+      : await createLive2DCore(this.options.canvas, this.lastSelection?.entryPath.endsWith('.native.json') ?? false);
     if (this.destroyed || this.contextLost) {
-      core.destroy();
+      await core.destroy();
       throw abortError('Live2D core creation completed outside an active WebGL generation.');
     }
     core.on('tap', (areaName) => this.options.onTap?.(areaName ?? ''));
@@ -248,9 +197,12 @@ export class Live2DRenderer {
   load(selection: Live2DRendererSelection): Promise<void> {
     if (this.destroyed) return Promise.reject(abortError('Live2D renderer is destroyed.'));
     this.cancelMotionPrefetch();
+    this.warmedMotions.clear();
+    this.pendingMotion = null;
     this.lastSelection = selection;
     if (this.contextLost) return Promise.reject(abortError('Live2D WebGL context is currently lost.'));
     const generation = ++this.generation;
+    if (this.phase === 'loading') this.core?.cancelLoading?.();
     const run = async (): Promise<void> => {
       if (this.destroyed || this.suspended || generation !== this.generation) {
         throw abortError('Live2D selection was superseded.');
@@ -264,6 +216,14 @@ export class Live2DRenderer {
         await withLoadDeadline(
           core.load({
             path: selection.entryPath,
+            onProgress: (progress) => {
+              if (this.destroyed || this.suspended || generation !== this.generation) return;
+              try {
+                this.options.onProgress?.(progress);
+              } catch {
+                /* UI cannot fail a model load. */
+              }
+            },
             scale: selection.scale,
             position: selection.position,
             volume: 0,
@@ -287,8 +247,7 @@ export class Live2DRenderer {
         // 失败或超时的 l2d core 可能保留部分纹理和未完成回调。展示重试入口前先销毁，
         // 确保下一代加载从干净实例开始，也避免旧 loaded 事件污染新模型状态。
         if (core && this.core === core) {
-          core.destroy();
-          this.core = null;
+          await this.disposeCore();
         }
         if (!this.destroyed && !this.suspended && generation === this.generation) {
           this.setPhase('recoverable', error);
@@ -307,6 +266,7 @@ export class Live2DRenderer {
    */
   private scheduleMotionPrefetch(core: Live2DCore, selection: Live2DRendererSelection, generation: number): void {
     this.cancelMotionPrefetch();
+    if (this.playbackPaused) return;
     const urls = [
       ...new Set(
         Object.values(core.getMotions())
@@ -315,12 +275,13 @@ export class Live2DRenderer {
           .map((motionPath) => resolveMotionUrl(selection.entryPath, motionPath)),
       ),
     ];
-    if (urls.length === 0) return;
+    const pending = urls.filter((url) => !this.warmedMotions.has(url));
+    if (pending.length === 0) return;
 
     this.cancelScheduledMotionPrefetch = scheduleIdleTask(() => {
       this.cancelScheduledMotionPrefetch = null;
-      if (!this.destroyed && !this.suspended && generation === this.generation) {
-        this.startMotionPrefetch(urls, generation);
+      if (!this.destroyed && !this.suspended && !this.playbackPaused && generation === this.generation) {
+        this.startMotionPrefetch(pending, generation);
       }
     });
   }
@@ -344,6 +305,7 @@ export class Live2DRenderer {
         if (!url) return;
         try {
           await prefetch(url, controller.signal);
+          if (!controller.signal.aborted && generation === this.generation) this.warmedMotions.add(url);
         } catch (error) {
           if (controller.signal.aborted) return;
           // 预热是尽力而为；失败的动作仍保留 l2d 原有的按需加载兜底路径。
@@ -364,11 +326,15 @@ export class Live2DRenderer {
   }
 
   playMotion(group: string, index?: number, priority?: number): void {
-    if (this.phase === 'ready' && !this.playbackPaused) this.core?.playMotion(group, index, priority);
+    if (this.phase !== 'ready') return;
+    if (this.playbackPaused) this.pendingMotion = [group, index, priority];
+    else this.core?.playMotion(group, index, priority);
   }
 
   resetMotion(): void {
-    if (this.phase === 'ready' && !this.playbackPaused) this.core?.resetMotion?.();
+    if (this.phase !== 'ready') return;
+    if (this.playbackPaused) this.pendingMotion = 'reset';
+    else this.core?.resetMotion?.();
   }
 
   setExpression(id: string): void {
@@ -396,19 +362,43 @@ export class Live2DRenderer {
     return this.phase === 'ready' ? (this.core?.getExpressions() ?? []) : [];
   }
 
+  getParameters(): Live2DParameter[] {
+    if (this.phase !== 'ready') return [];
+    return (this.core?.getParams() ?? []).filter((p): p is Live2DParameter => {
+      const v = p as Live2DParameter | null;
+      return !!v && typeof v.id === 'string' && [v.value, v.min, v.max, v.default].every(Number.isFinite) && v.min <= v.max;
+    });
+  }
+
+  setParameters(values: Record<string, number>): void {
+    if (this.phase === 'ready') this.core?.setParams?.(clampParameterOverrides(values, this.getParameters()));
+  }
+
   /** Freezes the current model instance; unlike suspend(), this preserves animation and expression state. */
   setPlaybackPaused(paused: boolean): void {
     if (this.playbackPaused === paused) return;
     this.playbackPaused = paused;
     if (this.phase !== 'ready') return;
-    if (paused) this.core?.pauseRendering?.();
-    else this.core?.resumeRendering?.();
+    if (paused) {
+      this.cancelMotionPrefetch();
+      this.core?.pauseRendering?.();
+    } else {
+      this.core?.resumeRendering?.();
+      // Controls remain reachable above some dialogs. Defer only the latest intent without
+      // fetching motions or waking the hidden canvas, and discard it when switching models.
+      const pending = this.pendingMotion;
+      this.pendingMotion = null;
+      if (pending === 'reset') this.core?.resetMotion?.();
+      else if (pending) this.core?.playMotion(...pending);
+      if (this.core && this.lastSelection) this.scheduleMotionPrefetch(this.core, this.lastSelection, this.generation);
+    }
   }
 
   /** Captures the transparent canvas before pause or user download without another network read. */
   captureFrame(): string | null {
     if (this.phase !== 'ready' || typeof this.options.canvas.toDataURL !== 'function') return null;
     try {
+      if (this.core?.captureFrame) return this.core.captureFrame();
       return this.options.canvas.toDataURL('image/png');
     } catch {
       return null;
@@ -427,10 +417,9 @@ export class Live2DRenderer {
     this.setPhase('dormant');
     this.tail = this.tail
       .catch(() => undefined)
-      .then(() => {
+      .then(async () => {
         if (this.suspended && !this.destroyed) {
-          this.core?.destroy();
-          this.core = null;
+          await this.disposeCore();
         }
       });
   }
@@ -447,8 +436,12 @@ export class Live2DRenderer {
     this.contextLost = true;
     this.cancelMotionPrefetch();
     this.generation += 1;
-    this.core?.destroy();
+    const disposal = Promise.resolve(this.core?.destroy()).catch((error) => {
+      console.warn('[Live2D] Context loss cleanup failed.', error);
+    });
     this.core = null;
+    // Native disposal waits for an in-flight frame. Restoration must not reuse its GL context early.
+    this.tail = this.tail.catch(() => undefined).then(() => disposal);
     this.setPhase('recoverable', new Error('Live2D WebGL context was lost.'));
   };
 
@@ -471,6 +464,17 @@ export class Live2DRenderer {
     this.resizeObserver.observe(this.options.canvas);
   }
 
+  /** Detach first: rejected async native disposal must not leave a destroyed instance reusable. */
+  private async disposeCore(): Promise<void> {
+    const core = this.core;
+    this.core = null;
+    try {
+      await core?.destroy();
+    } catch (error) {
+      console.warn('[Live2D] Core cleanup failed.', error);
+    }
+  }
+
   /** Marks teardown immediately and queues WebGL cleanup after any in-flight upstream mutation. */
   destroy(): void {
     if (this.destroyed) return;
@@ -486,9 +490,8 @@ export class Live2DRenderer {
     this.setPhase('destroyed');
     this.tail = this.tail
       .catch(() => undefined)
-      .then(() => {
-        this.core?.destroy();
-        this.core = null;
+      .then(async () => {
+        await this.disposeCore();
       });
   }
 }

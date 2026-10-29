@@ -5,6 +5,8 @@ import { assertLive2DManifestReleaseId } from './package-manifest';
 import { type Live2DCatalog, type Live2DPackageManifest, live2dCatalogSchema, live2dPackageManifestSchema } from './types';
 
 export const LIVE2D_CATALOG_KEY = 'catalog.json';
+// Separate publication keeps deployed clients without the native engine on the GBP catalog.
+export const LIVE2D_NATIVE_CATALOG_KEY = 'catalog-our-notes.json';
 const CATALOG_CACHE_TTL_MS = 10 * 60 * 1000;
 const MAX_CATALOG_BYTES = 5_000_000;
 const MAX_MANIFEST_BYTES = 1_000_000;
@@ -20,6 +22,7 @@ export interface Live2DMetadataStoreOptions {
   now?: () => number;
   catalogTtlMs?: number;
   manifestCacheEntries?: number;
+  nativeCatalogKey?: string;
   onDiagnostic?: (message: string, error: unknown) => void;
 }
 
@@ -58,6 +61,7 @@ export function createLive2DMetadataStore(options: Live2DMetadataStoreOptions) {
     remote: boolean;
   } | null = null;
   let catalogRequest: Promise<Live2DCatalog> | null = null;
+  let nativeCache: Live2DCatalog | null = null;
   const manifestCache = new Map<string, Live2DPackageManifest>();
   const manifestRequests = new Map<string, Promise<Live2DPackageManifest>>();
 
@@ -71,9 +75,44 @@ export function createLive2DMetadataStore(options: Live2DMetadataStoreOptions) {
   };
 
   async function readRemoteCatalog(): Promise<Live2DCatalog> {
-    const snapshot = await options.client.get(LIVE2D_CATALOG_KEY);
+    const [snapshot, nativeResult] = await Promise.all([
+      options.client.get(LIVE2D_CATALOG_KEY),
+      options.nativeCatalogKey
+        ? options.client
+            .get(options.nativeCatalogKey)
+            .then((snapshot) => ({ snapshot }))
+            .catch(() => null)
+        : null,
+    ]);
     if (!snapshot) throw new Error('Live2D remote catalog does not exist.');
-    return parseJsonSnapshot(snapshot, MAX_CATALOG_BYTES, 'Live2D catalog', (value) => live2dCatalogSchema.parse(value));
+    const base = parseJsonSnapshot(snapshot, MAX_CATALOG_BYTES, 'Live2D catalog', (value) => live2dCatalogSchema.parse(value));
+    // Native availability must never discard a valid GBP directory. Keep the last native snapshot on a transient failure.
+    if (nativeResult) {
+      try {
+        const candidate = nativeResult.snapshot
+          ? parseJsonSnapshot(nativeResult.snapshot, MAX_CATALOG_BYTES, 'Our Notes catalog', (value) =>
+              live2dCatalogSchema.parse(value),
+            )
+          : null;
+        if (candidate?.characters.some((c) => c.costumes.some((costume) => !costume.entryPath.endsWith('.native.json')))) {
+          throw new Error('Our Notes catalog contains a non-native costume.');
+        }
+        nativeCache = candidate;
+      } catch {
+        /* Retain the previous validated native snapshot; GBP remains available. */
+      }
+    }
+    if (!nativeCache) return base;
+    const native = nativeCache;
+    const characters = new Map(base.characters.map((character) => [character.id, character]));
+    for (const character of native.characters) {
+      const current = characters.get(character.id);
+      // Keep GBP labels, voices and order; merge native costumes by stable identity, never duplicate them.
+      const costumes = new Map(current?.costumes.map((costume) => [costume.id, costume]));
+      for (const costume of character.costumes) costumes.set(costume.id, costume);
+      characters.set(character.id, { ...(current ?? character), costumes: [...costumes.values()] });
+    }
+    return { ...base, characters: [...characters.values()] };
   }
 
   async function getCatalog(): Promise<Live2DCatalog> {
@@ -155,6 +194,7 @@ export function createLive2DMetadataStore(options: Live2DMetadataStoreOptions) {
 
 export function createLive2DRemoteMetadataStore(config: () => HfS3Config) {
   const store = createLive2DMetadataStore({
+    nativeCatalogKey: LIVE2D_NATIVE_CATALOG_KEY,
     client: {
       get(key, missingStatuses) {
         // 凭证按请求读取，使冷启动缺失凭证也能由 metadata store 回退到 bootstrap。

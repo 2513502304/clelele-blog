@@ -43,7 +43,7 @@ export function getLive2DCatalogSelections(catalog: Live2DCatalog): Array<{ char
 }
 
 export async function fetchLive2DCatalog(fetchImpl: typeof fetch = fetch, signal?: AbortSignal): Promise<Live2DCatalog> {
-  const response = await fetchImpl('/api/live2d/catalog', {
+  const response = await fetchImpl('/api/live2d/catalog?native=1', {
     headers: { accept: 'application/json' },
     signal,
   });

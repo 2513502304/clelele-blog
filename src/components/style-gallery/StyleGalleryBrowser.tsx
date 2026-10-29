@@ -32,6 +32,7 @@ import {
 import { galleryTagMatches, normalizeGalleryTag } from '@lib/style-gallery-tags';
 import { useGalleryTags } from '@store/gallery-tags';
 import { openModal } from '@store/modal';
+import { $backgroundPagePaused } from '@store/page-activity';
 import { useReducedMotion } from 'motion/react';
 import { parseAsString, parseAsStringLiteral, useQueryState, useQueryStates } from 'nuqs';
 import { NuqsAdapter } from 'nuqs/adapters/react';
@@ -255,7 +256,8 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
     (item: StyleGalleryBrowserItem) => {
       // 单 prompt 的复制本身只需一次按需读取；仅候选选择器值得在 hover/focus 时提前准备。
       // 否则用户滚动经过大量卡片会制造无意义的详情请求，反向增加 Vercel Function CPU。
-      if (item.promptCount > 1) void loadPromptChoices(item).catch(() => undefined);
+      if (!document.hidden && !$backgroundPagePaused.get() && item.promptCount > 1)
+        void loadPromptChoices(item).catch(() => undefined);
     },
     [loadPromptChoices],
   );

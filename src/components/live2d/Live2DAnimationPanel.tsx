@@ -1,6 +1,8 @@
 import { Live2DPanel } from '@components/live2d/Live2DPanel';
+import { useTranslation } from '@hooks/useTranslation';
 import { Icon } from '@iconify/react';
 import type { Live2DEffects } from '@lib/live2d/preferences';
+import { studioActionLabel } from '@lib/live2d/studio-labels';
 import { useMemo } from 'react';
 
 interface MotionOption {
@@ -48,15 +50,16 @@ export function Live2DAnimationPanel({
   onScreenshot,
   onClose,
 }: Props) {
+  const { locale } = useTranslation();
   const motionOptions = useMemo<MotionOption[]>(
     () =>
       Object.entries(motions).flatMap(([group, files]) =>
         files.map((file, index) => ({
           value: motionValue(group, index),
-          label: files.length > 1 ? `${group} ${index + 1}` : group || file,
+          label: `${studioActionLabel(group || file, locale)}${files.length > 1 ? ` ${index + 1}` : ''}`,
         })),
       ),
-    [motions],
+    [motions, locale],
   );
   const selectMotion = (value: string) => {
     if (!value) {
@@ -124,7 +127,7 @@ export function Live2DAnimationPanel({
           {expressions.length > 1 && <option value={RANDOM_OPTION_VALUE}>{labels.randomExpression}</option>}
           {expressions.map((expression) => (
             <option key={expression} value={expression}>
-              {expression}
+              {studioActionLabel(expression, locale)}
             </option>
           ))}
         </select>

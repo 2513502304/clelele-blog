@@ -1,3 +1,4 @@
+import { $backgroundPagePaused } from '@store/page-activity';
 import { getSceneryPreferences } from './scenery-preferences';
 
 interface Particle {
@@ -65,6 +66,7 @@ export function startAtmosphere(canvas: HTMLCanvasElement): () => void {
     return (
       prefs.effect !== 'none' &&
       !document.hidden &&
+      !$backgroundPagePaused.get() &&
       !motion.matches &&
       document.documentElement.dataset.readingMotion !== 'reduced'
     );
@@ -187,12 +189,15 @@ export function startAtmosphere(canvas: HTMLCanvasElement): () => void {
     }
   }
   resize();
+  // The large opaque studio covers the decoration; preserve its particles but stop invisible work.
+  const unsubscribeModal = $backgroundPagePaused.subscribe(schedule);
   window.addEventListener('resize', resize);
   window.addEventListener('scenery-change', configure);
   window.addEventListener('reading-change', schedule);
   document.addEventListener('visibilitychange', schedule);
   motion.addEventListener('change', schedule);
   return () => {
+    unsubscribeModal();
     cancelAnimationFrame(frame);
     ctx.clearRect(0, 0, width, height);
     window.removeEventListener('resize', resize);

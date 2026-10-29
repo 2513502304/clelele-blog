@@ -1,63 +1,239 @@
 diff --git a/dist/index.js b/dist/index.js
-index 3d813a9..b822ba0 100644
 --- a/dist/index.js
 +++ b/dist/index.js
-@@ -4839 +4839 @@ var D = class {
+@@ -3964,6 +3964,15 @@
+ 		var f = d();
+ 	})(i ||= {}), window.Live2DCubismCore = i, console.log = r;
+ })))();
++// Blog embedding budget: preserve CSS geometry and avoid oversized retina editor buffers.
++function blogResizeCanvas(canvas) {
++ const width = canvas.clientWidth, height = canvas.clientHeight;
++ if (!width || !height) return;
++ const ratio = Math.min(window.devicePixelRatio || 1, 1.5, Math.sqrt(1500000 / (width * height)));
++ const w = Math.max(1, Math.floor(width * ratio)), h = Math.max(1, Math.floor(height * ratio));
++ if (canvas.width !== w) canvas.width = w;
++ if (canvas.height !== h) canvas.height = h;
++}
+ function r(e) {
+ 	if (!e.style.width && !e.style.height) {
+ 		let t = getComputedStyle(e);
+@@ -4836,7 +4845,7 @@
+ 	}
+ }, O = class extends d {
+ 	constructor() {
 -		super(), this.modelHomeDir = "", this.modelSetting = null, this.tmpMatrix = [];
 +		super(), this.modelHomeDir = "", this.modelSetting = null, this.tmpMatrix = [], this._effects = { sway: !0, breathe: !0, blink: !0 };
-@@ -4910 +4910 @@ var D = class {
+ 	}
+ 	loadJSON(e) {
+ 		let t = this.modelSetting.getTextureNum(), n = this.modelSetting.getPoseFile() == null ? 0 : 1, r = 1 + t + n, i = 0;
+@@ -4907,8 +4916,11 @@
+ 			group: this._currentMotionGroup,
+ 			index: this._currentMotionIndex,
+ 			file: this.modelSetting.getMotionFile(this._currentMotionGroup, this._currentMotionIndex)
 -		})), this.startRandomMotion(u.MOTION_GROUP_IDLE, u.PRIORITY_IDLE)), this.live2DModel.loadParam(), this.mainMotionManager.updateParam(this.live2DModel) || this.eyeBlink != null && this.eyeBlink.updateParam(this.live2DModel), this.live2DModel.saveParam(), this.expressionManager != null && this.expressions != null && !this.expressionManager.isFinished() && this.expressionManager.updateParam(this.live2DModel), this.live2DModel.addToParamFloat("PARAM_ANGLE_X", this.dragX * 30, 1), this.live2DModel.addToParamFloat("PARAM_ANGLE_Y", this.dragY * 30, 1), this.live2DModel.addToParamFloat("PARAM_ANGLE_Z", this.dragX * this.dragY * -30, 1), this.live2DModel.addToParamFloat("PARAM_BODY_ANGLE_X", this.dragX * 10, 1), this.live2DModel.addToParamFloat("PARAM_EYE_BALL_X", this.dragX, 1), this.live2DModel.addToParamFloat("PARAM_EYE_BALL_Y", this.dragY, 1), this.live2DModel.addToParamFloat("PARAM_ANGLE_X", Number(15 * Math.sin(e / 6.5345)), .5), this.live2DModel.addToParamFloat("PARAM_ANGLE_Y", Number(8 * Math.sin(e / 3.5345)), .5), this.live2DModel.addToParamFloat("PARAM_ANGLE_Z", Number(10 * Math.sin(e / 5.5345)), .5), this.live2DModel.addToParamFloat("PARAM_BODY_ANGLE_X", Number(4 * Math.sin(e / 15.5345)), .5), this.live2DModel.setParamFloat("PARAM_BREATH", Number(.5 + .5 * Math.sin(e / 3.2345)), 1), this.physics != null && this.physics.updateParam(this.live2DModel), this.lipSync ?? this.live2DModel.setParamFloat("PARAM_MOUTH_OPEN_Y", this.lipSyncValue), this.pose != null && this.pose.updateParam(this.live2DModel), this._forcedParams != null) for (let [e, t] of Object.entries(this._forcedParams)) this.live2DModel.setParamFloat(e, t, 1);
 +		})), this.startRandomMotion(u.MOTION_GROUP_IDLE, u.PRIORITY_IDLE)), this.live2DModel.loadParam(), this.mainMotionManager.updateParam(this.live2DModel) || this._effects.blink && this.eyeBlink != null && this.eyeBlink.updateParam(this.live2DModel), this.live2DModel.saveParam(), this.expressionManager != null && this.expressions != null && !this.expressionManager.isFinished() && this.expressionManager.updateParam(this.live2DModel), this.live2DModel.addToParamFloat("PARAM_ANGLE_X", this.dragX * 30, 1), this.live2DModel.addToParamFloat("PARAM_ANGLE_Y", this.dragY * 30, 1), this.live2DModel.addToParamFloat("PARAM_ANGLE_Z", this.dragX * this.dragY * -30, 1), this.live2DModel.addToParamFloat("PARAM_BODY_ANGLE_X", this.dragX * 10, 1), this.live2DModel.addToParamFloat("PARAM_EYE_BALL_X", this.dragX, 1), this.live2DModel.addToParamFloat("PARAM_EYE_BALL_Y", this.dragY, 1), this._effects.sway && (this.live2DModel.addToParamFloat("PARAM_ANGLE_X", Number(15 * Math.sin(e / 6.5345)), .5), this.live2DModel.addToParamFloat("PARAM_ANGLE_Y", Number(8 * Math.sin(e / 3.5345)), .5), this.live2DModel.addToParamFloat("PARAM_ANGLE_Z", Number(10 * Math.sin(e / 5.5345)), .5), this.live2DModel.addToParamFloat("PARAM_BODY_ANGLE_X", Number(4 * Math.sin(e / 15.5345)), .5)), this._effects.breathe && this.live2DModel.setParamFloat("PARAM_BREATH", Number(.5 + .5 * Math.sin(e / 3.2345)), 1), this.physics != null && this.physics.updateParam(this.live2DModel), this.lipSync ?? this.live2DModel.setParamFloat("PARAM_MOUTH_OPEN_Y", this.lipSyncValue), this.pose != null && this.pose.updateParam(this.live2DModel), this._forcedParams != null) for (let [e, t] of Object.entries(this._forcedParams)) this.live2DModel.setParamFloat(e, t, 1);
-@@ -4913,0 +4914,3 @@ var D = class {
+ 		this.live2DModel.update();
++	}
 +	setEffects(e) {
 +		this._effects = { ...this._effects, ...e };
-+	}
-@@ -5053 +5056 @@ var D = class {
+ 	}
+ 	setRandomExpression() {
+ 		let e = [];
+@@ -5050,10 +5062,10 @@
+ 	}
+ }, ee = Promise.resolve(), te = 0, ne = class {
+ 	constructor(e) {
 -		this._glContextIndex = te++, this.live2DMgr = new A(e, this._glContextIndex), this._destroyed = !1, this.isDrawStart = !1, this.gl = null, this.canvas = null, this.dragMgr = null, this.viewMatrix = null, this.projMatrix = null, this.deviceToScreen = null, this._boundMouseEvent = this.mouseEvent.bind(this), this._boundTouchEvent = this.touchEvent.bind(this), this._resizeRafId = null;
 +		this._glContextIndex = te++, this.live2DMgr = new A(e, this._glContextIndex), this._destroyed = !1, this.isDrawStart = !1, this.gl = null, this.canvas = null, this.dragMgr = null, this.viewMatrix = null, this.projMatrix = null, this.deviceToScreen = null, this._pointerTracking = !0, this._boundMouseEvent = this.mouseEvent.bind(this), this._boundTouchEvent = this.touchEvent.bind(this), this._resizeRafId = null;
-@@ -5056 +5059 @@ var D = class {
+ 	}
+ 	initL2dCanvas(e) {
 -		this.canvas = e, this.canvas.addEventListener && (this.canvas.addEventListener("click", this._boundMouseEvent, !1), document.addEventListener("mousemove", this._boundMouseEvent, !1), document.addEventListener("mouseout", this._boundMouseEvent, !1), this.canvas.addEventListener("contextmenu", this._boundMouseEvent, !1), this.canvas.addEventListener("touchstart", this._boundTouchEvent, !1), this.canvas.addEventListener("touchend", this._boundTouchEvent, !1), this.canvas.addEventListener("touchmove", this._boundTouchEvent, !1)), r(this.canvas), this._resizeObserver = new ResizeObserver(() => {
 +		this.canvas = e, this.canvas.addEventListener && (this.canvas.addEventListener("click", this._boundMouseEvent, !1), document.addEventListener("mousemove", this._boundMouseEvent, !1), document.addEventListener("mouseleave", this._boundMouseEvent, !1), this.canvas.addEventListener("contextmenu", this._boundMouseEvent, !1), this.canvas.addEventListener("touchstart", this._boundTouchEvent, !1), this.canvas.addEventListener("touchend", this._boundTouchEvent, !1), this.canvas.addEventListener("touchmove", this._boundTouchEvent, !1)), r(this.canvas), this._resizeObserver = new ResizeObserver(() => {
-@@ -5106 +5109 @@ var D = class {
+ 			this._resizeRafId ||= requestAnimationFrame(() => {
+ 				this._resizeRafId = null, this.resize();
+ 			});
+@@ -5103,13 +5115,18 @@
+ 		}), ee;
+ 	}
+ 	destroy() {
 -		this.canvas && (this.canvas.removeEventListener("click", this._boundMouseEvent, !1), document.removeEventListener("mousemove", this._boundMouseEvent, !1), document.removeEventListener("mouseout", this._boundMouseEvent, !1), this.canvas.removeEventListener("contextmenu", this._boundMouseEvent, !1), this.canvas.removeEventListener("touchstart", this._boundTouchEvent, !1), this.canvas.removeEventListener("touchend", this._boundTouchEvent, !1), this.canvas.removeEventListener("touchmove", this._boundTouchEvent, !1)), this._resizeObserver &&= (this._resizeObserver.disconnect(), null), this._resizeRafId &&= (cancelAnimationFrame(this._resizeRafId), null), this._drawFrameId &&= (window.cancelAnimationFrame(this._drawFrameId), null), this._destroyed = !0, this.isDrawStart = !1, this.live2DMgr && this.live2DMgr.releaseModel(this.gl), this.canvas = null, this.gl = null, this.dragMgr = null, this.viewMatrix = null, this.projMatrix = null, this.deviceToScreen = null;
 +		this.canvas && (this.canvas.removeEventListener("click", this._boundMouseEvent, !1), document.removeEventListener("mousemove", this._boundMouseEvent, !1), document.removeEventListener("mouseleave", this._boundMouseEvent, !1), this.canvas.removeEventListener("contextmenu", this._boundMouseEvent, !1), this.canvas.removeEventListener("touchstart", this._boundTouchEvent, !1), this.canvas.removeEventListener("touchend", this._boundTouchEvent, !1), this.canvas.removeEventListener("touchmove", this._boundTouchEvent, !1)), this._resizeObserver &&= (this._resizeObserver.disconnect(), null), this._resizeRafId &&= (cancelAnimationFrame(this._resizeRafId), null), this._drawFrameId &&= (window.cancelAnimationFrame(this._drawFrameId), null), this._destroyed = !0, this.isDrawStart = !1, this.live2DMgr && this.live2DMgr.releaseModel(this.gl), this.canvas = null, this.gl = null, this.dragMgr = null, this.viewMatrix = null, this.projMatrix = null, this.deviceToScreen = null;
-@@ -5192,0 +5196,3 @@ var D = class {
+ 	}
+ 	startDraw() {
+ 		if (!this._destroyed && !this.isDrawStart) {
+ 			this.isDrawStart = !0;
+-			let e = () => {
+-				this.draw(), this._drawFrameId = window.requestAnimationFrame(e, this.canvas);
++			let last = null;
++			let e = (now) => {
++                if (last === null || now - last >= 1000 / 30) {
++                    last = last === null ? now : now - ((now - last) % (1000 / 30));
++                    this.draw();
++                }
++				this._drawFrameId = window.requestAnimationFrame(e, this.canvas);
+ 			};
+ 			this._drawFrameId = window.requestAnimationFrame(e, this.canvas);
+ 		}
+@@ -5142,7 +5159,8 @@
+ 		if (!e?.live2DModel) return [];
+ 		let t = e.live2DModel.getModelContext(), n = t._$qo;
+ 		return Array.from({ length: n }, (e, n) => ({
+-			id: t._$pb[n],
++			// Cubism 2 stores ParamID objects; the public interface promises string IDs.
++			id: t._$pb[n].toString(),
+ 			value: t._$_2[n],
+ 			min: t._$Rr[n],
+ 			max: t._$Or[n],
+@@ -5163,7 +5181,7 @@
+ 	}
+ 	resize() {
+ 		if (!this.canvas || !this.gl) return;
+-		this.canvas.width = this.canvas.clientWidth * window.devicePixelRatio, this.canvas.height = this.canvas.clientHeight * window.devicePixelRatio;
++		blogResizeCanvas(this.canvas);
+ 		let e = this.canvas.width, t = this.canvas.height;
+ 		this._applyViewState(), this.projMatrix = new _(), this.projMatrix.multScale(1, e / t), this.deviceToScreen = new _(), this.deviceToScreen.multTranslate(-e / 2, -t / 2), this.deviceToScreen.multScale(2 / e, -2 / e), this.gl.viewport(0, 0, e, t);
+ 	}
+@@ -5189,13 +5207,16 @@
+ 	lookFront() {
+ 		this.dragMgr.setPoint(0, 0);
+ 	}
 +	setPointerTracking(e) {
 +		this._pointerTracking = e, e || this.lookFront();
 +	}
-@@ -5193 +5199 @@ var D = class {
+ 	mouseEvent(e) {
 -		e.preventDefault(), e.type == "click" || e.type == "contextmenu" ? this.modelTurnHead(e) : e.type == "mousemove" ? this.followPointer(e) : e.type == "mouseout" && this.lookFront();
 +		e.preventDefault(), e.type == "click" || e.type == "contextmenu" ? (this.modelTurnHead(e), this._pointerTracking || this.lookFront()) : e.type == "mousemove" ? this._pointerTracking && this.followPointer(e) : e.type == "mouseleave" && this.lookFront();
-@@ -5198 +5204 @@ var D = class {
+ 	}
+ 	touchEvent(e) {
+ 		e.preventDefault();
+ 		let t = e.touches[0];
 -		e.type == "touchstart" ? e.touches.length == 1 && this.modelTurnHead(t) : e.type == "touchmove" ? this.followPointer(t) : e.type == "touchend" && this.lookFront();
 +		e.type == "touchstart" ? e.touches.length == 1 && (this.modelTurnHead(t), this._pointerTracking || this.lookFront()) : e.type == "touchmove" ? this._pointerTracking && this.followPointer(t) : e.type == "touchend" && this.lookFront();
-@@ -11432,0 +11439 @@ var Eo = class extends So {
+ 	}
+ 	getHitAreaBounds() {
+ 		if (!this.canvas || !this.viewMatrix) return [];
+@@ -11255,14 +11276,14 @@
+ 		}), this._programId ??= this._subdelegate.createShader();
+ 	}
+ 	onTouchesBegan(e, t) {
+-		this._touchManager.touchesBegan(e * window.devicePixelRatio, t * window.devicePixelRatio);
++		this._touchManager.touchesBegan(e * (this._subdelegate.getCanvas().width / this._subdelegate.getCanvas().clientWidth), t * (this._subdelegate.getCanvas().width / this._subdelegate.getCanvas().clientWidth));
+ 	}
+ 	onTouchesMoved(e, t) {
+-		let n = e * window.devicePixelRatio, r = t * window.devicePixelRatio, i = this._subdelegate.getLive2DManager(), a = this.transformViewX(this._touchManager.getX()), o = this.transformViewY(this._touchManager.getY());
++		let n = e * (this._subdelegate.getCanvas().width / this._subdelegate.getCanvas().clientWidth), r = t * (this._subdelegate.getCanvas().width / this._subdelegate.getCanvas().clientWidth), i = this._subdelegate.getLive2DManager(), a = this.transformViewX(this._touchManager.getX()), o = this.transformViewY(this._touchManager.getY());
+ 		this._touchManager.touchesMoved(n, r), i.onDrag(a, o);
+ 	}
+ 	onTouchesEnded(e, t) {
+-		let n = e * window.devicePixelRatio, r = t * window.devicePixelRatio, i = this._subdelegate.getLive2DManager();
++		let n = e * (this._subdelegate.getCanvas().width / this._subdelegate.getCanvas().clientWidth), r = t * (this._subdelegate.getCanvas().width / this._subdelegate.getCanvas().clientWidth), i = this._subdelegate.getLive2DManager();
+ 		i.onDrag(0, 0);
+ 		let a = this.transformViewX(n), o = this.transformViewY(r);
+ 		i.onTap(a, o), this._gear.isHit(n, r) && i.nextScene();
+@@ -11335,7 +11356,7 @@
+ 		return this._live2dManager;
+ 	}
+ 	resizeCanvas() {
+-		this._canvas.width = this._canvas.clientWidth * window.devicePixelRatio, this._canvas.height = this._canvas.clientHeight * window.devicePixelRatio;
++		blogResizeCanvas(this._canvas);
+ 		let e = this._glManager.getGl();
+ 		e.viewport(0, 0, e.drawingBufferWidth, e.drawingBufferHeight);
+ 	}
+@@ -11429,17 +11450,30 @@
+ 	_onLoaded = null;
+ 	mouseMoveEventListener = null;
+ 	mouseEndedEventListener = null;
 +	_pointerTracking = !0;
-@@ -11466 +11473 @@ var Eo = class extends So {
+ 	tapEventListener = null;
+ 	constructor(e) {
+ 		this._canvas = e, this._cubismOption = new We();
+ 	}
++    // Gate the clock together with drawing: gating delegates alone slows motion/physics on high-Hz displays.
++    renderFrame(timestamp = performance.now(), resetClock = false) {
++        if (resetClock) Mt.lastFrame = Date.now();
++        To(timestamp);
++        !this._modelLoadedEmitted && this._isModelReady() && (this._modelLoadedEmitted = !0, this._onLoaded && this._onLoaded());
++        for (let delegate of this._subdelegates) delegate.update();
++    }
+ 	run() {
+-		let e = (t) => {
+-			To(t), !this._modelLoadedEmitted && this._isModelReady() && (this._modelLoadedEmitted = !0, this._onLoaded && this._onLoaded());
+-			for (let e of this._subdelegates) e.update();
++        if (this._drawFrameId != null) return;
++        let last = null;
++		let e = (now) => {
++            if (last === null || now - last >= 1000 / 30) {
++                const first = last === null;
++                last = first ? now : now - ((now - last) % (1000 / 30));
++                this.renderFrame(now, first);
++            }
+ 			this._drawFrameId = window.requestAnimationFrame(e);
+ 		};
+-		e();
++		this._drawFrameId = window.requestAnimationFrame(e);
+ 	}
+ 	onLoaded(e) {
+ 		this._onLoaded = e;
+@@ -11463,12 +11497,15 @@
+ 		return X.getIdManager() === null ? !1 : (this._subdelegates[0]?.getLive2DManager())?._models?.[0]?._state === 23;
+ 	}
+ 	onMouseMove(e) {
 -		if (!this._isModelReady()) return;
 +		if (!this._pointerTracking || !this._isModelReady()) return;
-@@ -11473,0 +11481,3 @@ var Eo = class extends So {
+ 		let { x: t, y: n } = this.transformOffset(e);
+ 		this._subdelegates[0].getLive2DManager().onDrag(t, n);
+ 	}
+ 	onMouseEnd(e) {
+ 		this._isModelReady() && this._subdelegates[0].getLive2DManager().onDrag(0, 0);
++	}
 +	setPointerTracking(e) {
 +		this._pointerTracking = e, e || this.onMouseEnd();
-+	}
-@@ -11485 +11495 @@ var Eo = class extends So {
+ 	}
+ 	onTap(e) {
+ 		if (!this._isModelReady()) return;
+@@ -11482,10 +11519,10 @@
+ 		}
+ 	}
+ 	initializeEventListener() {
 -		this.mouseMoveEventListener = this.onMouseMove.bind(this), this.mouseEndedEventListener = this.onMouseEnd.bind(this), this.tapEventListener = this.onTap.bind(this), document.addEventListener("mousemove", this.mouseMoveEventListener, { passive: !0 }), document.addEventListener("mouseout", this.mouseEndedEventListener, { passive: !0 }), document.addEventListener("pointerdown", this.tapEventListener, { passive: !0 });
 +		this.mouseMoveEventListener = this.onMouseMove.bind(this), this.mouseEndedEventListener = this.onMouseEnd.bind(this), this.tapEventListener = this.onTap.bind(this), document.addEventListener("mousemove", this.mouseMoveEventListener, { passive: !0 }), document.addEventListener("mouseleave", this.mouseEndedEventListener, { passive: !0 }), document.addEventListener("pointerdown", this.tapEventListener, { passive: !0 });
-@@ -11488 +11498 @@ var Eo = class extends So {
+ 	}
+ 	releaseEventListener() {
 -		this.mouseMoveEventListener &&= (document.removeEventListener("mousemove", this.mouseMoveEventListener), null), this.mouseEndedEventListener &&= (document.removeEventListener("mouseout", this.mouseEndedEventListener), null), this.tapEventListener &&= (document.removeEventListener("pointerdown", this.tapEventListener), null);
 +		this.mouseMoveEventListener &&= (document.removeEventListener("mousemove", this.mouseMoveEventListener), null), this.mouseEndedEventListener &&= (document.removeEventListener("mouseleave", this.mouseEndedEventListener), null), this.tapEventListener &&= (document.removeEventListener("pointerdown", this.tapEventListener), null);
-@@ -11788,0 +11799,6 @@ var Mo = class {
+ 	}
+ 	initialize() {
+ 		Mt.updateTime(), this._cubismOption.logFunction = Mt.printMessage, this._cubismOption.loggingLevel = Wt, X.startUp(this._cubismOption), X.initialize();
+@@ -11566,7 +11603,8 @@
+ 		n.initialize(t), n._viewMatrix.adjustScale(0, 0, e), t._userPosition !== void 0 && n._viewMatrix.translate(t._userPosition[0], t._userPosition[1]), t.getLive2DManager().setViewMatrix(n._viewMatrix);
+ 	}
+ 	resize() {
+-		let e = this._subdelegates[0], t = e.getCanvas(), n = t.width, r = t.height;
++		let e = this._subdelegates[0]; e.resizeCanvas();
++        let t = e.getCanvas(), n = t.width, r = t.height;
+ 		e._view.initialize(e), e.getGlManager().getGl().viewport(0, 0, n, r), e._userScale !== void 0 && e._view._viewMatrix.adjustScale(0, 0, e._userScale), e._userPosition !== void 0 && e._view._viewMatrix.translate(e._userPosition[0], e._userPosition[1]), e.getLive2DManager().setViewMatrix(e._view._viewMatrix);
+ 	}
+ 	getHitAreaBounds() {
+@@ -11785,6 +11823,12 @@
+ 	setExpression(e) {
+ 		this._exprCtrl.setExpression(e);
+ 	}
 +	setEffects(e) {
 +		this._state.currentVersion === 2 && this._state.l2d2Model?.live2DMgr?.getModel?.()?.setEffects?.(e);
 +	}
 +	setPointerTracking(e) {
 +		this._state.currentVersion === 2 && this._state.l2d2Model ? this._state.l2d2Model.setPointerTracking(e) : this._state.currentVersion !== null && this._state.l2d6Model?.setPointerTracking(e);
 +	}
+ 	setVolume(e) {
+ 		this._state.currentVersion === 2 && this._state.l2d2Model ? this._state.l2d2Model.setVolume(e) : this._state.currentVersion !== null && this._state.l2d6Model && this._state.l2d6Model.setVolume(e);
+ 	}
 diff --git a/dist/l2d.d.ts b/dist/l2d.d.ts
-index e87562f..6632493 100644
 --- a/dist/l2d.d.ts
 +++ b/dist/l2d.d.ts
-@@ -45,0 +46,8 @@ declare class L2D extends Emitter<L2DEventMap> {
+@@ -42,6 +42,14 @@
+      * 切换模型表情。
+      * @param id - 表情 ID，省略时随机切换
+      */
 +    /** 控制 Cubism 2 模型的自动摇摆、呼吸与眨眼效果。 */
 +    setEffects(effects: Partial<{
 +        sway: boolean;
@@ -66,3 +242,6 @@ index e87562f..6632493 100644
 +    }>): void;
 +    /** 启用或关闭鼠标视线追随；关闭时将视线目标恢复到画布中心。 */
 +    setPointerTracking(enabled: boolean): void;
+     setExpression(id?: string): void;
+     /**
+      * 设置动作声音文件的播放音量，与加载选项中的 `volume` 作用一致。
