@@ -201,6 +201,13 @@ export function Live2DStudio({
               <DialogDescription>{t('live2d.studio.description')}</DialogDescription>
             </div>
           </div>
+          <a
+            className="live2d-studio-export"
+            href={`/live2d-studio/index.html${selection.costumeId.startsWith('our-notes-') ? `?model=${encodeURIComponent(selection.costumeId.slice('our-notes-'.length).replaceAll('-', '_'))}` : ''}`}
+            data-astro-reload
+          >
+            {t('live2d.studio.workbench')}
+          </a>
           <button type="button" className="live2d-studio-close" onClick={onClose} aria-label={t('live2d.close')}>
             <Icon icon="ri:close-line" />
           </button>

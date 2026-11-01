@@ -278,6 +278,7 @@ export const uiStrings: UIStrings = {
   'live2d.studio.stage': 'Preview canvas',
   'live2d.studio.gestures':
     'Drag to move · Scroll to zoom · Double-click to reset. Focus the canvas to use arrow keys, +/−, and 0.',
+  'live2d.studio.workbench': 'Multi-character editor',
   'live2d.studio.title': 'Live2D Studio',
   'live2d.studio.description': 'Give your character a mood. Capture the moment.',
   'live2d.studio.local': 'Local workspace',

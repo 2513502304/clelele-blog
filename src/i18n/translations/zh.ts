@@ -275,6 +275,7 @@ export const uiStrings = {
   'live2d.nextPage': '下一页',
   'live2d.studio.stage': '预览画布',
   'live2d.studio.gestures': '拖拽移动 · 滚轮缩放 · 双击复位。聚焦画布后可用方向键、＋/－、0 调整构图。',
+  'live2d.studio.workbench': '多人物创作台',
   'live2d.studio.title': 'Live2D 工作室',
   'live2d.studio.description': '给角色一个表情，留住这一刻。',
   'live2d.studio.local': '本地创作',

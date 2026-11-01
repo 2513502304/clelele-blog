@@ -278,6 +278,7 @@ export const uiStrings: UIStrings = {
   'live2d.studio.stage': 'プレビューキャンバス',
   'live2d.studio.gestures':
     'ドラッグで移動・ホイールで拡大縮小・ダブルクリックでリセット。フォーカス後は矢印キー、＋/－、0 も使えます。',
+  'live2d.studio.workbench': 'マルチキャラクター編集',
   'live2d.studio.title': 'Live2D スタジオ',
   'live2d.studio.description': '表情をつくって、この瞬間を残そう。',
   'live2d.studio.local': 'ローカル編集',

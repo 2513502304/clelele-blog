@@ -45,3 +45,5 @@ output/gallery-generation/
 
 # Python pipeline bytecode
 __pycache__/
+
+.context/compound-engineering/

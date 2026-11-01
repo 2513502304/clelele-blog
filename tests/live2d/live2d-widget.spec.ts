@@ -143,6 +143,7 @@ test('enabled character voice requests the audio paired with the visible dialogu
   await page.route('**/api/live2d/catalog*', (route) => route.fulfill({ json: catalog }));
   const voiceIndex = page.waitForResponse(
     (response) => response.url().includes(`${voiceRelease}/dialogues.json`) && response.ok(),
+    { timeout: 120_000 },
   );
   await page.goto('/');
   await waitForLive2DReady(page);

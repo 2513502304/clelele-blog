@@ -1,5 +1,7 @@
 # Live2D 资源与工作室
 
+多人物编辑、动态特效、海报、关键帧和动画导出现在由独立的[多人物创作台](live2d-workbench.md)承载。本文中的单画布、关闭后重置、静态滤镜和 PNG 限制均指博客内的轻量弹窗；资源同步及兼容说明对两种入口仍然适用。
+
 2026-10-29 的同步结果：Bestdori 五区合集由 3,477 套增至 3,551 套，本次新增的 74 套全部发布；Our Notes 三个公开索引按模型 ID 去重后共 261 套，已发布为独立、不可变的 HF 资源包。两个游戏保留不同服装 ID，同一人物通过完整姓名或明确的舞台名别名合并。
 
 Bestdori 的资源仍属于 Girls Band Party，并不包含 Our Notes 原生模型。本次新增原生格式适配，而非将新游戏模型转换成旧游戏模型。HF 沿用既有 `raw-datasets/bestdori` 存储前缀；每个资源包的 provenance 单独记录真实来源、版本和校验值。
@@ -52,6 +54,8 @@ npm run sync:live2d-our-notes -- --publish
 # 发布到独立的原生目录；旧版博客继续读取原目录：
 npm run sync:live2d-our-notes -- --publish --commit-catalog
 ```
+
+上面的 `_glasses` 命令演示指定服装同步。下文的边缘采样对照使用的是无眼镜版本 `adv_live2d_anon_002_casual_spring_01`；二者是不同服装 ID，不能据此前后对比推断所有变体均经过人工验证。
 
 所有索引、下载、HF 和 Git 网络操作经代理执行。`--publish` 只写不可变包；`--commit-catalog` 要求同时指定 `--publish` 且本批次无失败。未知或空模型选择会报错。新版本替换已有服装需走显式的版本更新流程，脚本不会静默覆盖。
 

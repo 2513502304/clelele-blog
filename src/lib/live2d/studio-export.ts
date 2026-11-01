@@ -35,6 +35,15 @@ export async function exportStudioScene(frame: string, scene: StudioScene, aspec
   canvas.height = Math.round(canvas.width / aspect);
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Canvas unavailable');
+  // Unsupported properties accept expando assignments, so check before writing.
+  // Never report success while silently exporting pixels without the chosen filter.
+  const filter = studioFilterCss(scene.filter, scene.filterStrength);
+  if (filter !== 'none') {
+    if (!('filter' in ctx)) throw new Error('Canvas filters unavailable');
+    ctx.filter = filter;
+    if (ctx.filter === 'none') throw new Error('Canvas filters unavailable');
+    ctx.filter = 'none';
+  }
   const { width: w, height: h } = canvas;
   if (scene.background !== 'transparent') {
     ctx.fillStyle = STUDIO_BACKGROUNDS[scene.background];
@@ -50,7 +59,7 @@ export async function exportStudioScene(frame: string, scene: StudioScene, aspec
     ctx.drawImage(background, (w - bw) / 2, (h - bh) / 2, bw, bh);
   }
   ctx.save();
-  ctx.filter = studioFilterCss(scene.filter, scene.filterStrength);
+  ctx.filter = filter;
   ctx.translate(w / 2 + (scene.x * w) / 100, h / 2 + (scene.y * h) / 100);
   ctx.scale(scene.zoom / 100, scene.zoom / 100);
   ctx.drawImage(image, -w / 2, -h / 2, w, h);
