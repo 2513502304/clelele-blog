@@ -8,13 +8,25 @@ export const prerender = false;
 const metadata = createLive2DRemoteMetadataStore(() => getLive2DReadS3Config(process.env));
 
 /** Mutable metadata gets a short CDN TTL; immutable model members retain their one-year cache. */
-export const GET: APIRoute = async () => {
+export const GET: APIRoute = async ({ url }) => {
   if (!live2dEnabled && process.env.LIVE2D_ASSET_DELIVERY_MODE !== 'enabled') {
     return new Response('Live2D catalog not found.', { status: 404 });
   }
   try {
     const catalog = await metadata.getCatalog();
-    return Response.json(catalog, {
+    const responseCatalog =
+      url.searchParams.get('native') === '1'
+        ? catalog
+        : {
+            ...catalog,
+            characters: catalog.characters
+              .map((character) => ({
+                ...character,
+                costumes: character.costumes.filter((costume) => !costume.entryPath.endsWith('.native.json')),
+              }))
+              .filter((character) => character.costumes.length),
+          };
+    return Response.json(responseCatalog, {
       headers: {
         'cache-control': 'public, max-age=300, stale-while-revalidate=3600',
         'vercel-cdn-cache-control': 'public, max-age=300, stale-while-revalidate=3600',

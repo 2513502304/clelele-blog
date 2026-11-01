@@ -24,9 +24,10 @@
 import { animation } from '@constants/design-tokens';
 import { cn } from '@lib/utils';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
+import { registerPageOverlay } from '@store/page-activity';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import type React from 'react';
-import { createContext, forwardRef, useCallback, useContext, useState } from 'react';
+import { createContext, forwardRef, useCallback, useContext, useEffect, useState } from 'react';
 
 // Context for animation state and open state
 interface DialogContextValue {
@@ -40,10 +41,15 @@ const DialogContext = createContext<DialogContextValue | null>(null);
 // Root Dialog component with animation state management
 interface DialogProps extends DialogPrimitive.DialogProps {
   children: React.ReactNode;
+  /** Only the studio moves the active Live2D surface inside the dialog. */
+  keepLive2DActive?: boolean;
 }
 
-function Dialog({ children, open, onOpenChange, ...props }: DialogProps) {
+function Dialog({ children, open, onOpenChange, keepLive2DActive = false, ...props }: DialogProps) {
   const [isAnimating, setIsAnimating] = useState(false);
+  useEffect(() => {
+    if (open && props.modal !== false) return registerPageOverlay(keepLive2DActive);
+  }, [open, props.modal, keepLive2DActive]);
 
   const handleOpenChange = useCallback(
     (nextOpen: boolean) => {

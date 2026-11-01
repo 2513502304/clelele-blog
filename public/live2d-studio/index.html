@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Live2D 工作室 · 多人物创作台</title>
+  <link rel="stylesheet" href="/fonts/ChillRoundFRegular/result.css"><link rel="stylesheet" href="./style.css"><link rel="stylesheet" href="./poster-fonts.css"><link rel="stylesheet" href="./poster-cjk-fonts.css"><link rel="stylesheet" data-action-controls href="./action-controls.css"><link rel="stylesheet" href="./workbench.css"><link rel="stylesheet" href="./atelier.css"><link rel="stylesheet" href="./studio-design.css">
+</head>
+<body>
+<div id="app" data-layout="rails" data-ce-variant="工具常驻">
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">✳</span><div><h1>Live2D 工作室 <span class="prototype">创作台</span></h1><p>给角色一个表情，留住这一刻。</p></div></div>
+    <div class="variant-switch" role="group" aria-label="编辑布局"><button data-layout="rails" aria-pressed="true">创作台</button><button data-layout="canvas" aria-pressed="false">专注画布</button></div>
+    <div class="top-actions"><div class="history-tools"><button id="undo" aria-label="撤销" title="撤销 · ⌘/Ctrl Z" disabled>↶</button><button id="redo" aria-label="重做" title="重做 · ⌘/Ctrl Shift Z" disabled>↷</button></div><button id="presets-open" class="save-preset">我的预设</button><button class="icon-btn" id="help" title="查看操作说明" aria-label="查看操作说明">?</button><button class="icon-btn" id="theme" title="切换深浅色" aria-label="切换深浅色">◐</button><button class="primary" id="export-open">↓ <span>导出作品</span></button></div>
+  </header>
+  <main class="workspace"><nav class="tool-rail" aria-label="工作室工具"><button data-rail="model" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="7" r="3"/><path d="M5 21v-3a7 7 0 0 1 14 0v3"/></svg><span>人物</span></button><button data-rail="actions"><svg viewBox="0 0 24 24"><path d="m8 4 11 8-11 8Z"/></svg><span>动作</span></button><button data-rail="pose"><svg viewBox="0 0 24 24"><circle cx="12" cy="4" r="2"/><path d="m4 9 8 2 8-2M12 6v9m0 0-5 7m5-7 5 7"/></svg><span>姿态</span></button><div class="rail-divider"></div><button data-rail="scene" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m3 15 5-5 5 6 3-3 5 5"/></svg><span>画面</span></button><button data-rail="filters" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2 2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5Z"/></svg><span>氛围</span></button><button data-rail="poster" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M12 5v15M8 20h8M4 5v4M20 5v4"/></svg><span>海报</span></button><button data-rail="layers" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="m3 7 9-4 9 4-9 4Zm0 5 9 4 9-4M3 17l9 4 9-4"/></svg><span>图层</span></button><button data-rail="dialogue" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11a9 8 0 0 1-9 8H5l-3 3V11a9 8 0 0 1 19 0Z"/><path d="M7 9h10M7 13h7"/></svg><span>台词</span></button></nav>
+    <aside class="model-panel panel" id="model-panel" aria-label="角色与动作">
+      <nav class="actor-page-tabs" aria-label="人物编辑"><button data-actor-page="model" aria-pressed="true">人物</button><button data-actor-page="actions">动作</button><button data-actor-page="pose">姿态</button></nav><section data-actor-panel="model"><div class="panel-heading"><h2>画面中的人物</h2><span class="source" id="actor-count">1 / 3</span></div>
+      <div id="actor-list" class="actor-list"></div>
+      <div class="actor-order"><button id="actor-back">后移</button><button id="actor-front">前移</button><button id="actor-remove">移除</button></div>
+      <div class="add-actor-row"><select id="add-model" aria-label="要加入画面的角色"><option value="adv_live2d_soyo_004_casual_spring_01">长崎素世</option><option value="adv_live2d_anon_002_casual_spring_01">千早爱音</option><option value="adv_live2d_anon_002_casual_spring_01_glasses">爱音 · 眼镜</option></select><button id="add-actor" title="加入一个独立人物">＋</button></div>
+
+      <details class="model-picker"><summary>替换选中人物 / 服装</summary>
+      <label class="catalog-search"><span>搜索角色或服装</span><input id="model-search" type="search" placeholder="初华 / Uika / 春 / 眼镜…" autocomplete="off"></label>
+      <p id="model-results" class="hint" role="status"></p><div class="model-list" id="model-list"></div>
+      <button id="model-more" class="wide-button">显示更多</button>
+      <p class="hint">Our Notes · 人物资源按需读取，已校验的文件最多缓存 128 MB。</p>
+      </details>
+      </section><section data-actor-panel="actions" hidden><div class="section-title"><h2 id="actions-heading">动作与表情</h2><button id="label-locale" class="text-btn" title="切换动作、表情和参数的中英文名称">中 / EN</button></div>
+      <div id="actions-editor"></div></section><section data-actor-panel="pose" hidden><div id="pose-editor"></div>
+      <label class="range-field actor-rotation">人物整体倾斜<output id="actor-rotation-output">0°</output><input id="actor-rotation" type="range" min="-180" max="180" value="0" step="1"></label>
+      <p class="hint">面部与身体使用模型原有范围；整体倾斜可独立旋转人物。</p>
+      </section><div class="left-footer"><span class="status-dot"></span><span>仅选中人物播放 · 其他人物保留姿态</span></div>
+    </aside>
+    <section class="stage-area" aria-label="画布工作区">
+      <div class="stage-heading"><div><strong id="model-name">千早爱音</strong><span id="costume-name">春日便服</span></div><span class="frame-label" id="frame-label">4 : 3</span></div>
+      <div class="stage-well" id="stage-well">
+        <div class="stage-frame" id="stage-frame" role="region" tabindex="0" aria-label="角色画布，可拖动与滚轮缩放">
+          <canvas id="output"></canvas>
+          <canvas id="decorations" aria-hidden="true"></canvas><canvas id="selection-outline" aria-hidden="true"></canvas>
+          <canvas id="caption" class="caption" hidden aria-label="台词预览"></canvas>
+          <div class="guides" id="guides" hidden></div>
+          <div class="loading" id="loading" role="status"><div class="load-symbol">✳</div><strong id="load-title">准备角色…</strong><progress id="load-progress" max="100" value="0"></progress><span id="load-message">首次载入需要准备模型与纹理</span><button id="retry" hidden>重试此角色</button><button id="load-cancel" hidden>取消切换</button><button id="load-keep-current" hidden>继续编辑原人物</button></div>
+          <div class="target-badge" id="target-badge">✥ 正在移动背景</div>
+        </div>
+      </div>
+      <div class="stage-tools">
+        <div class="tool-group"><button id="precise-selection" aria-pressed="true" title="点击人物或文字直接编辑；点击空白取消选择">⌖ 点选</button></div><div class="tool-group target-controls" role="group" aria-label="编辑对象"><button data-target="model" aria-pressed="true" title="拖动与滚轮调整角色">角色</button><button data-target="text" aria-pressed="false" title="拖动选中文字，滚轮调整字号">文字</button><button data-target="background" aria-pressed="false" title="拖动与滚轮调整背景图片">背景</button></div>
+        <div class="tool-group object-controls"><button id="duplicate-object" aria-label="复制选中对象" title="复制对象 · ⌘/Ctrl D">⧉</button><button id="delete-object" aria-label="删除选中对象" title="删除对象 · Delete">⌫</button></div><div class="tool-group zoom-controls"><button id="zoom-out" aria-label="缩小">−</button><button id="zoom-value" title="重置位置和缩放">100%</button><button id="zoom-in" aria-label="放大">＋</button><button id="fit" title="适应画布" aria-label="适应画布">⛶</button></div>
+        <div class="tool-group"><button id="pause" aria-pressed="false">Ⅱ 暂停</button><button id="guides-toggle" aria-pressed="false" title="三分线构图辅助">网格</button></div>
+      </div>
+      <div id="timeline-slot"></div><div id="keyframe-slot"></div><div class="stage-status"><span id="gesture-hint">拖拽移动 · 滚轮缩放 · 双击复位</span><span id="render-stats">准备渲染器</span></div>
+    </section>
+    <aside class="inspector panel" id="inspector" aria-label="画面编辑">
+      <nav class="inspector-tabs" aria-label="画面设置"><button data-tab="scene" aria-pressed="true">画面</button><button data-tab="filters" aria-pressed="false">滤镜</button><button data-tab="poster" aria-pressed="false">海报</button><button data-tab="layers" aria-pressed="false">图层</button><button data-tab="dialogue" aria-pressed="false">台词</button></nav>
+      <div class="inspector-scroll">
+        <section data-tab-panel="layers" hidden><div class="section-title"><h2>图层</h2><span class="source">FRONT → BACK</span></div><p class="hint">上方遮挡下方，可拖动排列。点击一行激活后可删除；「隐藏」的图层可点「显示」恢复。</p><div id="scene-layers"></div><button id="select-typography" class="wide-button">T 选择整组文字排版</button><p class="hint">整组选中后，拖拽移动；滚轮或 ＋ / − 等比缩放所有文字。</p></section>
+        <section data-tab-panel="scene">
+          <div class="section-title"><h2>构图比例</h2><span class="help-dot" tabindex="0" data-tip="改变构图与导出的宽高比例。角色和背景分别保留自己的移动与缩放。">?</span></div>
+          <div class="ratio-grid" id="ratios"><button data-ratio="1">1:1</button><button data-ratio="1.333333" class="selected">4:3</button><button data-ratio="1.777778">16:9</button><button data-ratio="0.75">3:4</button><button data-ratio="0.8">4:5</button><button data-ratio="0.5625">9:16</button></div>
+          <div class="section-title"><h2>背景</h2><button id="reset-background" class="text-btn">复位</button></div>
+          <div class="background-options" id="background-options">
+            <button data-background="paper" class="selected" aria-label="暖纸白"><i style="background:#f6f0ec"></i><span>暖纸白</span></button>
+            <button data-background="blush" aria-label="晨间粉"><i style="background:linear-gradient(145deg,#f4d2d9,#e7ddc9)"></i><span>晨间粉</span></button>
+            <button data-background="midnight" aria-label="暮蓝"><i style="background:linear-gradient(145deg,#283448,#49536a)"></i><span>暮蓝</span></button>
+            <button data-background="transparent" aria-label="透明"><i class="checker"></i><span>透明</span></button>
+          </div>
+          <label class="upload" id="upload-drop"><input type="file" id="background-file" accept="image/png,image/jpeg,image/webp"><span>＋</span><strong>加入背景图片</strong><small>也可将图片拖入画布 · 仅在本机处理</small></label>
+          <div id="retained-background" class="retained-background" hidden><div><small>已上传 · 切换预设仍保留</small><strong id="background-name"></strong></div><button id="use-uploaded-background">使用这张图片</button></div>
+          <div class="background-library-heading"><h3>我的背景</h3><span id="background-library-count">0 / 12</span></div>
+          <div id="background-library" class="background-library" hidden></div><p class="hint">每张背景分别记住位置与缩放。先选中，再移除；移除可以撤销。最多12张、100 MB。</p>
+<div class="background-storage"><button id="background-usage" type="button">查看素材占用</button><small id="background-usage-output" role="status">仅保存在本机；仍能撤销的素材会保留。</small></div>
+          <div class="settings-launchers"><button data-popup="background-popover"><span>◩</span><strong>背景设置</strong><small>颜色 · 缩放</small><b>↗</b></button><button data-popup="quality-popover"><span>◇</span><strong>预览画质</strong><small id="quality-summary">精细 · 2×</small><b>↗</b></button></div>
+          <div id="background-popover" class="tool-popover" popover><div class="popover-heading"><h3>背景设置</h3><button data-close-popup aria-label="关闭背景设置">×</button></div><p class="hint">只调整背景，人物和文字保持原位。</p><div class="two-fields"><label class="field">底色<input id="background-color" type="color" value="#f6f0ec"></label><label class="field">渐变色<input id="background-color2" type="color" value="#e7ddc9"></label></div><label class="range-field">背景缩放 <output id="bg-zoom-output">100%</output><input id="bg-zoom" type="range" min="100" max="400" value="100"></label><button id="edit-background" class="wide-button">在画布上移动背景图片</button></div>
+          <div id="quality-popover" class="tool-popover" popover><div class="popover-heading"><h3>预览画质</h3><button data-close-popup aria-label="关闭画质设置">×</button></div><div class="quality-switch"><button data-quality="1" aria-pressed="false">轻量 <small>1× 像素密度</small></button><button data-quality="2" aria-pressed="true">精细 <small>2× 像素密度</small></button></div><p class="hint">仅控制编辑时的显示精度。导出会按所选尺寸重新渲染，不受此项限制。精细模式使用更多 GPU 资源。</p></div>
+        </section>
+        <section data-tab-panel="filters" hidden>
+          <div class="section-title"><h2>画面风格</h2><button id="compare" class="text-btn" title="按住查看未调色的原图">按住看原色</button></div>
+          <div class="filter-grid" id="filters">
+            <button data-filter="original" class="selected"><i class="f-original">Aa</i><span>原色</span></button><button data-filter="soft"><i class="f-soft">Aa</i><span>柔光</span></button><button data-filter="film"><i class="f-film">Aa</i><span>胶片</span></button><button data-filter="manga"><i class="f-manga">Aa</i><span>漫画网点</span></button><button data-filter="pixel"><i class="f-pixel">Aa</i><span>像素</span></button><button data-filter="night"><i class="f-night">Aa</i><span>蓝调</span></button>
+          </div>
+          <p class="hint" id="filter-description">保留模型原始颜色与细节。</p>
+          <div class="settings-launchers"><button id="adjust-filter" data-popup="filter-popover"><span>≋</span><strong>调整当前滤镜</strong><small id="filter-summary">原色</small><b>↗</b></button></div>
+          <div id="filter-popover" class="tool-popover filter-popover" popover><div class="popover-heading"><h3 id="filter-panel-title">滤镜调整</h3><button data-close-popup aria-label="关闭滤镜调整">×</button></div><div id="filter-specific-controls"></div><details class="adjustment-section"><summary>基础调色</summary><label class="range-field">滤镜强度 <output id="strength-output">70%</output><input type="range" id="strength" min="0" max="100" value="70"></label><label class="range-field">曝光 <output id="exposure-output">0.00</output><input type="range" id="exposure" min="-300" max="300" value="0"></label><label class="range-field">饱和度 <output id="saturation-output">100%</output><input type="range" id="saturation" min="0" max="300" value="100"></label><label class="check-field"><input type="checkbox" id="grade-background">背景一起调色</label></details><button class="wide-button" id="reset-filter">复位当前滤镜</button></div>
+          <div class="section-title"><h2>动态氛围</h2><span class="help-dot" tabindex="0" data-tip="画面特效独立播放，人物暂停时仍可流动。可单独定格特效；导出会保留当前颜色与动态设置。">?</span></div>
+          <div class="effect-options"></div><div class="effect-transport"><span id="effect-description">为画面添一层流动的氛围。</span><button id="effect-play" aria-pressed="true" title="单独暂停或继续画面特效">Ⅱ</button></div>
+          <button data-popup="effects-popover" class="subtle-link">调整动效 <span>↗</span></button><div id="effects-popover" class="tool-popover" popover><div class="popover-heading"><h3>动效细节</h3><button data-close-popup aria-label="关闭装饰设置">×</button></div><label class="range-field">数量<output id="effect-density-output">45%</output><input id="effect-density" type="range" min="5" max="100" value="45"></label><label class="range-field">速度<output id="effect-speed-output">50%</output><input id="effect-speed" type="range" min="0" max="100" value="50"></label><label class="range-field">不透明度<output id="effect-opacity-output">60%</output><input id="effect-opacity" type="range" min="0" max="100" value="60"></label><label class="field">光色<input id="effect-color" type="color" value="#dc7d9a"></label><div id="effect-specific-controls" class="effect-detail-section"></div><button id="reset-effect" class="subtle-link">重置这组细节</button><p class="hint">独立于人物动作播放；切到后台时暂停计算。导出动画按相同时间采样。</p></div>
+        </section>
+        <section data-tab-panel="poster" hidden>
+          <div class="section-title"><h2>从一张封面开始</h2><span class="help-dot" tabindex="0" data-tip="预设会调整画框、背景、人物位置并替换文字图层；部分预设包含配套滤镜。单人预设会隐藏多余人物，可在左侧重新显示。">?</span></div>
+          <div class="poster-presets" id="poster-presets"></div>
+          <p class="hint">选一种排版，再让它成为你的作品。</p>
+          <div class="section-title"><h2>文字图层</h2><button class="text-btn" id="text-add">＋ 添加</button></div>
+          <div id="text-layers" class="text-layers"></div>
+          <div class="text-layer-actions"><button id="text-back" title="在文字图层中后移">后移</button><button id="text-front" title="在文字图层中前移">前移</button><button id="text-remove">删除</button></div>
+          <div id="text-editor" hidden>
+            <label class="field">文字内容<textarea id="poster-text" rows="3" maxlength="200"></textarea></label>
+            <div class="two-fields"><label class="field">字体<select id="poster-font"></select></label><label class="field">颜色<input type="color" id="poster-color" value="#a54b68"></label></div>
+            <div class="two-fields"><label class="field">字效<select id="poster-style"><option value="fill">实色</option><option value="outline">描边</option><option value="shadow">柔和投影</option><option value="comic">漫画描边</option><option value="neon">霓虹发光</option></select></label><label class="field">前后关系<select id="poster-layer"><option value="back">人物后方</option><option value="front">人物前方</option></select></label></div>
+            <label class="field">文字对齐<select id="poster-align"><option value="left">左对齐</option><option value="center">居中</option><option value="right">右对齐</option></select></label>
+            <details class="text-finish"><summary>字效细节</summary>
+            <label class="field">描边／光晕颜色<input id="poster-accent" type="color" value="#362633"></label>
+            <label class="range-field">描边厚度<output id="poster-stroke-output"></output><input id="poster-stroke" type="range" min="0" max="25" step="0.5"></label>
+            <label class="range-field">光晕半径<output id="poster-glow-output"></output><input id="poster-glow" type="range" min="0" max="50" step="1"></label>
+            <label class="check-field"><input id="poster-italic" type="checkbox">斜体</label>
+            <p class="hint">漫画描边保留内部填色；霓虹用文字颜色填充、独立光色发光。以上效果会一并导出。</p></details>
+            <button class="wide-button" id="text-drag">✥ 在画布上移动／缩放文字</button><p class="hint">拖动文字移动，拖动四角等比例缩放；滚轮也可调整大小。</p>
+            <label class="range-field">字号 / 画面高度<output id="poster-size-output"></output><input id="poster-size" type="range" min="0.5" max="50" step="0.1"></label>
+            <label class="range-field">字距<output id="poster-tracking-output"></output><input id="poster-tracking" type="range" min="-8" max="40" step="1"></label>
+            <label class="range-field">行距<output id="poster-lineHeight-output"></output><input id="poster-lineHeight" type="range" min="70" max="200" step="1"></label>
+            <label class="range-field">左右位置<output id="poster-x-output"></output><input id="poster-x" type="range" min="-50" max="120" step="0.5"></label>
+            <label class="range-field">上下位置<output id="poster-y-output"></output><input id="poster-y" type="range" min="-50" max="120" step="0.5"></label>
+            <label class="range-field">旋转<output id="poster-rotation-output"></output><input id="poster-rotation" type="range" min="-180" max="180"></label>
+            <label class="range-field">不透明度<output id="poster-opacity-output"></output><input id="poster-opacity" type="range" min="0" max="100"></label>
+          </div>
+          <p class="hint">艺术字在导出时重新排版绘制，不会放大截图。中文沿用博客字体。</p>
+        </section>
+        <section data-tab-panel="dialogue" hidden>
+          <div class="section-title"><h2>这一刻，想说的话</h2></div><div id="dialogue-actors" class="dialogue-actors"></div><p class="hint">每个人物拥有独立台词；在这里切换说话人。</p><label class="field">说话人<input id="speaker" maxlength="40" value="千早爱音"></label><label class="field">台词<textarea id="dialogue" rows="4" maxlength="160" placeholder="写下一句台词…"></textarea></label>
+          <label class="range-field">文字大小 <output id="text-size-output">100%</output><input id="text-size" type="range" min="70" max="150" value="100"></label><label class="check-field"><input id="caption-export" type="checkbox" checked>导出时保留台词</label><p class="hint">文字始终在画面安全范围内。选择透明背景并清空台词，可以导出角色立绘。</p>
+          <button class="wide-button" id="clear-dialogue">清空台词</button>
+        </section>
+      </div>
+      <div class="inspector-footer"><span class="status-dot"></span> <span id="draft-status">正在准备本地草稿…</span></div>
+    </aside>
+    <nav class="floating-nav" aria-label="画布模式工具"><button id="toggle-model-panel" aria-pressed="false">♙ 人物</button><button data-float-tab="scene">▧ 画面</button><button data-float-tab="filters">✧ 滤镜</button><button data-float-tab="poster">T 海报</button><button data-float-tab="dialogue">☷ 台词</button><button id="hide-panels">收起</button></nav>
+  </main>
+  <footer class="page-footer"><span><b>clelele</b> 的创作角落</span><span id="layout-description">角色、动作和画面设置始终可见。</span><span class="local-only">作品保存在此浏览器</span></footer>
+</div>
+<canvas id="model-source" hidden></canvas>
+<dialog id="export-dialog" aria-labelledby="export-heading">
+  <header class="export-header"><div><h2 id="export-heading">导出作品</h2><p>保存画布里的构图，不包含工具栏、选框与辅助线。</p></div><form method="dialog"><button class="dialog-close" aria-label="关闭导出窗口">×</button></form></header>
+  <div class="export-scroll"><fieldset id="export-controls">
+    <div class="two-fields"><label class="field">格式<select id="export-format"><option value="png">PNG · 可透明</option><option value="jpeg">JPG · 更小体积</option><option value="webp">WebP · 可透明</option><option value="gif">GIF · 动画</option><option value="mp4">MP4 · 无声动画</option></select></label><label class="field">画质<select id="export-quality"><option value="1" selected>最高</option><option value="0.88">均衡</option><option value="0.72">轻量</option></select></label></div>
+    <label class="field">分辨率来源<select id="export-area"><option value="canvas">自定义导出尺寸</option><option value="preview">与屏幕显示同尺寸</option></select></label>
+    <label class="field">长边尺寸<select id="export-size"><option value="1280">1280 px · 日常分享</option><option value="2560">2560 px · 清晰收藏</option><option value="3840" selected>3840 px · 大尺寸</option></select></label>
+    <p class="hint">两种尺寸来源都保留完整构图，仅输出像素数不同。</p>
+    <section id="animation-export-options" hidden>
+      <div class="two-fields"><label class="field">时长（秒）<input id="export-duration" type="number" min="0.2" max="8" step="0.1" value="3"></label><label class="field">帧率<select id="export-fps"><option value="24" selected>24 fps</option><option value="15">15 fps</option><option value="12">12 fps</option></select></label></div>
+      <div class="export-actors-heading"><h3>参与动画的人物</h3><button type="button" id="export-select-all">全选可见人物</button></div>
+      <div id="export-actors" role="group" aria-label="参与动画的人物"></div>
+      <p class="hint">勾选人物同时从各自动作起点播放，保留表情、关键帧与局部微调；未勾选的人物保持当前姿态。全部取消时，仅画面特效播放。</p>
+      <p class="hint">GIF 使用统一调色板，不支持半透明；MP4 使用当前底色。动画尺寸会按时长和帧率自动限制。</p>
+    </section>
+  </fieldset>
+  <section id="animation-preview" class="animation-preview" hidden aria-label="动画预览">
+    <div class="animation-preview-heading"><h3>先看一遍</h3><button type="button" id="animation-preview-toggle" aria-pressed="false">播放预览</button></div>
+    <canvas id="animation-preview-canvas" width="1" height="1" hidden aria-label="所选人物的同步动画预览"></canvas>
+    <p id="animation-preview-status" role="status" class="hint">查看所选人物一起运动的构图。</p>
+    <p class="hint">预览最长边 720 px、最高 15 fps；导出保留上方选择的画质与帧率。GIF 的有限色彩以导出文件为准。</p>
+  </section></div>
+  <footer class="export-footer"><p id="export-description" class="hint"></p><button id="export-confirm" class="primary wide-button">导出 PNG</button><progress id="export-progress" max="1" value="0" hidden aria-label="导出进度"></progress><button id="export-cancel" class="wide-button" hidden>取消导出</button><p id="export-status" role="status" class="hint"></p></footer>
+</dialog>
+<dialog id="presets-dialog"><form method="dialog"><button class="dialog-close" aria-label="关闭">×</button></form><span class="dialog-mark">✧</span><h2>我的预设</h2><p>保存在这个浏览器。构图可用于其他人物，姿态预设应用到当前角色。</p><label class="field">预设名称<input id="preset-name" maxlength="60" placeholder="给这份灵感起个名字…"></label><label class="field">保存内容<select id="preset-kind"><option value="composition">构图 · 画面 / 滤镜 / 海报 / 台词</option><option value="pose">姿态 · 当前角色动作与表情</option><option value="project">完整作品 · 所有人物与设置</option></select></label><button id="preset-save" class="primary wide-button">保存预设</button><div id="saved-presets" class="saved-presets"></div><p class="hint" id="preset-storage-hint">草稿会在编辑后自动保存，刷新后自动恢复。</p></dialog>
+<dialog id="help-dialog"><form method="dialog"><button class="dialog-close" aria-label="关闭">×</button></form><span class="dialog-mark">✥</span><h2>让画布跟着你的手</h2><dl><dt>⌘ / Ctrl Z · Shift Z</dt><dd>撤销与重做；输入框中保留系统文字撤销。</dd><dt>Delete / Backspace</dt><dd>删除选中文字或人物，包括最后一位人物；可撤销。图层列表需先激活对应行。</dd><dt>⌘ / Ctrl C · V · D</dt><dd>复制、粘贴或直接复制选中对象。人物和文字都可使用，最多三个人物。</dd><dt>[ / ] · Shift + 方向键</dt><dd>将人物后移/前移；按住 Shift 加速移动。</dd><dt>Esc</dt><dd>关闭设置弹窗，或取消对象选择。</dd><dt>点选</dt><dd>点击人物或文字自动切到对应编辑面板，点空白取消选择。</dd><dt>拖拽 / 双指移动</dt><dd>移动当前编辑对象：角色、选中文字或背景。</dd><dt>鼠标滚轮 / 双指捏合</dt><dd>缩放。角色以鼠标所在位置为中心。</dd><dt>双击 / 0</dt><dd>重置当前对象的位置与缩放。</dd><dt>方向键 / ＋ / −</dt><dd>聚焦画布后，精确平移或缩放。</dd><dt>空格</dt><dd>在工作室内暂停或继续动作；输入文字时仍正常输入空格。</dd><dt>◇ · 姿态关键帧</dt><dd>点击参数旁的菱形记录当前值。展开画布下方的动画曲线，拖动菱形调整时间与数值，选择贝塞尔可直接拖动曲线控制柄。双击空白处新增，Delete 删除选中参数的一个关键帧。拖帧会暂停播放，并保留其他手动微调。</dd></dl><p class="hint">动作通过时间轴逐帧采样，播放、拖动和导出保持一致；暂不包含游戏运行时的随机眨眼和完整物理模拟。<br>创作台通过本站资源接口按需加载模型，已校验的资源最多缓存 128 MB。作品和背景仅保存在当前浏览器；目录不代表每套服装都已逐一人工验收。</p></dialog>
+<div class="toast" id="toast" role="status" hidden></div>
+<script type="module" src="./boot.js"></script>
+</body></html>

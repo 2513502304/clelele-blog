@@ -103,6 +103,15 @@ test('intent preload is cancelled on leave/scroll and a click joins a single in-
   await page.evaluate(() => document.dispatchEvent(new Event('scroll')));
   await page.waitForTimeout(500);
   expect(originalRequests).toEqual([]);
+  // Opening a full-page UI cancels pending background intent; synthetic hover must not re-arm it.
+  await trigger.dispatchEvent('pointerover', { pointerType: 'mouse' });
+  await page.getByRole('button', { name: '搜索', exact: true }).evaluate((button: HTMLButtonElement) => button.click());
+  await expect(page.locator('html')).toHaveAttribute('data-background-paused', 'true');
+  await trigger.dispatchEvent('pointerover', { pointerType: 'mouse' });
+  await page.waitForTimeout(500);
+  expect(originalRequests).toEqual([]);
+  await page.getByRole('button', { name: '关闭', exact: true }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-background-paused', 'false');
   await trigger.focus();
   await expect.poll(() => originalRequests.length).toBe(1);
   await trigger.press('Enter');

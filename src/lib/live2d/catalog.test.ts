@@ -8,7 +8,7 @@ test('published catalog remains lightweight and validates at import time', () =>
   assert.equal(live2dCatalog.characters.length, 2);
   assert.equal(
     live2dCatalog.characters.reduce((total, character) => total + character.costumes.length, 0),
-    4,
+    5,
   );
   assert.equal('model' in live2dCatalog.characters[0].costumes[0], false);
 });

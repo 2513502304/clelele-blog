@@ -101,6 +101,69 @@ test('falls back to the checked-in catalog when the remote directory is unavaila
   assert.deepEqual(await store.getCatalog(), live2dCatalog);
 });
 
+test('merges an optional native catalog without duplicating identities or replacing GBP metadata', async () => {
+  const { catalog } = remoteFixture();
+  const native = structuredClone(catalog);
+  native.characters[0].label = { zh: '另一个来源名称' };
+  native.characters[0].costumes[0].id = 'native-costume';
+  native.characters[0].costumes[0].entryPath = getLive2DObjectKey(
+    native.characters[0].costumes[0].releaseId,
+    'model.native.json',
+  );
+  let fail = false;
+  const store = createLive2DMetadataStore({
+    nativeCatalogKey: 'catalog-our-notes.json',
+    catalogTtlMs: 0,
+    client: {
+      async get(key) {
+        if (key === 'catalog.json') return snapshot(catalog);
+        if (fail) throw new Error('temporary outage');
+        return snapshot(native);
+      },
+    },
+  });
+  const combined = await store.getCatalog();
+  assert.equal(combined.characters.length, 1);
+  assert.deepEqual(combined.characters[0].label, catalog.characters[0].label);
+  assert.deepEqual(
+    combined.characters[0].costumes.map((c) => c.id),
+    ['remote-costume', 'native-costume'],
+  );
+  fail = true;
+  assert.deepEqual(await store.getCatalog(), combined, 'a transient native read failure keeps the last complete snapshot');
+  assert.equal(catalog.characters[0].costumes.length, 1);
+});
+
+test('a missing optional native catalog preserves the complete GBP directory', async () => {
+  const { catalog } = remoteFixture();
+  const store = createLive2DMetadataStore({
+    nativeCatalogKey: 'catalog-our-notes.json',
+    client: {
+      async get(key) {
+        return key === 'catalog.json' ? snapshot(catalog) : null;
+      },
+    },
+  });
+  assert.deepEqual(await store.getCatalog(), catalog);
+});
+
+test('a cold native catalog failure does not replace the remote GBP directory with bootstrap', async () => {
+  const { catalog } = remoteFixture();
+  for (const failure of ['network', 'invalid']) {
+    const store = createLive2DMetadataStore({
+      nativeCatalogKey: 'catalog-our-notes.json',
+      client: {
+        async get(key) {
+          if (key === 'catalog.json') return snapshot(catalog);
+          if (failure === 'network') throw new Error('Temporary native catalog failure');
+          return snapshot({ version: 'invalid' });
+        },
+      },
+    });
+    assert.deepEqual(await store.getCatalog(), catalog);
+  }
+});
+
 test('keeps checked-in release manifests readable after the remote catalog replaces their entries', async () => {
   const bootstrapReleaseId = live2dCatalog.characters[0]?.costumes[0]?.releaseId;
   assert.ok(bootstrapReleaseId);

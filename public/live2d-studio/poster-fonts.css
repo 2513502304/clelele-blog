@@ -1,0 +1,29 @@
+/* Latin subsets only. Each font's SIL OFL is included in fonts/poster/. */
+@font-face {
+  font-family: "Poster Bodoni Moda";
+  src: url("./fonts/poster/bodoni-moda-latin-700.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Poster Barlow Condensed";
+  src: url("./fonts/poster/barlow-condensed-latin-800.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Poster Allura";
+  src: url("./fonts/poster/allura-latin-400.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Poster Fredoka";
+  src: url("./fonts/poster/fredoka-latin-600.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+}

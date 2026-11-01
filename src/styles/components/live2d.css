@@ -508,6 +508,21 @@
   text-align: center;
 }
 
+.live2d-catalog-notice {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+.live2d-catalog-notice button {
+  flex-shrink: 0;
+  padding: 0.35rem 0.65rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.5rem;
+  color: hsl(var(--primary));
+}
+
 .live2d-pagination {
   display: grid;
   grid-template-columns: 2rem minmax(0, 1fr) 2rem;
@@ -645,4 +660,54 @@
   .live2d-dialogue-audio.is-loading {
     animation: none;
   }
+}
+
+/* The studio owns the existing canvas host, while the companion controls remain mounted. */
+.live2d-canvas-anchor,
+.live2d-canvas-host {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.live2d-root[data-studio-open="true"] > .live2d-stage,
+.live2d-root[data-studio-open="true"] > .live2d-controls-shell {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.live2d-source-filter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.3rem 0 0.7rem;
+  font-size: 0.8rem;
+}
+.live2d-source-filter select {
+  max-width: 65%;
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.45rem;
+  padding: 0.4rem;
+  background: hsl(var(--background));
+  color: inherit;
+}
+
+.live2d-load-progress {
+  display: grid;
+  gap: 0.45rem;
+  min-width: 11rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.live2d-load-progress progress {
+  width: 100%;
+  height: 0.45rem;
+  border: 0;
+  border-radius: 1rem;
+  overflow: hidden;
+  accent-color: hsl(var(--primary));
+}
+.live2d-load-progress small {
+  opacity: 0.7;
 }

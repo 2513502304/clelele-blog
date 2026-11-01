@@ -136,7 +136,7 @@ export interface ImageLightboxData {
   };
 }
 
-export type ModalType = 'drawer' | 'search' | 'codeFullscreen' | 'diagramFullscreen' | 'imageLightbox' | null;
+export type ModalType = 'live2dStudio' | 'drawer' | 'search' | 'codeFullscreen' | 'diagramFullscreen' | 'imageLightbox' | null;
 
 export interface ModalState {
   type: ModalType;

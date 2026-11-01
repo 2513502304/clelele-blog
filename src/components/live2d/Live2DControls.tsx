@@ -4,6 +4,7 @@ import { useRef } from 'react';
 interface Props {
   labels: {
     toolbar: string;
+    studio: string;
     previous: string;
     next: string;
     characters: string;
@@ -12,6 +13,7 @@ interface Props {
     hide: string;
     restore: string;
   };
+  onStudio: () => void;
   onPrevious: () => void;
   onNext: () => void;
   onCharacters: () => void;
@@ -25,6 +27,7 @@ const buttons = [
   ['next', 'ri:arrow-right-s-line'],
   ['characters', 'ri:user-smile-line'],
   ['animations', 'ri:movie-line'],
+  ['studio', 'ri:focus-3-line'],
   ['settings', 'ri:settings-3-line'],
   ['hide', 'ri:eye-off-line'],
 ] as const;
@@ -40,6 +43,7 @@ export function Live2DControls(props: Props) {
     else delete tooltip.dataset.visible;
   };
   const actions = {
+    studio: props.onStudio,
     previous: props.onPrevious,
     next: props.onNext,
     characters: props.onCharacters,

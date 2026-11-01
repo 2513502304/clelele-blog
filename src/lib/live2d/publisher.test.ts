@@ -8,6 +8,8 @@ import {
   publishImmutableJson,
   publishObjects,
   removeCatalogCharacters,
+  updateRemoteCatalog,
+  updateRemoteCatalogBatch,
   upsertCatalog,
   upsertCatalogBatch,
   verifyRemoteObject,
@@ -108,6 +110,56 @@ test('publisher is idempotent but requires explicit --replace for changed existi
     /already exists; pass --replace/,
   );
   assert.deepEqual(catalog, createCatalog(), 'create-only validation must not mutate the source catalog');
+});
+
+test('single-model publication isolates native costumes from the legacy catalog', async () => {
+  for (const native of [false, true]) {
+    const expectedKey = native ? 'catalog-our-notes.json' : 'catalog.json';
+    const costume = { ...createCostume(), entryPath: `releases/${releaseId}/model.${native ? 'native.' : ''}json` };
+    const writes: string[] = [];
+    const client = {
+      async get(key: string) {
+        assert.equal(key, expectedKey);
+        return null;
+      },
+      async put(key: string, bytes: Uint8Array, mime: string, condition: unknown) {
+        writes.push(key);
+        assert.equal(mime, 'application/json');
+        assert.deepEqual(condition, { ifNoneMatch: '*' });
+        const value: Live2DCatalog = JSON.parse(new TextDecoder().decode(bytes));
+        assert.ok(value.characters.find((c) => c.id === 'anon')?.costumes.some((c) => c.entryPath === costume.entryPath));
+        if (native) assert.equal(value.characters.length, 1, 'a new native catalog must not copy legacy bootstrap costumes');
+      },
+    } as unknown as Parameters<typeof updateRemoteCatalog>[0];
+    await updateRemoteCatalog(client, { characterId: 'anon', characterLabels: { zh: '爱音' }, replace: false }, costume);
+    assert.deepEqual(writes, [expectedKey]);
+  }
+});
+
+test('batch catalog rejects mixed engine descriptors before any remote read or write', async () => {
+  const client = {
+    get() {
+      assert.fail('mismatched batches must not read remote state');
+    },
+    put() {
+      assert.fail('mismatched batches must not publish');
+    },
+  } as unknown as Parameters<typeof updateRemoteCatalogBatch>[0];
+  const options = { characterId: 'anon', characterLabels: { zh: '爱音' }, replace: false };
+  const legacy = createCostume();
+  const native = { ...createCostume('our-notes'), entryPath: `releases/${releaseId}/model.native.json` };
+  await assert.rejects(updateRemoteCatalogBatch(client, [{ options, costume: native }]), /requires catalog-our-notes/);
+  await assert.rejects(
+    updateRemoteCatalogBatch(client, [{ options, costume: legacy }], [], 'catalog-our-notes.json'),
+    /requires catalog.json/,
+  );
+  await assert.rejects(
+    updateRemoteCatalogBatch(client, [
+      { options, costume: legacy },
+      { options, costume: native },
+    ]),
+    /requires catalog-our-notes/,
+  );
 });
 
 test('--replace updates only the matching costume and preserves its hand-tuned interactions', () => {

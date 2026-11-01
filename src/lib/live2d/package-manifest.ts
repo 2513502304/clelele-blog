@@ -1,11 +1,18 @@
 import { createHash } from 'node:crypto';
 import { lstat, open, readdir, readFile, realpath } from 'node:fs/promises';
 import path from 'node:path';
+import { gunzipSync } from 'node:zlib';
+import { LIVE2D_MAX_ASSET_BYTES } from './asset-registry';
+import { nativeModelAssets } from './native-package';
 import { type Live2DManifestObject, type Live2DPackageManifest, live2dPackageManifestSchema } from './types';
 
 const MIME_BY_EXTENSION: Record<string, string> = {
   '.json': 'application/json',
   '.moc': 'application/octet-stream',
+  '.moc3': 'application/octet-stream',
+  '.webp': 'image/webp',
+  '.gz': 'application/gzip',
+  '.glsl': 'text/plain',
   '.mtn': 'application/octet-stream',
   '.png': 'image/png',
   '.wav': 'audio/wav',
@@ -147,7 +154,19 @@ async function listFiles(root: string): Promise<string[]> {
   return files;
 }
 
-/** Builds a deterministic manifest from a converted Cubism 2 package without mutating the source directory. */
+/** Native filenames address decoded content; validate transport and decompression before publication. */
+export function assertNativeAssetBytes(asset: { path: string; size: number; decodedSize: number }, bytes: Uint8Array): void {
+  const match = /^assets\/([a-f0-9]{64})\.[a-z0-9.]+$/.exec(asset.path);
+  if (!match || asset.size > LIVE2D_MAX_ASSET_BYTES || bytes.byteLength !== asset.size) {
+    throw new Error(`Native asset stored size/path mismatch: ${asset.path}`);
+  }
+  const decoded = asset.path.endsWith('.gz') ? gunzipSync(bytes, { maxOutputLength: 50_000_000 }) : bytes;
+  if (decoded.byteLength !== asset.decodedSize || sha256(decoded) !== match[1]) {
+    throw new Error(`Native asset decoded hash/size mismatch: ${asset.path}`);
+  }
+}
+
+/** Builds an immutable allowlist for Cubism packages and native Our Notes packages. */
 export async function buildLive2DPackageManifest(
   packageRoot: string,
   options: BuildLive2DManifestOptions = {},
@@ -157,7 +176,16 @@ export async function buildLive2DPackageManifest(
   const approvedAudio = new Set([...(options.approvedAudio ?? [])].map(normalizeRelativePath));
   const sourceEntry = JSON.parse(await readFile(path.join(rootRealPath, entryPath), 'utf8')) as unknown;
   const references = new Map<string, string>();
-  collectReferences(sourceEntry, references);
+  const nativeAssets = new Map<string, ReturnType<typeof nativeModelAssets>[number]>();
+  if (entryPath.endsWith('.native.json')) {
+    for (const asset of nativeModelAssets(sourceEntry)) {
+      const normalized = normalizeRelativePath(asset.path);
+      if (nativeAssets.has(normalized)) throw new Error(`Duplicate native asset path after normalization: ${normalized}`);
+      // Byte verification uses the same canonical key as the package references below.
+      nativeAssets.set(normalized, { ...asset, path: normalized });
+      addReference(references, asset.path);
+    }
+  } else collectReferences(sourceEntry, references);
   addReference(references, entryPath);
   // Approval controls package inclusion only; model-level sound bindings are always stripped below.
   for (const audioPath of approvedAudio) addReference(references, audioPath);
@@ -182,6 +210,8 @@ export async function buildLive2DPackageManifest(
     const mime = MIME_BY_EXTENSION[extension];
     if (!mime) throw new Error(`Unsupported package file type: ${relativePath}`);
     const bytes = relativePath === entryPath ? sanitizedEntry : await readNoFollow(absolutePath);
+    const nativeAsset = nativeAssets.get(relativePath);
+    if (nativeAsset) assertNativeAssetBytes(nativeAsset, bytes);
     transformedFiles.set(relativePath, bytes);
     objects.push({ path: relativePath, size: bytes.byteLength, mime, sha256: sha256(bytes) });
   }

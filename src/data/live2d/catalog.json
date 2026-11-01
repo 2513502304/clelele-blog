@@ -60,6 +60,21 @@
             }
           ],
           "provenancePath": "src/data/live2d/provenance/63efa2f7902818e27ad2c3ec71b3cbcc6c83ee4b4c8c4176b2e7f764422f3e85.json"
+        },
+        {
+          "id": "our-notes-adv-live2d-anon-002-casual-spring-01-glasses",
+          "label": {
+            "zh": "Our Notes · 便服 · 春 · 眼镜",
+            "en": "Our Notes · casual spring glasses",
+            "ja": "Our Notes · casual spring glasses"
+          },
+          "releaseId": "d5eadf497778106f46fa76ba5e4685f3d0a3fa7eeae0b2d20a22d18ec13c81e4",
+          "entryPath": "releases/d5eadf497778106f46fa76ba5e4685f3d0a3fa7eeae0b2d20a22d18ec13c81e4/model.native.json",
+          "packageBytes": 5634079,
+          "scale": 1,
+          "position": [0, 0],
+          "interactions": [],
+          "provenancePath": "provenance/d5eadf497778106f46fa76ba5e4685f3d0a3fa7eeae0b2d20a22d18ec13c81e4/320bfaa826ff885b5d26b5ce8b3a62725c8e39e26d8b4ca16af794b8663593a1.json"
         }
       ]
     },

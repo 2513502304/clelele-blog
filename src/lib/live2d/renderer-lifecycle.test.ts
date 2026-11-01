@@ -126,3 +126,39 @@ test('reloads the latest selection after WebGL context restoration', async () =>
   assert.equal(destroyCount, 1);
   renderer.destroy();
 });
+
+test('a new native selection aborts its obsolete download and ignores late progress', async () => {
+  let rejectLoad: ((reason: unknown) => void) | undefined;
+  let oldProgress: ((progress: { stage: 'download'; loaded: number; total: number }) => void) | undefined;
+  let cancelled = 0;
+  const progress: number[] = [];
+  const native = createCore({
+    load: ({ onProgress }) =>
+      new Promise((_resolve, reject) => {
+        rejectLoad = reject;
+        oldProgress = onProgress;
+      }),
+    cancelLoading: () => {
+      cancelled++;
+      rejectLoad?.(new DOMException('Superseded', 'AbortError'));
+    },
+  });
+  let count = 0;
+  const renderer = new Live2DRenderer({
+    canvas: new EventTarget() as HTMLCanvasElement,
+    createCore: async () => (++count === 1 ? native : createCore()),
+    onProgress: (p) => progress.push(p.loaded),
+  });
+  const first = renderer.load({ key: 'a', entryPath: '/a/model.native.json', scale: 1, position: [0, 0] });
+  const rejection = assert.rejects(first, { name: 'AbortError' });
+  await new Promise((resolve) => setImmediate(resolve));
+  oldProgress?.({ stage: 'download', loaded: 10, total: 100 });
+  const second = renderer.load({ key: 'b', entryPath: '/b/model.native.json', scale: 1, position: [0, 0] });
+  oldProgress?.({ stage: 'download', loaded: 90, total: 100 });
+  await second;
+  await rejection;
+  assert.equal(cancelled, 1);
+  assert.deepEqual(progress, [10]);
+  assert.equal(renderer.getPhase(), 'ready');
+  renderer.destroy();
+});

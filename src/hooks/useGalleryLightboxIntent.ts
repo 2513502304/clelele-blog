@@ -1,5 +1,6 @@
 import { getReusableStyleGalleryImageUrl, preloadStyleGalleryImages } from '@lib/style-gallery-image-client';
 import { parseStyleGalleryImageApiPath } from '@lib/style-gallery-image-key';
+import { $backgroundPagePaused } from '@store/page-activity';
 import { useEffect, useRef } from 'react';
 
 /** A single delegated listener warms one explicit zoom target, never the whole list on scroll. */
@@ -26,7 +27,7 @@ export function useGalleryLightboxIntent(enabled: boolean): void {
       if (event instanceof PointerEvent && event.pointerType !== 'mouse') return;
       const target = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-gallery-original]') : null;
       const source = target?.dataset.galleryOriginal;
-      if (!target || !source || !parseStyleGalleryImageApiPath(source)) return;
+      if ($backgroundPagePaused.get() || !target || !source || !parseStyleGalleryImageApiPath(source)) return;
       // Moving between a button's icon and label is still the same intent.
       if (event instanceof PointerEvent && event.relatedTarget instanceof Node && target.contains(event.relatedTarget)) {
         return;
@@ -44,7 +45,7 @@ export function useGalleryLightboxIntent(enabled: boolean): void {
       if (downloading.current || document.hidden || connection?.saveData || /(^|-)2g$/.test(connection?.effectiveType ?? ''))
         return;
       timer = setTimeout(() => {
-        if (!active || !target.isConnected || document.hidden) return;
+        if (!active || !target.isConnected || document.hidden || $backgroundPagePaused.get()) return;
         downloading.current = true;
         const url = getReusableStyleGalleryImageUrl(source, false) ?? source;
         // The existing preloader registers in-flight URLs synchronously. A click
@@ -61,6 +62,9 @@ export function useGalleryLightboxIntent(enabled: boolean): void {
       const target = event.target instanceof Element ? event.target.closest('[data-gallery-original]') : null;
       if (target && (!(event.relatedTarget instanceof Node) || !target.contains(event.relatedTarget))) cancel();
     };
+    const unsubscribe = $backgroundPagePaused.subscribe((paused) => {
+      if (paused) cancel();
+    });
     document.addEventListener('pointerover', schedule);
     document.addEventListener('pointerout', leave);
     document.addEventListener('pointermove', move);
@@ -70,6 +74,7 @@ export function useGalleryLightboxIntent(enabled: boolean): void {
     document.addEventListener('visibilitychange', cancel);
     return () => {
       active = false;
+      unsubscribe();
       cancel();
       document.removeEventListener('pointerover', schedule);
       document.removeEventListener('pointerout', leave);
