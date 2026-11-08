@@ -82,7 +82,7 @@ export function describeImportHelp() {
     '  --overwrite-tag          将目标卡片标签替换为本次 --tag 集合，移除未列出的旧标签；必须至少有一个 --tag。',
     '  --prompt-model=名称      显式指定本次导入的模型名称；未指定时读取会话中的模型信息。',
     '  --metadata-only          只对已有卡片执行 Prompt 元数据 upsert，允许更新匹配变体的元数据；跳过新卡片，不替换图片。别名：--update-metadata-only。',
-    '  --api-base-url=https://…  指定目标网站，默认 clelele-blog.vercel.app。请先确认目标，避免写入错误环境。',
+    '  --api-base-url=https://…  指定目标网站，默认 clelele-blog.pages.dev。请先确认目标，避免写入错误环境。',
     '  --help / -h              显示本说明。--overwrite-images 不能与 --metadata-only 同用。',
     '',
     '[示例]',

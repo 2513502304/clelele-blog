@@ -23,6 +23,9 @@ test-results/
 
 # vercel
 .vercel
+.wrangler/
+.cloudflare-pages/
+.dev.vars*
 .superset
 
 # macOS-specific files

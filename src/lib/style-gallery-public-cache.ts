@@ -1,4 +1,4 @@
-import { invalidateByTag } from '@vercel/functions';
+import { invalidateCdnTags } from './cdn-cache';
 
 export const STYLE_GALLERY_LIST_CACHE_TAG = 'style-gallery-lists';
 export const STYLE_GALLERY_PUBLIC_CACHE_CONTROL = 'public, max-age=0, must-revalidate';
@@ -29,8 +29,8 @@ export function setStyleGalleryPublicCacheHeaders(headers: Headers, tags: readon
 export async function invalidateStyleGalleryPublicCache(slugs: readonly string[] = []): Promise<void> {
   const tags = [STYLE_GALLERY_LIST_CACHE_TAG, ...slugs.map(getStyleGalleryItemCacheTag)];
   try {
-    await invalidateByTag([...new Set(tags)]);
+    await invalidateCdnTags([...new Set(tags)]);
   } catch (error) {
-    console.error('[style-gallery] Durable data was saved but Vercel CDN cache invalidation failed.', error);
+    console.error('[style-gallery] Durable data was saved but CDN cache invalidation failed.', error);
   }
 }

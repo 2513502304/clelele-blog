@@ -19,6 +19,11 @@ function catalogItem(slug: string, imageHash: string): StyleGalleryCatalogItem {
 }
 
 describe('style gallery example upload CLI', () => {
+  it('uses the Cloudflare production host when no API override is configured', () => {
+    const options = parseStyleGalleryExampleUploadArgs(['--item', 'aaaaaa', '--platform', 'PixAI', './image.webp'], {});
+    assert.equal(options.apiBaseUrl, 'https://clelele-blog.pages.dev');
+  });
+
   it('parses aliases, tuning options, and multiple image paths', () => {
     const options = parseStyleGalleryExampleUploadArgs(
       [

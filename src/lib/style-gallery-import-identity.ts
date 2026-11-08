@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { invalidateByTag } from '@vercel/functions';
 import { z } from 'zod';
 import type { StoredStyleGalleryItem } from '@/types/style-gallery';
+import { invalidateCdnTags as invalidateByTag } from './cdn-cache';
 import {
   getStyleGalleryObjectTextSnapshot,
   headStyleGalleryObject,
@@ -385,8 +385,8 @@ export async function replaceImportImageBatch(jobs: ImportImageReplacement[]) {
     await invalidateStyleGalleryPublicCache(changed.flatMap(({ previous, item }) => [previous.slug, item.slug]));
     try {
       await invalidateByTag(STYLE_GALLERY_TAG_CACHE_TAG);
-    } catch {
-      /* Local CLI has no Vercel runtime. */
+    } catch (error) {
+      console.error('[style-gallery] Import tag-cache invalidation failed.', error);
     }
     return {
       items: changes.map(({ item }) => item),

@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import node from '@astrojs/node';
 import react from '@astrojs/react';
 import sitemap from '@astrojs/sitemap';
 import vercel from '@astrojs/vercel';
@@ -173,7 +174,8 @@ if (contentConfig.enableCodeMeta !== false) shikiTransformers.push(shokaMetaTran
 // https://astro.build/config
 export default defineConfig({
   site: yamlConfig.site.url,
-  adapter: vercel(),
+  // Cloudflare runs the native Node origin; retain the Vercel build for the observation-period fallback.
+  adapter: process.env.DEPLOY_TARGET === 'cloudflare-container' ? node({ mode: 'standalone' }) : vercel(),
   compressHTML: true,
   markdown: {
     // Enable GitHub Flavored Markdown

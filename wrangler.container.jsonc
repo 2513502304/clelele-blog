@@ -1,0 +1,31 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "clelele-blog-container",
+  "main": "cloudflare/container-worker.mjs",
+  "compatibility_date": "2026-11-08",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": { "directory": "./dist/client", "binding": "ASSETS", "run_worker_first": true },
+  "observability": { "enabled": true, "traces": { "enabled": true, "head_sampling_rate": 0.1 } },
+  "cache": { "enabled": true },
+  "exports": {
+    "default": { "type": "worker", "cache": { "enabled": false } },
+    "CachedOrigin": { "type": "worker", "cache": { "enabled": true } },
+    "BlogContainer": { "type": "durable-object", "storage": "sqlite" }
+  },
+  "durable_objects": { "bindings": [{ "name": "BLOG", "class_name": "BlogContainer" }] },
+  "containers": [
+    {
+      "class_name": "BlogContainer",
+      "image": "./docker/cloudflare.Dockerfile",
+      "image_build_context": ".",
+      "instance_type": "basic",
+      "max_instances": 1
+    }
+  ],
+  "vars": {
+    "BLOG_READ_ONLY": "false",
+    "BLOG_CACHE_INVALIDATION_URL": "https://clelele-blog-container.2513502304.workers.dev/_internal/cache",
+    // Historical name: this contains the production music session, not disposable test data.
+    "MUSIC_SESSION_HF_S3_PREFIX": "music-sessions/cloudflare-validation"
+  }
+}
