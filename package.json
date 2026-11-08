@@ -24,6 +24,8 @@
     "sync:live2d-bestdori": "node --use-env-proxy --env-file-if-exists=.env.local --import tsx scripts/live2d/sync-bestdori-models.ts",
     "sync:live2d-our-notes": "node --use-env-proxy --env-file-if-exists=.env.local --import tsx scripts/live2d/sync-our-notes-models.ts",
     "build": "astro build",
+    "build:cloudflare": "DEPLOY_TARGET=cloudflare astro build",
+    "deploy:cloudflare-preview": "npx --yes wrangler@4.158.0 deploy",
     "preview": "astro preview",
     "astro": "astro",
     "check": "astro check",
@@ -55,6 +57,7 @@
   },
   "dependencies": {
     "@antv/infographic": "^0.2.4",
+    "@astrojs/cloudflare": "^12.6.13",
     "@astrojs/netlify": "^6.6.4",
     "@astrojs/node": "^9.5.2",
     "@astrojs/react": "^4.4.2",

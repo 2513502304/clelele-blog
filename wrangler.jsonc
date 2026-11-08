@@ -1,0 +1,10 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "clelele-blog-preview",
+  "main": "cloudflare-preview.mjs",
+  "compatibility_date": "2026-11-08",
+  "compatibility_flags": ["nodejs_compat"],
+  "minify": true,
+  "assets": { "directory": "./dist", "binding": "ASSETS" },
+  "observability": { "enabled": true }
+}

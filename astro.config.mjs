@@ -1,8 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { builtinModules } from 'node:module';
 import react from '@astrojs/react';
 import sitemap from '@astrojs/sitemap';
 import vercel from '@astrojs/vercel';
+import cloudflare from '@astrojs/cloudflare';
 import yaml from '@rollup/plugin-yaml';
 import tailwindcss from '@tailwindcss/vite';
 import umami from '@yeskunall/astro-umami';
@@ -173,7 +175,8 @@ if (contentConfig.enableCodeMeta !== false) shikiTransformers.push(shokaMetaTran
 // https://astro.build/config
 export default defineConfig({
   site: yamlConfig.site.url,
-  adapter: vercel(),
+  // Keep the production target while validating Cloudflare in an isolated preview.
+  adapter: process.env.DEPLOY_TARGET === 'cloudflare' ? cloudflare({ imageService: 'compile' }) : vercel(),
   compressHTML: true,
   markdown: {
     // Enable GitHub Flavored Markdown
@@ -240,10 +243,18 @@ export default defineConfig({
     build: {
       // Enable sourcemap for Sonda bundle analysis
       sourcemap: isAnalyze,
+      ...(process.env.DEPLOY_TARGET === 'cloudflare' && {
+        rollupOptions: {
+          external: [...builtinModules, ...builtinModules.map((name) => `node:${name}`)],
+        },
+      }),
     },
     plugins: [yaml(), conditionalSnowfall(), svgr(), tailwindcss()],
     ssr: {
       noExternal: ['react-tweet'],
+      ...(process.env.DEPLOY_TARGET === 'cloudflare' && {
+        external: [...builtinModules, ...builtinModules.map((name) => `node:${name}`)],
+      }),
     },
     optimizeDeps: {
       include: ['@antv/infographic'],
