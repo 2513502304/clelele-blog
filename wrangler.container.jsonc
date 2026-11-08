@@ -14,7 +14,13 @@
   },
   "durable_objects": { "bindings": [{ "name": "BLOG", "class_name": "BlogContainer" }] },
   "containers": [
-    { "class_name": "BlogContainer", "image": "./docker/cloudflare.Dockerfile", "instance_type": "basic", "max_instances": 1 }
+    {
+      "class_name": "BlogContainer",
+      "image": "./docker/cloudflare.Dockerfile",
+      "image_build_context": ".",
+      "instance_type": "basic",
+      "max_instances": 1
+    }
   ],
   "vars": {
     "BLOG_READ_ONLY": "true",
