@@ -98,5 +98,12 @@ gateway defaults to read-only and the container sleeps after 20 idle minutes.
 Remote native uploads, OAuth, cache invalidation and cold starts still need staging
 acceptance before enabling writes or replacing the existing Pages deployment.
 
+The Pages entry in `cloudflare/pages-entry.mjs` uses a `BLOG` service binding to
+`clelele-blog-container`. Passing the original Request preserves the public host
+and Origin for OAuth/cookie/CSRF handling without trusting a client-supplied proxy
+header. It streams the response unchanged and hides internal maintenance routes.
+This entry requires its own Pages project; the earlier preview remains available
+until the new container deployment passes remote acceptance.
+
 Cache API references: [entrypoint cache invalidation](https://developers.cloudflare.com/workers/cache/purge/)
 and [Workers cache examples](https://developers.cloudflare.com/workers/cache/examples/).
