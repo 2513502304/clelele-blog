@@ -5,8 +5,10 @@ Validated on 2026-11-09. Production target: https://clelele-blog.pages.dev/
 The native Cloudflare deployment passed public reads, GitHub owner login,
 synthetic uploads and cleanup, profile CAS/retry/cache checks, music session
 login and actual browser playback. Source configuration now selects the Pages
-canonical URL and enables production writes. Vercel remains available during the
-observation period, approximately through 2026-11-15; it has not been deleted.
+canonical URL and enables production writes. Cloudflare Pages is the public
+primary site. The Vercel deployment and its `vercel.app` domain remain available
+long term as a complete secondary deployment. Approximately 2026-11-15 is a
+billing review for a possible Pro-to-Hobby downgrade, not a deletion deadline.
 
 ## Architecture and deployment
 
@@ -35,11 +37,15 @@ Use pinned pnpm 9.15.1 and Node 24.x (24.22.1 in the verified Linux build):
 - `pnpm deploy:cloudflare-pages` prepares and deploys the small service-binding
   gateway to the existing `clelele-blog` Pages project. It does not copy the
   server bundle or replace the container's static assets.
-- Ordinary `pnpm build` retains the Vercel adapter for the observation-period
-  fallback.
-- Workers Builds must track `main` after the PR merge, using the container build
+- Ordinary `pnpm build` retains the Vercel adapter for the long-term secondary
+  deployment.
+- Workers Builds now tracks `main` after the PR merge, using the container build
   and deploy commands above. Pages' deployment branch `main` selects its own
   environment and does not commit or merge repository code.
+
+The Pages gateway uses Direct Upload through the deployment command above;
+its lack of a Pages Git connection is expected and does not mean it is abandoned.
+The container Worker has its own Git-connected build pipeline.
 
 `BLOG_READ_ONLY=true` remains an emergency maintenance switch. After acceptance,
 briefly restoring it blocked a real user's import with 405. Production writes
@@ -72,7 +78,9 @@ The existing `clelele-blog-production` GitHub OAuth app now retains both:
 
 GitHub confirmed the save; a fresh page load confirmed both persisted callbacks.
 The Cloudflare secret is a second secret on that same production app. Vercel's
-old secret and homepage remain intact; the development app was not changed.
+old secret remains intact; the development app was not changed. The production
+app's homepage is now `https://clelele-blog.pages.dev/`. Both callbacks remain
+required for the two retained deployments.
 
 Cloudflare uses `music-sessions/cloudflare-validation` in HF. Despite its historical
 name, this is now the production Cloudflare music-session prefix and must not be
@@ -99,15 +107,18 @@ Build and code checks:
   153 music/Live2D tests.
 - Native Sharp decoding and ONNX inference produced the expected 384-byte
   embedding locally and in the Cloudflare Linux image build.
-- The verified Linux image `52b0002d688081fdc4d03ae5235800201e92c4aa9a0b3150e2f08b367c4f3616`
-  completed build/deployment `dd9d6b03-4b6e-4559-9d8a-d6ddc440598b`.
+- The final Linux image `a1e84e4c9ff7da35e0171b27f6a7848813958c8a6ad828fe963b5f52aff8bdde`
+  completed build/deployment `4c52a8ab-afca-477c-9910-6d9ca0c7738a`.
+  Merge commit `c5f8b0b` has the same tree as the verified head `76b8d4a`.
 - Node's former open-ended engine range selected Node 26 on Vercel and broke
   `re2`/NAN installation. Pinning 24.x passed the remote clean-install Vercel
   build for commit `0721371`. The local Vercel trace hit an absent optional
   `@img/sharp-wasm32` package in the existing local install; remote CI verified
   the clean build.
-- PR review threads were empty. CodeRabbit skipped the draft and was not counted
-  as an approving review.
+- CodeRabbit completed a full review after PR #81 became ready. Its sole finding,
+  silent import-cache invalidation failures, was fixed and the thread resolved;
+  nine targeted identity/cache tests passed. The final check was neutral after
+  the included hourly review allowance was exhausted.
 
 Public/browser checks:
 
@@ -153,7 +164,20 @@ acceptance. Synthetic objects were cleaned and profile content/active assets
 were preserved. Actual active-card metadata publication was covered by existing
 logic tests rather than a production-record mutation.
 
-## Cleanup and observation
+## Domain integrations
+
+The existing Umami website ID records visits from both domains. Its dashboard
+Domain metadata was saved and confirmed after a fresh load as
+`clelele-blog.pages.dev`; the website name and ID were preserved and no history
+was cleared. Giscus uses pathname mapping and reuses the existing discussions
+across both domains.
+
+Pages `/rss.xml`, `/en/rss.xml`, `/ja/rss.xml`, the sitemap index and child sitemap,
+and `robots.txt` returned 200. Their XML contained no old Vercel hostname; RSS
+GUIDs remain slug or locale-prefixed slug identities. The retained Vercel root,
+`/hpoi/` and `/rss.xml` also returned 200; its RSS item links already point to Pages.
+
+## Cleanup and long-term operation
 
 The superseded Workers-only preview could not load Sharp's native addon. Its
 Pages project and Worker, both named `clelele-blog-preview`, were deleted and
@@ -165,12 +189,21 @@ The production gateway was redeployed from the final helper as Pages deployment
 `bc084053` with its existing production service binding. No static blog files or
 server bundle are duplicated in Pages.
 
-Keep the Vercel blog and subscription through the observation period. The user
-also confirmed the new production domain's home and Gallery images on a phone
-with VPN disabled. Continue observing the new domain and Cloudflare usage while
-Vercel remains available.
+Keep both production deployments, both domains and both GitHub OAuth callbacks.
+Cloudflare remains the canonical URL and public entry point; Vercel continues to
+serve its site with expected lower traffic, rather than becoming a site-wide
+redirect. No deletion is scheduled for 2026-11-15.
+
+Review Cloudflare usage and the Vercel bill around that date. A future Pro-to-Hobby
+change is a separate, explicit billing action; stopping payment is not the
+downgrade procedure. Vercel supports retaining projects when downgrading, but
+this migration has not fully audited whether every blog feature fits Hobby's
+limits without changes. Check eligibility and resource limits before changing
+the plan. The user confirmed the Pages home and Gallery images on a phone with
+VPN disabled; continue observing both deployments.
 
 References: [container environment variables and secrets](https://developers.cloudflare.com/containers/examples/env-vars-and-secrets/),
 [entrypoint cache invalidation](https://developers.cloudflare.com/workers/cache/purge/),
 [Pages service bindings](https://developers.cloudflare.com/pages/functions/bindings/),
-and [Vercel Node version selection](https://vercel.com/docs/functions/runtimes/node-js/node-js-versions).
+[Vercel Node version selection](https://vercel.com/docs/functions/runtimes/node-js/node-js-versions),
+and [Vercel's Pro-to-Hobby procedure](https://vercel.com/docs/plans/pro-plan#downgrading-to-hobby).
