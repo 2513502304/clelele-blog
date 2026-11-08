@@ -74,7 +74,7 @@ Public HTTP checks against the new Pages domain:
 | Built logo WebP | 200, edge HIT | Actual image bytes |
 | `/image-style-prompt-gallery` | 200, edge HIT | HTTP probe capped at 6 MiB; browser checks below |
 | `/api/style-gallery/catalog` | 200 JSON, edge HIT | Complete 5.8 MB response |
-| `/api/live2d/catalog` | 200 JSON, edge HIT | Four costume releases |
+| `/api/live2d/catalog` | 200 JSON, edge HIT | Initially bootstrap; later full remote catalog verified below |
 | `/api/site-assets/avatar` | 200 WebP, edge HIT | Actual avatar bytes |
 | `/api/music/meting` without arguments | 400, BYPASS, private/no-store | Input validation only |
 | Existing NetEase playlist through Meting | 200 JSON, 27 songs | Metadata only |
@@ -91,13 +91,23 @@ Browser checks on 2026-11-09 used the actual new Pages domain in Edge:
 - Homepage visible logo, cover, avatar and post-cover images all completed with
   nonzero intrinsic dimensions.
 - Live2D reported that Chihaya Anon had loaded.
+- A later cookie-bearing request bypassed shared cache and confirmed the remote
+  Live2D directory: 115 characters / 3,522 costumes (1.94 MB), or 165 characters /
+  3,783 costumes with `native=1` (2.10 MB). The initial 3 KB response was bootstrap
+  fallback, so that earlier response alone did not establish remote catalog access.
 - Gallery hydrated and displayed 5,613 cards. Searching `#专辑` changed the result
   count to 43 / 5,613; visible filtered images loaded.
 - Opening the first card displayed its loaded reference image and 1 / 5,613.
   Next-image navigation displayed the second loaded image and 2 / 5,613.
-- The music page rendered the playlist and lyrics. A browser play click did not
-  establish advancing time in this session, so playback is not accepted merely
-  because the range request returned audio bytes.
+- The music page rendered the playlist and lyrics. A DOM click was rejected by
+  the browser's user-activation rule. A subsequent real mouse click activated the
+  document, but audio remained buffering at time zero. Playback is still pending;
+  the successful range request alone does not establish browser playback. The
+  audio was paused and temporary inspection hooks were removed after this check.
+
+Three concurrent warm requests to health, Live2D catalog and avatar all returned
+200, taking 0.43-1.55 seconds. This small warm sample does not establish cold-start
+latency or capacity under sustained traffic.
 
 These checks use the local browser/network. The user's earlier phone test with
 VPN disabled applied to `clelele-blog-preview.pages.dev`, not this new domain.
