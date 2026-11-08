@@ -25,7 +25,10 @@
     "sync:live2d-our-notes": "node --use-env-proxy --env-file-if-exists=.env.local --import tsx scripts/live2d/sync-our-notes-models.ts",
     "build": "astro build",
     "build:cloudflare": "DEPLOY_TARGET=cloudflare astro build",
+    "build:cloudflare-container": "DEPLOY_TARGET=cloudflare-container astro build",
     "deploy:cloudflare-preview": "npx --yes wrangler@4.158.0 deploy",
+    "deploy:cloudflare-container": "wrangler deploy --config wrangler.container.jsonc",
+    "test:cloudflare-cache": "node --test cloudflare/cache-policy.test.mjs && node --import tsx --test src/lib/cdn-cache.test.ts",
     "preview": "astro preview",
     "astro": "astro",
     "check": "astro check",
@@ -147,6 +150,7 @@
   "devDependencies": {
     "@astrojs/check": "^0.9.6",
     "@biomejs/biome": "^2.3.10",
+    "@cloudflare/containers": "0.3.7",
     "@huggingface/transformers": "^3.8.1",
     "@iconify/react": "^5.2.1",
     "@inkjs/ui": "^2.0.0",
@@ -180,6 +184,7 @@
     "typescript": "^5.9.3",
     "vite": "^7.3.1",
     "vite-plugin-svgr": "^4.5.0",
+    "wrangler": "4.158.0",
     "yaml": "^2.8.2"
   },
   "lint-staged": {

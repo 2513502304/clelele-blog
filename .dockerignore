@@ -16,6 +16,13 @@ docker/nginx/*.md
 # Local configuration and secrets
 .env*
 *.local
+.dev.vars*
+.wrangler/
+.cloudflare-pages/
+.vercel/
+backups/
+output/
+test-results/
 
 # OS junk
 .DS_Store

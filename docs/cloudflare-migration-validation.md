@@ -65,3 +65,38 @@ files. `.wrangler` and local secret bindings are ignored by Git.
 
 Keep this PR in draft until the migration gaps have been resolved. Do not cancel
 Vercel or replace production based solely on this preview.
+
+## Native container migration in progress
+
+The next target uses `pnpm build:cloudflare-container` with Astro's standalone
+Node adapter. A single Cloudflare Container retains native Sharp and ONNX support;
+HF remains the durable store. The existing Vercel build and read-only Pages preview
+remain available during validation.
+
+The outer Worker serves static assets and excludes authenticated, cookie-bearing,
+range and mutation requests from shared caching. A separate cached entrypoint
+translates the existing CDN TTL/tag headers while preserving browser revalidation.
+Authenticated invalidation runs in that same entrypoint, retains the distinction
+between stale invalidation and hard purge, and fails visibly if configuration or
+invalidation is unavailable. Gallery lightweight indexes, immutable image paths,
+direct HF asset delivery, CAS and pending-deletion rules are unchanged.
+
+Local checks on 2026-11-08:
+
+- Astro check: 0 errors, 0 warnings (19 existing hints).
+- Standalone Node production build passed.
+- 218 gallery tests, 28 Hpoi tests and 6 cache-policy/bridge tests passed.
+- Real Sharp decoding and ONNX inference on synthetic pixels passed, producing
+  the expected 384-byte quantized embedding. No storage writes or paid APIs used.
+- Wrangler bundled the Worker and validated its configuration with
+  `--dry-run --containers-rollout=none`. The host lacks Docker, so the actual
+  Linux image must be built and validated in Cloudflare Builds before acceptance.
+
+The container Dockerfile also runs the native probe during image creation and
+retains its model weights, avoiding a runtime download on the first upload. The
+gateway defaults to read-only and the container sleeps after 20 idle minutes.
+Remote native uploads, OAuth, cache invalidation and cold starts still need staging
+acceptance before enabling writes or replacing the existing Pages deployment.
+
+Cache API references: [entrypoint cache invalidation](https://developers.cloudflare.com/workers/cache/purge/)
+and [Workers cache examples](https://developers.cloudflare.com/workers/cache/examples/).

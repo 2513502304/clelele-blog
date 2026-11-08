@@ -5,6 +5,7 @@ import react from '@astrojs/react';
 import sitemap from '@astrojs/sitemap';
 import vercel from '@astrojs/vercel';
 import cloudflare from '@astrojs/cloudflare';
+import node from '@astrojs/node';
 import yaml from '@rollup/plugin-yaml';
 import tailwindcss from '@tailwindcss/vite';
 import umami from '@yeskunall/astro-umami';
@@ -176,7 +177,12 @@ if (contentConfig.enableCodeMeta !== false) shikiTransformers.push(shokaMetaTran
 export default defineConfig({
   site: yamlConfig.site.url,
   // Keep the production target while validating Cloudflare in an isolated preview.
-  adapter: process.env.DEPLOY_TARGET === 'cloudflare' ? cloudflare({ imageService: 'compile' }) : vercel(),
+  adapter:
+    process.env.DEPLOY_TARGET === 'cloudflare-container'
+      ? node({ mode: 'standalone' })
+      : process.env.DEPLOY_TARGET === 'cloudflare'
+        ? cloudflare({ imageService: 'compile' })
+        : vercel(),
   compressHTML: true,
   markdown: {
     // Enable GitHub Flavored Markdown
