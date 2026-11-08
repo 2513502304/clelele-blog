@@ -51,6 +51,7 @@ export class BlogContainer extends Container {
   };
 }
 
+/** Forward the public host while discarding untrusted proxy-origin headers. */
 function origin(request, env) {
   const forwarded = new Request(request);
   // Never let client-supplied proxy headers change Astro's origin/CSRF checks.
@@ -75,6 +76,7 @@ export class CachedOrigin extends WorkerEntrypoint {
   }
 }
 
+/** Compare maintenance bearer credentials through constant-time HMAC verification. */
 async function authorized(request, expected) {
   if (!expected) return false;
   const supplied = request.headers.get('authorization') ?? '';
