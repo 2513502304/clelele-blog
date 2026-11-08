@@ -1,5 +1,7 @@
 FROM node:24.22.1-bookworm-slim AS builder
 WORKDIR /app
+# This container uses CPU inference; GPU libraries only enlarge the deployment.
+ENV ONNXRUNTIME_NODE_INSTALL_CUDA=skip
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates python3 make g++ libgomp1 \
     && rm -rf /var/lib/apt/lists/* \
     && corepack enable && corepack prepare pnpm@9.15.1 --activate
