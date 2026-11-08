@@ -41,9 +41,12 @@ Use pinned pnpm 9.15.1 and Node 24.x (24.22.1 in the verified Linux build):
   and deploy commands above. Pages' deployment branch `main` selects its own
   environment and does not commit or merge repository code.
 
-`BLOG_READ_ONLY=true` remains an emergency maintenance switch. Acceptance used a
-temporary write-enabled deployment and restored the guard afterward; the final
-production source sets it to `false`.
+`BLOG_READ_ONLY=true` remains an emergency maintenance switch. After acceptance,
+briefly restoring it blocked a real user's import with 405. Production writes
+were immediately reopened and verified: health reports `readOnly: false`, and an
+unauthorized manual-upload request now reaches application auth and returns 401.
+The final production source sets the switch to `false`; do not re-enable it while
+users are importing.
 
 ## Credentials and music storage
 
@@ -126,6 +129,7 @@ Public/browser checks:
 | Profile CAS and cache | Stale revision 409; same-content save 200; anonymous public revision refreshed in 35 seconds and ended as HIT |
 | Music session | User QR login completed; configured/connected/healthy all true |
 | Music playback | Real mouse click produced loadedmetadata and playing, readyState 4, visible pause control and time advancing to 21.72 seconds |
+| Phone without VPN | User confirmed the new production domain's homepage and Gallery images work |
 
 The first music track was a 30-second fallback preview. Vercel and Cloudflare
 returned the same fallback source for that track. This verifies session health
@@ -157,11 +161,14 @@ absence was read back. Neither had exclusive storage data. The source no longer
 offers their deployment commands or adapter; the gateway helper targets only the
 existing production Pages project.
 
-Keep the Vercel blog and subscription through the observation period. Default
-domain reachability depends on the user's network: the earlier phone/VPN-off
-test applied to the old Pages preview; the new domain was exercised through the
-local browser and HTTP checks. Continue observing the new domain and Cloudflare
-usage while Vercel remains available.
+The production gateway was redeployed from the final helper as Pages deployment
+`bc084053` with its existing production service binding. No static blog files or
+server bundle are duplicated in Pages.
+
+Keep the Vercel blog and subscription through the observation period. The user
+also confirmed the new production domain's home and Gallery images on a phone
+with VPN disabled. Continue observing the new domain and Cloudflare usage while
+Vercel remains available.
 
 References: [container environment variables and secrets](https://developers.cloudflare.com/containers/examples/env-vars-and-secrets/),
 [entrypoint cache invalidation](https://developers.cloudflare.com/workers/cache/purge/),
