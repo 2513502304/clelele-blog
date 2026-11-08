@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { invalidateByTag } from '@vercel/functions';
+import { invalidateCdnTags as invalidateByTag } from './cdn-cache';
 import { getStyleGalleryObjectTextSnapshot, putStyleGalleryObject, StyleGalleryObjectConflictError } from './hf-s3-presign';
 import { StyleGalleryClientError } from './style-gallery-errors';
 import { IMPORT_IDENTITY_KEY, parseImportAliases } from './style-gallery-import-identity';

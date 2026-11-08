@@ -1,5 +1,5 @@
-import { invalidateByTag } from '@vercel/functions';
 import { z } from 'zod';
+import { invalidateCdnTags as invalidateByTag } from './cdn-cache';
 import { getStyleGalleryObjectTextSnapshot, putStyleGalleryObject, StyleGalleryObjectConflictError } from './hf-s3-presign';
 import { getStyleGalleryCatalog } from './style-gallery-store';
 import {

@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { invalidateByTag } from '@vercel/functions';
 import { z } from 'zod';
 import type { StoredStyleGalleryItem } from '@/types/style-gallery';
+import { invalidateCdnTags as invalidateByTag } from './cdn-cache';
 import {
   getStyleGalleryObjectTextSnapshot,
   headStyleGalleryObject,
