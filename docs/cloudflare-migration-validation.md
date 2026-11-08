@@ -3,7 +3,9 @@
 Status: experimental read-only deployment, not ready to replace Vercel production.
 Baseline: upstream main `6b7e437` (2026-11-02). Checked on 2026-11-08.
 
-Preview: https://clelele-blog-preview.2513502304.workers.dev/
+Preferred preview: https://clelele-blog-preview.pages.dev/
+
+Workers comparison: https://clelele-blog-preview.2513502304.workers.dev/
 
 ## Reproduce
 
@@ -11,6 +13,14 @@ Use the repository's pinned pnpm 9.15.1. Run `pnpm build:cloudflare`, wait for
 completion, then run `pnpm deploy:cloudflare-preview`. Ordinary `pnpm build`
 continues to target Vercel. The Cloudflare adapter is pinned to the Astro 5
 compatible 12.x line rather than upgrading the application framework.
+
+For the separately validated Pages domain, run `node scripts/prepare-cloudflare-pages.mjs`
+after the Cloudflare build. Deploy from `.cloudflare-pages` with
+`npx --yes wrangler@4.158.0 pages deploy public --project-name clelele-blog-preview --branch main --force`.
+Here `--force` selects the legacy Pages workflow instead of Wrangler's automatic
+conversion to Workers; it is unrelated to Git force pushes. The Pages `main`
+deployment branch selects this independent preview's production environment and
+does not commit or merge into the Git repository's main branch.
 
 The preview wrapper rejects all non-GET/HEAD/OPTIONS requests before Astro loads
 route modules. It is intentionally not a production entrypoint. Storage credentials
@@ -24,6 +34,9 @@ files. `.wrangler` and local secret bindings are ignored by Git.
 - Remote homepage returned HTTP 200.
 - Remote gallery returned HTTP 200 after HF storage bindings were configured.
 - Remote Live2D catalog endpoint returned HTTP 200.
+- Pages home, gallery and Live2D catalog also returned 200 while bypassing the local
+  explicit proxy. Workers-domain access timed out on that path. This validates one
+  local network, not all mainland ISPs or users.
 - Browser rendered the gallery layout, filters and cards; full interaction parity
   is not yet established.
 - The outer preview wrapper returned HTTP 405 for POST to the gallery upload route.
@@ -41,6 +54,8 @@ files. `.wrangler` and local secret bindings are ignored by Git.
   setup and tests before write access is enabled.
 - Music APIs, Live2D editor/runtime, all gallery interactions, image services and
   cold/concurrent request performance are not fully verified.
+- Header logos using `/_image` were broken in browser inspection; the Astro image
+  service needs adaptation alongside runtime Sharp operations.
 - Local installation with Node 26 encountered a native `re2` build failure. A
   scripts-disabled dependency installation allowed build/runtime investigation;
   this does not prove a clean CI installation. Validate with the intended CI Node
