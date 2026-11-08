@@ -91,7 +91,7 @@ def legacy_plan(args, out):
                 raise ValueError(f'Inputs changed for {job["id"]}; use a new ID.')
             job['source'] = saved['source']
         else:
-            job['source'] = resolve_source(row['source'], (args.api_base or 'https://clelele-blog.vercel.app').rstrip('/'), row.get('promptId'))
+            job['source'] = resolve_source(row['source'], (args.api_base or 'https://clelele-blog.pages.dev').rstrip('/'), row.get('promptId'))
         workflow.validate_job(job)
         params = {k: getattr(args, k) for k in planner.DEFAULT_PROFILE if k != 'provider' and getattr(args, k) is not None}
         params.update(row.get('generation', {}))

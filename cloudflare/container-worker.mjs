@@ -1,5 +1,5 @@
-import { Container, getContainer } from '@cloudflare/containers';
 import { WorkerEntrypoint } from 'cloudflare:workers';
+import { Container, getContainer } from '@cloudflare/containers';
 import { canUsePublicCache, forBrowser, forEdgeCache, parseInvalidation } from './cache-policy.mjs';
 
 const RUNTIME_BINDINGS = [
@@ -88,7 +88,7 @@ async function authorized(request, expected) {
 }
 
 export default {
-  /** The uncached gateway enforces preview isolation before static or origin work. */
+  /** The uncached gateway enforces maintenance read-only mode before static or origin work. */
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     if (url.pathname === '/_internal/cache') {
@@ -128,7 +128,7 @@ export default {
     if (url.pathname === '/health')
       return Response.json({ service: 'clelele-blog-container', readOnly: env.BLOG_READ_ONLY !== 'false' });
     if (env.BLOG_READ_ONLY !== 'false' && !['GET', 'HEAD', 'OPTIONS'].includes(request.method)) {
-      return new Response('Migration preview is read-only.', { status: 405, headers: { Allow: 'GET, HEAD, OPTIONS' } });
+      return new Response('Service is temporarily read-only.', { status: 405, headers: { Allow: 'GET, HEAD, OPTIONS' } });
     }
     try {
       if (['GET', 'HEAD'].includes(request.method)) {

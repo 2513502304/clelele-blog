@@ -1,24 +1,29 @@
-import { cp, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const output = path.join(root, '.cloudflare-pages');
 const assets = path.join(output, 'public');
-// Validate the build target before copying: a Vercel build is not a Pages artifact.
-await readFile(path.join(root, 'dist/_worker.js/index.js'));
+const entry = await readFile(path.join(root, 'cloudflare/pages-entry.mjs'), 'utf8');
 await mkdir(output, { recursive: true });
-// Remove only this script's generated assets so deleted build files cannot survive a redeploy.
+// Only this generated gateway directory is replaced; the container serves the blog's static assets.
 await rm(assets, { recursive: true, force: true });
-await cp(path.join(root, 'dist'), assets, { recursive: true, force: true });
-const server = path.join(assets, '_worker.js');
-await rename(path.join(server, 'index.js'), path.join(server, 'app.js'));
-const wrapper = await readFile(path.join(root, 'cloudflare-preview.mjs'), 'utf8');
-await writeFile(path.join(server, 'index.js'), wrapper.replace('./dist/_worker.js/index.js', './app.js'));
-await writeFile(path.join(output, 'wrangler.jsonc'), JSON.stringify({
-  name: 'clelele-blog-preview',
-  pages_build_output_dir: './public',
-  compatibility_date: '2026-11-08',
-  compatibility_flags: ['nodejs_compat'],
-}, null, 2));
-console.log('Prepared read-only Pages preview in .cloudflare-pages/public');
+await mkdir(assets, { recursive: true });
+await writeFile(path.join(assets, '_worker.js'), entry);
+await writeFile(path.join(assets, '_routes.json'), JSON.stringify({ version: 1, include: ['/*'], exclude: [] }));
+await writeFile(
+  path.join(output, 'wrangler.jsonc'),
+  JSON.stringify(
+    {
+      name: 'clelele-blog',
+      pages_build_output_dir: './public',
+      compatibility_date: '2026-11-08',
+      compatibility_flags: ['nodejs_compat'],
+      services: [{ binding: 'BLOG', service: 'clelele-blog-container', environment: 'production' }],
+    },
+    null,
+    2,
+  ),
+);
+console.log('Prepared production Pages service-binding gateway in .cloudflare-pages/public');

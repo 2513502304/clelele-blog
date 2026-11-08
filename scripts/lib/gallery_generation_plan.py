@@ -124,7 +124,7 @@ def select_cards(items, selector):
 
 def build(config, fetch, resolve):
     fields(config.get('gallery', {}), {'baseUrl'}, 'gallery')
-    base = config.get('gallery', {}).get('baseUrl', 'https://clelele-blog.vercel.app').rstrip('/')
+    base = config.get('gallery', {}).get('baseUrl', 'https://clelele-blog.pages.dev').rstrip('/')
     if not base.startswith('https://'):
         raise ValueError('Gallery base URL must use HTTPS.')
     fields(config.get('rewrite', {}), DEFAULT_REWRITE, 'rewrite')

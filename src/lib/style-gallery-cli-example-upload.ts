@@ -3,7 +3,7 @@ import { parseArgs } from 'node:util';
 import { getStyleGalleryPlatform, STYLE_GALLERY_PLATFORMS, type StyleGalleryPlatform } from '@lib/style-gallery-platforms';
 import type { StyleGalleryCatalogItem } from '@/types/style-gallery';
 
-const DEFAULT_API_BASE_URL = 'https://clelele-blog.vercel.app';
+const DEFAULT_API_BASE_URL = 'https://clelele-blog.pages.dev';
 const DEFAULT_CONCURRENCY = 5;
 const DEFAULT_ATTEMPTS = 3;
 const DEFAULT_TIMEOUT_MS = 120_000;

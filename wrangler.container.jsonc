@@ -23,8 +23,9 @@
     }
   ],
   "vars": {
-    "BLOG_READ_ONLY": "true",
+    "BLOG_READ_ONLY": "false",
     "BLOG_CACHE_INVALIDATION_URL": "https://clelele-blog-container.2513502304.workers.dev/_internal/cache",
+    // Historical name: this contains the production music session, not disposable test data.
     "MUSIC_SESSION_HF_S3_PREFIX": "music-sessions/cloudflare-validation"
   }
 }

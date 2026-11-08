@@ -24,9 +24,8 @@
     "sync:live2d-bestdori": "node --use-env-proxy --env-file-if-exists=.env.local --import tsx scripts/live2d/sync-bestdori-models.ts",
     "sync:live2d-our-notes": "node --use-env-proxy --env-file-if-exists=.env.local --import tsx scripts/live2d/sync-our-notes-models.ts",
     "build": "astro build",
-    "build:cloudflare": "DEPLOY_TARGET=cloudflare astro build",
     "build:cloudflare-container": "DEPLOY_TARGET=cloudflare-container astro build",
-    "deploy:cloudflare-preview": "npx --yes wrangler@4.158.0 deploy",
+    "deploy:cloudflare-pages": "node scripts/prepare-cloudflare-pages.mjs && wrangler pages deploy public --cwd .cloudflare-pages --project-name clelele-blog --branch main",
     "deploy:cloudflare-container": "wrangler deploy --config wrangler.container.jsonc",
     "test:cloudflare-cache": "node --test cloudflare/cache-policy.test.mjs && node --import tsx --test src/lib/cdn-cache.test.ts",
     "preview": "astro preview",
@@ -60,7 +59,6 @@
   },
   "dependencies": {
     "@antv/infographic": "^0.2.4",
-    "@astrojs/cloudflare": "^12.6.13",
     "@astrojs/netlify": "^6.6.4",
     "@astrojs/node": "^9.5.2",
     "@astrojs/react": "^4.4.2",

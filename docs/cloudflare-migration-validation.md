@@ -1,180 +1,169 @@
 # Cloudflare migration validation
 
-Status on 2026-11-09: the native container and public read path are deployed;
-OAuth, controlled writes and production acceptance remain pending. Vercel is
-still the production fallback and must remain available during the observation
-period, approximately through 2026-11-15. Keep PR #81 in draft until acceptance.
+Validated on 2026-11-09. Production target: https://clelele-blog.pages.dev/
 
-Public target: https://clelele-blog.pages.dev/
+The native Cloudflare deployment passed public reads, GitHub owner login,
+synthetic uploads and cleanup, profile CAS/retry/cache checks, music session
+login and actual browser playback. Source configuration now selects the Pages
+canonical URL and enables production writes. Vercel remains available during the
+observation period, approximately through 2026-11-15; it has not been deleted.
 
-## Deployment and architecture
+## Architecture and deployment
 
-The production Pages project `clelele-blog` forwards the original Request through
-its `BLOG` service binding to `clelele-blog-container`. This retains the public
-host, Origin, cookies and streaming body for OAuth and CSRF checks. Pages hides
-`/_internal/*`; the Worker's authenticated cache endpoint is not public through
-Pages. Pages' deployment branch `main` selects its environment and does not merge
-the repository branch.
+Pages forwards the original Request through its production `BLOG` service
+binding to `clelele-blog-container`. The public host, Origin, cookies and streaming
+body survive the binding. Pages hides `/_internal/*`.
 
-Astro's standalone Node adapter runs in one Cloudflare Container. Native Sharp
-and ONNX remain available; HF remains the durable store. The Dockerfile runs a
-real decoding/inference probe and retains the model weights. CUDA downloads are
-disabled because this is a CPU image. The basic instance has a maximum of one
-replica and sleeps after 20 idle minutes. This uses the existing Workers Paid
-account; no additional subscription was created.
+Astro's standalone Node adapter runs in one basic Cloudflare Container. Native
+Sharp and ONNX remain available; HF remains the durable store. The Linux image
+runs a real decoding/inference probe and retains model weights. CUDA downloads
+are disabled. Maximum replicas remain one; the container sleeps after 20 idle
+minutes. No additional subscription was created.
 
-The outer Worker serves static assets, bypasses shared cache for authenticated,
-cookie-bearing, range and mutation requests, and translates existing CDN TTL/tag
-headers in a separate cached entrypoint. Cache invalidation executes in that same
-entrypoint and preserves stale invalidation versus hard purge. Signed public
-image redirects retain their explicit TTL; private and login responses remain
-uncached. Gallery CAS, immutable asset paths, active-card identity and
-pending-deletion rules are unchanged.
+The outer Worker serves static assets and bypasses shared cache for authenticated,
+cookie-bearing, range and mutation requests. A separate cached entrypoint
+translates existing CDN TTL/tag headers. Authenticated invalidation runs in that
+same entrypoint, preserving stale invalidation versus hard purge. Signed public
+image redirects retain their explicit TTL; private and login responses are
+uncached. Gallery CAS, immutable image identity and pending-deletion rules remain
+unchanged.
 
-`BLOG_READ_ONLY=true` rejects non-GET/HEAD/OPTIONS requests before the Node app.
-The music-session prefix is separate from Vercel production. Upload/admin, music
-and the independent Cloudflare session-signing secret are installed. The existing
-encrypted production music-session object was copied once with create-only CAS
-to that isolated prefix, then read back byte-for-byte; Vercel's original was not
-changed and no session cookie was decrypted or printed. OAuth credentials are
-installed; the running container is being refreshed and the production app's
-additional callback still needs confirmed readback. Do not enable general writes
-before authentication and isolated mutation acceptance are complete.
+Use pinned pnpm 9.15.1 and Node 24.x (24.22.1 in the verified Linux build):
 
-New migration credentials are stored only in the user's existing gitignored
-`~/code/Github/clelele-blog/.env.local`, with mode 0600. The `CLOUDFLARE_` fields
-map to the corresponding unprefixed Worker secrets at deployment. In particular,
-use `CLOUDFLARE_STYLE_GALLERY_GITHUB_CLIENT_ID`,
-`CLOUDFLARE_STYLE_GALLERY_GITHUB_CLIENT_SECRET`,
-`CLOUDFLARE_STYLE_GALLERY_GITHUB_REDIRECT_URI`,
-`CLOUDFLARE_STYLE_GALLERY_SESSION_SECRET` and
-`CLOUDFLARE_BLOG_CACHE_INVALIDATION_TOKEN`. The unprefixed local OAuth fields are
-development credentials and must not be deployed to Cloudflare. Temporary
-duplicate credential files have been removed after verifying the canonical copy.
+- `pnpm build:cloudflare-container` builds the native Node origin.
+- `pnpm deploy:cloudflare-container` deploys the container Worker.
+- `pnpm deploy:cloudflare-pages` prepares and deploys the small service-binding
+  gateway to the existing `clelele-blog` Pages project. It does not copy the
+  server bundle or replace the container's static assets.
+- Ordinary `pnpm build` retains the Vercel adapter for the observation-period
+  fallback.
+- Workers Builds must track `main` after the PR merge, using the container build
+  and deploy commands above. Pages' deployment branch `main` selects its own
+  environment and does not commit or merge repository code.
 
-## Reproduce
+`BLOG_READ_ONLY=true` remains an emergency maintenance switch. Acceptance used a
+temporary write-enabled deployment and restored the guard afterward; the final
+production source sets it to `false`.
 
-Use the pinned pnpm 9.15.1 and Node 24.22.1 for the Cloudflare image build.
-`pnpm build:cloudflare-container` builds the standalone target;
-`pnpm deploy:cloudflare-container` deploys the container Worker with
-`wrangler.container.jsonc`. The configured Cloudflare Build tracks
-`feat/cloudflare-validation`. Ordinary `pnpm build` still targets Vercel.
-The package's Node engine is restricted to 24.x. The former open-ended minimum
-caused Vercel to choose Node 26 instead of its configured Node 24, where the
-existing `re2`/NAN dependency failed during installation.
+## Credentials and music storage
 
-The Pages entrypoint is `cloudflare/pages-entry.mjs`, with a production `BLOG`
-service binding to `clelele-blog-container`. Its latest accepted deployment is
-`cc5782af-270e-4627-8884-06f3a5e6cd39`. The successful container build is
-`8ff45ab6-cc8c-479b-9c09-baba3140455c`, from commit `8e872cc`. Initial container
-provisioning can return 503 before an instance becomes available; repeat bounded
-HTTP checks before classifying this as an application failure.
+New migration credentials are saved only in the user's gitignored
+`~/code/Github/clelele-blog/.env.local`, mode 0600. These local names map to the
+corresponding unprefixed Cloudflare Worker Secrets:
 
-## Verified evidence
+- `CLOUDFLARE_STYLE_GALLERY_GITHUB_CLIENT_ID`
+- `CLOUDFLARE_STYLE_GALLERY_GITHUB_CLIENT_SECRET`
+- `CLOUDFLARE_STYLE_GALLERY_GITHUB_REDIRECT_URI`
+- `CLOUDFLARE_STYLE_GALLERY_SESSION_SECRET`
+- `CLOUDFLARE_BLOG_CACHE_INVALIDATION_TOKEN`
 
-Local and Linux build checks:
+The aliases are not loaded automatically by the application or Wrangler.
+Unprefixed local OAuth fields belong to the existing development app and are
+preserved. Optional `VERCEL_PRODUCTION_*` fields are local archives, not runtime
+bindings. Temporary duplicate credential files were removed.
 
-- Astro check: 0 errors, 0 warnings, 19 existing hints; standalone build passed.
-- 218 Gallery tests, 28 Hpoi tests and 7 cache-policy/bridge tests passed.
-- A further 153 music/Live2D tests passed on 2026-11-09.
-- Real Sharp decoding and ONNX inference produced the expected 384-byte
-  quantized embedding locally and during the Cloudflare Linux image build.
-- Worker bundling/configuration dry-run passed. The cloud-built image was
-  deployed successfully; local Docker was unavailable.
-- Authenticated remote invalidation of a synthetic cache tag returned 204.
-  This proves endpoint execution, not post-mutation catalog freshness.
-- Anonymous and incorrect-Bearer POST requests to the Worker's internal cache
-  endpoint returned 401; the same path on Pages returned 404. These rejection
-  checks did not invalidate real data tags.
-- Node 24 Astro check passed again after the engine pin. A local default Vercel
-  build compiled and prerendered, then failed while tracing an absent optional
-  `@img/sharp-wasm32` package in the existing local dependency installation.
-  Remote clean-install/build verification is still required for the pin.
+The existing `clelele-blog-production` GitHub OAuth app now retains both:
 
-Public HTTP checks against the new Pages domain:
+- `https://clelele-blog.vercel.app/api/style-gallery/auth/github/callback`
+- `https://clelele-blog.pages.dev/api/style-gallery/auth/github/callback`
 
-| Route | Result | Scope |
-| --- | --- | --- |
-| `/health` | 200, `readOnly: true` | Gateway configuration |
-| `/` | 200, edge HIT | Complete 171 KB HTML response |
-| Built logo WebP | 200, edge HIT | Actual image bytes |
-| `/image-style-prompt-gallery` | 200, edge HIT | HTTP probe capped at 6 MiB; browser checks below |
-| `/api/style-gallery/catalog` | 200 JSON, edge HIT | Complete 5.8 MB response |
-| `/api/live2d/catalog` | 200 JSON, edge HIT | Initially bootstrap; later full remote catalog verified below |
-| `/api/site-assets/avatar` | 200 WebP, edge HIT | Actual avatar bytes |
-| `/api/music/meting` without arguments | 400, BYPASS, private/no-store | Input validation only |
-| Existing NetEase playlist through Meting | 200 JSON, 27 songs | Metadata only |
-| First song's stream redirect chain | 206, `audio/mpeg`, ID3 prefix | 4 KiB range from the audio origin |
-| GitHub login entry | 503 | Expected while OAuth is unconfigured |
-| POST `/api/style-gallery/manual` | 405 | Read-only guard; no storage writes |
+GitHub confirmed the save; a fresh page load confirmed both persisted callbacks.
+The Cloudflare secret is a second secret on that same production app. Vercel's
+old secret and homepage remain intact; the development app was not changed.
 
-The HTTP probe uses an explicit `CleleleMigrationAcceptance/1.0` user agent;
-Python's default user agent received 403 on the same route. This difference is
-not evidence that the application handler failed.
+Cloudflare uses `music-sessions/cloudflare-validation` in HF. Despite its historical
+name, this is now the production Cloudflare music-session prefix and must not be
+deleted as temporary data. An initial encrypted Vercel session copy failed
+authentication with the locally available encryption key. That unchanged
+migration copy was conditionally deleted using its ETag and ciphertext identity,
+with the original Vercel object preserved. The user then completed a fresh
+NetEase QR login; the new encrypted Cloudflare session is healthy. No cookie
+plaintext or secret value was printed or committed.
 
-Browser checks on 2026-11-09 used the actual new Pages domain in Edge:
+Worker secret updates affect the container process on its next start. During
+migration, the login handler kept returning its old “not configured” response
+until the new image/Worker deployment actually started. Application rollout
+metadata and instance listings lagged; HTTP behavior established that the new
+environment was active.
 
-- Homepage visible logo, cover, avatar and post-cover images all completed with
-  nonzero intrinsic dimensions.
-- Live2D reported that Chihaya Anon had loaded.
-- A later cookie-bearing request bypassed shared cache and confirmed the remote
-  Live2D directory: 115 characters / 3,522 costumes (1.94 MB), or 165 characters /
-  3,783 costumes with `native=1` (2.10 MB). The initial 3 KB response was bootstrap
-  fallback, so that earlier response alone did not establish remote catalog access.
-- Gallery hydrated and displayed 5,613 cards. Searching `#专辑` changed the result
-  count to 43 / 5,613; visible filtered images loaded.
-- Opening the first card displayed its loaded reference image and 1 / 5,613.
-  Next-image navigation displayed the second loaded image and 2 / 5,613.
-- The music page rendered the playlist and lyrics. A DOM click was rejected by
-  the browser's user-activation rule. A subsequent real mouse click activated the
-  document, but audio remained buffering at time zero. Playback is still pending;
-  the successful range request alone does not establish browser playback. The
-  audio was paused and temporary inspection hooks were removed after this check.
+## Validation
 
-Three concurrent warm requests to health, Live2D catalog and avatar all returned
-200, taking 0.43-1.55 seconds. This small warm sample does not establish cold-start
-latency or capacity under sustained traffic.
+Build and code checks:
 
-These checks use the local browser/network. The user's earlier phone test with
-VPN disabled applied to `clelele-blog-preview.pages.dev`, not this new domain.
+- Astro check: 0 errors, 0 warnings, 19 existing hints.
+- 219 Gallery tests and 30 Gallery-generation tests passed after the final API
+  default changes. Earlier checks also passed 28 Hpoi, 7 cache-policy/bridge and
+  153 music/Live2D tests.
+- Native Sharp decoding and ONNX inference produced the expected 384-byte
+  embedding locally and in the Cloudflare Linux image build.
+- The verified Linux image `52b0002d688081fdc4d03ae5235800201e92c4aa9a0b3150e2f08b367c4f3616`
+  completed build/deployment `dd9d6b03-4b6e-4559-9d8a-d6ddc440598b`.
+- Node's former open-ended engine range selected Node 26 on Vercel and broke
+  `re2`/NAN installation. Pinning 24.x passed the remote clean-install Vercel
+  build for commit `0721371`. The local Vercel trace hit an absent optional
+  `@img/sharp-wasm32` package in the existing local install; remote CI verified
+  the clean build.
+- PR review threads were empty. CodeRabbit skipped the draft and was not counted
+  as an approving review.
 
-## Remaining acceptance and cleanup
+Public/browser checks:
 
-1. Configure GitHub OAuth for
-   `https://clelele-blog.pages.dev/api/style-gallery/auth/github/callback` without
-   removing Vercel's callback. The existing `clelele-blog-production` app is
-   reused; the development app remains unchanged. The production app's form is
-   prepared with both callbacks and awaits confirmed persisted readback. Its old
-   Vercel secret cannot be read back from Vercel; a second secret was added and
-   deployed from the prefixed local field above. The old secret remains available
-   to Vercel. No additional OAuth app was created. Credentials are Cloudflare
-   Secrets and must never enter Git or chat.
-2. Verify login, session cookies, CSRF rejection and protected admin routes on
-   the Pages host. Migrate upload/admin and music configuration as needed.
-3. Exercise native upload, readback, update, cache freshness and deletion with
-   isolated synthetic records. Do not merge, overwrite or remove real cards or
-   user assets. Preserve CAS and pending-deletion behavior during cleanup.
-4. Verify actual music playback/session behavior, Live2D controls/editor assets,
-   and cold/concurrent requests. Test the new Pages domain from the user's
-   intended network with VPN disabled.
-5. After production acceptance, enable writes, update canonical site settings,
-   merge the PR with a merge commit, and point the build at the production
-   branch. Keep Vercel available through the observation period.
-6. Remove the superseded `clelele-blog-preview` Pages project and Worker only
-   after the new target passes acceptance. They are currently retained for
-   fallback. Clean migration-only local artifacts after useful evidence and
-   recovery material have been retained.
+| Surface | Observed result |
+| --- | --- |
+| Home, logo, avatar, Gallery HTML/catalog | 200; images loaded and public responses reached edge HIT |
+| Gallery browser | 5,613 cards; `#专辑` filtered to 43; first/next lightbox images loaded |
+| Anonymous Live2D catalog | 200 MISS then HIT, 1,939,530 bytes, 115 characters / 3,522 costumes |
+| Native-inclusive Live2D catalog | 165 characters / 3,783 costumes on an uncached read |
+| Live2D widget | Chihaya Anon loaded in Edge |
+| GitHub OAuth roundtrip | Returned to Pages without an error; owner profile admin GET returned 200 |
+| Session cookie attributes | Pages host only; HttpOnly, Secure, SameSite=Lax; flow cookie removed |
+| Gallery cross-origin tag write | 403 even with a valid management token |
+| Gallery same-origin wrong-token write | 401 |
+| Internal cache endpoint | Anonymous/wrong Bearer 401 on Worker; 404 through Pages; valid synthetic-tag request 204 |
+| Synthetic Gallery source upload | 200; public read 200 and exact PNG SHA-256 match; conditional DELETE 204; origin object absent |
+| Synthetic inactive profile asset | Native 32×32 dimensions; original active slots preserved; test asset removed |
+| Profile deletion recovery | Pending intent was retained after a failed deletion, then completed by retry; original fields/assets/history equal afterward |
+| Profile CAS and cache | Stale revision 409; same-content save 200; anonymous public revision refreshed in 35 seconds and ended as HIT |
+| Music session | User QR login completed; configured/connected/healthy all true |
+| Music playback | Real mouse click produced loadedmetadata and playing, readyState 4, visible pause control and time advancing to 21.72 seconds |
 
-## Superseded experiment
+The first music track was a 30-second fallback preview. Vercel and Cloudflare
+returned the same fallback source for that track. This verifies session health
+and working playback, not full-track access for every copyright/region/account
+combination. Playback was paused and temporary inspection hooks were removed.
 
-The earlier Workers-only Astro Cloudflare adapter preview could serve public
-pages, but runtime manual upload failed while loading Sharp's native addon
-(`sharp-linuxnull-x64.node`). Header logos through `/_image` also failed. That
-experiment is not the production architecture; the native container and built
-logo checks above resolve those deployment incompatibilities. Its still-retained
-URLs are `clelele-blog-preview.pages.dev` and
-`clelele-blog-preview.2513502304.workers.dev`.
+Three warm concurrent health/catalog/avatar requests returned 200 in
+0.43–1.55 seconds. This sample does not establish sustained-load capacity. The
+earlier HTTP Gallery probe capped its body at 6 MiB; the browser checks above
+established actual hydration and image interaction.
 
-References: [Cloudflare container environment variables and secrets](https://developers.cloudflare.com/containers/examples/env-vars-and-secrets/),
+Initial Live2D responses contained only bootstrap data; subsequent ordinary
+anonymous requests confirmed the complete remote directory without cookies,
+cache-busting parameters or forced invalidation. Initial browser DOM clicks were
+rejected for lacking user activation; the accepted playback check used a real
+mouse click. Python's default user agent received 403, while the explicit
+acceptance user agent and browser worked.
+
+No real Gallery cards were created, merged, overwritten or deleted during
+acceptance. Synthetic objects were cleaned and profile content/active assets
+were preserved. Actual active-card metadata publication was covered by existing
+logic tests rather than a production-record mutation.
+
+## Cleanup and observation
+
+The superseded Workers-only preview could not load Sharp's native addon. Its
+Pages project and Worker, both named `clelele-blog-preview`, were deleted and
+absence was read back. Neither had exclusive storage data. The source no longer
+offers their deployment commands or adapter; the gateway helper targets only the
+existing production Pages project.
+
+Keep the Vercel blog and subscription through the observation period. Default
+domain reachability depends on the user's network: the earlier phone/VPN-off
+test applied to the old Pages preview; the new domain was exercised through the
+local browser and HTTP checks. Continue observing the new domain and Cloudflare
+usage while Vercel remains available.
+
+References: [container environment variables and secrets](https://developers.cloudflare.com/containers/examples/env-vars-and-secrets/),
 [entrypoint cache invalidation](https://developers.cloudflare.com/workers/cache/purge/),
-and [Workers cache examples](https://developers.cloudflare.com/workers/cache/examples/).
+[Pages service bindings](https://developers.cloudflare.com/pages/functions/bindings/),
+and [Vercel Node version selection](https://vercel.com/docs/functions/runtimes/node-js/node-js-versions).
