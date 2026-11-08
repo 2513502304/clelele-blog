@@ -42,6 +42,23 @@ test('private responses, session cookies and errors cannot become public cache e
   }
 });
 
+test('signed-image redirect TTL survives while unspecified redirects remain private', () => {
+  const headers = {
+    location: 'https://assets.example/immutable-image?signature=synthetic',
+    'cache-control': 'public, max-age=300',
+    'vercel-cdn-cache-control': 'public, s-maxage=300',
+  };
+  const edge = forEdgeCache(new Response(null, { status: 302, headers }));
+  assert.equal(edge.headers.get('cache-control'), 'public, s-maxage=300');
+  const browser = forBrowser(edge);
+  assert.equal(browser.headers.get('cache-control'), 'public, max-age=300');
+  assert.equal(browser.headers.get('location'), headers.location);
+  const login = forEdgeCache(new Response(null, { status: 302, headers: { location: '/login' } }));
+  assert.equal(login.headers.get('cache-control'), 'private, no-store');
+  const personalized = forEdgeCache(new Response(null, { status: 302, headers: { ...headers, 'set-cookie': 'sid=test' } }));
+  assert.equal(personalized.headers.get('cache-control'), 'private, no-store');
+});
+
 test('invalidation validates scope, deduplicates tags, and distinguishes hard purge', () => {
   assert.deepEqual(parseInvalidation({ mode: 'purge', tags: ['hpoi-collection', 'hpoi-collection'] }), {
     mode: 'purge',

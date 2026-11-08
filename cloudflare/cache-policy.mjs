@@ -19,8 +19,17 @@ export function forEdgeCache(response) {
   if (browserPolicy) headers.set('x-blog-browser-cache-control', browserPolicy);
   if (edgePolicy) headers.set('cache-control', edgePolicy);
   if (tags) headers.set('cache-tag', tags);
+  // Signed-image redirects explicitly opt into a TTL shorter than the signature's
+  // lifetime. Preserve that policy, but never cache an unspecified login redirect.
+  const cacheableRedirect =
+    [301, 302, 307, 308].includes(response.status) &&
+    /(?:^|,)\s*(?:s-maxage|max-age)=[1-9]\d*(?:,|$)/i.test(edgePolicy ?? browserPolicy ?? '');
   // Public headers must never override a personalized or unsuccessful response.
-  if (response.status !== 200 || headers.has('set-cookie') || /private|no-store/i.test(browserPolicy ?? '')) {
+  if (
+    (response.status !== 200 && !cacheableRedirect) ||
+    headers.has('set-cookie') ||
+    /private|no-store/i.test(browserPolicy ?? '')
+  ) {
     headers.set('cache-control', 'private, no-store');
     headers.set('x-blog-browser-cache-control', 'private, no-store');
   }
