@@ -32,9 +32,25 @@ uncached. Gallery CAS, immutable asset paths, active-card identity and
 pending-deletion rules are unchanged.
 
 `BLOG_READ_ONLY=true` rejects non-GET/HEAD/OPTIONS requests before the Node app.
-The music-session prefix is separate from Vercel production. OAuth, upload/admin
-and music session secrets are not yet installed. Do not enable general writes
+The music-session prefix is separate from Vercel production. Upload/admin, music
+and the independent Cloudflare session-signing secret are installed. The existing
+encrypted production music-session object was copied once with create-only CAS
+to that isolated prefix, then read back byte-for-byte; Vercel's original was not
+changed and no session cookie was decrypted or printed. OAuth credentials are
+installed; the running container is being refreshed and the production app's
+additional callback still needs confirmed readback. Do not enable general writes
 before authentication and isolated mutation acceptance are complete.
+
+New migration credentials are stored only in the user's existing gitignored
+`~/code/Github/clelele-blog/.env.local`, with mode 0600. The `CLOUDFLARE_` fields
+map to the corresponding unprefixed Worker secrets at deployment. In particular,
+use `CLOUDFLARE_STYLE_GALLERY_GITHUB_CLIENT_ID`,
+`CLOUDFLARE_STYLE_GALLERY_GITHUB_CLIENT_SECRET`,
+`CLOUDFLARE_STYLE_GALLERY_GITHUB_REDIRECT_URI`,
+`CLOUDFLARE_STYLE_GALLERY_SESSION_SECRET` and
+`CLOUDFLARE_BLOG_CACHE_INVALIDATION_TOKEN`. The unprefixed local OAuth fields are
+development credentials and must not be deployed to Cloudflare. Temporary
+duplicate credential files have been removed after verifying the canonical copy.
 
 ## Reproduce
 
@@ -43,6 +59,9 @@ Use the pinned pnpm 9.15.1 and Node 24.22.1 for the Cloudflare image build.
 `pnpm deploy:cloudflare-container` deploys the container Worker with
 `wrangler.container.jsonc`. The configured Cloudflare Build tracks
 `feat/cloudflare-validation`. Ordinary `pnpm build` still targets Vercel.
+The package's Node engine is restricted to 24.x. The former open-ended minimum
+caused Vercel to choose Node 26 instead of its configured Node 24, where the
+existing `re2`/NAN dependency failed during installation.
 
 The Pages entrypoint is `cloudflare/pages-entry.mjs`, with a production `BLOG`
 service binding to `clelele-blog-container`. Its latest accepted deployment is
@@ -64,6 +83,13 @@ Local and Linux build checks:
   deployed successfully; local Docker was unavailable.
 - Authenticated remote invalidation of a synthetic cache tag returned 204.
   This proves endpoint execution, not post-mutation catalog freshness.
+- Anonymous and incorrect-Bearer POST requests to the Worker's internal cache
+  endpoint returned 401; the same path on Pages returned 404. These rejection
+  checks did not invalidate real data tags.
+- Node 24 Astro check passed again after the engine pin. A local default Vercel
+  build compiled and prerendered, then failed while tracing an absent optional
+  `@img/sharp-wasm32` package in the existing local dependency installation.
+  Remote clean-install/build verification is still required for the pin.
 
 Public HTTP checks against the new Pages domain:
 
@@ -116,9 +142,13 @@ VPN disabled applied to `clelele-blog-preview.pages.dev`, not this new domain.
 
 1. Configure GitHub OAuth for
    `https://clelele-blog.pages.dev/api/style-gallery/auth/github/callback` without
-   removing Vercel's callback. A separate application's non-sensitive form has
-   been prepared; its registration and secret generation await the user.
-   Install credentials only as Cloudflare Secrets, never in Git or chat.
+   removing Vercel's callback. The existing `clelele-blog-production` app is
+   reused; the development app remains unchanged. The production app's form is
+   prepared with both callbacks and awaits confirmed persisted readback. Its old
+   Vercel secret cannot be read back from Vercel; a second secret was added and
+   deployed from the prefixed local field above. The old secret remains available
+   to Vercel. No additional OAuth app was created. Credentials are Cloudflare
+   Secrets and must never enter Git or chat.
 2. Verify login, session cookies, CSRF rejection and protected admin routes on
    the Pages host. Migrate upload/admin and music configuration as needed.
 3. Exercise native upload, readback, update, cache freshness and deletion with
