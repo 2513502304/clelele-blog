@@ -5,6 +5,17 @@ import { expectNonBlankCanvas, waitForLive2DReady } from './helpers';
 const release = 'd5eadf497778106f46fa76ba5e4685f3d0a3fa7eeae0b2d20a22d18ec13c81e4';
 const costumeId = 'our-notes-adv-live2d-anon-002-casual-spring-01-glasses';
 
+test('pixel assertion rejects a blank canvas even over an opaque studio backdrop', async ({ page }) => {
+  await page.setContent('<div style="background: pink"><canvas class="live2d-canvas" width="200" height="200"></canvas></div>');
+  await expect(expectNonBlankCanvas(page)).rejects.toThrow();
+  await page.locator('canvas').evaluate((canvas: HTMLCanvasElement) => {
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Missing test context');
+    ctx.fillRect(50, 50, 100, 100);
+  });
+  await expectNonBlankCanvas(page);
+});
+
 test('native studio reuses one canvas and model, pauses GPU draws, and exports a local PNG', async ({ page }, testInfo) => {
   test.setTimeout(180_000);
   const catalog = structuredClone(catalogData);

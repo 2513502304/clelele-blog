@@ -112,7 +112,8 @@ describe('parseHpoiCollection', () => {
   it('accepts both current numeric and legacy quoted lazy-load page counts', () => {
     assert.equal(parseHpoiCollectionPageCount('<script>var query = { pageCount: 6 };</script>'), 6);
     assert.equal(parseHpoiCollectionPageCount("<script>var query = { pageCount: '3' };</script>"), 3);
-    assert.equal(parseHpoiCollectionPageCount('<script>var query = { page: 1 };</script>'), 1);
+    assert.equal(parseHpoiCollectionPageCount('<script>var query = { pageCount: 0 };</script>'), 0);
+    assert.equal(parseHpoiCollectionPageCount('<script>var query = { page: 1 };</script>'), null);
   });
 
   it('parses large-card collection items', () => {

@@ -20,9 +20,15 @@ export async function waitForLive2DReady(page: Page): Promise<void> {
   await expect(page.locator('.live2d-root')).toHaveAttribute('data-phase', 'ready', { timeout: 90_000 });
 }
 
-/** WebGL canvases cannot be inspected through a 2D context, so verify pixels from the browser-composited element image. */
+/** Inspect the composited WebGL frame with all surrounding paint hidden. The
+ * studio's opaque backdrop must not let an empty transparent canvas pass. */
 export async function expectNonBlankCanvas(page: Page): Promise<void> {
-  const screenshot = await page.locator('.live2d-canvas').screenshot();
+  const screenshot = await page.locator('.live2d-canvas').screenshot({
+    omitBackground: true,
+    style: `html, body { background: transparent !important; }
+      body * { visibility: hidden !important; }
+      .live2d-canvas { visibility: visible !important; background: transparent !important; }`,
+  });
   const { data, info } = await sharp(screenshot).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   let visiblePixels = 0;
   for (let offset = 3; offset < data.length; offset += info.channels) {

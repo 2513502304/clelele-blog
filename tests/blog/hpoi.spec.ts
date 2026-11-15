@@ -125,3 +125,73 @@ for (const [width, columns] of [
     expect(sizes.scroll).toBeLessThanOrEqual(width);
   });
 }
+
+test('owner invalidation rejects an older in-flight crawl before it can repopulate snapshots', async ({ page }) => {
+  await setup(page);
+  await page.addInitScript(
+    ({ meta, states }) => {
+      localStorage.setItem(
+        'hpoi-snapshots-v2',
+        JSON.stringify(
+          Object.fromEntries(
+            states.map((state) => [state, { items: [], meta, complete: true, savedAt: state === 'all' ? 1 : Date.now() }]),
+          ),
+        ),
+      );
+    },
+    { meta, states },
+  );
+  let invalidated = false;
+  let held = false;
+  let release = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(/\/api\/hpoi\?/, async (route) => {
+    const url = new URL(route.request().url());
+    if (url.searchParams.has('page')) {
+      held = true;
+      await gate;
+      return route.fulfill({ json: { items: [figure('3')], next: null, meta } });
+    }
+    return route.fulfill({
+      json: { items: [figure(invalidated ? '4' : '2')], next: invalidated ? null : '/api/hpoi?state=all&page=2&pages=2', meta },
+    });
+  });
+  await page.goto('/hpoi/');
+  await expect.poll(() => held).toBe(true);
+  invalidated = true;
+  // Exercise the same exported invalidation boundary as the authenticated admin action,
+  // without inventing production credentials or sending a real cache-purge request.
+  await page.evaluate(async () => {
+    const modulePath = '/src/hooks/useHpoiCollection.ts';
+    const { invalidateHpoiSnapshots } = await import(modulePath);
+    invalidateHpoiSnapshots();
+  });
+  expect(await page.evaluate(() => localStorage.getItem('hpoi-snapshots-v2'))).toBeNull();
+  release();
+  await expect(page.getByRole('heading', { name: '手办 4', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '手办 3', exact: true })).toHaveCount(0);
+});
+
+test('retrying an incomplete crawl retains cards from pages not yet revisited', async ({ page }) => {
+  await setup(page);
+  let retry = false;
+  await page.route(/\/api\/hpoi\?/, (route) => {
+    const url = new URL(route.request().url());
+    const state = url.searchParams.get('state');
+    if (state !== 'all') return route.fulfill({ json: { items: [], next: null, meta } });
+    if (url.searchParams.has('page')) return route.fulfill({ status: 502, body: 'Temporary failure' });
+    return route.fulfill({
+      json: { items: retry ? [figure('1')] : [figure('1'), figure('2')], next: '/api/hpoi?state=all&page=2&pages=2', meta },
+    });
+  });
+  await page.goto('/hpoi/');
+  const retryButton = page.getByRole('button', { name: '加载失败，点击重试', exact: true });
+  await expect(retryButton).toBeVisible();
+  await expect(page.getByRole('heading', { name: '手办 2', exact: true })).toBeVisible();
+  retry = true;
+  await retryButton.click();
+  await expect(retryButton).toBeVisible();
+  await expect(page.getByRole('heading', { name: '手办 2', exact: true })).toBeVisible();
+});

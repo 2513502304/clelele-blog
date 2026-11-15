@@ -11,6 +11,7 @@ const listeners = new Set<() => void>();
 let hydrated = false;
 let running = false;
 let retryQueued = false;
+let cacheGeneration = 0;
 let preferred: HpoiCollectionState = 'all';
 const notify = () => {
   for (const listener of listeners) listener();
@@ -55,6 +56,7 @@ function hydrate() {
 async function refresh() {
   if (running) return;
   running = true;
+  const generation = cacheGeneration;
   const work = new Map(
     HPOI_COLLECTION_STATES.filter((state) => {
       const old = snapshots.get(state);
@@ -70,7 +72,7 @@ async function refresh() {
     ]),
   );
   try {
-    while (work.size && listeners.size) {
+    while (work.size && listeners.size && generation === cacheGeneration) {
       const entries = [...work.entries()];
       // Switching to an unvisited tab moves its first page ahead of speculative reads.
       const candidate =
@@ -90,6 +92,7 @@ async function refresh() {
         const response = await fetch(url);
         if (!response.ok) throw new Error(`Hpoi ${response.status}`);
         const page = (await response.json()) as CollectionPage<HpoiSnapshot['items'][number], HpoiSnapshot['meta']>;
+        if (generation !== cacheGeneration) break;
         if (
           !Array.isArray(page.items) ||
           (page.next !== null && (typeof page.next !== 'string' || !page.next.startsWith(`/api/hpoi?state=${state}&`)))
@@ -114,14 +117,19 @@ async function refresh() {
             /* Optional persistence. */
           }
         } else if (!prior.complete) {
+          // A retry has not yet revisited all previously visible cards. Only the final
+          // page can prove deletions; retain unseen IDs through partial/error states.
+          const fetched = new Set(crawl.items.map((item) => item.id));
+          const merged = [...crawl.items, ...prior.items.filter((item) => !fetched.has(item.id))];
           snapshots.set(state, {
             ...prior,
-            items: reconcileHpoiItems(prior.items, crawl.items),
+            items: reconcileHpoiItems(prior.items, merged),
             meta: crawl.meta,
             loading: true,
           });
         }
       } catch {
+        if (generation !== cacheGeneration) break;
         snapshots.set(state, { ...(snapshots.get(state) ?? EMPTY), loading: false, error: true });
         work.delete(state);
       }
@@ -134,6 +142,22 @@ async function refresh() {
       void refresh();
     }
   }
+}
+
+/** Owner refresh must invalidate both durable snapshots and this SPA's in-memory copies.
+ * A prior in-flight crawl may finish, but its generation can no longer publish stale pages.
+ */
+export function invalidateHpoiSnapshots() {
+  cacheGeneration++;
+  try {
+    localStorage.removeItem(KEY);
+  } catch {
+    /* Optional persistence. */
+  }
+  for (const [state, snapshot] of snapshots) snapshots.set(state, { ...snapshot, savedAt: 0, error: false, loading: false });
+  notify();
+  if (running) retryQueued = true;
+  else void refresh();
 }
 
 export function useHpoiCollection(state: HpoiCollectionState) {

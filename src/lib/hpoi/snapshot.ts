@@ -10,7 +10,8 @@ export interface HpoiSnapshot {
 }
 
 /** Preserve unchanged objects (and card DOM) while honoring the authoritative order and deletions.
- * Call only after the last page succeeds: a partial crawl cannot prove an item was removed.
+ * A partial crawl must merge previously seen IDs into incoming first: only the
+ * confirmed last page permits omissions to be treated as deletions.
  */
 export function reconcileHpoiItems(previous: HpoiCollectionItem[], incoming: HpoiCollectionItem[]) {
   const byId = new Map(previous.map((item) => [item.id, item]));

@@ -4,7 +4,7 @@ import { fetchHpoiCollection, fetchHpoiCollectionState, fetchHpoiPage, fetchHpoi
 
 const originalFetch = globalThis.fetch;
 
-function collectionPage(ids: string[], pageCount?: number): string {
+function collectionPage(ids: string[], pageCount: number | null = 1): string {
   const items = ids
     .map(
       (id) => `
@@ -20,7 +20,7 @@ function collectionPage(ids: string[], pageCount?: number): string {
     <div class="hpoi-collect-container">
       <div class="collect-hobby-list-small">${items}</div>
     </div>
-    ${pageCount === undefined ? '' : `<script>var query = { page: 1, pageCount: ${pageCount} };</script>`}
+    ${pageCount === null ? '' : `<script>var query = { page: 1, pageCount: ${pageCount} };</script>`}
   `;
 }
 
@@ -217,6 +217,12 @@ describe('detail rating enrichment', () => {
 });
 
 describe('fetchHpoiPage', () => {
+  it('rejects unknown pagination instead of claiming the first page is a complete collection', async () => {
+    globalThis.fetch = async (input) =>
+      new Response(String(input).endsWith('/user/783694') ? profilePage() : collectionPage(['1'], null));
+    await assert.rejects(fetchHpoiPage('783694', 'all'), /pagination metadata is missing/);
+    await assert.rejects(fetchHpoiCollectionState('783694', 'all'), /pagination metadata is missing/);
+  });
   it('loads only the requested state/page, then follows a cursor without rereading the first page or profile', async () => {
     const urls: string[] = [];
     globalThis.fetch = async (input, init) => {
