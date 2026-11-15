@@ -19,6 +19,9 @@ for (const [id, expected] of [
     for (let i = 1; i <= 3; i++) matches.push({ index: i, ...(await matchCover(cover, await fixture(i))) });
     matches.sort((a, b) => b.score - a.score);
     assert.equal(matches[0].index, expected);
+    assert.ok(matches[0].ssim > 0);
+    assert.ok(Number.isFinite(matches[0].psnr) && matches[0].psnr > 0);
+    assert.ok(Math.abs(matches[0].score - (0.8 * matches[0].ssim + 0.2 * Math.min(1, matches[0].psnr / 50))) < 1e-12);
     assert.ok(matches[0].score > 0.67);
     assert.ok(matches[0].score - matches[1].score > 0.045);
     assert.ok(matches[0].left >= 0 && matches[0].top >= 0);

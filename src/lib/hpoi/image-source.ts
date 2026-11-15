@@ -88,9 +88,11 @@ export async function readHpoiGallery(id: string) {
   if (!cover) throw new Error('Hpoi cover missing');
   const node = html.match(/fn\.init\(fn,\s*(\d+),\s*\d+\)/)?.[1];
   const urls = officialImages(html);
-  if (urls.length >= 12) {
+  // Some detail pages render an empty gallery shell. It is not evidence of an empty gallery:
+  // 130013 exposes all official photos only through the offset=0 endpoint.
+  if (urls.length === 0 || urls.length >= 12) {
     if (!node) throw new Error('Hpoi gallery pagination missing');
-    for (let offset = 12; ; offset += 12) {
+    for (let offset = urls.length ? 12 : 0; ; offset += 12) {
       if (offset > 240) throw new Error('Hpoi gallery exceeds safety limit');
       const fragment = (
         await readHpoiSource(
