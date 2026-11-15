@@ -160,9 +160,9 @@ export function parseHpoiCollection(html: string): HpoiCollectionItem[] {
 /**
  * 读取 Hpoi 收藏页初始化脚本中的懒加载总页数。
  *
- * Hpoi 曾先后输出 `pageCount: '6'` 和 `pageCount: 6`，两种形式都需要兼容；未找到时按仅有首屏处理。
+ * Hpoi 曾先后输出 `pageCount: '6'` 和 `pageCount: 6`，两种形式都需要兼容；缺失元数据不能证明只有一页。
  */
-export function parseHpoiCollectionPageCount(html: string): number {
+export function parseHpoiCollectionPageCount(html: string): number | null {
   const $ = load(html);
   for (const script of $('script').toArray()) {
     const match = $(script)
@@ -171,9 +171,9 @@ export function parseHpoiCollectionPageCount(html: string): number {
     if (!match) continue;
 
     const pageCount = Number.parseInt(match[1] ?? match[2], 10);
-    if (pageCount > 0) return pageCount;
+    if (pageCount >= 0) return pageCount;
   }
-  return 1;
+  return null;
 }
 
 /** 通过页面容器区分“有效但为空的收藏页”和拦截页、错误页等非预期响应。 */
@@ -192,4 +192,16 @@ export function isHpoiProfilePage(html: string): boolean {
 export function isHpoiCollectionFragment(html: string): boolean {
   const $ = load(html);
   return $('.collect-hobby-list-large, .collect-hobby-list-small').length > 0;
+}
+
+/** Resolve the first official product photo, never a user album or a guessed cover filename. */
+export function parseHpoiDetailImage(html: string): string | null {
+  const $ = load(html);
+  const source = $('.hpoi-image-swiper a[onclick*="clickOfficialGallery"] img').first().attr('src');
+  const absolute = toAbsoluteUrl(source);
+  if (!absolute) return null;
+  const url = new URL(absolute);
+  if (url.protocol !== 'https:' || url.hostname !== 'rfx.hpoi.net' || !/^\/gk\/pic\/[sn]\//.test(url.pathname)) return null;
+  url.pathname = url.pathname.replace('/gk/pic/s/', '/gk/pic/n/');
+  return url.toString();
 }

@@ -5,9 +5,9 @@ export interface StudioViewport {
 }
 
 export const STUDIO_VIEWPORT_LIMITS = {
-  zoom: { min: 50, max: 180 },
-  x: { min: -40, max: 40 },
-  y: { min: -40, max: 40 },
+  zoom: { min: 25, max: 600 },
+  x: { min: -300, max: 300 },
+  y: { min: -300, max: 300 },
 } as const;
 
 /** Shared bounds for the stage gestures, keyboard shortcuts and range controls. */

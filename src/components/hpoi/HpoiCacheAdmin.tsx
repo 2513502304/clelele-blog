@@ -1,3 +1,4 @@
+import { invalidateHpoiSnapshots } from '@hooks/useHpoiCollection';
 import { useTranslation } from '@hooks/useTranslation';
 import { Icon } from '@iconify/react';
 import { useEffect, useState } from 'react';
@@ -37,10 +38,16 @@ export function HpoiCacheAdmin() {
       const response = await fetch('/api/hpoi/refresh', { method: 'POST' });
       if (!response.ok) throw new Error(`Hpoi refresh API returned HTTP ${response.status}.`);
       setData((await response.json()) as HpoiCollectionResponse);
-      // Owner refresh also retires public pages cached by this tab.
+      // Retire both the durable snapshot and earlier per-page/detail caches.
+      invalidateHpoiSnapshots();
       try {
         for (const key of Object.keys(sessionStorage))
-          if (key.startsWith('collection-page-v1:/api/hpoi')) sessionStorage.removeItem(key);
+          if (
+            key.startsWith('collection-page-v1:/api/hpoi') ||
+            key.startsWith('hpoi-detail-v2:') ||
+            key.startsWith('hpoi-rating-v1:')
+          )
+            sessionStorage.removeItem(key);
       } catch {
         /* Private storage may be disabled. */
       }

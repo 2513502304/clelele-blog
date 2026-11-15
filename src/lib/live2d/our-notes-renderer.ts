@@ -3,6 +3,7 @@ import { enableNativeMipmaps } from './native-texture-sampling';
 import { type NativeRuntime, type NativeSession, nativeParameters } from './our-notes-runtime-types';
 import type { Live2DCore } from './renderer';
 import { clampParameterOverrides } from './studio-state';
+import type { StudioViewport } from './studio-viewport';
 
 const VENDOR = '/vendor/ournotes-player-0.1.8';
 let runtime: Promise<NativeRuntime> | undefined;
@@ -46,6 +47,7 @@ export function createOurNotesCore(canvas: HTMLCanvasElement): Live2DCore {
   let pendingStep: Promise<void> | null = null;
   let overrides: Record<string, number> = {};
   let tracking = true;
+  let studioViewport: StudioViewport | null = null;
   const listeners = new Map<string, Array<(value?: string) => void>>();
   const stop = () => {
     loopGeneration++;
@@ -89,8 +91,13 @@ export function createOurNotesCore(canvas: HTMLCanvasElement): Live2DCore {
     const width = canvas.clientWidth,
       height = canvas.clientHeight;
     if (!width || !height) return;
-    // Match the pinned legacy engine: at most 1.5 DPR and 1.5M pixels, independent of CSS zoom.
-    const ratio = Math.min(window.devicePixelRatio || 1, 1.5, Math.sqrt(1_500_000 / (width * height)));
+    // The modal gets Retina detail; the always-on widget retains its lower GPU budget.
+    // Zoom changes the projection, never the backing-store size.
+    const ratio = Math.min(
+      window.devicePixelRatio || 1,
+      studioViewport ? 2 : 1.5,
+      Math.sqrt((studioViewport ? 4_000_000 : 1_500_000) / (width * height)),
+    );
     const pixelWidth = Math.max(1, Math.floor(width * ratio)),
       pixelHeight = Math.max(1, Math.floor(height * ratio));
     // A replacement session has its own requested size even when it reuses an already-sized canvas.
@@ -155,6 +162,20 @@ export function createOurNotesCore(canvas: HTMLCanvasElement): Live2DCore {
         throw new Error('Native session disposed.');
       }
       session = loaded;
+      const originalGlobals = loaded._globals.bind(loaded);
+      loaded._globals = (width, height) => {
+        const globals = originalGlobals(width, height);
+        if (!studioViewport) return globals;
+        const source = globals.unity_MatrixVP;
+        const vp = source.slice();
+        // DOM pan percentages become NDC; positive DOM y points down.
+        for (let column = 0; column < 4; column++) {
+          const i = column * 4;
+          vp[i] = (source[i] * studioViewport.zoom) / 100 + (source[i + 3] * studioViewport.x) / 50;
+          vp[i + 1] = (source[i + 1] * studioViewport.zoom) / 100 - (source[i + 3] * studioViewport.y) / 50;
+        }
+        return { ...globals, unity_MatrixVP: vp };
+      };
       overrides = {};
       // The pinned runtime finishes animation/physics before modelUpdate. Apply overrides there once
       // per frame, so motion cannot erase an edited face and we do not need a second animation loop.
@@ -176,6 +197,10 @@ export function createOurNotesCore(canvas: HTMLCanvasElement): Live2DCore {
     },
     cancelLoading() {
       if (loading) controller.abort();
+    },
+    setStudioViewport(view) {
+      studioViewport = view;
+      resize();
     },
     resize,
     async destroy() {

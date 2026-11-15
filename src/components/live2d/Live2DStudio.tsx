@@ -10,7 +10,7 @@ import { downloadStudioFile, exportStudioScene, INITIAL_STUDIO_SCENE, STUDIO_BAC
 import { studioActionLabel, studioParameterLabel } from '@lib/live2d/studio-labels';
 import { parseStudioPose, studioFilterCss } from '@lib/live2d/studio-state';
 import type { Live2DCatalog } from '@lib/live2d/types';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import '@styles/components/live2d-studio.css';
 
 interface Props {
@@ -79,7 +79,19 @@ export function Live2DStudio({
   const [exporting, setExporting] = useState(false);
   const backgroundUrls = useRef(new Set<string>());
   const stageRef = useRef<HTMLDivElement>(null);
-  useStudioViewport(stageRef, ready, scene, setScene);
+  // Radix mounts portal contents after the parent effect. Track the actual node so first-open
+  // input binds even when the model was already ready before the portal appeared.
+  const [stage, setStage] = useState<HTMLDivElement | null>(null);
+  const bindStage = useCallback((node: HTMLDivElement | null) => {
+    stageRef.current = node;
+    setStage(node);
+  }, []);
+  useStudioViewport(stage, ready, scene, setScene);
+  const nativeCamera = selection.costumeId.startsWith('our-notes-');
+  useEffect(() => {
+    renderer?.setStudioViewport(nativeCamera ? { zoom: scene.zoom, x: scene.x, y: scene.y } : null);
+  }, [renderer, nativeCamera, scene.zoom, scene.x, scene.y]);
+  useEffect(() => () => renderer?.setStudioViewport(null), [renderer]);
   const fileRef = useRef<HTMLInputElement>(null);
   // Object URLs have a single owner and are released on replacement/reset/close.
   useEffect(
@@ -172,7 +184,11 @@ export function Live2DStudio({
       downloadStudioFile(
         await exportStudioScene(
           frame,
-          compareOriginal ? { ...scene, filter: 'original' } : scene,
+          {
+            ...scene,
+            ...(compareOriginal ? { filter: 'original' as const } : {}),
+            ...(nativeCamera ? { zoom: 100, x: 0, y: 0 } : {}),
+          },
           stage.clientWidth / stage.clientHeight,
         ),
         `${selection.costumeId}.png`,
@@ -202,11 +218,13 @@ export function Live2DStudio({
             </div>
           </div>
           <a
-            className="live2d-studio-export"
+            className="live2d-studio-workbench"
             href={`/live2d-studio/index.html${selection.costumeId.startsWith('our-notes-') ? `?model=${encodeURIComponent(selection.costumeId.slice('our-notes-'.length).replaceAll('-', '_'))}` : ''}`}
             data-astro-reload
           >
+            <Icon icon="ri:artboard-2-line" />
             {t('live2d.studio.workbench')}
+            <Icon icon="ri:arrow-right-up-line" />
           </a>
           <button type="button" className="live2d-studio-close" onClick={onClose} aria-label={t('live2d.close')}>
             <Icon icon="ri:close-line" />
@@ -219,7 +237,7 @@ export function Live2DStudio({
               <span>{selection.costumeId.startsWith('our-notes-') ? 'OUR NOTES' : 'GIRLS BAND PARTY'}</span>
             </div>
             <div
-              ref={stageRef}
+              ref={bindStage}
               className="live2d-studio-stage"
               role="application"
               tabIndex={ready ? 0 : -1}
@@ -235,7 +253,7 @@ export function Live2DStudio({
                 ref={onHost}
                 style={{
                   filter: compareOriginal ? 'none' : studioFilterCss(scene.filter, scene.filterStrength),
-                  transform: `translate(${scene.x}%, ${scene.y}%) scale(${scene.zoom / 100})`,
+                  transform: nativeCamera ? undefined : `translate(${scene.x}%, ${scene.y}%) scale(${scene.zoom / 100})`,
                 }}
               />
               {!ready && (

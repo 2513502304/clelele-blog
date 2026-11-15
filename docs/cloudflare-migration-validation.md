@@ -1,5 +1,7 @@
 # Cloudflare migration validation
 
+Current deployment status (2026-11-15): the owner has cancelled the Vercel subscription and paused the legacy Vercel deployment. Cloudflare Pages and its Container origin are the authoritative production target. References below to keeping Vercel running describe the earlier migration acceptance, not the current deployment state. Validate and deploy changes against Cloudflare.
+
 Validated on 2026-11-09. Production target: https://clelele-blog.pages.dev/
 
 The native Cloudflare deployment passed public reads, GitHub owner login,

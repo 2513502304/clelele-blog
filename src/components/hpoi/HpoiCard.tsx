@@ -1,6 +1,7 @@
 import { useTranslation } from '@hooks/useTranslation';
 import { Icon } from '@iconify/react';
 import { createHpoiImageProxyUrl } from '@lib/hpoi/image';
+import { useState } from 'react';
 import { InlineSpinner } from '@/components/ui/InlineSpinner';
 import type { TranslationKey } from '@/i18n/types';
 import type { HpoiCollectionItem, HpoiCollectionState } from '@/types/hpoi';
@@ -19,23 +20,29 @@ interface HpoiCardProps {
   state: HpoiCollectionState;
   masonry?: boolean;
   ratingLoading?: boolean;
+  detailImage?: string | null;
 }
 
 /** Keep the cover usable while optional rating enrichment is pending; settled empty scores display a dash. */
-export function HpoiCard({ item, state, masonry = false, ratingLoading = false }: HpoiCardProps) {
+export function HpoiCard({ item, state, masonry = false, ratingLoading = false, detailImage }: HpoiCardProps) {
   const { t } = useTranslation();
+  const [failedImage, setFailedImage] = useState<string>();
+  const imageUrl = detailImage && failedImage !== detailImage ? detailImage : item.imageUrl;
 
   return (
     <a
       href={item.detailUrl}
       target="_blank"
       rel="noopener noreferrer"
-      className="group flex min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-card transition-[border-color,transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
+      className="group relative flex min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-card transition-[border-color,transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
     >
-      <div className={`relative w-full overflow-hidden bg-muted/60 ${masonry && item.imageUrl ? '' : 'aspect-square'}`}>
-        {item.imageUrl ? (
+      <div className={`relative w-full overflow-hidden bg-muted/60 ${masonry && imageUrl ? '' : 'aspect-square'}`}>
+        {imageUrl ? (
           <img
-            src={createHpoiImageProxyUrl(item.imageUrl)}
+            src={createHpoiImageProxyUrl(imageUrl)}
+            onError={() => {
+              if (detailImage) setFailedImage(detailImage);
+            }}
             alt={item.title}
             loading="lazy"
             decoding="async"
@@ -68,19 +75,21 @@ export function HpoiCard({ item, state, masonry = false, ratingLoading = false }
         </span>
       </div>
 
-      <div className="flex min-h-24 flex-1 flex-col justify-between gap-2 p-3">
-        <h2 className="line-clamp-2 font-medium text-sm leading-5 transition-colors group-hover:text-primary">{item.title}</h2>
-        <div className="space-y-1 text-muted-foreground text-xs">
-          <span className="flex items-center gap-1.5">
-            <Icon icon="ri:calendar-event-line" className="size-3.5 shrink-0" />
-            <span className="line-clamp-1">{item.releaseText ?? '—'}</span>
+      <div className="absolute inset-x-2 bottom-2 flex flex-col items-start gap-1.5 text-white">
+        <h2 className="max-w-full rounded-lg border border-white/20 bg-black/65 px-2.5 py-1.5 font-medium text-sm leading-5 shadow-sm backdrop-blur-sm">
+          <span className="line-clamp-2">{item.title}</span>
+        </h2>
+        <div className="flex max-w-full flex-wrap gap-1.5 text-xs">
+          <span
+            title={item.releaseText ?? undefined}
+            className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-black/70 px-2 py-1 backdrop-blur-sm"
+          >
+            <Icon icon="ri:calendar-event-line" className="size-3 shrink-0" />
+            {item.releaseDate ?? item.releaseText ?? '—'}
           </span>
-          <span className="flex items-center justify-between gap-2">
-            <span className="flex min-w-0 items-center gap-1.5">
-              <Icon icon="ri:hashtag" className="size-3.5 shrink-0" />
-              <span className="truncate">Hpoi {item.id}</span>
-            </span>
-            <Icon icon="ri:external-link-line" className="size-3.5 shrink-0 opacity-60" />
+          <span className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-black/70 px-2 py-1 backdrop-blur-sm">
+            Hpoi {item.id}
+            <Icon icon="ri:external-link-line" className="size-3 shrink-0 opacity-70" />
           </span>
         </div>
       </div>

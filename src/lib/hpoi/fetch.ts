@@ -8,6 +8,7 @@ import {
   isHpoiProfilePage,
   parseHpoiCollection,
   parseHpoiCollectionPageCount,
+  parseHpoiDetailImage,
   parseHpoiDetailScore,
   parseHpoiProfile,
 } from './parser';
@@ -106,7 +107,7 @@ function getHpoiConcurrency(taskCount: number): number {
  * 获取某个 Hpoi 收藏状态中能够发现的条目集合。
  *
  * 第 1 页使用公开收藏页 GET 请求，后续页复用页面滚动加载器的 POST 参数并发获取。页数来自首屏脚本，
- * 同时受 `MAX_COLLECTION_PAGES` 限制；脚本缺少页数元数据时只能按首屏处理，不能保证发现后续条目。
+ * 同时受 `MAX_COLLECTION_PAGES` 限制；脚本缺少页数时拒绝更新，避免把未抓取条目误判为删除。
  * 最终按 Hpoi ID 去重并保留首次顺序。
  */
 export async function fetchHpoiCollectionState(
@@ -117,6 +118,7 @@ export async function fetchHpoiCollectionState(
   const initialHtml = await fetchHtml(collectionUrl, undefined, isHpoiCollectionPage);
 
   const pageCount = parseHpoiCollectionPageCount(initialHtml);
+  if (pageCount === null) throw new Error('Hpoi pagination metadata is missing');
   if (pageCount > MAX_COLLECTION_PAGES) {
     throw new Error(`Hpoi collection state "${state}" exceeds the ${MAX_COLLECTION_PAGES}-page safety limit.`);
   }
@@ -256,6 +258,7 @@ export async function fetchHpoiPage(userId: string, state: HpoiCollectionState, 
       ? await fetchHtml(url, undefined, isHpoiCollectionPage)
       : await fetchHtml(endpoint.toString(), createCollectionPageBody(url, page, knownPageCount), isHpoiCollectionFragment);
   const pageCount = page === 1 ? parseHpoiCollectionPageCount(html) : knownPageCount;
+  if (pageCount === null) throw new Error('Hpoi pagination metadata is missing');
   if (pageCount > MAX_COLLECTION_PAGES) throw new Error('Hpoi page limit exceeded');
   const items = [...new Map(parseHpoiCollection(html).map((item) => [item.id, item])).values()];
   if (items.length === 0 && page < pageCount) throw new Error('Hpoi returned an empty intermediate page');
@@ -282,4 +285,20 @@ export async function fetchHpoiRatings(ids: string[]): Promise<Record<string, st
     }
   });
   return ratings;
+}
+
+/** Score and official photo share one bounded detail read. Missing IDs remain retryable failures. */
+export async function fetchHpoiDetails(ids: string[]) {
+  const signal = AbortSignal.timeout(RATING_BUDGET_MS);
+  const details: Record<string, { score: string | null; imageUrl: string | null }> = {};
+  await mapWithConcurrency(ids, 4, async (id) => {
+    if (signal.aborted) return;
+    try {
+      const html = await fetchHtml(`https://www.hpoi.net/hobby/${id}`, undefined, isHpoiDetailPage, signal);
+      details[id] = { score: parseHpoiDetailScore(html), imageUrl: parseHpoiDetailImage(html) };
+    } catch {
+      /* Preserve the list cover on temporary detail failures. */
+    }
+  });
+  return details;
 }

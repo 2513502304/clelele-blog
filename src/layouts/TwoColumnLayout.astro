@@ -17,7 +17,7 @@ const { className, post } = Astro.props;
   <slot name="cover" />
   <!-- The full-width stage lets ambient fog cross both columns without a card-shaped edge. -->
   <div class="page-reading-stage">
-    <div class={cn('page-reading-layout mx-auto md:mx-0 flex w-full items-start justify-center md:w-full', MAX_WIDTH.content, className)}>
+    <div class={cn('page-reading-layout mx-auto md:mx-0 flex w-full items-start justify-center md:w-full', post ? 'max-w-[min(1800px,calc(100%-4rem))] tablet:max-w-full' : MAX_WIDTH.content, className)}>
       <slot name="sider" />
       <div class="flex min-w-0 grow flex-col gap-8 md:w-full">
         <slot />

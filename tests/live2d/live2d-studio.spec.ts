@@ -1,9 +1,20 @@
 import { expect, type Page, test } from '@playwright/test';
 import catalogData from '../../src/data/live2d/catalog.json' with { type: 'json' };
-import { waitForLive2DReady } from './helpers';
+import { expectNonBlankCanvas, waitForLive2DReady } from './helpers';
 
 const release = 'd5eadf497778106f46fa76ba5e4685f3d0a3fa7eeae0b2d20a22d18ec13c81e4';
 const costumeId = 'our-notes-adv-live2d-anon-002-casual-spring-01-glasses';
+
+test('pixel assertion rejects a blank canvas even over an opaque studio backdrop', async ({ page }) => {
+  await page.setContent('<div style="background: pink"><canvas class="live2d-canvas" width="200" height="200"></canvas></div>');
+  await expect(expectNonBlankCanvas(page)).rejects.toThrow();
+  await page.locator('canvas').evaluate((canvas: HTMLCanvasElement) => {
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Missing test context');
+    ctx.fillRect(50, 50, 100, 100);
+  });
+  await expectNonBlankCanvas(page);
+});
 
 test('native studio reuses one canvas and model, pauses GPU draws, and exports a local PNG', async ({ page }, testInfo) => {
   test.setTimeout(180_000);
@@ -99,6 +110,15 @@ test('native studio reuses one canvas and model, pauses GPU draws, and exports a
   expect(requests).toHaveLength(0);
   await verifyBackgroundDialogs(page, false);
   await page.getByRole('button', { name: 'Live2D 工作室', exact: true }).click();
+  const firstStage = page.locator('.live2d-studio-stage');
+  await firstStage.hover();
+  await page.mouse.wheel(0, -80);
+  await page.getByRole('button', { name: '画面', exact: true }).click();
+  await expect
+    .poll(async () => Number(await page.getByRole('slider', { name: '人物缩放', exact: true }).inputValue()))
+    .toBeGreaterThan(100);
+  await firstStage.press('0');
+  await page.getByRole('button', { name: '角色', exact: true }).click();
   await expect(page.locator('.live2d-studio-fields select').first()).toHaveValue('bestdori');
   await expect(page.locator('.live2d-studio-costumes button[aria-pressed=true]')).toHaveCount(1);
   await page.locator('.live2d-studio-fields select').first().selectOption('our-notes');
@@ -173,9 +193,11 @@ test('native studio reuses one canvas and model, pauses GPU draws, and exports a
   const backing = await page
     .locator('canvas.live2d-canvas')
     .evaluate((c: HTMLCanvasElement) => ({ w: c.width, h: c.height, css: c.clientWidth }));
-  expect(backing.w * backing.h).toBeLessThanOrEqual(1_500_000);
-  expect(backing.w / backing.css).toBeLessThanOrEqual(1.5);
+  expect(backing.w * backing.h).toBeLessThanOrEqual(4_000_000);
+  expect(backing.w / backing.css).toBeLessThanOrEqual(2);
   await page.getByRole('button', { name: '重置画面', exact: true }).click();
+  await expect(page.getByRole('slider', { name: '人物缩放', exact: true })).toHaveValue('100');
+  await expect(async () => expectNonBlankCanvas(page)).toPass({ timeout: 3000 });
   await page.screenshot({ path: testInfo.outputPath('studio-desktop.png') });
   await page.evaluate(() => document.documentElement.classList.add('dark'));
   await page.setViewportSize({ width: 390, height: 844 });
@@ -205,7 +227,7 @@ test('native studio reuses one canvas and model, pauses GPU draws, and exports a
   await dragRange(page, 'PARAM_ANGLE_X');
   const afterPose = await legacyCanvas.screenshot();
   expect(beforePose.equals(afterPose)).toBe(false);
-  await verifyStageGestures(page);
+  await verifyStageGestures(page, false);
   // Resizing a paused canvas clears its backing store; it must receive one replacement frame.
   const beforeResize = await draws();
   await page.setViewportSize({ width: 1280, height: 900 });
@@ -289,7 +311,7 @@ async function verifySceneTools(page: Page) {
 }
 
 /** Pan/zoom are composition-only: no reload, no animation restart, and no lost capture outside the stage. */
-async function verifyStageGestures(page: Page) {
+async function verifyStageGestures(page: Page, native = true) {
   await page.getByRole('button', { name: '画面', exact: true }).click();
   const stage = page.getByRole('application', { name: '预览画布', exact: true });
   const zoom = page.getByRole('slider', { name: '人物缩放', exact: true });
@@ -314,10 +336,10 @@ async function verifyStageGestures(page: Page) {
   expect(Number(await x.inputValue())).toBeCloseTo(-10, 0);
   await page.mouse.move(box.x - 10, cy);
   await page.mouse.up();
-  expect(await x.inputValue()).toBe('-40');
+  expect(Number(await x.inputValue())).toBeLessThan(-50);
   await expect(stage).not.toHaveAttribute('data-dragging');
   await page.mouse.move(cx, cy);
-  expect(await x.inputValue()).toBe('-40');
+  expect(Number(await x.inputValue())).toBeLessThan(-50);
   await stage.press('Home');
   await page.mouse.move(cx + box.width * 0.25, cy);
   const scrollBefore = await page.evaluate(() => window.scrollY);
@@ -339,7 +361,18 @@ async function verifyStageGestures(page: Page) {
   await dialogue.press('ArrowRight');
   await expect(zoom).toHaveValue('105');
   expect(await canvas?.evaluate((element) => element.isConnected)).toBe(true);
-  expect(await page.evaluate(() => Reflect.get(window, '__nativeDraws'))).toBe(drawsBefore);
+  // Camera changes need one redraw while paused, but must not restart animation.
+  if (native) expect(await page.evaluate(() => Reflect.get(window, '__nativeDraws'))).toBeGreaterThan(drawsBefore);
+  else expect(await page.evaluate(() => Reflect.get(window, '__nativeDraws'))).toBe(drawsBefore);
+  const size = await canvas?.evaluate((el) => [(el as HTMLCanvasElement).width, (el as HTMLCanvasElement).height]);
+  await zoom.fill('600');
+  await expect(zoom).toHaveValue('600');
+  if (native) await expect(page.locator('.live2d-studio-model')).toHaveCSS('transform', 'none');
+  expect(await canvas?.evaluate((el) => [(el as HTMLCanvasElement).width, (el as HTMLCanvasElement).height])).toEqual(size);
+  await page.waitForTimeout(150);
+  const settledDraws = await page.evaluate(() => Reflect.get(window, '__nativeDraws'));
+  await page.waitForTimeout(250);
+  expect(await page.evaluate(() => Reflect.get(window, '__nativeDraws'))).toBe(settledDraws);
   await page.getByRole('button', { name: '重置画面', exact: true }).click();
 }
 
