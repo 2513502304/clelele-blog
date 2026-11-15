@@ -14,6 +14,10 @@ export interface HpoiCollectionItem {
   id: string;
   title: string;
   imageUrl: string | null;
+  /** Original cover geometry stays fixed for cached HD images and their fallback. */
+  imageWidth?: number;
+  imageHeight?: number;
+  imageFallbackUrl?: string;
   detailUrl: string;
   releaseText: string | null;
   /** 用于稳定排序的 ISO 日期；`releaseText` 保留 Hpoi 原始展示文案。 */

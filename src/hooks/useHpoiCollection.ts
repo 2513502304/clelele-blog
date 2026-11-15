@@ -5,7 +5,7 @@ import { HPOI_COLLECTION_STATES, type HpoiCollectionState } from '@/types/hpoi';
 
 const EMPTY: HpoiSnapshot = { items: [], complete: false, savedAt: 0, loading: false, error: false };
 const TTL = 30 * 60_000;
-const KEY = 'hpoi-snapshots-v2';
+const KEY = 'hpoi-snapshots-v3';
 const snapshots = new Map<HpoiCollectionState, HpoiSnapshot>();
 const listeners = new Set<() => void>();
 let hydrated = false;
@@ -89,7 +89,7 @@ async function refresh() {
         if (!url) throw new Error('Missing Hpoi cursor');
         if (crawl.seen.has(url) || crawl.seen.size >= 100) throw new Error('Invalid Hpoi cursor');
         crawl.seen.add(url);
-        const response = await fetch(url);
+        const response = await fetch(`${url}&images=matched-v1`);
         if (!response.ok) throw new Error(`Hpoi ${response.status}`);
         const page = (await response.json()) as CollectionPage<HpoiSnapshot['items'][number], HpoiSnapshot['meta']>;
         if (generation !== cacheGeneration) break;

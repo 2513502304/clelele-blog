@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
-import { isAllowedHpoiImageUrl } from '@/lib/hpoi/image';
 import type { HpoiCollectionItem } from '@/types/hpoi';
 
-type Detail = { score: string | null; imageUrl: string | null };
+type Detail = { score: string | null };
 const pending = new Map<string, Promise<Record<string, Detail>>>();
 const CACHE_MS = 30 * 60 * 1000;
 
@@ -22,12 +21,10 @@ async function readRatings(ids: string[]) {
           const detail = data?.[id];
           if (!detail || (detail.score !== null && !(typeof detail.score === 'string' && /^\d+(\.\d+)?$/.test(detail.score))))
             continue;
-          if (detail.imageUrl !== null && (typeof detail.imageUrl !== 'string' || !isAllowedHpoiImageUrl(detail.imageUrl)))
-            continue;
           scores[id] = data[id];
           try {
             sessionStorage.setItem(
-              `hpoi-detail-v2:${id}`,
+              `hpoi-detail-v3:${id}`,
               JSON.stringify({ detail: scores[id], expires: Date.now() + CACHE_MS }),
             );
           } catch {
@@ -57,7 +54,7 @@ export function useHpoiRatings(items: HpoiCollectionItem[]) {
       const missing: string[] = [];
       for (const id of ids.split(',').filter(Boolean)) {
         try {
-          const cached = JSON.parse(sessionStorage.getItem(`hpoi-detail-v2:${id}`) || 'null');
+          const cached = JSON.parse(sessionStorage.getItem(`hpoi-detail-v3:${id}`) || 'null');
           if (cached?.expires > Date.now() && cached.detail) {
             scores[id] = cached.detail;
             continue;
@@ -95,7 +92,6 @@ export function useHpoiRatings(items: HpoiCollectionItem[]) {
   const pendingIds = state.ids === ids ? state.pendingIds : new Set(ids.split(',').filter(Boolean));
   return {
     scores: Object.fromEntries(Object.entries(state.scores).map(([id, d]) => [id, d.score])),
-    images: Object.fromEntries(Object.entries(state.scores).map(([id, d]) => [id, d.imageUrl])),
     pendingIds,
     loading: pendingIds.size > 0,
   };
