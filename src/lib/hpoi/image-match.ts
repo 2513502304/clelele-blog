@@ -4,9 +4,13 @@ import sharp from 'sharp';
 const W = 48;
 const H = 64;
 
-/** Local RGB SSIM after alignment; PSNR alone over-rewards empty white backgrounds. */
-function similarity(a: Uint8Array, b: Uint8Array): number {
+/** Both metrics use the same aligned RGB pixels. Weight structure 80%, pixel fidelity 20%.
+ * PSNR is normalized against 50 dB, never added in raw dB to SSIM. A finite 100 dB
+ * reporting ceiling keeps exact-match metrics JSON-safe (its normalized contribution is 1).
+ */
+function similarity(a: Uint8Array, b: Uint8Array) {
   let sum = 0;
+  let squaredError = 0;
   for (let y = 0; y < H; y += 8)
     for (let x = 0; x < W; x += 8)
       for (let c = 0; c < 3; c++) {
@@ -24,6 +28,7 @@ function similarity(a: Uint8Array, b: Uint8Array): number {
             aa += v * v;
             bb += w * w;
             ab += v * w;
+            squaredError += (v - w) ** 2;
           }
         ma /= 64;
         mb /= 64;
@@ -31,7 +36,11 @@ function similarity(a: Uint8Array, b: Uint8Array): number {
           ((2 * ma * mb + 6.5025) * (2 * (ab / 64 - ma * mb) + 58.5225)) /
           ((ma * ma + mb * mb + 6.5025) * (aa / 64 - ma * ma + bb / 64 - mb * mb + 58.5225));
       }
-  return sum / (((W * H) / 64) * 3);
+  const ssim = sum / (((W * H) / 64) * 3);
+  const mse = squaredError / (W * H * 3);
+  const psnr = Math.min(100, 10 * Math.log10(255 ** 2 / Math.max(mse, 255 ** 2 * 1e-10)));
+  const score = 0.8 * Math.max(0, ssim) + 0.2 * Math.min(1, Math.max(0, psnr / 50));
+  return { score, ssim, psnr };
 }
 
 /** Search scale/translation because Hpoi covers crop and enlarge the official photo. Never mirror/rotate a match. */
@@ -53,7 +62,7 @@ export async function matchCover(cover: Buffer, candidate: Buffer) {
     .raw()
     .toBuffer({ resolveWithObject: true });
   const out = new Uint8Array(W * H * 3);
-  let best = { score: -1, left: 0, top: 0, width: 1, height: 1 };
+  let best = { score: -1, ssim: 0, psnr: 0, left: 0, top: 0, width: 1, height: 1 };
   const maxHeight = Math.min(info.height, info.width / ratio);
   const evaluate = (height: number, left: number, top: number) => {
     const width = height * ratio;
@@ -78,10 +87,10 @@ export async function matchCover(cover: Buffer, candidate: Buffer) {
             (data[c + channel] * (1 - fx) + data[d + channel] * fx) * fy;
         }
       }
-    const score = similarity(target, out);
-    if (score > best.score)
+    const metrics = similarity(target, out);
+    if (metrics.score > best.score)
       best = {
-        score,
+        ...metrics,
         left: left / info.width,
         top: top / info.height,
         width: width / info.width,

@@ -30,6 +30,8 @@ if (!args.includes('--dry-run')) {
               total: missing.length,
               id,
               matched: record.matched,
+              source: record.sourceUrl,
+              pixels: [record.sourceWidth, record.sourceHeight],
               photos: record.candidates.length,
               best: [...record.candidates].sort((a, b) => b.similarity - a.similarity)[0],
             }),

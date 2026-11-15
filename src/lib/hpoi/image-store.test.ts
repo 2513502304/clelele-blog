@@ -28,7 +28,7 @@ test('completed IDs skip Hpoi/CV; concurrent manifest writes retain another publ
   let writes = 0;
   globalThis.fetch = async (input, init) => {
     assert.equal(new URL(String(input)).hostname, 'storage.test', 'cached entries must not contact Hpoi');
-    const receiptId = new URL(String(input)).pathname.match(/completed\/(\d+)\.json$/)?.[1];
+    const receiptId = new URL(String(input)).pathname.match(/completed-v2\/(\d+)\.json$/)?.[1];
     if (receiptId) {
       if (init?.method === 'PUT') {
         assert.equal(new Headers(init.headers).get('if-none-match'), '*');

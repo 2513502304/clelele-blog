@@ -12,6 +12,6 @@ export function isAllowedHpoiImageUrl(value: string): boolean {
 
 /** 生成同源图片代理地址，避免浏览器直接依赖 Hpoi CDN 的 Referer 与跨域策略。 */
 export function createHpoiImageProxyUrl(sourceUrl: string): string {
-  if (/^\/api\/hpoi\/cached-image\?key=[a-f0-9]{64}\.jpg$/.test(sourceUrl)) return sourceUrl;
+  if (/^\/api\/hpoi\/cached-image\?key=[a-f0-9]{64}\.(jpg|png|webp)$/.test(sourceUrl)) return sourceUrl;
   return `/api/hpoi/image?source=${encodeURIComponent(sourceUrl)}`;
 }

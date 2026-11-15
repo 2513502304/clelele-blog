@@ -30,6 +30,10 @@ export function HpoiCard({ item, state, masonry = false, ratingLoading = false }
   const imageUrl = source && !failedImages.has(source) ? source : item.imageFallbackUrl;
   const visibleImage = imageUrl && !failedImages.has(imageUrl);
   const aspectRatio = masonry ? `${item.imageWidth ?? 360} / ${item.imageHeight ?? 520}` : '1 / 1';
+  const crop = item.imageCrop;
+  // Fit a poster's selected panel into the square grid too; CSS clips the full original,
+  // so neither layout needs a downsampled or recompressed file.
+  const panelScale = crop && !masonry ? Math.min(1, crop.width / crop.height) : 1;
 
   return (
     <a
@@ -48,6 +52,18 @@ export function HpoiCard({ item, state, masonry = false, ratingLoading = false }
             alt={item.title}
             loading="lazy"
             decoding="async"
+            style={
+              crop
+                ? {
+                    position: 'absolute',
+                    maxWidth: 'none',
+                    width: `${(crop.sourceWidth / crop.width) * panelScale * 100}%`,
+                    height: `${(crop.sourceHeight / (masonry ? crop.height : crop.width)) * panelScale * 100}%`,
+                    left: `${((1 - panelScale) / 2 - (crop.left / crop.width) * panelScale) * 100}%`,
+                    top: `${(masonry ? -crop.top / crop.height : (1 - (crop.height / crop.width) * panelScale) / 2 - (crop.top / crop.width) * panelScale) * 100}%`,
+                  }
+                : undefined
+            }
             className="block size-full object-contain transition-transform duration-300 group-hover:scale-[1.03]"
           />
         ) : (

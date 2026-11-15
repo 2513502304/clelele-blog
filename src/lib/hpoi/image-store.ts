@@ -9,13 +9,20 @@ export interface CachedHpoiImage {
   score: string | null;
   matched: boolean;
   originalKey?: string;
+  /** Selected /pic/n/ URL; the cached object's bytes must equal this source file. */
+  sourceUrl?: string;
+  sourceWidth?: number;
+  sourceHeight?: number;
+  /** CSS viewport into a multi-photo poster, in original pixels; never a re-encoded derivative. */
+  crop?: { left: number; top: number; width: number; height: number };
   /** Public gallery links whose thumbnail and original both returned 404. */
   unavailable?: string[];
   processedAt: string;
-  candidates: Array<{ url: string; similarity: number }>;
+  /** Legacy similarity is SSIM-only; new entries retain both metrics and their scoring version. */
+  candidates: Array<{ url: string; similarity: number; ssim?: number; psnr?: number; scoring?: 'ssim80-psnr20-v1' }>;
 }
 export type HpoiImageManifest = Record<string, CachedHpoiImage>;
-const INDEX = 'manifest.v1.json';
+const INDEX = 'manifest.v2.json';
 let cached: { value: HpoiImageManifest; until: number } | undefined;
 let pending: Promise<HpoiImageManifest> | undefined;
 
@@ -32,6 +39,12 @@ export function hpoiImageStorage() {
     prefix: 'hpoi-images',
     region: process.env.HF_S3_REGION ?? 'us-east-1',
   });
+}
+
+/** One-time v1 migration reuses existing rankings and original objects, without repeating CV. */
+export async function readLegacyHpoiImageManifest(): Promise<HpoiImageManifest> {
+  const object = await hpoiImageStorage().get('manifest.v1.json');
+  return object ? JSON.parse(Buffer.from(object.bytes).toString()) : {};
 }
 
 /** Coalesce manifest reads, including empty manifests. Failures never become a completed snapshot. */
@@ -53,14 +66,14 @@ export function readHpoiImageManifest(): Promise<HpoiImageManifest> {
 
 /** Immutable per-ID receipts survive a stale manifest read or interruption before index publication. */
 export async function readCompletedHpoiImage(id: string): Promise<CachedHpoiImage | null> {
-  const object = await hpoiImageStorage().get(`completed/${id}.json`);
+  const object = await hpoiImageStorage().get(`completed-v2/${id}.json`);
   return object ? (JSON.parse(Buffer.from(object.bytes).toString()) as CachedHpoiImage) : null;
 }
 
 /** First completion wins; an index repair must reuse the original decision, not overwrite it. */
 export async function ensureHpoiImageCompletion(id: string, record: CachedHpoiImage): Promise<CachedHpoiImage> {
   try {
-    await hpoiImageStorage().put(`completed/${id}.json`, Buffer.from(JSON.stringify(record)), 'application/json', {
+    await hpoiImageStorage().put(`completed-v2/${id}.json`, Buffer.from(JSON.stringify(record)), 'application/json', {
       ifNoneMatch: '*',
     });
     return record;

@@ -1,6 +1,6 @@
-import { createHash } from 'node:crypto';
-import sharp from 'sharp';
 import { matchCover } from './image-match';
+import { cacheHpoiOriginal } from './image-original';
+import { reviewedHpoiOriginals } from './image-reviewed';
 import { readHpoiCandidate, readHpoiGallery, readHpoiSource } from './image-source';
 import {
   type CachedHpoiImage,
@@ -8,12 +8,21 @@ import {
   publishHpoiImage,
   readCompletedHpoiImage,
   readHpoiImageManifest,
+  readLegacyHpoiImageManifest,
 } from './image-store';
 
 const inFlight = new Map<string, Promise<CachedHpoiImage>>();
 const queued = new Set<string>();
 const retryAfter = new Map<string, number>();
 let draining = false;
+let legacyRead: ReturnType<typeof readLegacyHpoiImageManifest> | undefined;
+function legacyManifest() {
+  legacyRead ??= readLegacyHpoiImageManifest().catch((error) => {
+    legacyRead = undefined;
+    throw error;
+  });
+  return legacyRead;
+}
 
 async function processImage(id: string): Promise<CachedHpoiImage> {
   const existing = (await readHpoiImageManifest())[id];
@@ -23,77 +32,45 @@ async function processImage(id: string): Promise<CachedHpoiImage> {
     await publishHpoiImage(id, completed);
     return completed;
   }
-  const client = hpoiImageStorage();
-  const save = async (bytes: Buffer) => {
-    const key = `objects/${createHash('sha256').update(bytes).digest('hex')}.jpg`;
-    if (!(await client.head(key)).exists) await client.put(key, bytes, 'image/jpeg');
-    return key;
-  };
-  const gallery = await readHpoiGallery(id);
-  const cover = await readHpoiSource(gallery.cover);
-  const dimensions = await sharp(cover).metadata();
-  if (!dimensions.width || !dimensions.height) throw new Error('Invalid Hpoi cover dimensions');
-  const coverJpeg = await sharp(cover).flatten({ background: '#fff' }).jpeg({ quality: 95 }).toBuffer();
-  const fallbackKey = await save(coverJpeg);
-  const candidates: CachedHpoiImage['candidates'] = [];
-  const unavailable: string[] = [];
-  // The official /s/ derivative preserves the photo composition (unlike /cover/).
-  // Rank these smaller files; download and re-align only the winning HD original.
-  for (const url of gallery.urls) {
-    const preview = await readHpoiCandidate(url);
-    if (!preview) {
-      unavailable.push(url);
-      continue;
-    }
-    const match = await matchCover(cover, preview);
-    candidates.push({ url, similarity: match.score });
-  }
-  const ranked = [...candidates].sort((a, b) => b.similarity - a.similarity);
-  const selected = ranked[0];
-  let winner: { bytes: Buffer; match: Awaited<ReturnType<typeof matchCover>> } | undefined;
-  if (selected) {
-    const bytes = await readHpoiSource(selected.url);
-    winner = { bytes, match: await matchCover(cover, bytes) };
-  }
-  // An uncertain match stays on the original cover. Similar duplicate photographs are safe only
-  // at very high similarity; white backgrounds must not make a box/back view win by accident.
-  const confident =
-    winner?.match &&
-    winner.match.score >= 0.67 &&
-    (winner.match.score >= 0.9 || winner.match.score - (ranked[1]?.similarity ?? 0) >= 0.045);
-  let key = fallbackKey;
-  let originalKey: string | undefined;
-  if (winner?.match && confident) {
-    const meta = await sharp(winner.bytes).metadata();
-    if (!meta.width || !meta.height) throw new Error('Invalid HD dimensions');
-    const left = Math.round(winner.match.left * meta.width);
-    const top = Math.round(winner.match.top * meta.height);
-    const width = Math.min(meta.width - left, Math.round(winner.match.width * meta.width));
-    const height = Math.min(meta.height - top, Math.round(winner.match.height * meta.height));
-    // Preserve the cover crop and aspect ratio. Never call an upscaled thumbnail an HD replacement.
-    if (width > dimensions.width && height > dimensions.height) {
-      originalKey = await save(
-        meta.format === 'jpeg' ? winner.bytes : await sharp(winner.bytes).jpeg({ quality: 95 }).toBuffer(),
-      );
-      key = await save(
-        await sharp(winner.bytes)
-          .extract({ left, top, width, height })
-          .resize({ width, height: Math.round((width * dimensions.height) / dimensions.width), fit: 'fill' })
-          .flatten({ background: '#fff' })
-          .jpeg({ quality: 95 })
-          .toBuffer(),
-      );
+  // A versioned migration consumes old rankings/original objects once. Refreshing an
+  // existing v2 ID exits above and never re-downloads galleries or runs CV.
+  const legacy = (await legacyManifest())[id];
+  const reviewed = reviewedHpoiOriginals[id];
+  const candidates = legacy?.candidates ?? [];
+  let coverUrl = legacy?.coverUrl;
+  let score = legacy?.score ?? null;
+  const unavailable = [...(legacy?.unavailable ?? [])];
+  if (!candidates.length) {
+    const gallery = await readHpoiGallery(id);
+    coverUrl = gallery.cover;
+    score = gallery.score;
+    const cover = await readHpoiSource(gallery.cover);
+    for (const url of gallery.urls) {
+      const preview = await readHpoiCandidate(url);
+      if (!preview) {
+        unavailable.push(url);
+        continue;
+      }
+      const match = await matchCover(cover, preview);
+      candidates.push({ url, similarity: match.score, ssim: match.ssim, psnr: match.psnr, scoring: 'ssim80-psnr20-v1' });
     }
   }
+  const selected = reviewed?.url ?? [...candidates].sort((a, b) => b.similarity - a.similarity)[0]?.url;
+  if (!selected || !coverUrl) throw new Error('Hpoi gallery has no available original; retry later');
+  const previousWinner = legacy?.candidates.toSorted((a, b) => b.similarity - a.similarity)[0]?.url;
+  const saved =
+    legacy?.originalKey && selected === previousWinner && /\.jpe?g$/i.test(new URL(selected).pathname)
+      ? await hpoiImageStorage().get(legacy.originalKey)
+      : null;
+  // No confidence/dimension gate may silently substitute /cover/n/ or /pic/s/.
+  // Keep the original bytes even when the source itself is smaller than other figures.
+  const bytes = saved ? Buffer.from(saved.bytes) : await readHpoiSource(selected);
+  const original = await cacheHpoiOriginal(selected, bytes, reviewed?.crop);
   const record: CachedHpoiImage = {
-    coverUrl: gallery.cover,
-    width: dimensions.width,
-    height: dimensions.height,
-    key,
-    fallbackKey,
-    score: gallery.score,
-    matched: key !== fallbackKey,
-    originalKey,
+    ...original,
+    coverUrl,
+    score,
+    matched: true,
     processedAt: new Date().toISOString(),
     candidates,
     unavailable,
@@ -102,7 +79,7 @@ async function processImage(id: string): Promise<CachedHpoiImage> {
   return record;
 }
 
-/** Idempotent per figure: completed entries (including conservative fallbacks) are never rematched. */
+/** Idempotent per figure: completed original images are never rematched. */
 export function syncHpoiImage(id: string): Promise<CachedHpoiImage> {
   if (!/^[1-9]\d{0,9}$/.test(id)) return Promise.reject(new Error('Invalid Hpoi ID'));
   const existing = inFlight.get(id);
