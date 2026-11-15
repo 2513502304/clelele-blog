@@ -9,6 +9,8 @@ export interface CachedHpoiImage {
   score: string | null;
   matched: boolean;
   originalKey?: string;
+  /** Public gallery links whose thumbnail and original both returned 404. */
+  unavailable?: string[];
   processedAt: string;
   candidates: Array<{ url: string; similarity: number }>;
 }

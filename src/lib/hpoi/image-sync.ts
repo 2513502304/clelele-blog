@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import sharp from 'sharp';
 import { matchCover } from './image-match';
-import { readHpoiGallery, readHpoiSource } from './image-source';
+import { readHpoiCandidate, readHpoiGallery, readHpoiSource } from './image-source';
 import { type CachedHpoiImage, hpoiImageStorage, publishHpoiImage, readHpoiImageManifest } from './image-store';
 
 const inFlight = new Map<string, Promise<CachedHpoiImage>>();
@@ -25,10 +25,15 @@ async function processImage(id: string): Promise<CachedHpoiImage> {
   const coverJpeg = await sharp(cover).flatten({ background: '#fff' }).jpeg({ quality: 95 }).toBuffer();
   const fallbackKey = await save(coverJpeg);
   const candidates: CachedHpoiImage['candidates'] = [];
+  const unavailable: string[] = [];
   // The official /s/ derivative preserves the photo composition (unlike /cover/).
   // Rank these smaller files; download and re-align only the winning HD original.
   for (const url of gallery.urls) {
-    const preview = await readHpoiSource(url.replace('/gk/pic/n/', '/gk/pic/s/'));
+    const preview = await readHpoiCandidate(url);
+    if (!preview) {
+      unavailable.push(url);
+      continue;
+    }
     const match = await matchCover(cover, preview);
     candidates.push({ url, similarity: match.score });
   }
@@ -80,6 +85,7 @@ async function processImage(id: string): Promise<CachedHpoiImage> {
     originalKey,
     processedAt: new Date().toISOString(),
     candidates,
+    unavailable,
   };
   await publishHpoiImage(id, record);
   return record;
