@@ -32,6 +32,7 @@ export const GET: APIRoute = async ({ url }) => {
       headers: {
         'cache-control': HPOI_CACHE_CONTROL,
         'vercel-cache-tag': HPOI_CACHE_TAG,
+        'x-hpoi-image-policy': 'original-v2',
       },
     });
   } catch (error) {

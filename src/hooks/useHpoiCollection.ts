@@ -89,7 +89,19 @@ async function refresh() {
         if (!url) throw new Error('Missing Hpoi cursor');
         if (crawl.seen.has(url) || crawl.seen.size >= 100) throw new Error('Invalid Hpoi cursor');
         crawl.seen.add(url);
-        const response = await fetch(`${url}&images=original-v2`);
+        const imageUrl = `${url}&images=original-v2`;
+        let response = await fetch(imageUrl);
+        if (response.ok && response.headers.get('x-hpoi-image-policy') !== 'original-v2') {
+          // Worker assets can deploy before the new container. An old origin response may
+          // otherwise poison the new query's CDN entry for 30 minutes. Range bypasses our
+          // shared cache; this JSON route returns the complete snapshot, not partial content.
+          await response.body?.cancel();
+          response = await fetch(imageUrl, { headers: { Range: 'bytes=0-' } });
+          if (response.ok && response.headers.get('x-hpoi-image-policy') !== 'original-v2') {
+            await response.body?.cancel();
+            throw new Error('Hpoi original-image deployment pending');
+          }
+        }
         if (!response.ok) throw new Error(`Hpoi ${response.status}`);
         const page = (await response.json()) as CollectionPage<HpoiSnapshot['items'][number], HpoiSnapshot['meta']>;
         if (generation !== cacheGeneration) break;

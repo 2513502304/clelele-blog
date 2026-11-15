@@ -1,5 +1,6 @@
 import { expect, type Page, test } from '@playwright/test';
 
+const imagePolicyHeaders = { 'x-hpoi-image-policy': 'original-v2' };
 const states = ['all', 'care', 'want', 'preorder', 'buy', 'resell'];
 const figure = (id: string) => ({
   id,
@@ -29,6 +30,7 @@ async function setup(page: Page) {
   await page.route('**/api/hpoi/ratings?**', (route) => {
     const ids = new URL(route.request().url()).searchParams.get('ids')?.split(',') ?? [];
     return route.fulfill({
+      headers: imagePolicyHeaders,
       json: Object.fromEntries(
         ids.map((id) => [id, { score: '4.79', imageUrl: 'https://rfx.hpoi.net/gk/pic/n/official.jpg' }]),
       ),
@@ -43,6 +45,24 @@ async function setup(page: Page) {
   await page.route('**/api/live2d-assets/**', (route) => route.abort());
 }
 
+test('an old container response in the CDN is bypassed before publishing an original-image snapshot', async ({ page }) => {
+  await setup(page);
+  let bypasses = 0;
+  await page.route(/\/api\/hpoi\?/, (route) => {
+    if (route.request().headers().range) {
+      bypasses++;
+      return route.fulfill({ headers: imagePolicyHeaders, json: { items: [figure('126224')], next: null, meta } });
+    }
+    return route.fulfill({
+      json: { items: [{ ...figure('old'), imageUrl: 'https://rfx.hpoi.net/gk/pic/s/old.jpg' }], next: null, meta },
+    });
+  });
+  await page.goto('/hpoi/');
+  await expect(page.getByRole('heading', { name: '手办 126224', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '手办 old', exact: true })).toHaveCount(0);
+  await expect.poll(() => bypasses).toBe(6);
+});
+
 test('prefetches category membership once, preserves cached switches and reloads, and uses cached matched photos', async ({
   page,
 }) => {
@@ -51,7 +71,10 @@ test('prefetches category membership once, preserves cached switches and reloads
   await page.route(/\/api\/hpoi\?/, (route) => {
     const state = new URL(route.request().url()).searchParams.get('state') ?? 'all';
     requests.push(state);
-    return route.fulfill({ json: { items: [figure(String(states.indexOf(state) + 1))], next: null, meta } });
+    return route.fulfill({
+      headers: imagePolicyHeaders,
+      json: { items: [figure(String(states.indexOf(state) + 1))], next: null, meta },
+    });
   });
   await page.goto('/hpoi/');
   await expect.poll(() => requests.length).toBe(6);
@@ -87,6 +110,7 @@ test('failed refresh retains a complete snapshot until a later successful crawl 
     const url = new URL(route.request().url());
     if (url.searchParams.has('page') && fail) return route.fulfill({ status: 502, body: 'Temporary failure' });
     return route.fulfill({
+      headers: imagePolicyHeaders,
       json: {
         items: url.searchParams.has('page') ? [figure('3')] : [figure('2')],
         next: url.searchParams.has('page') ? null : `/api/hpoi?state=${url.searchParams.get('state')}&page=2&pages=2`,
@@ -113,7 +137,10 @@ for (const [width, columns] of [
     await setup(page);
     await page.setViewportSize({ width, height: 982 });
     await page.route(/\/api\/hpoi\?/, (route) =>
-      route.fulfill({ json: { items: Array.from({ length: 12 }, (_, i) => figure(String(i + 1))), next: null, meta } }),
+      route.fulfill({
+        headers: imagePolicyHeaders,
+        json: { items: Array.from({ length: 12 }, (_, i) => figure(String(i + 1))), next: null, meta },
+      }),
     );
     await page.goto('/hpoi/');
     const grid = page.locator('[data-gallery-layout]');
@@ -155,9 +182,10 @@ test('owner invalidation rejects an older in-flight crawl before it can repopula
     if (url.searchParams.has('page')) {
       held = true;
       await gate;
-      return route.fulfill({ json: { items: [figure('3')], next: null, meta } });
+      return route.fulfill({ headers: imagePolicyHeaders, json: { items: [figure('3')], next: null, meta } });
     }
     return route.fulfill({
+      headers: imagePolicyHeaders,
       json: { items: [figure(invalidated ? '4' : '2')], next: invalidated ? null : '/api/hpoi?state=all&page=2&pages=2', meta },
     });
   });
@@ -183,9 +211,10 @@ test('retrying an incomplete crawl retains cards from pages not yet revisited', 
   await page.route(/\/api\/hpoi\?/, (route) => {
     const url = new URL(route.request().url());
     const state = url.searchParams.get('state');
-    if (state !== 'all') return route.fulfill({ json: { items: [], next: null, meta } });
+    if (state !== 'all') return route.fulfill({ headers: imagePolicyHeaders, json: { items: [], next: null, meta } });
     if (url.searchParams.has('page')) return route.fulfill({ status: 502, body: 'Temporary failure' });
     return route.fulfill({
+      headers: imagePolicyHeaders,
       json: { items: retry ? [figure('1')] : [figure('1'), figure('2')], next: '/api/hpoi?state=all&page=2&pages=2', meta },
     });
   });
@@ -203,7 +232,10 @@ test('matched originals reserve their native geometry and a failed image settles
   await setup(page);
   const title = '艺术家杰作+ 约会大作战第四季 时崎狂三—刻刻帝—';
   await page.route(/\/api\/hpoi\?/, (route) =>
-    route.fulfill({ json: { items: [{ ...figure('77004'), title, imageWidth: 1199, imageHeight: 1799 }], next: null, meta } }),
+    route.fulfill({
+      headers: imagePolicyHeaders,
+      json: { items: [{ ...figure('77004'), title, imageWidth: 1199, imageHeight: 1799 }], next: null, meta },
+    }),
   );
   await page.route('**/api/hpoi/cached-image?**', async (route) => {
     if (route.request().url().includes('a'.repeat(64))) return route.fulfill({ status: 502, body: 'Unavailable' });
@@ -251,7 +283,10 @@ test('old thumbnail snapshots cannot survive the original-image cache version up
   page.on('request', (request) => requests.push(request.url()));
   await page.route(/\/api\/hpoi\?/, (route) => {
     expect(new URL(route.request().url()).searchParams.get('images')).toBe('original-v2');
-    return route.fulfill({ json: { items: [{ ...figure('126224'), imageWidth: 750, imageHeight: 1050 }], next: null, meta } });
+    return route.fulfill({
+      headers: imagePolicyHeaders,
+      json: { items: [{ ...figure('126224'), imageWidth: 750, imageHeight: 1050 }], next: null, meta },
+    });
   });
   await page.goto('/hpoi/');
   const img = page.locator('img[alt="手办 126224"]');
