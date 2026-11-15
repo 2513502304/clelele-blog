@@ -259,7 +259,6 @@ export function HpoiCollection() {
             key={item.id}
             item={item}
             state={activeState}
-            detailImage={ratings.images[item.id]}
             masonry={masonry}
             ratingLoading={!item.score && ratings.pendingIds.has(item.id)}
           />

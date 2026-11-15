@@ -8,7 +8,6 @@ import {
   isHpoiProfilePage,
   parseHpoiCollection,
   parseHpoiCollectionPageCount,
-  parseHpoiDetailImage,
   parseHpoiDetailScore,
   parseHpoiProfile,
 } from './parser';
@@ -285,20 +284,4 @@ export async function fetchHpoiRatings(ids: string[]): Promise<Record<string, st
     }
   });
   return ratings;
-}
-
-/** Score and official photo share one bounded detail read. Missing IDs remain retryable failures. */
-export async function fetchHpoiDetails(ids: string[]) {
-  const signal = AbortSignal.timeout(RATING_BUDGET_MS);
-  const details: Record<string, { score: string | null; imageUrl: string | null }> = {};
-  await mapWithConcurrency(ids, 4, async (id) => {
-    if (signal.aborted) return;
-    try {
-      const html = await fetchHtml(`https://www.hpoi.net/hobby/${id}`, undefined, isHpoiDetailPage, signal);
-      details[id] = { score: parseHpoiDetailScore(html), imageUrl: parseHpoiDetailImage(html) };
-    } catch {
-      /* Preserve the list cover on temporary detail failures. */
-    }
-  });
-  return details;
 }

@@ -20,14 +20,16 @@ interface HpoiCardProps {
   state: HpoiCollectionState;
   masonry?: boolean;
   ratingLoading?: boolean;
-  detailImage?: string | null;
 }
 
 /** Keep the cover usable while optional rating enrichment is pending; settled empty scores display a dash. */
-export function HpoiCard({ item, state, masonry = false, ratingLoading = false, detailImage }: HpoiCardProps) {
+export function HpoiCard({ item, state, masonry = false, ratingLoading = false }: HpoiCardProps) {
   const { t } = useTranslation();
-  const [failedImage, setFailedImage] = useState<string>();
-  const imageUrl = detailImage && failedImage !== detailImage ? detailImage : item.imageUrl;
+  const [failedImages, setFailedImages] = useState<Set<string>>(() => new Set());
+  const source = item.imageUrl;
+  const imageUrl = source && !failedImages.has(source) ? source : item.imageFallbackUrl;
+  const visibleImage = imageUrl && !failedImages.has(imageUrl);
+  const aspectRatio = masonry ? `${item.imageWidth ?? 360} / ${item.imageHeight ?? 520}` : '1 / 1';
 
   return (
     <a
@@ -36,22 +38,17 @@ export function HpoiCard({ item, state, masonry = false, ratingLoading = false, 
       rel="noopener noreferrer"
       className="group relative flex min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-card transition-[border-color,transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
     >
-      <div className={`relative w-full overflow-hidden bg-muted/60 ${masonry && imageUrl ? '' : 'aspect-square'}`}>
-        {imageUrl ? (
+      <div className="relative w-full overflow-hidden bg-muted/60" style={{ aspectRatio }}>
+        {visibleImage ? (
           <img
             src={createHpoiImageProxyUrl(imageUrl)}
             onError={() => {
-              if (detailImage) setFailedImage(detailImage);
+              setFailedImages((previous) => new Set([...previous, imageUrl]));
             }}
             alt={item.title}
             loading="lazy"
             decoding="async"
-            style={masonry ? { aspectRatio: 'auto 1 / 1' } : undefined}
-            className={
-              masonry
-                ? 'block h-auto w-full'
-                : 'size-full object-contain transition-transform duration-300 group-hover:scale-[1.03]'
-            }
+            className="block size-full object-contain transition-transform duration-300 group-hover:scale-[1.03]"
           />
         ) : (
           <div className="flex size-full flex-col items-center justify-center gap-2 text-muted-foreground text-xs">
@@ -76,8 +73,12 @@ export function HpoiCard({ item, state, masonry = false, ratingLoading = false, 
       </div>
 
       <div className="absolute inset-x-2 bottom-2 flex flex-col items-start gap-1.5 text-white">
-        <h2 className="max-w-full rounded-lg border border-white/20 bg-black/65 px-2.5 py-1.5 font-medium text-sm leading-5 shadow-sm backdrop-blur-sm">
-          <span className="line-clamp-2">{item.title}</span>
+        <h2
+          title={item.title}
+          style={{ textWrap: 'wrap' }}
+          className="max-w-full rounded-lg border border-white/20 bg-black/65 px-2.5 py-1.5 font-medium text-sm leading-5 shadow-sm backdrop-blur-sm"
+        >
+          <span className="block break-words">{item.title}</span>
         </h2>
         <div className="flex max-w-full flex-wrap gap-1.5 text-xs">
           <span

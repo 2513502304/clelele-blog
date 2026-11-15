@@ -4,7 +4,10 @@ const states = ['all', 'care', 'want', 'preorder', 'buy', 'resell'];
 const figure = (id: string) => ({
   id,
   title: `手办 ${id}`,
-  imageUrl: 'https://rfx.hpoi.net/gk/cover/n/cover.jpg',
+  imageUrl: `/api/hpoi/cached-image?key=${'a'.repeat(64)}.jpg`,
+  imageFallbackUrl: `/api/hpoi/cached-image?key=${'b'.repeat(64)}.jpg`,
+  imageWidth: 360,
+  imageHeight: 520,
   detailUrl: `https://www.hpoi.net/hobby/${id}`,
   releaseText: '出荷：2027年9月28日',
   releaseDate: '2027-09-28',
@@ -31,7 +34,7 @@ async function setup(page: Page) {
       ),
     });
   });
-  await page.route('**/api/hpoi/image?**', (route) =>
+  await page.route('**/api/hpoi/cached-image?**', (route) =>
     route.fulfill({
       contentType: 'image/svg+xml',
       body: '<svg xmlns="http://www.w3.org/2000/svg" width="750" height="1050"><rect width="750" height="1050" fill="#bea7c8"/></svg>',
@@ -40,7 +43,7 @@ async function setup(page: Page) {
   await page.route('**/api/live2d-assets/**', (route) => route.abort());
 }
 
-test('prefetches category membership once, preserves cached switches and reloads, and uses official photos', async ({
+test('prefetches category membership once, preserves cached switches and reloads, and uses cached matched photos', async ({
   page,
 }) => {
   await setup(page);
@@ -61,7 +64,7 @@ test('prefetches category membership once, preserves cached switches and reloads
     await expect(page.getByRole('heading', { name: `手办 ${id}`, exact: true })).toBeVisible();
   }
   expect(requests).toHaveLength(6);
-  await expect(page.locator('img[alt="手办 1"]')).toHaveAttribute('src', /official.jpg/);
+  await expect(page.locator('img[alt="手办 1"]')).toHaveAttribute('src', /cached-image/);
   await page.reload();
   await expect(page.getByRole('heading', { name: '手办 1', exact: true })).toBeVisible();
   expect(requests).toHaveLength(6);
@@ -71,9 +74,9 @@ test('failed refresh retains a complete snapshot until a later successful crawl 
   await setup(page);
   await page.addInitScript(
     ({ meta, items, states }) => {
-      if (!localStorage.getItem('hpoi-snapshots-v2'))
+      if (!localStorage.getItem('hpoi-snapshots-v3'))
         localStorage.setItem(
-          'hpoi-snapshots-v2',
+          'hpoi-snapshots-v3',
           JSON.stringify(Object.fromEntries(states.map((state) => [state, { items, meta, complete: true, savedAt: 1 }]))),
         );
     },
@@ -131,7 +134,7 @@ test('owner invalidation rejects an older in-flight crawl before it can repopula
   await page.addInitScript(
     ({ meta, states }) => {
       localStorage.setItem(
-        'hpoi-snapshots-v2',
+        'hpoi-snapshots-v3',
         JSON.stringify(
           Object.fromEntries(
             states.map((state) => [state, { items: [], meta, complete: true, savedAt: state === 'all' ? 1 : Date.now() }]),
@@ -168,7 +171,7 @@ test('owner invalidation rejects an older in-flight crawl before it can repopula
     const { invalidateHpoiSnapshots } = await import(modulePath);
     invalidateHpoiSnapshots();
   });
-  expect(await page.evaluate(() => localStorage.getItem('hpoi-snapshots-v2'))).toBeNull();
+  expect(await page.evaluate(() => localStorage.getItem('hpoi-snapshots-v3'))).toBeNull();
   release();
   await expect(page.getByRole('heading', { name: '手办 4', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: '手办 3', exact: true })).toHaveCount(0);
@@ -194,4 +197,34 @@ test('retrying an incomplete crawl retains cards from pages not yet revisited', 
   await retryButton.click();
   await expect(retryButton).toBeVisible();
   await expect(page.getByRole('heading', { name: '手办 2', exact: true })).toBeVisible();
+});
+
+test('matched images keep their cover geometry and a failed image settles on one fallback', async ({ page }) => {
+  await setup(page);
+  const title = '艺术家杰作+ 约会大作战第四季 时崎狂三—刻刻帝—';
+  await page.route(/\/api\/hpoi\?/, (route) =>
+    route.fulfill({ json: { items: [{ ...figure('77004'), title }], next: null, meta } }),
+  );
+  await page.route('**/api/hpoi/cached-image?**', async (route) => {
+    if (route.request().url().includes('a'.repeat(64))) return route.fulfill({ status: 502, body: 'Unavailable' });
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    return route.fulfill({
+      contentType: 'image/svg+xml',
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800"/>',
+    });
+  });
+  await page.goto('/hpoi/');
+  const heading = page.getByRole('heading', { name: title, exact: true });
+  await expect(heading).toBeVisible();
+  expect(await heading.evaluate((el) => getComputedStyle(el).textWrap)).toBe('wrap');
+  const img = page.locator(`img[alt="${title}"]`);
+  await expect(img).toHaveAttribute('src', new RegExp('b'.repeat(64)));
+  const box = await img.evaluate((el) => {
+    const parent = el.parentElement;
+    if (!parent) throw new Error('Missing image container');
+    return { ratio: getComputedStyle(parent).aspectRatio, height: parent.getBoundingClientRect().height };
+  });
+  await expect.poll(() => img.evaluate((el) => (el as HTMLImageElement).complete)).toBe(true);
+  expect(await img.evaluate((el) => el.parentElement?.getBoundingClientRect().height)).toBe(box.height);
+  expect(box.ratio).toBe('360 / 520');
 });

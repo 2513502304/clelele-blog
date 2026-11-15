@@ -2,6 +2,7 @@ import { hpoiConfig } from '@constants/site-config';
 import { HPOI_CACHE_CONTROL, HPOI_CACHE_TAG } from '@lib/hpoi/cache';
 import { fetchHpoiCollection, fetchHpoiPage } from '@lib/hpoi/fetch';
 import type { APIRoute } from 'astro';
+import { withHpoiImages } from '@/lib/hpoi/image-enrichment';
 import { HPOI_COLLECTION_STATES, type HpoiCollectionState } from '@/types/hpoi';
 
 export const prerender = false;
@@ -25,6 +26,8 @@ export const GET: APIRoute = async ({ url }) => {
     const data = url.searchParams.has('state')
       ? await fetchHpoiPage(hpoiConfig.userId, state as HpoiCollectionState, page, pages)
       : await fetchHpoiCollection(hpoiConfig.userId);
+    if ('items' in data) data.items = await withHpoiImages(data.items);
+    else for (const state of HPOI_COLLECTION_STATES) data.collections[state] = await withHpoiImages(data.collections[state]);
     return Response.json(data, {
       headers: {
         'cache-control': HPOI_CACHE_CONTROL,

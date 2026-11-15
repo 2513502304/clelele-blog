@@ -31,6 +31,7 @@
     "preview": "astro preview",
     "astro": "astro",
     "check": "astro check",
+    "sync:hpoi-images": "node --use-env-proxy --env-file-if-exists=.env.local --import tsx scripts/hpoi/sync-images.ts",
     "test:hpoi": "node --import tsx --test src/lib/hpoi/*.test.ts",
     "test:bangumi": "node --import tsx --test src/lib/bangumi/*.test.ts",
     "test:character-quote": "node --import tsx --test src/lib/character-quote.test.ts",
