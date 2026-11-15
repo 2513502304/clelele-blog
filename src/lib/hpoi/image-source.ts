@@ -2,6 +2,13 @@ import { load } from 'cheerio';
 import { isAllowedHpoiImageUrl } from './image';
 import { isHpoiDetailPage, parseHpoiDetailScore } from './parser';
 
+/** Preserve HTTP status so only confirmed missing photos can be skipped safely. */
+export class HpoiSourceError extends Error {
+  constructor(readonly status: number) {
+    super(`Hpoi HTTP ${status}`);
+  }
+}
+
 /** Public Hpoi reads only; validate each redirect before following it. Never forward credentials. */
 export async function readHpoiSource(url: string): Promise<Buffer> {
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -31,7 +38,7 @@ export async function readHpoiSource(url: string): Promise<Buffer> {
           current = new URL(location, current);
           continue;
         }
-        if (!response.ok) throw new Error(`Hpoi HTTP ${response.status}`);
+        if (!response.ok) throw new HpoiSourceError(response.status);
         const reader = response.body?.getReader();
         if (!reader) throw new Error('Empty Hpoi response');
         const chunks: Uint8Array[] = [];
@@ -50,7 +57,7 @@ export async function readHpoiSource(url: string): Promise<Buffer> {
       }
       throw new Error('Too many Hpoi redirects');
     } catch (error) {
-      if (attempt === 2) throw error;
+      if (attempt === 2 || (error instanceof HpoiSourceError && error.status === 404)) throw error;
       await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
     }
   }
@@ -98,4 +105,19 @@ export async function readHpoiGallery(id: string) {
     }
   }
   return { cover, urls, score: parseHpoiDetailScore(html) };
+}
+
+/** A missing thumbnail can still have an HD original. Skip only when both are confirmed 404. */
+export async function readHpoiCandidate(url: string): Promise<Buffer | null> {
+  try {
+    return await readHpoiSource(url.replace('/gk/pic/n/', '/gk/pic/s/'));
+  } catch (error) {
+    if (!(error instanceof HpoiSourceError && error.status === 404)) throw error;
+  }
+  try {
+    return await readHpoiSource(url);
+  } catch (error) {
+    if (error instanceof HpoiSourceError && error.status === 404) return null;
+    throw error;
+  }
 }

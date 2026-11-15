@@ -9,6 +9,8 @@ export interface CachedHpoiImage {
   score: string | null;
   matched: boolean;
   originalKey?: string;
+  /** Public gallery links whose thumbnail and original both returned 404. */
+  unavailable?: string[];
   processedAt: string;
   candidates: Array<{ url: string; similarity: number }>;
 }
@@ -49,8 +51,30 @@ export function readHpoiImageManifest(): Promise<HpoiImageManifest> {
   return pending;
 }
 
+/** Immutable per-ID receipts survive a stale manifest read or interruption before index publication. */
+export async function readCompletedHpoiImage(id: string): Promise<CachedHpoiImage | null> {
+  const object = await hpoiImageStorage().get(`completed/${id}.json`);
+  return object ? (JSON.parse(Buffer.from(object.bytes).toString()) as CachedHpoiImage) : null;
+}
+
+/** First completion wins; an index repair must reuse the original decision, not overwrite it. */
+export async function ensureHpoiImageCompletion(id: string, record: CachedHpoiImage): Promise<CachedHpoiImage> {
+  try {
+    await hpoiImageStorage().put(`completed/${id}.json`, Buffer.from(JSON.stringify(record)), 'application/json', {
+      ifNoneMatch: '*',
+    });
+    return record;
+  } catch (error) {
+    if (!(error instanceof HfS3ConflictError)) throw error;
+    const existing = await readCompletedHpoiImage(id);
+    if (!existing) throw new Error('Completed Hpoi image receipt temporarily unavailable');
+    return existing;
+  }
+}
+
 /** Publish only after every referenced object exists; CAS merges concurrent batches without erasing entries. */
 export async function publishHpoiImage(id: string, record: CachedHpoiImage): Promise<void> {
+  record = await ensureHpoiImageCompletion(id, record);
   const client = hpoiImageStorage();
   for (let attempt = 0; attempt < 6; attempt++) {
     const snapshot = await client.get(INDEX);
