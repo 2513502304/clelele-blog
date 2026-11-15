@@ -2,7 +2,13 @@ import { createHash } from 'node:crypto';
 import sharp from 'sharp';
 import { matchCover } from './image-match';
 import { readHpoiCandidate, readHpoiGallery, readHpoiSource } from './image-source';
-import { type CachedHpoiImage, hpoiImageStorage, publishHpoiImage, readHpoiImageManifest } from './image-store';
+import {
+  type CachedHpoiImage,
+  hpoiImageStorage,
+  publishHpoiImage,
+  readCompletedHpoiImage,
+  readHpoiImageManifest,
+} from './image-store';
 
 const inFlight = new Map<string, Promise<CachedHpoiImage>>();
 const queued = new Set<string>();
@@ -12,6 +18,11 @@ let draining = false;
 async function processImage(id: string): Promise<CachedHpoiImage> {
   const existing = (await readHpoiImageManifest())[id];
   if (existing) return existing;
+  const completed = await readCompletedHpoiImage(id);
+  if (completed) {
+    await publishHpoiImage(id, completed);
+    return completed;
+  }
   const client = hpoiImageStorage();
   const save = async (bytes: Buffer) => {
     const key = `objects/${createHash('sha256').update(bytes).digest('hex')}.jpg`;

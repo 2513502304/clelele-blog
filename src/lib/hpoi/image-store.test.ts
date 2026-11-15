@@ -23,10 +23,21 @@ test('completed IDs skip Hpoi/CV; concurrent manifest writes retain another publ
   process.env.HF_S3_SECRET_ACCESS_KEY = 'test';
   process.env.HF_S3_ENDPOINT = 'https://storage.test/test';
   let remote: Record<string, CachedHpoiImage> = { '1': record };
+  const receipts: Record<string, CachedHpoiImage> = { '4': record };
   let conflict = true;
   let writes = 0;
   globalThis.fetch = async (input, init) => {
     assert.equal(new URL(String(input)).hostname, 'storage.test', 'cached entries must not contact Hpoi');
+    const receiptId = new URL(String(input)).pathname.match(/completed\/(\d+)\.json$/)?.[1];
+    if (receiptId) {
+      if (init?.method === 'PUT') {
+        assert.equal(new Headers(init.headers).get('if-none-match'), '*');
+        if (receipts[receiptId]) return new Response(null, { status: 412 });
+        receipts[receiptId] = JSON.parse(Buffer.from(init.body as ArrayBuffer).toString());
+        return new Response(null);
+      }
+      return receipts[receiptId] ? Response.json(receipts[receiptId]) : new Response(null, { status: 404 });
+    }
     if (init?.method === 'PUT') {
       writes++;
       assert.ok(new Headers(init.headers).has('if-match'));
@@ -46,6 +57,9 @@ test('completed IDs skip Hpoi/CV; concurrent manifest writes retain another publ
     await publishHpoiImage('3', record);
     assert.deepEqual(Object.keys(await readHpoiImageManifest()).sort(), ['1', '2', '3']);
     assert.equal(writes, 2);
+    assert.equal((await syncHpoiImage('4')).key, record.key);
+    assert.deepEqual(Object.keys(await readHpoiImageManifest()).sort(), ['1', '2', '3', '4']);
+    assert.equal(writes, 3, 'stale index is repaired using the completion receipt without Hpoi or CV');
   } finally {
     globalThis.fetch = originalFetch;
     names.forEach((name, index) => {
