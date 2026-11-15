@@ -1,5 +1,5 @@
+import { useHpoiCollection } from '@hooks/useHpoiCollection';
 import { useHpoiRatings } from '@hooks/useHpoiRatings';
-import { useProgressiveCollection } from '@hooks/useProgressiveCollection';
 import { useTranslation } from '@hooks/useTranslation';
 import { Icon } from '@iconify/react';
 import { createHpoiImageProxyUrl } from '@lib/hpoi/image';
@@ -8,14 +8,7 @@ import { cn } from '@lib/utils';
 import { useMemo, useState } from 'react';
 import { InlineSpinner } from '@/components/ui/InlineSpinner';
 import type { TranslationKey } from '@/i18n/types';
-import type {
-  HpoiCollectionItem,
-  HpoiCollectionState,
-  HpoiProfile,
-  HpoiProfileStats,
-  HpoiSortDirection,
-  HpoiSortKey,
-} from '@/types/hpoi';
+import type { HpoiCollectionState, HpoiProfileStats, HpoiSortDirection, HpoiSortKey } from '@/types/hpoi';
 import { HPOI_COLLECTION_STATES } from '@/types/hpoi';
 import { CollectionLoadMore } from '../collection/CollectionLoadMore';
 import StyleGalleryGrid, { StyleGalleryLayoutToggle } from '../style-gallery/StyleGalleryGrid';
@@ -47,7 +40,7 @@ const SORT_OPTIONS: Array<{ key: HpoiSortKey; label: TranslationKey }> = [
   { key: 'releaseDate', label: 'hpoi.sortReleaseDate' },
 ];
 
-/** Read one upstream state/page at a time; CDN and session caches survive reloads. */
+/** Reuse public category snapshots while a bounded background crawl refreshes their membership. */
 export function HpoiCollection() {
   const { t, locale } = useTranslation();
   const [activeState, setActiveState] = useState<HpoiCollectionState>('all');
@@ -55,15 +48,25 @@ export function HpoiCollection() {
   const [sortDirection, setSortDirection] = useState<HpoiSortDirection>('asc');
 
   const [masonry, setMasonry] = useState(true);
-  const collection = useProgressiveCollection<
-    HpoiCollectionItem,
-    { profile?: HpoiProfile; warnings: string[]; fetchedAt: string }
-  >(`/api/hpoi?state=${activeState}`, (item) => item.id, sortKey !== 'default' || sortDirection !== 'asc');
-  const ratings = useHpoiRatings(collection.items);
+  const collection = useHpoiCollection(activeState);
+  const [visibleCount, setVisibleCount] = useState(24);
+  const detailItems = useMemo(
+    () => [
+      ...new Map(
+        [
+          ...sortHpoiCollectionItems(collection.items, sortKey, sortDirection).slice(0, visibleCount),
+          ...(sortKey === 'score' ? collection.items.filter((item) => !item.score) : []),
+        ].map((item) => [item.id, item]),
+      ).values(),
+    ],
+    [collection.items, sortKey, sortDirection, visibleCount],
+  );
+  const ratings = useHpoiRatings(detailItems);
   const data = collection.meta?.profile ? { ...collection.meta, profile: collection.meta.profile } : null;
   const error = collection.error;
   const waitingForComplete =
-    ((sortKey !== 'default' || sortDirection !== 'asc') && !collection.complete) || (sortKey === 'score' && ratings.loading);
+    ((sortKey !== 'default' || sortDirection !== 'asc') && !collection.complete) ||
+    (sortKey === 'score' && collection.items.some((item) => !item.score && ratings.pendingIds.has(item.id)));
   const activeItems = useMemo(
     () =>
       sortHpoiCollectionItems(
@@ -73,11 +76,9 @@ export function HpoiCollection() {
       ),
     [collection.items, ratings.scores, sortKey, sortDirection],
   );
-  const [visibleCount, setVisibleCount] = useState(24);
   const visibleItems = waitingForComplete ? [] : activeItems.slice(0, visibleCount);
   const loadMore = () => {
     setVisibleCount((n) => n + 24);
-    if (activeItems.length <= visibleCount) collection.loadMore();
   };
 
   function handleStateChange(state: HpoiCollectionState) {
@@ -258,8 +259,9 @@ export function HpoiCollection() {
             key={item.id}
             item={item}
             state={activeState}
+            detailImage={ratings.images[item.id]}
             masonry={masonry}
-            ratingLoading={ratings.pendingIds.has(item.id)}
+            ratingLoading={!item.score && ratings.pendingIds.has(item.id)}
           />
         ))}
       </StyleGalleryGrid>
@@ -268,7 +270,7 @@ export function HpoiCollection() {
       )}
       <CollectionLoadMore
         more={!collection.complete || visibleCount < activeItems.length}
-        loading={collection.loading}
+        loading={collection.loading && visibleCount >= activeItems.length}
         error={error}
         onLoad={error ? collection.loadMore : loadMore}
         locale={locale}

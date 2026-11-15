@@ -3,8 +3,8 @@ import test from 'node:test';
 import { clampStudioViewport, zoomStudioViewport } from './studio-viewport';
 
 test('viewport bounds agree for gesture and slider input, retaining sub-percent precision', () => {
-  assert.deepEqual(clampStudioViewport({ zoom: 900, x: -100, y: 80 }), { zoom: 180, x: -40, y: 40 });
-  assert.deepEqual(clampStudioViewport({ zoom: 12, x: 2.34, y: -2.36 }), { zoom: 50, x: 2.3, y: -2.4 });
+  assert.deepEqual(clampStudioViewport({ zoom: 900, x: -400, y: 380 }), { zoom: 600, x: -300, y: 300 });
+  assert.deepEqual(clampStudioViewport({ zoom: 12, x: 2.34, y: -2.36 }), { zoom: 25, x: 2.3, y: -2.4 });
 });
 
 test('zoom preserves the point under the cursor and supports reversal', () => {
@@ -18,7 +18,7 @@ test('zoom preserves the point under the cursor and supports reversal', () => {
 });
 
 test('zoom at its limit neither moves the model nor amplifies an out-of-bounds gesture', () => {
-  const view = { zoom: 180, x: 30, y: -30 };
-  assert.deepEqual(zoomStudioViewport(view, 250, { x: -25, y: 25 }), view);
-  assert.deepEqual(zoomStudioViewport({ zoom: 50, x: 40, y: -40 }, 180), { zoom: 180, x: 40, y: -40 });
+  const view = { zoom: 600, x: 30, y: -30 };
+  assert.deepEqual(zoomStudioViewport(view, 700, { x: -25, y: 25 }), view);
+  assert.deepEqual(zoomStudioViewport({ zoom: 50, x: 40, y: -40 }, 180), { zoom: 180, x: 144, y: -144 });
 });

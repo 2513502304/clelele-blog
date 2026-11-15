@@ -1,9 +1,9 @@
 import { clampStudioViewport, type StudioViewport, zoomStudioViewport } from '@lib/live2d/studio-viewport';
-import { type Dispatch, type RefObject, type SetStateAction, useEffect, useRef } from 'react';
+import { type Dispatch, type SetStateAction, useEffect, useRef } from 'react';
 
 /** Direct manipulation owns only stage input; it never reloads or advances the model. */
 export function useStudioViewport<T extends StudioViewport>(
-  stageRef: RefObject<HTMLDivElement | null>,
+  stage: HTMLDivElement | null,
   ready: boolean,
   scene: T,
   setScene: Dispatch<SetStateAction<T>>,
@@ -11,7 +11,6 @@ export function useStudioViewport<T extends StudioViewport>(
   const current = useRef(scene);
   current.current = scene;
   useEffect(() => {
-    const stage = stageRef.current;
     if (!stage || !ready) return;
     let drag: { id: number; clientX: number; clientY: number; width: number; height: number; view: StudioViewport } | null =
       null;
@@ -131,5 +130,5 @@ export function useStudioViewport<T extends StudioViewport>(
       stage.removeEventListener('keydown', key);
       window.removeEventListener('blur', end);
     };
-  }, [stageRef, ready, setScene]);
+  }, [stage, ready, setScene]);
 }

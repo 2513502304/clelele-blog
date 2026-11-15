@@ -1,5 +1,6 @@
 import { createLive2DCore } from './create-core';
 import { clampParameterOverrides, type Live2DParameter } from './studio-state';
+import type { StudioViewport } from './studio-viewport';
 
 export type Live2DRendererPhase = 'dormant' | 'loading' | 'ready' | 'recoverable' | 'destroyed';
 
@@ -27,6 +28,7 @@ export interface Live2DCore {
     volume?: number;
     logLevel?: 'error' | 'warn' | 'info' | 'trace';
   }): Promise<void>;
+  setStudioViewport?(view: StudioViewport | null): void;
   cancelLoading?(): void;
   resize(): void;
   destroy(): void | Promise<void>;
@@ -136,6 +138,13 @@ function scheduleIdleTask(task: () => void): () => void {
 export class Live2DRenderer {
   private readonly options: Live2DRendererOptions;
   private core: Live2DCore | null = null;
+  private studioViewport: StudioViewport | null = null;
+
+  /** Native camera magnification preserves texture detail; null restores the floating widget budget. */
+  setStudioViewport(view: StudioViewport | null): void {
+    this.studioViewport = view;
+    this.core?.setStudioViewport?.(view);
+  }
   private phase: Live2DRendererPhase = 'dormant';
   private generation = 0;
   private readonly loadedEvents = new WeakMap<Live2DCore, { count: number }>();
@@ -241,6 +250,7 @@ export class Live2DRenderer {
           throw new Error(`Live2D model did not finish loading: ${selection.entryPath}`);
         }
         if (this.playbackPaused) core.pauseRendering?.();
+        core.setStudioViewport?.(this.studioViewport);
         this.setPhase('ready');
         this.scheduleMotionPrefetch(core, selection, generation);
       } catch (error) {

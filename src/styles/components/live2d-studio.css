@@ -426,3 +426,43 @@
   color: hsl(var(--primary));
   background: hsl(var(--background));
 }
+
+/* A navigation action must remain recognizable outside the preview toolbar. */
+.live2d-studio-workbench {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-inline: 1rem;
+  padding: 0.65rem 0.9rem;
+  border: 1px solid hsl(var(--primary) / 35%);
+  border-radius: 0.75rem;
+  background: hsl(var(--primary) / 10%);
+  color: hsl(var(--primary));
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+.live2d-studio-workbench:hover {
+  background: hsl(var(--primary) / 18%);
+}
+.live2d-studio-workbench:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+.live2d-studio-workbench svg {
+  flex-shrink: 0;
+  width: 1.1rem;
+  height: 1.1rem;
+}
+@media (max-width: 600px) {
+  .live2d-studio-header {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .live2d-studio-workbench {
+    order: 3;
+    width: 100%;
+    margin: 0;
+  }
+}

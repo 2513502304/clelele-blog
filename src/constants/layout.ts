@@ -22,7 +22,7 @@ export const CONTENT_PADDING = {
  */
 export const MAX_WIDTH = {
   // Keep a small desktop gutter while allowing galleries and the shared sidebar to use wider screens.
-  content: 'max-w-[min(1800px,calc(100%-4rem))] tablet:max-w-full',
+  content: 'max-w-[calc(100%-4rem)] tablet:max-w-full',
 } as const;
 
 /**

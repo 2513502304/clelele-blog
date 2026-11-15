@@ -19,6 +19,8 @@ export interface NativeCharacter {
   setLookY(value: number): void;
 }
 export interface NativeSession {
+  /** Pinned runtime projection hook, also used by the standalone workbench camera. */
+  _globals(width: number, height: number): { unity_MatrixVP: Float32Array; [key: string]: unknown };
   character: NativeCharacter;
   motions: string[];
   expressions: string[];

@@ -193,3 +193,15 @@ export function isHpoiCollectionFragment(html: string): boolean {
   const $ = load(html);
   return $('.collect-hobby-list-large, .collect-hobby-list-small').length > 0;
 }
+
+/** Resolve the first official product photo, never a user album or a guessed cover filename. */
+export function parseHpoiDetailImage(html: string): string | null {
+  const $ = load(html);
+  const source = $('.hpoi-image-swiper a[onclick*="clickOfficialGallery"] img').first().attr('src');
+  const absolute = toAbsoluteUrl(source);
+  if (!absolute) return null;
+  const url = new URL(absolute);
+  if (url.protocol !== 'https:' || url.hostname !== 'rfx.hpoi.net' || !/^\/gk\/pic\/[sn]\//.test(url.pathname)) return null;
+  url.pathname = url.pathname.replace('/gk/pic/s/', '/gk/pic/n/');
+  return url.toString();
+}
