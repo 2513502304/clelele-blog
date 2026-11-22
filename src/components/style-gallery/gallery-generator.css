@@ -1,9 +1,13 @@
-.gallery-generator {
+.gallery-generator,
+.studio-viewer,
+.studio-comparison-launch {
   --ink: hsl(var(--foreground));
   --paper: hsl(var(--card));
   --rule: hsl(var(--border));
   --soft: hsl(var(--muted));
   --accent: hsl(var(--primary));
+}
+.gallery-generator {
   color: var(--ink);
   background: var(--paper);
   overflow: hidden;
@@ -477,52 +481,173 @@
 .studio-compare {
   position: absolute;
   inset: 0;
+  overflow: hidden;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
-.studio-compare img {
+.studio-pair-pane {
   position: absolute;
   inset: 0;
+  overflow: hidden;
+  background: var(--soft);
+}
+.studio-pair-pane:first-child {
+  z-index: 1;
+}
+.studio-compare[data-side="true"] .studio-pair-pane {
+  position: relative;
+  min-height: 0;
+}
+.studio-compare[data-side="true"] .studio-pair-pane + .studio-pair-pane {
+  border-inline-start: 1px solid var(--rule);
+}
+.studio-pair-pane img {
+  display: block;
   width: 100%;
   height: 100%;
   object-fit: contain;
-  background: var(--soft);
+  user-select: none;
+  pointer-events: none;
 }
-.studio-compare span {
+.studio-seam {
   position: absolute;
-  top: 0;
-  bottom: 0;
+  z-index: 2;
+  inset-block: 0;
+  transform: translateX(-50%);
+  width: 44px;
   display: grid;
-  align-content: center;
-  border-left: 2px solid var(--accent);
-  color: var(--accent);
-  font-size: 1.6rem;
-  font-weight: bold;
-  text-shadow: 0 0 3px var(--paper);
+  place-items: center;
+  cursor: ew-resize;
+  touch-action: none;
+  background: transparent;
 }
-.studio-compare input {
+.studio-seam::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  width: 2px;
+  background: white;
+  box-shadow: 0 0 3px #0009;
+}
+.studio-seam span {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 50%;
+  background: white;
+  color: #202020;
+  box-shadow: 0 2px 12px #0005;
+}
+.studio-inline-split {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
+  z-index: 3;
   opacity: 0;
   cursor: ew-resize;
   touch-action: pan-y;
 }
-.studio-compare:focus-within {
+.studio-compare:has(.studio-inline-split:focus-visible) .studio-seam span,
+.studio-seam:focus-visible span {
   outline: 3px solid var(--accent);
-  outline-offset: -3px;
 }
 .studio-compare small {
   position: absolute;
-  bottom: 0.5rem;
-  left: 0.7rem;
-  background: var(--paper);
+  z-index: 2;
+  top: 0.65rem;
+  left: 0.65rem;
+  background: rgb(18 18 21 / 0.78);
+  color: white;
   border-radius: 0.4rem;
-  padding: 0.2rem 0.5rem;
+  padding: 0.22rem 0.5rem;
   pointer-events: none;
+  font-size: 0.74rem;
 }
 .studio-compare small:last-child {
   left: auto;
-  right: 0.7rem;
+  right: 0.65rem;
+}
+.studio-example-compare {
+  padding: 0.45rem 0.65rem;
+}
+.studio-comparison-tools,
+.studio-split-scale {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.55rem 0.85rem;
+  flex-wrap: wrap;
+}
+.studio-comparison-tools label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1 1 12rem;
+  min-width: 0;
+  font-size: 0.83rem;
+}
+.studio-comparison-tools select {
+  flex: 1;
+  min-width: 0;
+  max-width: 100%;
+  text-overflow: ellipsis;
+  border: 1px solid var(--rule);
+  border-radius: 0.5rem;
+  padding: 0.35rem;
+  background: var(--paper);
+}
+.studio-compare-modes {
+  display: flex;
+  padding: 0.15rem;
+  border-radius: 0.6rem;
+  background: var(--soft);
+}
+.studio-compare-modes button {
+  padding: 0.35rem 0.8rem;
+  font-size: 0.83rem;
+  border-radius: 0.45rem;
+}
+.studio-compare-modes button[aria-pressed="true"] {
+  background: var(--paper);
+  color: var(--accent);
+  box-shadow: 0 1px 4px #0002;
+}
+.studio-inspect-surface {
+  position: relative;
+}
+.studio-viewer[data-comparison="true"] {
+  overflow: auto;
+}
+.studio-viewer[data-comparison="true"] .studio-inspect-surface {
+  height: min(66dvh, 54rem);
+}
+.studio-split-scale {
+  font-size: 0.8rem;
+}
+.studio-split-scale input {
+  flex: 1;
+  min-width: 0;
+  height: 1.65rem;
+  accent-color: var(--accent);
+}
+.studio-split-scale span {
+  min-width: 3em;
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 40rem) {
+  .studio-viewer[data-comparison="true"] .studio-inspect-surface {
+    height: 55dvh;
+  }
+  .studio-comparison-tools select,
+  .studio-compare-modes button,
+  .studio-comparison-launch {
+    min-height: 44px;
+  }
 }
 
 .studio-keyring,

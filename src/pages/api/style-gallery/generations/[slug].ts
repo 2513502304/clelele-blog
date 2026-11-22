@@ -180,7 +180,7 @@ export const POST = privateRoute(async ({ slug, scope, platform, apiKey }, reque
     return json({ job: await findJob(scope, input.id) }, 202);
   }
   if (body?.action === 'confirm' && !isAuthorizedStyleGalleryRequest(request))
-    return json({ error: 'Invalid gallery upload token.' }, 403);
+    return json({ error: 'Invalid gallery upload token.', code: 'invalid_upload_token' }, 403);
   const job = await findJob(scope, z.string().uuid().parse(body?.id));
   if (body.action === 'sync') {
     await recoverGeneration(scope, job, apiKey);

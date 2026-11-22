@@ -31,7 +31,7 @@ import {
 } from 'react-icons/ri';
 import type { StyleGalleryExample, StyleGalleryImageRef } from '@/types/style-gallery';
 import { GenerationFields, studioLanguage } from './StyleGalleryGenerationFields';
-import { GenerationViewer } from './StyleGalleryGenerationViewer';
+import { ComparisonImages, GenerationViewer } from './StyleGalleryGenerationViewer';
 import { OutputStrip } from './StyleGalleryOutputStrip';
 import './gallery-generator.css';
 
@@ -157,6 +157,7 @@ async function studioRequest(
   body?: object,
   signal?: AbortSignal,
   uploadToken?: string,
+  invalidUploadMessage?: string,
 ) {
   const response = await fetch(url, {
     method: body ? 'POST' : 'GET',
@@ -173,6 +174,8 @@ async function studioRequest(
   });
   if (!response.ok) {
     const data = await response.json().catch(() => null);
+    if (response.status === 403 && data?.code === 'invalid_upload_token' && invalidUploadMessage)
+      throw new Error(invalidUploadMessage);
     throw new Error(data?.error ?? `HTTP ${response.status}`);
   }
   return response;
@@ -407,7 +410,19 @@ function Editor({
     const digest = await crypto.subtle.digest('SHA-256', await preview.file.arrayBuffer());
     const imageHash = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
     const data = await (
-      await studioRequest(base, platform, token, { action: 'confirm', id, index, imageHash }, undefined, uploadToken.trim())
+      await studioRequest(
+        base,
+        platform,
+        token,
+        { action: 'confirm', id, index, imageHash },
+        undefined,
+        uploadToken.trim(),
+        l(
+          '上传令牌与当前图库不匹配。请检查是否使用了当前环境的令牌，然后重新保存。生成结果已保留。',
+          'このギャラリーのアップロードトークンを確認して再度保存してください。生成結果は保持されています。',
+          'Check the upload token for this gallery environment and save again. Your generated result is retained.',
+        ),
+      )
     ).json();
     rememberStyleGalleryManagementToken(uploadToken);
     onSaved(data.examples);
@@ -478,6 +493,10 @@ function Editor({
             />
           </label>
           <GenerationFields settings={settings} change={setSettings} refs={refs} l={l} />
+          <button type="button" className="studio-secondary" onClick={() => setSettings(defaultSettings(platform))}>
+            <RiRestartLine />
+            {l('恢复默认参数', '既定の設定に戻す', 'Restore default settings')}
+          </button>
           <div className="studio-keyring">
             {token ? (
               <>
@@ -568,23 +587,13 @@ function Editor({
           </div>
           <div className="studio-canvas" aria-busy={state === 'running'}>
             {compare && refImage && activePreview ? (
-              <div className="studio-compare">
-                <img src={activePreview.url} alt={copy.preview} />
-                <img src={refImage} alt={refLabel} style={{ clipPath: `inset(0 ${100 - split}% 0 0)` }} />
-                <span style={{ left: `${split}%` }} aria-hidden="true">
-                  ↔
-                </span>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={split}
-                  onChange={(e) => setSplit(Number(e.target.value))}
-                  aria-label={l('参考图对比分界', '比較の境界', 'Comparison divider')}
-                />
-                <small>{refLabel}</small>
-                <small>{copy.preview}</small>
-              </div>
+              <ComparisonImages
+                reference={refImage}
+                result={activePreview.url}
+                locale={locale}
+                split={split}
+                setSplit={setSplit}
+              />
             ) : shownImage ? (
               <GenerationViewer
                 key={shownImage}
@@ -618,6 +627,15 @@ function Editor({
               <button type="button" className="studio-secondary" aria-pressed={compare} onClick={() => setCompare(!compare)}>
                 {compare ? copy.preview : l('对比参考图', '参照画像と比較', 'Compare reference')}
               </button>
+            )}
+            {activePreview && selectedReference && (
+              <GenerationViewer
+                src={activePreview.url}
+                alt={copy.preview}
+                locale={locale}
+                references={refs}
+                initialHash={selectedReference.imageHash}
+              />
             )}
             {activePreview && !showReference && (
               <a

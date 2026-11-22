@@ -71,8 +71,8 @@ export function GenerationFields({
                 change({
                   ...s,
                   model,
-                  size: sizesFor(model).includes(s.size) ? s.size : '1024x1024',
-                  quality: qualitiesFor(model).includes(s.quality) ? s.quality : 'medium',
+                  size: sizesFor(model).includes(s.size) ? s.size : 'auto',
+                  quality: qualitiesFor(model).includes(s.quality) ? s.quality : 'high',
                   background: backgroundsFor(model, s.format ?? 'png').includes(s.background ?? 'auto') ? s.background : 'auto',
                 })
               }

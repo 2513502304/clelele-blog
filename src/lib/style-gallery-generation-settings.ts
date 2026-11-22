@@ -1,10 +1,10 @@
 import { z } from 'zod';
 
 export const openAIModels = [
-  'gpt-image-2.6-flare',
   'gpt-image-2.6-sunburst',
-  'gpt-image-2.5-flare',
+  'gpt-image-2.6-flare',
   'gpt-image-2.5-sunburst',
+  'gpt-image-2.5-flare',
   'gpt-image-2',
   'gpt-image-1.5',
   'gpt-image-1-mini',
@@ -113,7 +113,7 @@ export interface GenerationJob extends GenerationRequest {
 export function defaultSettings(platform: GenerationPlatform): GenerationSettings {
   return platform === 'pixai'
     ? { platform, model: 'Tsubaki.3', size: '1k', ratio: '1:1', mode: 'pro' }
-    : { platform, model: 'gpt-image-2.6-flare', size: '1024x1024', quality: 'medium' };
+    : { platform, model: openAIModels[0], size: 'auto', quality: 'high' };
 }
 
 /** Exact submitted settings for receipts and sub-gallery captions, in provider terminology. */

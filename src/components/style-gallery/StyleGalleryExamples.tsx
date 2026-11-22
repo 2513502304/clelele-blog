@@ -45,6 +45,7 @@ import type {
 import GallerySelectionDock from './GallerySelectionDock';
 import GalleryZoomButton from './GalleryZoomButton';
 import { GenerationDetails } from './StyleGalleryGenerationFields';
+import { GenerationViewer } from './StyleGalleryGenerationViewer';
 import StyleGalleryGenerator from './StyleGalleryGenerator';
 import StyleGalleryGrid, { StyleGalleryLayoutToggle, useStyleGalleryLayout } from './StyleGalleryGrid';
 import {
@@ -960,6 +961,19 @@ function StyleGalleryExamplesContent({
                           className="absolute right-2 bottom-1.5 z-10"
                         />
                       </div>
+                      {generationReferences.length > 0 && !selectionMode && (
+                        <div className="studio-example-compare">
+                          <GenerationViewer
+                            src={example.src}
+                            alt={example.alt ?? example.model ?? ''}
+                            locale={locale}
+                            references={generationReferences}
+                            initialHash={
+                              example.generation?.platform === 'gpt-image' ? example.generation.referenceHash : undefined
+                            }
+                          />
+                        </div>
+                      )}
                       {example.note && (
                         <figcaption className="border-border/60 border-t bg-background/80 p-3">
                           {example.generation && <GenerationDetails settings={example.generation} locale={locale} />}

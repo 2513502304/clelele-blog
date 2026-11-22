@@ -207,3 +207,71 @@ test('reference viewer follows wheel travel across fine and coarse input', async
   await surface.dispatchEvent('wheel', { deltaMode: 2, deltaY: -3 });
   await expect(dialog.locator('output')).toHaveText('112%');
 });
+
+test('published outputs compare without credentials and both panes follow the same zoom', async ({ page }) => {
+  await imagesOnlyFixture(page);
+  await page.goto('/image-style-prompt-gallery/2026-09-23-35dc5191ccad', { waitUntil: 'domcontentloaded' });
+  const launch = page.locator('.studio-example-compare button').first();
+  await expect(launch.locator('xpath=ancestor::astro-island')).not.toHaveAttribute('ssr');
+  await launch.click();
+  const dialog = page.getByRole('dialog', { name: '放大对比' });
+  const seam = dialog.getByRole('slider', { name: '参考图对比分界' });
+  await seam.focus();
+  await seam.press('Shift+ArrowRight');
+  await expect(seam).toHaveAttribute('aria-valuenow', '60');
+  const area = dialog.locator('.studio-inspect-surface');
+  const bounds = await area.boundingBox();
+  if (!bounds) throw new Error('Missing comparison surface');
+  await page.mouse.move(bounds.x + bounds.width * 0.6, bounds.y + bounds.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(bounds.x + bounds.width * 0.25, bounds.y + bounds.height / 2, { steps: 4 });
+  await page.mouse.up();
+  await expect(seam).toHaveAttribute('aria-valuenow', '25');
+  await expect(dialog.getByRole('slider', { name: /参考占比/ })).toHaveValue('25');
+  await dialog.getByRole('button', { name: '并排' }).click();
+  const panes = area.locator('.studio-pair-pane');
+  expect((await panes.nth(1).boundingBox())?.x).toBeCloseTo(bounds.x + bounds.width / 2, 0);
+  await expect
+    .poll(() =>
+      panes
+        .first()
+        .locator('img')
+        .evaluate((img: HTMLImageElement) => img.naturalWidth),
+    )
+    .toBeGreaterThan(0);
+  await dialog.getByRole('button', { name: '放大', exact: true }).click();
+  await expect(dialog.locator('output')).toHaveText('112%');
+  const transforms = await panes.locator('img').evaluateAll((imgs) => imgs.map((img) => getComputedStyle(img).transform));
+  expect(transforms[0]).toBe(transforms[1]);
+  await dialog.getByRole('button', { name: '适应画布' }).click();
+  await expect(dialog.locator('output')).toHaveText('100%');
+  await page.keyboard.press('Escape');
+  await expect(dialog).not.toBeVisible();
+});
+
+test('new GPT defaults and model order survive a draft reset', async ({ page }) => {
+  await imagesOnlyFixture(page);
+  await page.goto('/image-style-prompt-gallery/2026-09-23-35dc5191ccad', { waitUntil: 'domcontentloaded' });
+  const studio = page.locator('.gallery-generator');
+  await expect(studio.locator('xpath=ancestor::astro-island')).not.toHaveAttribute('ssr');
+  await studio.getByRole('button', { name: '用此提示词生图' }).click();
+  const model = studio.getByRole('combobox', { name: '模型', exact: true });
+  await expect(model).toHaveValue('gpt-image-2.6-sunburst');
+  expect((await model.locator('option').allTextContents()).slice(0, 4)).toEqual([
+    'gpt-image-2.6-sunburst',
+    'gpt-image-2.6-flare',
+    'gpt-image-2.5-sunburst',
+    'gpt-image-2.5-flare',
+  ]);
+  await model.selectOption('gpt-image-2.5-flare');
+  await studio.getByRole('combobox', { name: '尺寸', exact: true }).selectOption('1024x1024');
+  await studio.getByRole('combobox', { name: '质量', exact: true }).selectOption('low');
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(studio.locator('xpath=ancestor::astro-island')).not.toHaveAttribute('ssr');
+  await studio.getByRole('button', { name: '用此提示词生图' }).click();
+  await expect(model).toHaveValue('gpt-image-2.5-flare');
+  await studio.getByRole('button', { name: '恢复默认参数' }).click();
+  await expect(model).toHaveValue('gpt-image-2.6-sunburst');
+  await expect(studio.getByRole('combobox', { name: '尺寸', exact: true })).toHaveValue('auto');
+  await expect(studio.getByRole('combobox', { name: '质量', exact: true })).toHaveValue('high');
+});
