@@ -1,3 +1,4 @@
+import type { GenerationSettings } from '@/lib/style-gallery-generation-settings';
 import type { StyleGalleryPlatformLabel } from '@/lib/style-gallery-platforms';
 
 /** Display dimensions after EXIF orientation; absent only on records awaiting backfill. */
@@ -22,6 +23,7 @@ export interface StyleGalleryExample {
   alt: string;
   model: StyleGalleryPlatformLabel;
   note?: string;
+  generation?: GenerationSettings;
   uploadedAt: string;
   imageHash: string;
 }
@@ -122,6 +124,7 @@ export interface StyleGalleryExampleIndexEntry {
   src: string;
   model: StyleGalleryPlatformLabel;
   note?: string;
+  generation?: GenerationSettings;
   uploadedAt: string;
   /** GitHub 数字用户 ID；数组本身是“一位用户一票”的唯一事实源。 */
   likedBy: number[];

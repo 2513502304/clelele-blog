@@ -7,6 +7,7 @@ import { Icon } from '@iconify/react';
 import { createStyleGalleryDateRangeMatcher, getStyleGalleryDateKey } from '@lib/style-gallery-date-range';
 import type { StyleGalleryDateRangeLabels } from '@lib/style-gallery-date-range-labels';
 import { createStyleGalleryExampleQueryMatcher } from '@lib/style-gallery-example-search';
+import { generationCaption } from '@lib/style-gallery-generation-settings';
 import { getReusableStyleGalleryImageUrl } from '@lib/style-gallery-image-client';
 import { getStyleGalleryImagePreviewSource } from '@lib/style-gallery-image-key';
 import {
@@ -252,7 +253,7 @@ function StyleGalleryExamplesOverviewContent({
       id: candidate.id,
       gallerySourceSlug: candidate.sourceSlug,
       generationPrompt: candidate.note,
-      generationPlatform: candidate.model,
+      generationPlatform: candidate.generation ? generationCaption(candidate.generation) : candidate.model,
       generationPromptInitiallyExpanded: revealPrompt && candidate.id === example.id,
       src: candidate.src,
       dimensions: candidate.dimensions,

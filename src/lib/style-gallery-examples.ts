@@ -42,6 +42,7 @@ export function toStyleGalleryExampleIndexEntry(
     src: example.src,
     model: example.model,
     note: example.note,
+    ...(example.generation && { generation: example.generation }),
     uploadedAt: example.uploadedAt,
     ...(example.dimensions ? { dimensions: example.dimensions } : {}),
     likedBy: previous?.likedBy ?? [],

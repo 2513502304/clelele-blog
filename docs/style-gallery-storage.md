@@ -231,3 +231,11 @@ Tag editors reuse the small public index to open immediately. PUT still validate
 ### Large original image uploads
 
 Source and example images share a 64 MiB total-file guard. This is separate from the Vercel request-body limit: browser uploads still send at most 4.25 MiB per request, with up to 16 independently hashed parts. Server completion fetches at most three parts concurrently, validates every part and the assembled original SHA-256, then stores unchanged bytes. The CLI uploads originals directly to signed HF object storage; its prepare/merge metadata calls use the same total-file limit. Neither path resizes or re-encodes the original. Thumbnail generation remains a separate derivative step.
+
+### 详情页直接生图
+
+展开「用此提示词生图」，选择 OpenAI 或 PixAI，输入自己的 API Key。浏览器按平台记住密钥，可在创作设置中清除。工作台通过本站服务端调用供应商，费用计入该密钥的账户。只有将结果加入子图时才需要已有的图库上传令牌。
+
+每次生成先在 HF 的 `generation-drafts/<slug>/<owner>/jobs.json` 登记请求 ID、实际提示词和参数。关闭页面后，可在同一条目的生成记录中继续预览。PixAI 会保存任务 ID 以便续取。若 OpenAI 同步调用在服务端收到并保存原图前中断，记录会显示「提交结果待核实」，此时再次主动生成可能产生新的费用。
+
+批量任务会按平台返回顺序保存每张原图。「确认加入子图」只发布正在预览的一张，同时写入缩略图、视觉检索特征和生成参数。其余结果可继续在生成记录中查看。比较滑块可对照原图。打开大图后支持滚轮缩放、拖动平移和键盘操作。草稿原图和任务记录保存在图库公开签名路径之外。使用相同的平台密钥可以跨设备找回历史。更换密钥后，原记录仍归原密钥所有。服务端用平台与密钥派生存储目录，密钥不写入任务、图片元数据或图库。

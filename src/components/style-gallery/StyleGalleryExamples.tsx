@@ -2,6 +2,7 @@ import { StyleGalleryExampleNote } from '@components/style-gallery/StyleGalleryE
 import { useGalleryMarquee } from '@hooks/useGalleryMarquee';
 import { Icon } from '@iconify/react';
 import { downloadStyleGalleryImages } from '@lib/style-gallery-batch-download';
+import { generationCaption } from '@lib/style-gallery-generation-settings';
 import { getReusableStyleGalleryImageUrl } from '@lib/style-gallery-image-client';
 import { getStyleGalleryImagePreviewSource } from '@lib/style-gallery-image-key';
 import {
@@ -35,9 +36,16 @@ import type { StyleGalleryVisualFeature } from '@lib/style-gallery-visual-types'
 import { openModal } from '@store/modal';
 import { NuqsAdapter } from 'nuqs/adapters/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { StyleGalleryExample, StyleGalleryExampleView, StyleGalleryImageDimensions } from '@/types/style-gallery';
+import type {
+  StyleGalleryExample,
+  StyleGalleryExampleView,
+  StyleGalleryImageDimensions,
+  StyleGalleryImageRef,
+} from '@/types/style-gallery';
 import GallerySelectionDock from './GallerySelectionDock';
 import GalleryZoomButton from './GalleryZoomButton';
+import { GenerationDetails } from './StyleGalleryGenerationFields';
+import StyleGalleryGenerator from './StyleGalleryGenerator';
 import StyleGalleryGrid, { StyleGalleryLayoutToggle, useStyleGalleryLayout } from './StyleGalleryGrid';
 import {
   createStyleGalleryLightboxLikeAction,
@@ -55,6 +63,7 @@ interface StyleGalleryExamplesProps {
   promptCount: number;
   promptRevision: string;
   initialExamples: StyleGalleryExampleView[];
+  generationReferences: StyleGalleryImageRef[];
   uploadsEnabled: boolean;
   likeLabels: StyleGalleryLikeLabels;
   lightboxActionLabels: StyleGalleryLightboxActionLabels;
@@ -110,6 +119,7 @@ function StyleGalleryExamplesContent({
   promptCount,
   promptRevision,
   initialExamples,
+  generationReferences,
   uploadsEnabled,
   likeLabels,
   lightboxActionLabels,
@@ -216,7 +226,7 @@ function StyleGalleryExamplesContent({
       id: candidate.id,
       gallerySourceSlug: slug,
       generationPrompt: candidate.note,
-      generationPlatform: candidate.model,
+      generationPlatform: candidate.generation ? generationCaption(candidate.generation) : candidate.model,
       generationPromptInitiallyExpanded: revealPrompt && candidate.id === example.id,
       src: candidate.src,
       dimensions: candidate.dimensions,
@@ -704,6 +714,16 @@ function StyleGalleryExamplesContent({
   );
   return (
     <section ref={marquee.rootRef} className="gallery-examples-sheet rounded-xl p-5">
+      <div className="mb-5">
+        <StyleGalleryGenerator
+          slug={slug}
+          prompt={prompt}
+          locale={locale}
+          accessEnabled={uploadsEnabled}
+          refs={generationReferences}
+          onSaved={setExamples}
+        />
+      </div>
       {marquee.overlay}
       <div className="mb-4 flex items-center justify-between gap-3 py-2">
         <div>
@@ -942,6 +962,7 @@ function StyleGalleryExamplesContent({
                       </div>
                       {example.note && (
                         <figcaption className="border-border/60 border-t bg-background/80 p-3">
+                          {example.generation && <GenerationDetails settings={example.generation} locale={locale} />}
                           <StyleGalleryExampleNote
                             note={example.note}
                             locale={locale}
@@ -959,7 +980,11 @@ function StyleGalleryExamplesContent({
         </div>
       ) : (
         <div className="rounded-lg border border-border border-dashed bg-muted/60 p-6 text-muted-foreground text-sm">
-          Generated examples created from this prompt will appear here after they are added manually.
+          {zh
+            ? '确认保存或上传的子图会显示在这里。'
+            : ja
+              ? '保存またはアップロードした画像がここに表示されます。'
+              : 'Images you save or upload appear here.'}
         </div>
       )}
     </section>
