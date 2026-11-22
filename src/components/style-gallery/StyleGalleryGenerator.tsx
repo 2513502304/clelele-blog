@@ -224,11 +224,13 @@ function Editor({
   const hasImage = available.includes(index);
   const isSaved = current && publishedOutputs(current).includes(index);
   const restoreView = useRef(false);
+  const historyRevision = useRef(0);
 
   const loadHistory = useCallback(
     async (auth: string, signal?: AbortSignal) => {
+      const attempt = ++historyRevision.current;
       const result: { jobs: GenerationJob[] } = await (await studioRequest(base, platform, auth, undefined, signal)).json();
-      if (signal?.aborted) return;
+      if (signal?.aborted || attempt !== historyRevision.current) return false;
       setJobs(result.jobs);
       if (!restoreView.current && result.jobs.length) {
         setView('review');
@@ -245,6 +247,7 @@ function Editor({
           /* Optional client receipt. */
         }
       }
+      return true;
     },
     [base, requestKey, platform],
   );
@@ -364,7 +367,7 @@ function Editor({
   }
   async function connect() {
     const auth = credential.trim();
-    await loadHistory(auth);
+    if (!(await loadHistory(auth))) return;
     rememberProviderKey(platform, auth);
     setCredential('');
   }
@@ -401,10 +404,10 @@ function Editor({
   }
   async function confirm() {
     if (!preview || preview.id !== id || import.meta.env.SSR) return;
-    const { computeStyleGalleryVisualFeatureFromFile } = await import('@lib/style-gallery-visual-feature-browser');
-    const feature = await computeStyleGalleryVisualFeatureFromFile(preview.file);
+    const digest = await crypto.subtle.digest('SHA-256', await preview.file.arrayBuffer());
+    const imageHash = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
     const data = await (
-      await studioRequest(base, platform, token, { action: 'confirm', id, index, feature }, undefined, uploadToken.trim())
+      await studioRequest(base, platform, token, { action: 'confirm', id, index, imageHash }, undefined, uploadToken.trim())
     ).json();
     rememberStyleGalleryManagementToken(uploadToken);
     onSaved(data.examples);
@@ -509,6 +512,11 @@ function Editor({
                 <button type="submit" className="studio-secondary" disabled={!credential.trim() || Boolean(busy)}>
                   {busy === 'connect' ? copy.validating : copy.unlock}
                 </button>
+                {readProviderKey(platform) && (
+                  <button type="button" className="studio-secondary" disabled={Boolean(busy)} onClick={forget}>
+                    {l('清除此密钥', 'このキーを削除', 'Forget this key')}
+                  </button>
+                )}
                 <small className="w-full">
                   {l(
                     '密钥将记在此浏览器。生成费用由你的平台账户承担。',

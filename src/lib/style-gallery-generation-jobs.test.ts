@@ -54,6 +54,11 @@ it('reserves a paid request once across tabs and recovers the original after int
       chargedPosts++;
       return Response.json({ data: Array.from({ length: 4 }, () => ({ b64_json: bytes.toString('base64') })) });
     }
+    if (url.origin === 'https://api.pixai.art') {
+      assert.equal(url.pathname, '/v1/task/recover-me');
+      assert.equal(init?.method, 'GET');
+      return Response.json({ id: 'recover-me', status: 'failed' });
+    }
     assert.equal(url.hostname, 'generation.invalid');
     const key = url.pathname.slice('/fixture/gallery/'.length);
     const obj = objects.get(key);
@@ -100,6 +105,7 @@ it('reserves a paid request once across tabs and recovers the original after int
   assert.ok(!JSON.stringify(ready).includes('visitor-test-key'));
 
   assert.equal(chargedPosts, 1);
+  await assert.rejects(noteOutput(slug, request.id, 4), /exceeds the requested batch/);
   const key = draftImageKey(slug, request.id);
   assert.equal(isAllowedStyleGalleryImageKey(key), false);
   const image = objects.get(key);
@@ -121,6 +127,16 @@ it('reserves a paid request once across tabs and recovers the original after int
   await markGeneration(slug, request.id, { state: 'ready' });
   assert.equal((await listGenerationJobs(slug))[0].state, 'saved');
   assert.equal(await reserveGeneration(slug, request), false);
+  assert.equal(chargedPosts, 1);
+  // The provider accepted this PixAI job, but the manifest update with its task ID was interrupted.
+  const pixRequest = { ...request, id: randomUUID(), settings: defaultSettings('pixai') };
+  await reserveGeneration(slug, pixRequest);
+  objects.set(`generation-drafts/${slug}/${pixRequest.id}.task`, {
+    bytes: new TextEncoder().encode('recover-me'),
+    etag: '"task"',
+  });
+  await recoverGeneration(slug, (await listGenerationJobs(slug))[0], 'visitor-test-key');
+  assert.equal((await listGenerationJobs(slug))[0].state, 'failed');
   assert.equal(chargedPosts, 1);
 });
 
@@ -163,7 +179,7 @@ it('resumes a private PixAI task and downloads the original without sharing the 
         return Response.json({
           urls: [
             { variant: 'THUMBNAIL', url: 'https://pixai.art/thumb' },
-            { variant: 'ORIGINAL', url: 'https://d2doj8oszwtcqy.cloudfront.net/original' },
+            { variant: 'PUBLIC', url: 'https://d2doj8oszwtcqy.cloudfront.net/original' },
           ],
         });
     }

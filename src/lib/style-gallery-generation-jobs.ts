@@ -15,6 +15,7 @@ import {
   publishedOutputs,
 } from './style-gallery-generation-settings';
 
+const taskReceipt = (scope: string, id: string) => `generation-drafts/${scope}/${id}.task`;
 const manifest = (slug: string) => `generation-drafts/${slug}/jobs.json`;
 export const draftImageKey = (slug: string, id: string, index = 0) =>
   `generation-drafts/${slug}/${id}${index ? `-${index}` : ''}.image`;
@@ -95,10 +96,16 @@ export async function noteOutput(slug: string, id: string, index: number, publis
     const available = availableOutputs(job),
       saved = publishedOutputs(job),
       count = job.settings.count ?? 1;
+    if (index < 0 || index >= count) throw new Error('Output index exceeds the requested batch.');
     if (available.includes(index) && (!published || saved.includes(index))) return null;
     const nextAvailable = [...new Set([...available, index])].sort((a, b) => a - b);
     const nextSaved = published ? [...new Set([...saved, index])] : saved;
-    const state = nextSaved.length === count ? 'saved' : nextAvailable.length === count ? 'ready' : job.state;
+    const requested = Array.from({ length: count }, (_, i) => i);
+    const state = requested.every((i) => nextSaved.includes(i))
+      ? 'saved'
+      : requested.every((i) => nextAvailable.includes(i))
+        ? 'ready'
+        : job.state;
     return jobs.map((j) => (j === job ? { ...j, available: nextAvailable, published: nextSaved, state } : j));
   });
 }
@@ -125,7 +132,7 @@ export async function runReservedGeneration(slug: string, request: GenerationReq
   }
   if ('images' in result) {
     const stored = await Promise.allSettled(
-      result.images.map(async (bytes, index) => {
+      result.images.slice(0, request.settings.count ?? 1).map(async (bytes, index) => {
         if (!bytes) throw new Error('Missing batch output.');
         await keepImage(slug, request.id, index, bytes);
       }),
@@ -135,6 +142,8 @@ export async function runReservedGeneration(slug: string, request: GenerationReq
     return;
   }
   const taskId = result.taskId;
+  // This independent receipt survives a manifest CAS failure immediately after the provider accepts a paid task.
+  await checkpoint(() => putStyleGalleryObject(taskReceipt(slug, request.id), Buffer.from(taskId), 'text/plain'));
   await checkpoint(() => markGeneration(slug, request.id, { taskId }));
   // Persist the provider ID before waiting. A later visit can resume a longer task.
   for (let attempt = 0; attempt < 18; attempt++) {
@@ -152,7 +161,12 @@ async function collectPixAI(
   stored: readonly number[] = [],
 ) {
   try {
-    const count = await readPixAIResult(taskId, apiKey, (index, bytes) => keepImage(slug, id, index, bytes), stored);
+    const count = await readPixAIResult(
+      taskId,
+      apiKey,
+      (index, bytes) => (index < expected ? keepImage(slug, id, index, bytes) : Promise.resolve()),
+      stored,
+    );
     if (count === null) return false;
     if (count !== expected) await markGeneration(slug, id, { state: 'uncertain', error: 'Provider returned a partial batch.' });
     return true;
@@ -172,7 +186,10 @@ export async function recoverGeneration(slug: string, job: GenerationJob, apiKey
   const exists = await Promise.all(missing.map((i) => headStyleGalleryObject(draftImageKey(slug, job.id, i))));
   for (const [offset, index] of missing.entries()) if (exists[offset]) await noteOutput(slug, job.id, index);
   if (exists.every(Boolean)) return;
-  if (job.taskId) await collectPixAI(slug, apiKey, job.id, job.taskId, job.settings.count ?? 1, availableOutputs(job));
+  const taskId =
+    job.taskId ??
+    (job.settings.platform === 'pixai' ? (await getStyleGalleryObjectTextSnapshot(taskReceipt(slug, job.id))).text : null);
+  if (taskId) await collectPixAI(slug, apiKey, job.id, taskId, job.settings.count ?? 1, availableOutputs(job));
   else if (job.state === 'running' && Date.now() - Date.parse(job.created) > 5 * 60_000)
     await markGeneration(slug, job.id, { state: 'uncertain' });
 }

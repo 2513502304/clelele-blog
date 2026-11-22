@@ -21,10 +21,8 @@ import {
   publishedOutputs,
 } from '@lib/style-gallery-generation-settings';
 import { getStyleGalleryPlatform } from '@lib/style-gallery-platforms';
-import { styleGalleryVisualFeatureSchema } from '@lib/style-gallery-schema';
 import { getStoredStyleGalleryItem, mutateStyleGalleryVisualIndex } from '@lib/style-gallery-store';
 import { upsertStyleGalleryVisualRecords } from '@lib/style-gallery-visual-index';
-import type { StyleGalleryVisualFeature } from '@lib/style-gallery-visual-types';
 import { updateStyleGalleryItemExamples } from '@lib/style-gallery-write';
 import { waitUntil } from '@vercel/functions';
 import type { APIContext } from 'astro';
@@ -41,7 +39,7 @@ async function findJob(slug: string, id: string) {
 }
 
 /** Only the persisted server-side prompt, model and original bytes may be published. */
-async function publish(slug: string, scope: string, job: GenerationJob, index: number, feature: StyleGalleryVisualFeature) {
+async function publish(slug: string, scope: string, job: GenerationJob, index: number, reviewedHash: string) {
   const item = await getStoredStyleGalleryItem(slug, { fresh: true });
   if (!item) throw new StyleGalleryClientError('Item no longer exists.', 404);
   if (publishedOutputs(job).includes(index)) return item.examples;
@@ -49,7 +47,10 @@ async function publish(slug: string, scope: string, job: GenerationJob, index: n
   const bytes = await getStyleGalleryObjectBytes(draftImageKey(scope, job.id, index));
   if (!bytes) throw new Error('Missing draft.');
   const hash = createHash('sha256').update(bytes).digest('hex');
-  if (hash !== feature.imageHash) throw new StyleGalleryClientError('Preview does not match original.', 409);
+  if (hash !== reviewedHash) throw new StyleGalleryClientError('Preview does not match original.', 409);
+  // The native gallery runtime has the model weights. Phones only digest the reviewed bytes.
+  const { computeStyleGalleryVisualFeatureFromBytes } = await import('@lib/style-gallery-visual-feature-node');
+  const feature = await computeStyleGalleryVisualFeatureFromBytes(bytes, hash);
   const { format, width, height, autoOrient } = await sharp(bytes).metadata();
   if (!width || !height || !['png', 'jpeg', 'webp'].includes(format)) throw new Error('Invalid original.');
   const platform = getStyleGalleryPlatform(job.settings.platform);
@@ -139,7 +140,7 @@ export const GET = privateRoute(async ({ scope }, request) => {
     }
     return new Response(Uint8Array.from(thumb), { headers: { ...headers, 'content-type': 'image/webp' } });
   }
-  // Stream the private original so browsers can compute the existing visual-search feature without CDN CORS.
+  // Stream the private original for review, download and a byte-for-byte confirmation.
   const response = await fetchHfS3Read(createStyleGallerySignedImageUrl(draftImageKey(scope, job.id, index)), {
     signal: AbortSignal.timeout(60_000),
   });
@@ -197,7 +198,10 @@ export const POST = privateRoute(async ({ slug, scope, platform, apiKey }, reque
           .min(0)
           .max(3)
           .parse(body.index ?? 0),
-        styleGalleryVisualFeatureSchema.parse(body.feature),
+        z
+          .string()
+          .regex(/^[a-f0-9]{64}$/)
+          .parse(body.imageHash),
       ),
     });
   return json({ error: 'Unknown action.' }, 400);
