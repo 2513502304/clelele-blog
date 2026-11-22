@@ -148,6 +148,20 @@ function StyleGalleryExamplesContent({
   const masonry = layout === 'masonry';
   const [examples, setExamples] = useState<StyleGalleryExample[]>(initialExamples);
   const likes = useStyleGalleryLikes(Object.fromEntries(initialExamples.map((example) => [example.id, example.likeCount])));
+  const [comparedId, setComparedId] = useState<string>();
+  const compared = examples.find((example) => example.id === comparedId);
+  const comparisonPanel = useRef<HTMLDivElement>(null);
+  const comparisonTrigger = useRef<HTMLButtonElement>(null);
+  const closeComparison = () => {
+    setComparedId(undefined);
+    requestAnimationFrame(() => comparisonTrigger.current?.focus());
+  };
+  // The expanded comparison belongs to the platform group, including in masonry layout.
+  useEffect(() => {
+    if (!comparedId || !comparisonPanel.current) return;
+    comparisonPanel.current.focus({ preventScroll: true });
+    comparisonPanel.current.scrollIntoView({ block: 'start' });
+  }, [comparedId]);
   const [platform, setPlatform] = useState<string>(STYLE_GALLERY_PLATFORMS[0].slug);
   const [note, setNote] = useState('');
   const [token, setToken] = useState('');
@@ -895,6 +909,19 @@ function StyleGalleryExamplesContent({
                   </span>
                 </div>
               </div>
+              {compared && platformExamples.includes(compared) && !selectionMode && (
+                <div className="studio-group-comparison" ref={comparisonPanel} tabIndex={-1}>
+                  <GenerationViewer
+                    key={compared.id}
+                    src={compared.src}
+                    alt={compared.alt ?? compared.model ?? ''}
+                    locale={locale}
+                    references={generationReferences}
+                    initialHash={compared.generation?.platform === 'gpt-image' ? compared.generation.referenceHash : undefined}
+                    onClose={closeComparison}
+                  />
+                </div>
+              )}
               <StyleGalleryGrid masonry={masonry}>
                 {platformExamples.map((example) => {
                   return (
@@ -963,15 +990,19 @@ function StyleGalleryExamplesContent({
                       </div>
                       {generationReferences.length > 0 && !selectionMode && (
                         <div className="studio-example-compare">
-                          <GenerationViewer
-                            src={example.src}
-                            alt={example.alt ?? example.model ?? ''}
-                            locale={locale}
-                            references={generationReferences}
-                            initialHash={
-                              example.generation?.platform === 'gpt-image' ? example.generation.referenceHash : undefined
-                            }
-                          />
+                          <button
+                            type="button"
+                            className="studio-secondary studio-comparison-launch"
+                            aria-expanded={comparedId === example.id}
+                            onClick={(e) => {
+                              comparisonTrigger.current = e.currentTarget;
+                              if (comparedId === example.id) closeComparison();
+                              else setComparedId(example.id);
+                            }}
+                          >
+                            <Icon icon="ri:layout-column-line" />
+                            {zh ? '对比参考图' : ja ? '参照画像と比較' : 'Compare reference'}
+                          </button>
                         </div>
                       )}
                       {example.note && (

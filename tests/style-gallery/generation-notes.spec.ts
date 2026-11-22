@@ -192,11 +192,10 @@ test('reference viewer follows wheel travel across fine and coarse input', async
   await expect(studio.locator('xpath=ancestor::astro-island')).not.toHaveAttribute('ssr');
   await studio.getByRole('button', { name: '用此提示词生图' }).click();
   await studio.getByRole('button', { name: '生成记录' }).click();
-  await studio.getByRole('button', { name: '放大查看' }).click();
-  const dialog = studio.getByRole('dialog');
+  const dialog = studio.getByRole('region', { name: '条目参考图', exact: true });
   const surface = dialog.locator('.studio-inspect-surface');
   await expect.poll(() => surface.locator('img').evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
-  await surface.hover();
+  await surface.click();
   await page.mouse.wheel(0, -100);
   await expect(dialog.locator('output')).toHaveText('108%');
   // Twenty precision-trackpad deltas must exactly undo one 100px notch.
@@ -214,7 +213,8 @@ test('published outputs compare without credentials and both panes follow the sa
   const launch = page.locator('.studio-example-compare button').first();
   await expect(launch.locator('xpath=ancestor::astro-island')).not.toHaveAttribute('ssr');
   await launch.click();
-  const dialog = page.getByRole('dialog', { name: '放大对比' });
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  const dialog = page.getByRole('region', { name: '对比参考' });
   const seam = dialog.getByRole('slider', { name: '参考图对比分界' });
   await seam.focus();
   await seam.press('Shift+ArrowRight');
@@ -245,8 +245,11 @@ test('published outputs compare without credentials and both panes follow the sa
   expect(transforms[0]).toBe(transforms[1]);
   await dialog.getByRole('button', { name: '适应画布' }).click();
   await expect(dialog.locator('output')).toHaveText('100%');
-  await page.keyboard.press('Escape');
+  await dialog.getByRole('button', { name: '仅结果' }).click();
+  await expect(area.locator('img')).toHaveCount(1);
+  await dialog.getByRole('button', { name: '收起对比' }).click();
   await expect(dialog).not.toBeVisible();
+  await expect(launch).toBeFocused();
 });
 
 test('new GPT defaults and model order survive a draft reset', async ({ page }) => {

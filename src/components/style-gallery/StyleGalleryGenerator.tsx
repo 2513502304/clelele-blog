@@ -31,7 +31,7 @@ import {
 } from 'react-icons/ri';
 import type { StyleGalleryExample, StyleGalleryImageRef } from '@/types/style-gallery';
 import { GenerationFields, studioLanguage } from './StyleGalleryGenerationFields';
-import { ComparisonImages, GenerationViewer } from './StyleGalleryGenerationViewer';
+import { GenerationViewer } from './StyleGalleryGenerationViewer';
 import { OutputStrip } from './StyleGalleryOutputStrip';
 import './gallery-generator.css';
 
@@ -200,8 +200,6 @@ function Editor({
   const l = studioLanguage(locale);
   const [view, setView] = useState<'edit' | 'review'>('edit');
   const [outputIndex, selectOutput] = useState(0);
-  const [compare, setCompare] = useState(false);
-  const [split, setSplit] = useState(50);
   const base = `/api/style-gallery/generations/${encodeURIComponent(slug)}`;
   const draftKey = `gallery-generation:${slug}`;
   const [settings, setSettings] = useState<GenerationSettings>(() => defaultSettings(platform));
@@ -396,7 +394,6 @@ function Editor({
     upsert(job);
     setSelected(job.id);
     selectOutput(0);
-    setCompare(false);
     setView('review');
     pending.current = null;
     try {
@@ -440,7 +437,6 @@ function Editor({
   const selectJob = (jobId: string) => {
     setSelected(jobId);
     selectOutput(0);
-    setCompare(false);
   };
   const count = settings.count ?? 1;
   const generate = count === 1 ? copy.generate : l(`生成 ${count} 张`, `${count} 枚生成`, `Generate ${count} images`);
@@ -585,58 +581,35 @@ function Editor({
               </select>
             )}
           </div>
-          <div className="studio-canvas" aria-busy={state === 'running'}>
-            {compare && refImage && activePreview ? (
-              <ComparisonImages
-                reference={refImage}
-                result={activePreview.url}
-                locale={locale}
-                split={split}
-                setSplit={setSplit}
-              />
-            ) : shownImage ? (
-              <GenerationViewer
-                key={shownImage}
-                src={shownImage}
-                alt={showReference ? refLabel : copy.preview}
-                locale={locale}
-              />
-            ) : (
+          {shownImage ? (
+            <GenerationViewer
+              key={shownImage}
+              src={shownImage}
+              alt={showReference ? refLabel : copy.preview}
+              locale={locale}
+              references={activePreview ? refs : undefined}
+              initialHash={selectedReference?.imageHash}
+            />
+          ) : (
+            <div className="studio-canvas" aria-busy={state === 'running'}>
               <output className="studio-placeholder">
                 {state === 'running' ? <RiLoader4Line className="studio-spin" /> : <RiImage2Line />}
                 <span>{current ? copy[current.state] : copy.empty}</span>
               </output>
-            )}
-          </div>
+            </div>
+          )}
           {available.length > 1 && current && (
             <OutputStrip
               indices={available}
               published={publishedOutputs(current)}
               selected={index}
-              select={(i) => {
-                selectOutput(i);
-                setCompare(false);
-              }}
+              select={selectOutput}
               locale={locale}
               jobId={current.id}
               request={request}
             />
           )}
           <div className="studio-proof-tools">
-            {activePreview && refImage && (
-              <button type="button" className="studio-secondary" aria-pressed={compare} onClick={() => setCompare(!compare)}>
-                {compare ? copy.preview : l('对比参考图', '参照画像と比較', 'Compare reference')}
-              </button>
-            )}
-            {activePreview && selectedReference && (
-              <GenerationViewer
-                src={activePreview.url}
-                alt={copy.preview}
-                locale={locale}
-                references={refs}
-                initialHash={selectedReference.imageHash}
-              />
-            )}
             {activePreview && !showReference && (
               <a
                 className="studio-secondary"

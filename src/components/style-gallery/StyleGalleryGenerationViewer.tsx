@@ -1,13 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  RiAddLine,
-  RiArrowLeftRightLine,
-  RiCloseLine,
-  RiFocus3Line,
-  RiFullscreenLine,
-  RiLayoutColumnLine,
-  RiSubtractLine,
-} from 'react-icons/ri';
+import { RiAddLine, RiArrowLeftRightLine, RiCloseLine, RiFocus3Line, RiSubtractLine } from 'react-icons/ri';
 import type { StyleGalleryImageRef } from '@/types/style-gallery';
 import { studioLanguage } from './StyleGalleryGenerationFields';
 
@@ -30,11 +22,11 @@ interface ComparisonProps {
   split: number;
   setSplit: (value: number) => void;
   side?: boolean;
-  transform?: string;
+  transform: string;
 }
 
 /** Clip the reference pane after transforming its image so the seam stays under the handle at any zoom. */
-export function ComparisonImages({ reference, result, locale, split, setSplit, side, transform }: ComparisonProps) {
+function ComparisonImages({ reference, result, locale, split, setSplit, side, transform }: ComparisonProps) {
   const l = studioLanguage(locale);
   const boundary = l('参考图对比分界', '比較の境界', 'Comparison divider');
   return (
@@ -52,8 +44,6 @@ export function ComparisonImages({ reference, result, locale, split, setSplit, s
           style={{ left: `${split}%` }}
           role="slider"
           aria-label={boundary}
-          tabIndex={transform ? 0 : -1}
-          aria-hidden={transform ? undefined : true}
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={split}
@@ -87,17 +77,6 @@ export function ComparisonImages({ reference, result, locale, split, setSplit, s
           </span>
         </button>
       )}
-      {!transform && (
-        <input
-          type="range"
-          className="studio-inline-split"
-          aria-label={boundary}
-          min={0}
-          max={100}
-          value={split}
-          onChange={(e) => setSplit(Number(e.target.value))}
-        />
-      )}
       <small>{l('条目参考图', '参照画像', 'Reference')}</small>
       <small>{l('生成结果', '生成結果', 'Result')}</small>
     </div>
@@ -110,18 +89,18 @@ interface ViewerProps {
   locale: string;
   references?: StyleGalleryImageRef[];
   initialHash?: string;
+  onClose?: () => void;
 }
 
 /** Both inspection modes use the same bounded wheel, pinch and drag gestures. */
-export function GenerationViewer({ src, alt, locale, references, initialHash }: ViewerProps) {
+export function GenerationViewer({ src, alt, locale, references, initialHash, onClose }: ViewerProps) {
   const l = studioLanguage(locale);
   const [hash, selectHash] = useState(initialHash);
-  const [side, setSide] = useState(false);
+  const [mode, setMode] = useState<'result' | 'split' | 'side'>('split');
+  const side = mode === 'side';
   const [split, setSplit] = useState(50);
   const reference = references?.find((item) => item.imageHash === hash) ?? references?.[0];
-  const dialog = useRef<HTMLDialogElement>(null);
   const surface = useRef<HTMLDivElement>(null);
-  const [open, setOpen] = useState(false);
   const [{ scale, x, y }, setView] = useState({ scale: 1, x: 0, y: 0 });
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const reset = () => setView({ scale: 1, x: 0, y: 0 });
@@ -157,192 +136,161 @@ export function GenerationViewer({ src, alt, locale, references, initialHash }: 
   }, []);
   useEffect(() => {
     const area = surface.current;
-    if (!open || !area) return;
+    if (!area) return;
     const wheel = (event: WheelEvent) => {
-      if (!event.deltaY) return;
+      // Leave ordinary page scrolling available until the user engages this canvas.
+      if (!event.deltaY || (!event.ctrlKey && !area.closest('section.studio-viewer')?.contains(document.activeElement))) return;
       event.preventDefault();
       move(wheelZoom(event, area.clientHeight), 0, 0, { x: event.clientX, y: event.clientY });
     };
     area.addEventListener('wheel', wheel, { passive: false });
     return () => area.removeEventListener('wheel', wheel);
-  }, [open, move]);
+  }, [move]);
   const transform = `translate(${x}px,${y}px) scale(${scale})`;
-  const expand = reference
-    ? l('放大对比', '比較ビューを開く', 'Inspect comparison')
-    : l('放大查看', '拡大表示', 'Inspect image');
+  const title = reference ? l('对比参考', '参照画像と比較', 'Compare reference') : alt;
   return (
-    <>
-      <button
-        type="button"
-        className={reference ? 'studio-secondary studio-comparison-launch' : 'studio-image-launch'}
-        aria-label={expand}
-        onClick={() => {
-          reset();
-          selectHash(initialHash);
-          setSide(false);
-          setSplit(50);
-          dialog.current?.showModal();
-          setOpen(true);
-        }}
-      >
-        {reference ? (
-          <>
-            <RiLayoutColumnLine />
-            {expand}
-          </>
-        ) : (
-          <>
-            <img src={src} alt={alt} />
-            <span>
-              <RiFullscreenLine />
-              {expand}
-            </span>
-          </>
+    <section
+      aria-label={title}
+      className="studio-viewer"
+      onKeyDown={(e) => {
+        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+        if (['+', '=', '-', '0', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+          e.preventDefault();
+          if (e.key === '0') reset();
+          else if (e.key === '-') move(1 / zoomStep);
+          else if (e.key === '+' || e.key === '=') move(zoomStep);
+          else
+            move(
+              1,
+              e.key === 'ArrowLeft' ? 32 : e.key === 'ArrowRight' ? -32 : 0,
+              e.key === 'ArrowUp' ? 32 : e.key === 'ArrowDown' ? -32 : 0,
+            );
+        }
+      }}
+    >
+      <div className="studio-viewer-bar">
+        <strong>{title}</strong>
+        <button type="button" aria-label={l('缩小', '縮小', 'Zoom out')} onClick={() => move(1 / zoomStep)}>
+          <RiSubtractLine />
+        </button>
+        <output>{Math.round(scale * 100)}%</output>
+        <button type="button" aria-label={l('放大', '拡大', 'Zoom in')} onClick={() => move(zoomStep)}>
+          <RiAddLine />
+        </button>
+        <button type="button" aria-label={l('适应画布', '全体表示', 'Fit image')} onClick={reset}>
+          <RiFocus3Line />
+        </button>
+        {onClose && (
+          <button type="button" aria-label={l('收起对比', '比較を閉じる', 'Collapse comparison')} onClick={onClose}>
+            <RiCloseLine />
+          </button>
         )}
-      </button>
-      <dialog
-        ref={dialog}
-        aria-label={expand}
-        className="studio-viewer"
-        data-comparison={Boolean(reference)}
-        onClose={() => {
-          pointers.current.clear();
-          setOpen(false);
-        }}
-        onKeyDown={(e) => {
-          if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
-          if (['+', '=', '-', '0', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
-            e.preventDefault();
-            if (e.key === '0') reset();
-            else if (e.key === '-') move(1 / zoomStep);
-            else if (e.key === '+' || e.key === '=') move(zoomStep);
-            else
-              move(
-                1,
-                e.key === 'ArrowLeft' ? 32 : e.key === 'ArrowRight' ? -32 : 0,
-                e.key === 'ArrowUp' ? 32 : e.key === 'ArrowDown' ? -32 : 0,
-              );
-          }
-        }}
-      >
-        {open && (
-          <>
-            <div className="studio-viewer-bar">
-              <strong>{reference ? l('对比参考', '参照画像と比較', 'Compare reference') : alt}</strong>
-              <button type="button" aria-label={l('缩小', '縮小', 'Zoom out')} onClick={() => move(1 / zoomStep)}>
-                <RiSubtractLine />
-              </button>
-              <output>{Math.round(scale * 100)}%</output>
-              <button type="button" aria-label={l('放大', '拡大', 'Zoom in')} onClick={() => move(zoomStep)}>
-                <RiAddLine />
-              </button>
-              <button type="button" aria-label={l('适应画布', '全体表示', 'Fit image')} onClick={reset}>
-                <RiFocus3Line />
-              </button>
-              <button type="button" aria-label={l('关闭', '閉じる', 'Close')} onClick={() => dialog.current?.close()}>
-                <RiCloseLine />
-              </button>
-            </div>
-            {reference && (
-              <div className="studio-comparison-tools">
-                <label>
-                  {l('选择参考图', '参照画像', 'Reference image')}
-                  <select
-                    value={reference.imageHash}
-                    onChange={(e) => {
-                      selectHash(e.target.value);
-                      reset();
-                    }}
-                  >
-                    {references?.map((ref, i) => (
-                      <option key={ref.imageHash} value={ref.imageHash}>
-                        {i + 1} · {ref.sourceImageAlt || l('条目参考图', '参照画像', 'Entry reference')}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <div className="studio-compare-modes">
-                  {[false, true].map((value) => (
-                    <button
-                      key={String(value)}
-                      type="button"
-                      aria-pressed={side === value}
-                      onClick={() => {
-                        setSide(value);
-                        reset();
-                      }}
-                    >
-                      {value ? l('并排', '並列', 'Side by side') : l('滑杆', 'スライダー', 'Slider')}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            <div
-              role="application"
-              aria-label={l('图像缩放与平移', '画像の拡大と移動', 'Image zoom and pan')}
-              className="studio-inspect-surface"
-              ref={surface}
-              onDoubleClick={() => {
-                if (scale === 1) move(2);
-                else reset();
+      </div>
+      {reference && (
+        <div className="studio-comparison-tools">
+          <label>
+            {l('选择参考图', '参照画像', 'Reference image')}
+            <select
+              value={reference.imageHash}
+              onChange={(e) => {
+                selectHash(e.target.value);
+                reset();
               }}
-              onPointerDown={(e) => {
-                pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-                e.currentTarget.setPointerCapture(e.pointerId);
-              }}
-              onPointerMove={(e) => {
-                const from = pointers.current.get(e.pointerId);
-                if (!from) return;
-                const next = { x: e.clientX, y: e.clientY };
-                pointers.current.set(e.pointerId, next);
-                const mate = [...pointers.current.entries()].find(([id]) => id !== e.pointerId)?.[1];
-                if (!mate) {
-                  move(1, next.x - from.x, next.y - from.y);
-                  return;
-                }
-                const previous = Math.hypot(from.x - mate.x, from.y - mate.y);
-                const distance = Math.hypot(next.x - mate.x, next.y - mate.y);
-                // Nearly coincident fingertips give unstable ratios when they cross.
-                if (Math.min(previous, distance) >= 8)
-                  move((distance / previous) ** pinchResponse, (next.x - from.x) / 2, (next.y - from.y) / 2, {
-                    x: (from.x + mate.x) / 2,
-                    y: (from.y + mate.y) / 2,
-                  });
-              }}
-              onLostPointerCapture={(e) => pointers.current.delete(e.pointerId)}
             >
-              {reference ? (
-                <ComparisonImages
-                  result={src}
-                  reference={reference.sourceImage}
-                  locale={locale}
-                  transform={transform}
-                  split={split}
-                  setSplit={setSplit}
-                  side={side}
-                />
-              ) : (
-                <img src={src} draggable={false} alt={alt} style={{ transform }} />
-              )}
-            </div>
-            {reference && !side && (
-              <label className="studio-split-scale">
-                {l('参考占比', '参照の割合', 'Reference share')}
-                <input type="range" min="0" max="100" value={split} onChange={(e) => setSplit(Number(e.target.value))} />
-                <span>{split}%</span>
-              </label>
-            )}
-            <p>
-              {l(
-                '滚轮或双指缩放 · 拖动平移 · 双击切换缩放',
-                'ホイールで拡大・ドラッグで移動・ダブルクリックで切替',
-                'Scroll or pinch to zoom · Drag to pan · Double-click to toggle zoom',
-              )}
-            </p>
-          </>
+              {references?.map((ref, i) => (
+                <option key={ref.imageHash} value={ref.imageHash}>
+                  {i + 1} · {ref.sourceImageAlt || l('条目参考图', '参照画像', 'Entry reference')}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="studio-compare-modes">
+            {(['split', 'side', 'result'] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={mode === value}
+                onClick={() => {
+                  setMode(value);
+                  reset();
+                }}
+              >
+                {value === 'side'
+                  ? l('并排', '並列', 'Side by side')
+                  : value === 'split'
+                    ? l('滑杆', 'スライダー', 'Slider')
+                    : l('仅结果', '結果のみ', 'Result only')}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      <div
+        role="application"
+        aria-label={l('图像缩放与平移', '画像の拡大と移動', 'Image zoom and pan')}
+        className="studio-inspect-surface"
+        ref={surface}
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: This gesture surface accepts keyboard zoom and pan.
+        tabIndex={0}
+        data-zoomed={scale > 1}
+        onDoubleClick={() => {
+          if (scale === 1) move(2);
+          else reset();
+        }}
+        onPointerDown={(e) => {
+          e.currentTarget.focus({ preventScroll: true });
+          pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+          e.currentTarget.setPointerCapture(e.pointerId);
+        }}
+        onPointerMove={(e) => {
+          const from = pointers.current.get(e.pointerId);
+          if (!from) return;
+          const next = { x: e.clientX, y: e.clientY };
+          pointers.current.set(e.pointerId, next);
+          const mate = [...pointers.current.entries()].find(([id]) => id !== e.pointerId)?.[1];
+          if (!mate) {
+            move(1, next.x - from.x, next.y - from.y);
+            return;
+          }
+          const previous = Math.hypot(from.x - mate.x, from.y - mate.y);
+          const distance = Math.hypot(next.x - mate.x, next.y - mate.y);
+          // Nearly coincident fingertips give unstable ratios when they cross.
+          if (Math.min(previous, distance) >= 8)
+            move((distance / previous) ** pinchResponse, (next.x - from.x) / 2, (next.y - from.y) / 2, {
+              x: (from.x + mate.x) / 2,
+              y: (from.y + mate.y) / 2,
+            });
+        }}
+        onLostPointerCapture={(e) => pointers.current.delete(e.pointerId)}
+      >
+        {reference && mode !== 'result' ? (
+          <ComparisonImages
+            result={src}
+            reference={reference.sourceImage}
+            locale={locale}
+            transform={transform}
+            split={split}
+            setSplit={setSplit}
+            side={side}
+          />
+        ) : (
+          <img src={src} draggable={false} alt={alt} style={{ transform }} />
         )}
-      </dialog>
-    </>
+      </div>
+      {reference && mode === 'split' && (
+        <label className="studio-split-scale">
+          {l('参考占比', '参照の割合', 'Reference share')}
+          <input type="range" min="0" max="100" value={split} onChange={(e) => setSplit(Number(e.target.value))} />
+          <span>{split}%</span>
+        </label>
+      )}
+      <p>
+        {l(
+          '点击画布后滚轮缩放 · 双指缩放 · 放大后拖动平移',
+          '画像を選択してホイールまたはピンチで拡大・ドラッグで移動',
+          'Click the image to zoom with the wheel · Pinch to zoom · Drag to pan',
+        )}
+      </p>
+    </section>
   );
 }
