@@ -121,6 +121,7 @@ setStyleGalleryPublicCacheHeaders(Astro.response.headers, [getStyleGalleryItemCa
         promptCount={data.prompts.length}
         promptRevision={data.promptRevision}
         initialExamples={data.examples}
+        generationReferences={referenceImages}
         uploadsEnabled={Boolean(process.env.STYLE_GALLERY_UPLOAD_TOKEN)}
         likeLabels={{
           like: t(locale, 'gallery.like'),

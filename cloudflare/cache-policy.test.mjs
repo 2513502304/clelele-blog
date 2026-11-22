@@ -5,7 +5,12 @@ import { canUsePublicCache, forBrowser, forEdgeCache, parseInvalidation } from '
 test('shared caching excludes sessions, credentials, ranges and mutations', () => {
   const url = 'https://blog.example/api/style-gallery/catalog';
   assert.equal(canUsePublicCache(new Request(url)), true);
-  for (const headers of [{ cookie: 'session=private' }, { authorization: 'Bearer secret' }, { range: 'bytes=0-1' }]) {
+  for (const headers of [
+    { cookie: 'session=private' },
+    { authorization: 'Bearer secret' },
+    { 'x-api-key': 'private-studio-key' },
+    { range: 'bytes=0-1' },
+  ]) {
     assert.equal(canUsePublicCache(new Request(url, { headers })), false);
   }
   assert.equal(canUsePublicCache(new Request(url, { method: 'POST' })), false);

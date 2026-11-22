@@ -3,6 +3,7 @@ export function canUsePublicCache(request) {
   return (
     ['GET', 'HEAD'].includes(request.method) &&
     !request.headers.has('authorization') &&
+    !request.headers.has('x-api-key') &&
     !request.headers.has('cookie') &&
     !request.headers.has('range')
   );

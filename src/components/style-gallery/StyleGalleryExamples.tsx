@@ -2,6 +2,7 @@ import { StyleGalleryExampleNote } from '@components/style-gallery/StyleGalleryE
 import { useGalleryMarquee } from '@hooks/useGalleryMarquee';
 import { Icon } from '@iconify/react';
 import { downloadStyleGalleryImages } from '@lib/style-gallery-batch-download';
+import { generationCaption } from '@lib/style-gallery-generation-settings';
 import { getReusableStyleGalleryImageUrl } from '@lib/style-gallery-image-client';
 import { getStyleGalleryImagePreviewSource } from '@lib/style-gallery-image-key';
 import {
@@ -35,9 +36,17 @@ import type { StyleGalleryVisualFeature } from '@lib/style-gallery-visual-types'
 import { openModal } from '@store/modal';
 import { NuqsAdapter } from 'nuqs/adapters/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { StyleGalleryExample, StyleGalleryExampleView, StyleGalleryImageDimensions } from '@/types/style-gallery';
+import type {
+  StyleGalleryExample,
+  StyleGalleryExampleView,
+  StyleGalleryImageDimensions,
+  StyleGalleryImageRef,
+} from '@/types/style-gallery';
 import GallerySelectionDock from './GallerySelectionDock';
 import GalleryZoomButton from './GalleryZoomButton';
+import { GenerationDetails } from './StyleGalleryGenerationFields';
+import { GenerationViewer } from './StyleGalleryGenerationViewer';
+import StyleGalleryGenerator from './StyleGalleryGenerator';
 import StyleGalleryGrid, { StyleGalleryLayoutToggle, useStyleGalleryLayout } from './StyleGalleryGrid';
 import {
   createStyleGalleryLightboxLikeAction,
@@ -55,6 +64,7 @@ interface StyleGalleryExamplesProps {
   promptCount: number;
   promptRevision: string;
   initialExamples: StyleGalleryExampleView[];
+  generationReferences: StyleGalleryImageRef[];
   uploadsEnabled: boolean;
   likeLabels: StyleGalleryLikeLabels;
   lightboxActionLabels: StyleGalleryLightboxActionLabels;
@@ -110,6 +120,7 @@ function StyleGalleryExamplesContent({
   promptCount,
   promptRevision,
   initialExamples,
+  generationReferences,
   uploadsEnabled,
   likeLabels,
   lightboxActionLabels,
@@ -137,6 +148,20 @@ function StyleGalleryExamplesContent({
   const masonry = layout === 'masonry';
   const [examples, setExamples] = useState<StyleGalleryExample[]>(initialExamples);
   const likes = useStyleGalleryLikes(Object.fromEntries(initialExamples.map((example) => [example.id, example.likeCount])));
+  const [comparedId, setComparedId] = useState<string>();
+  const compared = examples.find((example) => example.id === comparedId);
+  const comparisonPanel = useRef<HTMLDivElement>(null);
+  const comparisonTrigger = useRef<HTMLButtonElement>(null);
+  const closeComparison = () => {
+    setComparedId(undefined);
+    requestAnimationFrame(() => comparisonTrigger.current?.focus());
+  };
+  // The expanded comparison belongs to the platform group, including in masonry layout.
+  useEffect(() => {
+    if (!comparedId || !comparisonPanel.current) return;
+    comparisonPanel.current.focus({ preventScroll: true });
+    comparisonPanel.current.scrollIntoView({ block: 'start' });
+  }, [comparedId]);
   const [platform, setPlatform] = useState<string>(STYLE_GALLERY_PLATFORMS[0].slug);
   const [note, setNote] = useState('');
   const [token, setToken] = useState('');
@@ -216,7 +241,7 @@ function StyleGalleryExamplesContent({
       id: candidate.id,
       gallerySourceSlug: slug,
       generationPrompt: candidate.note,
-      generationPlatform: candidate.model,
+      generationPlatform: candidate.generation ? generationCaption(candidate.generation) : candidate.model,
       generationPromptInitiallyExpanded: revealPrompt && candidate.id === example.id,
       src: candidate.src,
       dimensions: candidate.dimensions,
@@ -704,6 +729,16 @@ function StyleGalleryExamplesContent({
   );
   return (
     <section ref={marquee.rootRef} className="gallery-examples-sheet rounded-xl p-5">
+      <div className="mb-5">
+        <StyleGalleryGenerator
+          slug={slug}
+          prompt={prompt}
+          locale={locale}
+          accessEnabled={uploadsEnabled}
+          refs={generationReferences}
+          onSaved={setExamples}
+        />
+      </div>
       {marquee.overlay}
       <div className="mb-4 flex items-center justify-between gap-3 py-2">
         <div>
@@ -874,6 +909,19 @@ function StyleGalleryExamplesContent({
                   </span>
                 </div>
               </div>
+              {compared && platformExamples.includes(compared) && !selectionMode && (
+                <div className="studio-group-comparison" ref={comparisonPanel} tabIndex={-1}>
+                  <GenerationViewer
+                    key={compared.id}
+                    src={compared.src}
+                    alt={compared.alt ?? compared.model ?? ''}
+                    locale={locale}
+                    references={generationReferences}
+                    initialHash={compared.generation?.platform === 'gpt-image' ? compared.generation.referenceHash : undefined}
+                    onClose={closeComparison}
+                  />
+                </div>
+              )}
               <StyleGalleryGrid masonry={masonry}>
                 {platformExamples.map((example) => {
                   return (
@@ -940,8 +988,26 @@ function StyleGalleryExamplesContent({
                           className="absolute right-2 bottom-1.5 z-10"
                         />
                       </div>
+                      {generationReferences.length > 0 && !selectionMode && (
+                        <div className="studio-example-compare">
+                          <button
+                            type="button"
+                            className="studio-secondary studio-comparison-launch"
+                            aria-expanded={comparedId === example.id}
+                            onClick={(e) => {
+                              comparisonTrigger.current = e.currentTarget;
+                              if (comparedId === example.id) closeComparison();
+                              else setComparedId(example.id);
+                            }}
+                          >
+                            <Icon icon="ri:layout-column-line" />
+                            {zh ? '对比参考图' : ja ? '参照画像と比較' : 'Compare reference'}
+                          </button>
+                        </div>
+                      )}
                       {example.note && (
                         <figcaption className="border-border/60 border-t bg-background/80 p-3">
+                          {example.generation && <GenerationDetails settings={example.generation} locale={locale} />}
                           <StyleGalleryExampleNote
                             note={example.note}
                             locale={locale}
@@ -959,7 +1025,11 @@ function StyleGalleryExamplesContent({
         </div>
       ) : (
         <div className="rounded-lg border border-border border-dashed bg-muted/60 p-6 text-muted-foreground text-sm">
-          Generated examples created from this prompt will appear here after they are added manually.
+          {zh
+            ? '确认保存或上传的子图会显示在这里。'
+            : ja
+              ? '保存またはアップロードした画像がここに表示されます。'
+              : 'Images you save or upload appear here.'}
         </div>
       )}
     </section>

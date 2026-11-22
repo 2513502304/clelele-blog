@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { StoredStyleGalleryItem, StyleGalleryCatalogItem, StyleGalleryPromptSearchIndex } from '@/types/style-gallery';
+import { generationSettings } from './style-gallery-generation-settings';
 import { STYLE_GALLERY_PLATFORMS, type StyleGalleryPlatformLabel } from './style-gallery-platforms';
 import {
   getPrimaryStyleGalleryPrompt,
@@ -49,6 +50,7 @@ export const styleGalleryExampleSchema = z.object({
   alt: z.string().min(1),
   model: styleGalleryPlatformLabelSchema,
   note: z.string().optional(),
+  generation: generationSettings.optional(),
   uploadedAt: z.string().datetime({ offset: true }),
   imageHash: imageHashSchema,
 });
@@ -143,7 +145,7 @@ export const styleGalleryExampleIndexSchema = z.object({
       sourceSlug: z.string().regex(/^[a-z0-9-]+$/i),
       examples: z.array(
         styleGalleryExampleSchema
-          .pick({ id: true, src: true, model: true, note: true, uploadedAt: true, dimensions: true })
+          .pick({ id: true, src: true, model: true, note: true, generation: true, uploadedAt: true, dimensions: true })
           .extend({ likedBy: z.array(z.number().int().positive()).max(100_000) }),
       ),
     }),
