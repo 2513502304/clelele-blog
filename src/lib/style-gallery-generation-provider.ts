@@ -116,9 +116,9 @@ async function downloadMedia(apiKey: string, mediaId: string | undefined, initia
   let url = initialUrl;
   if (mediaId) {
     const media = await pixai(apiKey, `/v1/media/${providerId(mediaId)}`);
-    // Only full-resolution variants are valid originals. Older media may explicitly call this ORIGINAL.
+    // Only PUBLIC identifies the full-size file in the PixAI media endpoint.
     const variants = media.urls as { variant: string; url: string }[] | undefined;
-    url = (variants?.find((v) => v.variant === 'PUBLIC') ?? variants?.find((v) => v.variant === 'ORIGINAL'))?.url ?? initialUrl;
+    url = variants?.find((v) => v.variant === 'PUBLIC')?.url;
   }
   if (!url) throw new Error('Missing media URL.');
   const source = new URL(url);

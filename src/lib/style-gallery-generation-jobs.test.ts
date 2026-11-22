@@ -161,6 +161,7 @@ it('rejects invalid platform/model combinations before submission', () => {
 it('resumes a private PixAI task and downloads the original without sharing the API key with the CDN', async (t) => {
   const paths: string[] = [];
   let available = false;
+  let originalVariant = 'PUBLIC';
   t.mock.method(globalThis, 'fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(input instanceof Request ? input.url : input);
     paths.push(url.pathname);
@@ -179,7 +180,7 @@ it('resumes a private PixAI task and downloads the original without sharing the 
         return Response.json({
           urls: [
             { variant: 'THUMBNAIL', url: 'https://pixai.art/thumb' },
-            { variant: 'PUBLIC', url: 'https://d2doj8oszwtcqy.cloudfront.net/original' },
+            { variant: originalVariant, url: 'https://d2doj8oszwtcqy.cloudfront.net/original' },
           ],
         });
     }
@@ -199,6 +200,9 @@ it('resumes a private PixAI task and downloads the original without sharing the 
   assert.equal(await readPixAIResult(result.taskId, 'fixture-only', keep), null);
   available = true;
   assert.equal(await readPixAIResult(result.taskId, 'fixture-only', keep), 1);
+  originalVariant = 'ORIGINAL';
+  await assert.rejects(readPixAIResult(result.taskId, 'fixture-only', keep), /Missing media URL/);
+  assert.equal(paths.filter((path) => path === '/original').length, 1);
   assert.deepEqual(originals, ['original']);
   assert.equal(paths.filter((path) => path === '/v2/image/create').length, 1);
 });
