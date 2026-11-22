@@ -184,3 +184,26 @@ test('detail masonry reserves each aspect ratio and grid toggle preserves select
   await toggle.click();
   await expect(grid).toHaveAttribute('data-gallery-layout', 'masonry');
 });
+
+test('reference viewer follows wheel travel across fine and coarse input', async ({ page }) => {
+  await imagesOnlyFixture(page);
+  await page.goto('/image-style-prompt-gallery/2026-09-23-35dc5191ccad', { waitUntil: 'domcontentloaded' });
+  const studio = page.locator('.gallery-generator');
+  await expect(studio.locator('xpath=ancestor::astro-island')).not.toHaveAttribute('ssr');
+  await studio.getByRole('button', { name: '用此提示词生图' }).click();
+  await studio.getByRole('button', { name: '生成记录' }).click();
+  await studio.getByRole('button', { name: '放大查看' }).click();
+  const dialog = studio.getByRole('dialog');
+  const surface = dialog.locator('.studio-inspect-surface');
+  await expect.poll(() => surface.locator('img').evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+  await surface.hover();
+  await page.mouse.wheel(0, -100);
+  await expect(dialog.locator('output')).toHaveText('108%');
+  // Twenty precision-trackpad deltas must exactly undo one 100px notch.
+  await surface.evaluate((el) => {
+    for (let i = 0; i < 20; i++) el.dispatchEvent(new WheelEvent('wheel', { deltaY: 5, cancelable: true }));
+  });
+  await expect(dialog.locator('output')).toHaveText('100%');
+  await surface.dispatchEvent('wheel', { deltaMode: 2, deltaY: -3 });
+  await expect(dialog.locator('output')).toHaveText('112%');
+});

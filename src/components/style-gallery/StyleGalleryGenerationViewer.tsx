@@ -2,6 +2,18 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { RiAddLine, RiCloseLine, RiFocus3Line, RiFullscreenLine, RiSubtractLine } from 'react-icons/ri';
 import { studioLanguage } from './StyleGalleryGenerationFields';
 
+const zoomStep = 1.12;
+const pinchResponse = 0.6;
+
+/** Use travel distance so a trackpad can split one gesture into many small wheel events. */
+function wheelZoom(event: WheelEvent, height: number) {
+  const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? height : 1;
+  // Browsers represent trackpad pinches as Ctrl+wheel with much smaller deltas than a scroll wheel.
+  const gain = event.ctrlKey ? pinchResponse / 100 : Math.log(1.08) / 100;
+  const exponent = Math.max(-Math.log(zoomStep), Math.min(Math.log(zoomStep), -event.deltaY * unit * gain));
+  return Math.exp(exponent);
+}
+
 /** Inspect the original in a native dialog. The scroll wheel is captured only inside the open viewer. */
 export function GenerationViewer({ src, alt, locale }: { src: string; alt: string; locale: string }) {
   const l = studioLanguage(locale);
@@ -31,15 +43,15 @@ export function GenerationViewer({ src, alt, locale }: { src: string; alt: strin
     });
   }, []);
   useEffect(() => {
-    if (!open) return;
     const area = surface.current;
+    if (!open || !area) return;
     const wheel = (event: WheelEvent) => {
       if (!event.deltaY) return;
       event.preventDefault();
-      move(event.deltaY < 0 ? 1.25 : 0.8, 0, 0, { x: event.clientX, y: event.clientY });
+      move(wheelZoom(event, area.clientHeight), 0, 0, { x: event.clientX, y: event.clientY });
     };
-    area?.addEventListener('wheel', wheel, { passive: false });
-    return () => area?.removeEventListener('wheel', wheel);
+    area.addEventListener('wheel', wheel, { passive: false });
+    return () => area.removeEventListener('wheel', wheel);
   }, [open, move]);
   const expand = l('放大查看', '拡大表示', 'Inspect image');
   return (
@@ -72,8 +84,8 @@ export function GenerationViewer({ src, alt, locale }: { src: string; alt: strin
           if (['+', '=', '-', '0', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
             e.preventDefault();
             if (e.key === '0') reset();
-            else if (e.key === '-') move(0.8);
-            else if (e.key === '+' || e.key === '=') move(1.25);
+            else if (e.key === '-') move(1 / zoomStep);
+            else if (e.key === '+' || e.key === '=') move(zoomStep);
             else
               move(
                 1,
@@ -87,11 +99,11 @@ export function GenerationViewer({ src, alt, locale }: { src: string; alt: strin
           <>
             <div className="studio-viewer-bar">
               <strong>{alt}</strong>
-              <button type="button" aria-label={l('缩小', '縮小', 'Zoom out')} onClick={() => move(0.8)}>
+              <button type="button" aria-label={l('缩小', '縮小', 'Zoom out')} onClick={() => move(1 / zoomStep)}>
                 <RiSubtractLine />
               </button>
               <output>{Math.round(scale * 100)}%</output>
-              <button type="button" aria-label={l('放大', '拡大', 'Zoom in')} onClick={() => move(1.25)}>
+              <button type="button" aria-label={l('放大', '拡大', 'Zoom in')} onClick={() => move(zoomStep)}>
                 <RiAddLine />
               </button>
               <button type="button" aria-label={l('适应画布', '全体表示', 'Fit image')} onClick={reset}>
@@ -125,8 +137,10 @@ export function GenerationViewer({ src, alt, locale }: { src: string; alt: strin
                   return;
                 }
                 const previous = Math.hypot(from.x - mate.x, from.y - mate.y);
-                if (previous > 0)
-                  move(Math.hypot(next.x - mate.x, next.y - mate.y) / previous, (next.x - from.x) / 2, (next.y - from.y) / 2, {
+                const distance = Math.hypot(next.x - mate.x, next.y - mate.y);
+                // Nearly coincident fingertips give unstable ratios when they cross.
+                if (Math.min(previous, distance) >= 8)
+                  move((distance / previous) ** pinchResponse, (next.x - from.x) / 2, (next.y - from.y) / 2, {
                     x: (from.x + mate.x) / 2,
                     y: (from.y + mate.y) / 2,
                   });
