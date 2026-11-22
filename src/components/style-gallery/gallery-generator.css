@@ -235,6 +235,8 @@
   font-weight: 750;
 }
 .studio-history {
+  overflow: hidden;
+  text-overflow: ellipsis;
   width: auto;
   max-width: 100%;
   font-size: 0.78rem;
