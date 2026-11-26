@@ -4,11 +4,15 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { pathToFileURL } from 'node:url';
+import sharp from 'sharp';
+import { imageMigrationDecision, resolveOriginalImages } from '../import-style-prompts.mjs';
 import { readAntigravityItems, resolveAntigravityTranscript } from './antigravity-session.mjs';
 
 const title = '[prompt] 插画';
 const subject = '[在此处替换为您想要生成的主体内容]';
-const jpeg = Buffer.from([255, 216, 255, 0, 1]);
+const jpeg = await sharp({ create: { width: 8, height: 6, channels: 3, background: '#663322' } })
+  .jpeg()
+  .toBuffer();
 const pcm = { source: 'MODEL', type: 'PLANNER_RESPONSE', status: 'DONE', model: 'gemini-4-hydrogen-high' };
 const reply = { ...pcm, content: subject, thinking: 'private reasoning' };
 
@@ -92,4 +96,19 @@ test('rejects unresolved turns, other sessions, escaping symlinks and media type
   }
   await f.write([{ ...f.input, media: [{ ...f.media, mime_type: 'image/png' }] }, reply]);
   await assert.rejects(readAntigravityItems(f.transcript), /mismatched/);
+});
+
+test('verified upload bytes carry geometry into explicit image migration', async (t) => {
+  const f = await fixture(t);
+  await f.write([f.input, reply]);
+  const {
+    items: [item],
+  } = await resolveOriginalImages(await readAntigravityItems(f.transcript));
+  assert.equal(item.originalsVerified, 1);
+  assert.deepEqual(item.originalDimensions, [{ width: 8, height: 6 }]);
+  const match = { item: { slug: 'existing', imageHash: 'a'.repeat(64), images: [{ dimensions: { width: 8, height: 6 } }] } };
+  assert.equal(imageMigrationDecision(item, match, true), 'replace');
+  assert.equal(imageMigrationDecision(item, match, false), 'preserved');
+  match.item.images[0].dimensions.width = 16;
+  assert.equal(imageMigrationDecision(item, match, true), 'larger');
 });

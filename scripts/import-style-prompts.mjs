@@ -606,10 +606,12 @@ async function resolveOriginalImages(items, warn = console.warn) {
   const resolved = [];
   for (const item of items) {
     const images = [...item.images];
-    let originalsVerified = 0;
+    // Antigravity reads original attachments directly. Keep the dimensions checked against
+    // those exact bytes, so an explicit migration never reopens a mutable local path.
+    const originalDimensions = [...(item.verifiedUploadDimensions ?? [])];
+    let originalsVerified = originalDimensions.length;
     // Extraction-only accounting: group/duplicate records need image-occurrence counts, not card counts.
     let restoredImageCount = 0;
-    const originalDimensions = [];
     for (const [index, originalPath] of (item.localImagePaths ?? []).entries()) {
       try {
         const stat = await fs.stat(originalPath);

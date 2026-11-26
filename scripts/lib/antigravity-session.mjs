@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
+import sharp from 'sharp';
 import { sanitizeImportedOriginalPrompt, sanitizeImportedPrompt } from '../../src/lib/style-gallery-prompt-sanitize.ts';
 
 const transcriptPath = '.system_generated/logs/transcript.jsonl';
@@ -34,15 +35,13 @@ async function readAttachment(media, uploadRoot) {
   const stat = await fs.stat(file);
   if (!stat.isFile() || !stat.size || stat.size > 50 * 1024 * 1024) throw new Error('Unsupported Antigravity attachment size.');
   const bytes = await fs.readFile(file);
-  const mime = bytes.subarray(0, 3).equals(Buffer.from([255, 216, 255]))
-    ? 'image/jpeg'
-    : bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
-      ? 'image/png'
-      : bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP'
-        ? 'image/webp'
-        : null;
+  const metadata = await sharp(bytes).metadata();
+  const mime = { jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' }[metadata.format];
   if (!mime || media.mime_type !== mime) throw new Error('Unsupported or mismatched Antigravity image type.');
-  return `data:${mime};base64,${bytes.toString('base64')}`;
+  return {
+    data: `data:${mime};base64,${bytes.toString('base64')}`,
+    dimensions: { width: metadata.autoOrient?.width ?? metadata.width, height: metadata.autoOrient?.height ?? metadata.height },
+  };
 }
 
 /** Pair only a completed visible model reply with the current explicit user turn's structured upload list. */
@@ -84,16 +83,17 @@ export async function readAntigravityItems(transcript) {
         record.content.includes(subject)
       ) {
         const { media, ...turn } = pending;
-        const images = await Promise.all(media.map((entry) => readAttachment(entry, uploadRoot)));
+        const uploads = await Promise.all(media.map((entry) => readAttachment(entry, uploadRoot)));
         items.push({
           ...turn,
-          images,
+          images: uploads.map((upload) => upload.data),
+          verifiedUploadDimensions: uploads.map((upload) => upload.dimensions),
           prompt: sanitizeImportedPrompt(record.content),
           model: record.model,
           promptLine: line,
           sourceSession: `antigravity-${path.basename(sessionDir)}`,
         });
-        paired += images.length;
+        paired += uploads.length;
         pending = null;
       }
     }
