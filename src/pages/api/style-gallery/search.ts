@@ -6,15 +6,17 @@ import {
   getStyleGalleryCatalog,
   getStyleGalleryExampleIndex,
   getStyleGalleryPromptSearchIndex,
+  getStyleGallerySearchCacheState,
 } from '@lib/style-gallery-store';
+import { waitUntil } from '@vercel/functions';
 import type { APIRoute } from 'astro';
 
 export const prerender = false;
 
 async function readSnapshot() {
   const [catalog, examples, index] = await Promise.all([
-    getStyleGalleryCatalog(),
-    getStyleGalleryExampleIndex(),
+    getStyleGalleryCatalog({ revalidate: true }),
+    getStyleGalleryExampleIndex({ revalidate: true }),
     getStyleGalleryPromptSearchIndex(),
   ]);
   const revision = [catalog.updatedAt, examples.updatedAt, index.updatedAt].join('/');
@@ -31,7 +33,22 @@ type Snapshot = {
 let snapshot: Snapshot | undefined;
 let loading: Promise<Snapshot> | undefined;
 
-/** Concurrent queries share slow storage reads, then search a bounded, revision-scoped offset cache. */
+// Keep uncommon queries responsive between storage checks, without feeding expired snapshots back into the CDN.
+const maxStaleMs = 5 * 60_000;
+let retryAfter = 0;
+function refresh() {
+  loading ??= readSnapshot()
+    .then((value) => {
+      snapshot = value;
+      return value;
+    })
+    .finally(() => {
+      retryAfter = Date.now() + 5_000;
+      loading = undefined;
+    });
+  return loading;
+}
+
 export const GET: APIRoute = async ({ url }) => {
   const params = url.searchParams;
   const q = (params.get('q') ?? '').trim().toLowerCase();
@@ -40,15 +57,17 @@ export const GET: APIRoute = async ({ url }) => {
   if (!q || !Number.isSafeInteger(offset) || offset < 0 || !STYLE_GALLERY_SORT_KEYS.includes(sort))
     return new Response(null, { status: 400 });
   try {
-    loading ??= readSnapshot()
-      .then((value) => {
-        snapshot = value;
-        return value;
-      })
-      .finally(() => {
-        loading = undefined;
-      });
-    const data = await loading;
+    const cached = getStyleGallerySearchCacheState();
+    const now = Date.now();
+    const usable = snapshot && cached?.revision === snapshot.revision && now - cached.expiresAt < maxStaleMs;
+    let data = usable && snapshot ? snapshot : await refresh();
+    // A write can finish while a slower part of the previous three-object read is in flight.
+    const observed = getStyleGallerySearchCacheState();
+    if (!usable && observed && observed.revision !== data.revision) data = await refresh();
+    if (usable && cached && cached.expiresAt <= now && now >= retryAfter) {
+      // Extend a serverless invocation until the shared storage check settles; Node containers keep it running directly.
+      waitUntil(refresh().catch(() => {}));
+    }
     const matches = data.search(q, params.get('from') ?? '', params.get('to') ?? '', sort, params.get('dir') === 'desc');
     const all = params.get('all') === '1';
     const start = !all && params.get('revision') === data.revision ? Math.min(offset, matches.length) : 0;
@@ -57,7 +76,10 @@ export const GET: APIRoute = async ({ url }) => {
       return { ...item, likeCount: data.gallery.parentLikeCounts[item.slug] ?? 0 };
     });
     const headers = new Headers();
-    setStyleGalleryPublicCacheHeaders(headers, [STYLE_GALLERY_LIST_CACHE_TAG]);
+    const latest = getStyleGallerySearchCacheState();
+    if (latest?.revision === data.revision && latest.expiresAt > Date.now())
+      setStyleGalleryPublicCacheHeaders(headers, [STYLE_GALLERY_LIST_CACHE_TAG]);
+    else headers.set('Cache-Control', 'private, no-store');
     return Response.json({ start, items, total: matches.length, revision: data.revision }, { headers });
   } catch {
     return new Response('Gallery search unavailable', { status: 503 });
