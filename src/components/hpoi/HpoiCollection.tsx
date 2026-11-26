@@ -1,8 +1,9 @@
-import { useHpoiCollection } from '@hooks/useHpoiCollection';
+import { useHpoiCollection, useHpoiMembership } from '@hooks/useHpoiCollection';
 import { useHpoiRatings } from '@hooks/useHpoiRatings';
 import { useTranslation } from '@hooks/useTranslation';
 import { Icon } from '@iconify/react';
 import { createHpoiImageProxyUrl } from '@lib/hpoi/image';
+import { stateColor } from '@lib/hpoi/releases';
 import { sortHpoiCollectionItems } from '@lib/hpoi/sort';
 import { cn } from '@lib/utils';
 import { useMemo, useState } from 'react';
@@ -13,6 +14,7 @@ import { HPOI_COLLECTION_STATES } from '@/types/hpoi';
 import { CollectionLoadMore } from '../collection/CollectionLoadMore';
 import StyleGalleryGrid, { StyleGalleryLayoutToggle } from '../style-gallery/StyleGalleryGrid';
 import { HpoiCard } from './HpoiCard';
+import { HpoiReleaseCalendar } from './HpoiReleaseCalendar';
 
 const STATE_LABELS: Record<HpoiCollectionState, TranslationKey> = {
   all: 'hpoi.all',
@@ -49,6 +51,9 @@ export function HpoiCollection() {
 
   const [masonry, setMasonry] = useState(true);
   const collection = useHpoiCollection(activeState);
+  const membership = useHpoiMembership();
+  const [calendar, setCalendar] = useState(false);
+  const [cardState, setCardState] = useState<HpoiCollectionState>('all');
   const [visibleCount, setVisibleCount] = useState(24);
   const detailItems = useMemo(
     () => [
@@ -61,7 +66,7 @@ export function HpoiCollection() {
     ],
     [collection.items, sortKey, sortDirection, visibleCount],
   );
-  const ratings = useHpoiRatings(detailItems);
+  const ratings = useHpoiRatings(calendar ? [] : detailItems);
   const data = collection.meta?.profile ? { ...collection.meta, profile: collection.meta.profile } : null;
   const error = collection.error;
   const waitingForComplete =
@@ -190,6 +195,13 @@ export function HpoiCollection() {
                 activeState === state ? 'text-primary' : 'text-muted-foreground hover:text-foreground',
               )}
             >
+              {state !== 'all' && (
+                <span
+                  aria-hidden="true"
+                  className="size-2 shrink-0 rounded-full"
+                  style={{ backgroundColor: stateColor[state] }}
+                />
+              )}
               {t(STATE_LABELS[state])}
               {state === activeState && collection.complete && (
                 <span className="text-xs tabular-nums opacity-60">{activeItems.length}</span>
@@ -201,80 +213,114 @@ export function HpoiCollection() {
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <StyleGalleryLayoutToggle masonry={masonry} onChange={() => setMasonry((value) => !value)} locale={locale} />
-        <div className="flex gap-2">
-          <label htmlFor="hpoi-sort" className="sr-only">
-            {t('hpoi.sortBy')}
-          </label>
-          <div className="relative">
-            <Icon
-              icon="ri:sort-alphabet-asc"
-              className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
-            />
-            <select
-              id="hpoi-sort"
-              value={sortKey}
-              onChange={(event) => handleSortChange(event.target.value as HpoiSortKey)}
-              className="h-9 appearance-none rounded-md border border-border bg-background pr-8 pl-8 text-sm outline-none transition-colors hover:border-primary/40 focus:border-primary"
-            >
-              {SORT_OPTIONS.map((option) => (
-                <option key={option.key} value={option.key}>
-                  {t(option.label)}
-                </option>
-              ))}
-            </select>
-            <Icon
-              icon="ri:arrow-down-s-line"
-              className="pointer-events-none absolute top-1/2 right-2 size-4 -translate-y-1/2 text-muted-foreground"
-            />
-          </div>
+        <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            title={sortDirection === 'asc' ? t('hpoi.sortAscending') : t('hpoi.sortDescending')}
-            aria-label={sortDirection === 'asc' ? t('hpoi.sortAscending') : t('hpoi.sortDescending')}
-            onClick={toggleSortDirection}
-            className="flex size-9 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+            aria-pressed={calendar}
+            className="inline-flex min-h-10 items-center gap-2 rounded-md border border-border px-3 text-sm"
+            onClick={() => {
+              if (!calendar) {
+                setCardState(activeState);
+                handleStateChange('preorder');
+              } else handleStateChange(cardState);
+              setCalendar((v) => !v);
+            }}
           >
-            <Icon icon={sortDirection === 'asc' ? 'ri:sort-asc' : 'ri:sort-desc'} className="size-4" />
+            <Icon icon="ri:calendar-line" />
+            {t(calendar ? 'hpoi.showCards' : 'hpoi.calendar')}
           </button>
+          {!calendar && (
+            <StyleGalleryLayoutToggle masonry={masonry} onChange={() => setMasonry((value) => !value)} locale={locale} />
+          )}
         </div>
+        {!calendar && (
+          <div className="flex gap-2">
+            <label htmlFor="hpoi-sort" className="sr-only">
+              {t('hpoi.sortBy')}
+            </label>
+            <div className="relative">
+              <Icon
+                icon="ri:sort-alphabet-asc"
+                className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+              />
+              <select
+                id="hpoi-sort"
+                value={sortKey}
+                onChange={(event) => handleSortChange(event.target.value as HpoiSortKey)}
+                className="h-9 appearance-none rounded-md border border-border bg-background pr-8 pl-8 text-sm outline-none transition-colors hover:border-primary/40 focus:border-primary"
+              >
+                {SORT_OPTIONS.map((option) => (
+                  <option key={option.key} value={option.key}>
+                    {t(option.label)}
+                  </option>
+                ))}
+              </select>
+              <Icon
+                icon="ri:arrow-down-s-line"
+                className="pointer-events-none absolute top-1/2 right-2 size-4 -translate-y-1/2 text-muted-foreground"
+              />
+            </div>
+            <button
+              type="button"
+              title={sortDirection === 'asc' ? t('hpoi.sortAscending') : t('hpoi.sortDescending')}
+              aria-label={sortDirection === 'asc' ? t('hpoi.sortAscending') : t('hpoi.sortDescending')}
+              onClick={toggleSortDirection}
+              className="flex size-9 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+            >
+              <Icon icon={sortDirection === 'asc' ? 'ri:sort-asc' : 'ri:sort-desc'} className="size-4" />
+            </button>
+          </div>
+        )}
       </div>
 
-      {waitingForComplete && (
-        <output
-          className="flex items-center gap-2 text-muted-foreground text-sm"
-          aria-busy={collection.loading || ratings.loading}
-        >
-          {(collection.loading || ratings.loading) && <InlineSpinner />}
-          {locale.startsWith('zh')
-            ? '正在读取当前分类，以完成完整排序…'
-            : locale.startsWith('ja')
-              ? '並べ替えのために読み込み中…'
-              : 'Loading this category for complete sorting…'}
-        </output>
-      )}
-      <StyleGalleryGrid masonry={masonry}>
-        {visibleItems.map((item) => (
-          <HpoiCard
-            key={item.id}
-            item={item}
-            state={activeState}
-            masonry={masonry}
-            ratingLoading={!item.score && ratings.pendingIds.has(item.id)}
+      {calendar ? (
+        <HpoiReleaseCalendar
+          failed={error}
+          retry={collection.loadMore}
+          items={collection.items}
+          state={activeState}
+          membership={membership}
+          complete={collection.complete}
+        />
+      ) : (
+        <>
+          {waitingForComplete && (
+            <output
+              className="flex items-center gap-2 text-muted-foreground text-sm"
+              aria-busy={collection.loading || ratings.loading}
+            >
+              {(collection.loading || ratings.loading) && <InlineSpinner />}
+              {locale.startsWith('zh')
+                ? '正在读取当前分类，以完成完整排序…'
+                : locale.startsWith('ja')
+                  ? '並べ替えのために読み込み中…'
+                  : 'Loading this category for complete sorting…'}
+            </output>
+          )}
+          <StyleGalleryGrid masonry={masonry}>
+            {visibleItems.map((item) => (
+              <HpoiCard
+                key={item.id}
+                item={item}
+                state={activeState === 'all' ? (membership.get(item.id) ?? 'all') : activeState}
+                masonry={masonry}
+                ratingLoading={!item.score && ratings.pendingIds.has(item.id)}
+              />
+            ))}
+          </StyleGalleryGrid>
+          {collection.complete && activeItems.length === 0 && (
+            <p className="py-8 text-center text-muted-foreground">{t('hpoi.noItems')}</p>
+          )}
+          <CollectionLoadMore
+            more={!collection.complete || visibleCount < activeItems.length}
+            loading={collection.loading && visibleCount >= activeItems.length}
+            error={error}
+            onLoad={error ? collection.loadMore : loadMore}
+            locale={locale}
+            rootMargin="600px"
           />
-        ))}
-      </StyleGalleryGrid>
-      {collection.complete && activeItems.length === 0 && (
-        <p className="py-8 text-center text-muted-foreground">{t('hpoi.noItems')}</p>
+        </>
       )}
-      <CollectionLoadMore
-        more={!collection.complete || visibleCount < activeItems.length}
-        loading={collection.loading && visibleCount >= activeItems.length}
-        error={error}
-        onLoad={error ? collection.loadMore : loadMore}
-        locale={locale}
-        rootMargin="600px"
-      />
 
       <footer className="flex justify-end border-border border-t pt-3">
         <a

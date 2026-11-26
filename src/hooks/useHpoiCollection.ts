@@ -1,3 +1,4 @@
+import { releaseStates } from '@lib/hpoi/releases';
 import { useEffect, useSyncExternalStore } from 'react';
 import { type HpoiSnapshot, reconcileHpoiItems } from '@/lib/hpoi/snapshot';
 import type { CollectionPage } from '@/types/collection-page';
@@ -195,4 +196,24 @@ export function useHpoiCollection(state: HpoiCollectionState) {
       else void refresh();
     },
   };
+}
+
+const emptyMembership = new Map<string, HpoiCollectionState>();
+let categories: HpoiSnapshot['items'][] = [];
+let membership = emptyMembership;
+function readMembership() {
+  const lists = releaseStates.map((state) => snapshots.get(state)?.items ?? EMPTY.items);
+  if (lists.every((list, i) => list === categories[i])) return membership;
+  categories = lists;
+  membership = new Map();
+  // A partially refreshed overlap uses the most actionable category until reconciliation completes.
+  lists.forEach((list, i) => {
+    for (const item of list) if (!membership.has(item.id)) membership.set(item.id, releaseStates[i]);
+  });
+  return membership;
+}
+
+/** Subscribe to the crawler's existing snapshots, without opening another crawl or changing its priority. */
+export function useHpoiMembership() {
+  return useSyncExternalStore(subscribe, readMembership, () => emptyMembership);
 }
