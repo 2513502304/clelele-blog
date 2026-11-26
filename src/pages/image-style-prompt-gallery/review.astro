@@ -1,0 +1,27 @@
+---
+import HomeSider from '@components/layout/HomeSider.astro';
+import StyleGalleryReviewInbox from '@components/style-gallery/StyleGalleryReviewInbox';
+import Cover from '@components/ui/cover/Cover.astro';
+import { CONTENT_PADDING } from '@constants/layout';
+import Layout from '@layouts/Layout.astro';
+import TwoColumnLayout from '@layouts/TwoColumnLayout.astro';
+import { getLocaleFromUrl, localizedPath, t } from '@/i18n';
+
+export const prerender = false;
+const locale = getLocaleFromUrl(Astro.url.pathname);
+const gallery = localizedPath('/image-style-prompt-gallery', locale);
+const title = locale.startsWith('zh') ? '跨条目待审作品' : locale.startsWith('ja') ? '作品の確認一覧' : 'Review inbox';
+---
+<Layout title={title}>
+  <TwoColumnLayout>
+    <Cover slot="cover" title={t(locale, 'gallery.title')} />
+    <HomeSider slot="sider" />
+    <main class={`bg-gradient-start shadow-box flex min-w-0 flex-col gap-5 ${CONTENT_PADDING.standard}`}>
+      <header class="space-y-2">
+        <a href={gallery} class="inline-flex min-h-10 items-center text-primary text-sm">← {t(locale,'gallery.title')}</a>
+        <h1 class="text-3xl font-black tracking-tight">{title}</h1>
+      </header>
+      <StyleGalleryReviewInbox client:load locale={locale} gallery={gallery} />
+    </main>
+  </TwoColumnLayout>
+</Layout>
