@@ -394,6 +394,13 @@ function StyleGalleryBrowserContent({
     items,
   );
 
+  const browserRef = tagSelection.rootRef;
+  useEffect(() => {
+    // Astro can report hydration before React commits its concurrent update on WebKit.
+    // Only replay early controls once React has installed this gallery's handlers.
+    browserRef.current?.dispatchEvent(new Event('gallery:interactive', { bubbles: true }));
+  }, [browserRef]);
+
   const needsFullList = globalFilter || calendarUsed || tagSelection.enabled;
   useEffect(() => {
     if (needsFullList && !complete && error !== 'all') void load('all');
@@ -433,7 +440,8 @@ function StyleGalleryBrowserContent({
 
   return (
     <section
-      ref={tagSelection.rootRef}
+      data-gallery-browser
+      ref={browserRef}
       className="space-y-6"
       aria-label="Image style prompt gallery browser"
       aria-busy={waiting}

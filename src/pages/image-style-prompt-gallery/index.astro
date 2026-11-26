@@ -109,22 +109,22 @@ setStyleGalleryPublicCacheHeaders(Astro.response.headers, [STYLE_GALLERY_LIST_CA
           let pending;
           function remember(event) {
             const button = event.target.closest?.('button[type="button"]');
-            const island = button?.closest('astro-island[component-url*="StyleGalleryBrowser"]');
-            if (!island) return;
-            if (!island.hasAttribute('ssr')) {
-              surface.removeEventListener('click', remember, true);
-              return;
-            }
-            if (!pending) {
-              island.addEventListener('astro:hydrate', () => {
-                surface.removeEventListener('click', remember, true);
-                if (pending?.isConnected) pending.click();
-                pending = undefined;
-              }, { once: true });
-            }
+            if (!button?.closest('[data-gallery-browser]')) return;
             pending = button;
+            event.stopPropagation();
           }
           surface.addEventListener('click', remember, true);
+          surface.addEventListener('gallery:interactive', () => {
+            surface.removeEventListener('click', remember, true);
+            // React can replace an SSR node during hydration. Match an original by its
+            // stable source before replaying, never by a potentially changed card index.
+            const source = pending?.getAttribute('data-gallery-original');
+            const target = pending?.isConnected ? pending : source
+              ? surface.querySelector('[data-gallery-original="' + CSS.escape(source) + '"]')
+              : null;
+            target?.click();
+            pending = undefined;
+          }, { once: true });
         })();
       </script>
       <StyleGalleryBrowser
