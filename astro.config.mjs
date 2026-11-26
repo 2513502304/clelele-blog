@@ -265,7 +265,8 @@ export default defineConfig({
   }),
   prefetch: {
     prefetchAll: true,
-    defaultStrategy: 'viewport',
+    // Visible navigation and sidebar links can otherwise download whole galleries during a quiet read.
+    defaultStrategy: 'hover',
   },
   trailingSlash: 'ignore',
 });

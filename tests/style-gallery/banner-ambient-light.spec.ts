@@ -378,3 +378,80 @@ test('CSS-only light controls do not invalidate source readiness', async ({ page
   }
   await expect(page.locator('#banner-ambient-light')).toHaveAttribute('data-ready-mutations', '0');
 });
+
+test('gallery thumbnail and card opacity apply in place and survive a reload', async ({ page }) => {
+  await page.goto('/image-style-prompt-gallery', { waitUntil: 'domcontentloaded' });
+  const card = page.locator('[data-gallery-layout] article').first();
+  const thumbnail = card.locator('img').first();
+  await expect(page.locator('#banner-ambient-light')).toHaveAttribute('data-ready', /./);
+  await page.locator('[data-appearance-toggle]').click();
+  const panel = page.locator('.appearance-panel');
+  await panel.getByRole('button', { name: '横幅', exact: true }).click();
+  await panel.locator('summary').filter({ hasText: '界面融合' }).click();
+  for (const [name, value] of [
+    ['页面底衬', '10'],
+    ['卡片底色下限', '40'],
+    ['图库缩略图不透明度', '25'],
+    ['文字光晕半径', '12'],
+  ]) {
+    await panel.getByRole('spinbutton', { name, exact: true }).fill(value);
+  }
+  await panel.getByRole('button', { name: '关闭主题设置' }).click();
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(thumbnail).toHaveCSS('opacity', '0.25');
+  await expect(card).toHaveCSS('background-color', /0\.4\)/);
+  await expect(card.locator('h2')).toHaveCSS('text-shadow', /12px/);
+  await card.hover();
+  await expect(thumbnail).toHaveCSS('opacity', '1');
+  await page.mouse.move(0, 0);
+  await card.locator('a').first().focus();
+  await expect(thumbnail).toHaveCSS('opacity', '1');
+});
+
+test.describe('touch gallery', () => {
+  test.use({ hasTouch: true, viewport: { width: 390, height: 844 } });
+  test('keeps thumbnails visible without a hover gesture', async ({ page }) => {
+    await page.addInitScript(() =>
+      localStorage.setItem(
+        'appearance-scenery',
+        JSON.stringify({
+          ambientLight: 'wash',
+          lightThumbnailOpacity: 0,
+        }),
+      ),
+    );
+    await page.goto('/image-style-prompt-gallery', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#banner-ambient-light')).toHaveAttribute('data-ready', /./);
+    await expect(page.locator('[data-gallery-layout] article img').first()).toHaveCSS('opacity', '1');
+  });
+});
+
+test('surface controls own their entire row and tint the gallery search together with cards', async ({ page }) => {
+  await page.goto('/image-style-prompt-gallery', { waitUntil: 'domcontentloaded' });
+  const toolbar = page.locator('.glass-toolbar').first();
+  const search = toolbar.locator('input').first();
+  const card = page.locator('[data-gallery-layout] article').first();
+  await expect(page.locator('#banner-ambient-light')).toHaveAttribute('data-ready', 'true');
+  for (const surface of [card, toolbar, search]) await expect(surface).toHaveCSS('background-color', /, 0\)$/);
+  await page.locator('[data-appearance-toggle]').click();
+  const panel = page.locator('.appearance-panel');
+  await panel.getByRole('button', { name: '横幅', exact: true }).click();
+  const summary = panel.locator('summary').filter({ hasText: '界面融合' });
+  const group = summary.locator('..');
+  await summary.scrollIntoViewIfNeeded();
+  const box = await summary.boundingBox();
+  if (!box) throw new Error('Missing header');
+  expect(box.height).toBeGreaterThanOrEqual(44);
+  await summary.click({ position: { x: 6, y: 2 } });
+  await expect(group).toHaveAttribute('open');
+  const caption = group.locator('.appearance-caption');
+  const captionBox = await caption.boundingBox();
+  const openHeader = await summary.boundingBox();
+  if (!captionBox || !openHeader) throw new Error('Missing expanded content');
+  const gap = captionBox.y - (openHeader.y + openHeader.height);
+  expect(gap).toBeLessThanOrEqual(8);
+  await panel.getByRole('spinbutton', { name: '卡片底色下限', exact: true }).fill('65');
+  for (const surface of [card, toolbar, search]) await expect(surface).toHaveCSS('background-color', /0\.65\)/);
+  await summary.click({ position: { x: box.width - 6, y: box.height - 2 } });
+  await expect(group).not.toHaveAttribute('open');
+});

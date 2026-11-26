@@ -34,7 +34,12 @@ const zh = {
   lightFeather: '扩大光场边缘的渐隐区域。越大边缘越柔和，越小越接近完整覆盖；与四周/方向模式共同决定边缘形状。',
   lightDirection: '选择环境光覆盖全方向、两侧、上方或下方。被弱化的方向以渐变退回主题底色，不改变横幅取景。',
   lightSurface:
-    '调整所有页面侧栏和正文共用的底色。越大底衬越厚、光色越淡，越小更通透；阅读对比不足时可提高到 88% 或选择实色。卡片至少保留 78% 的底色；实色模式优先。',
+    '调整所有页面侧栏和正文共用的底色。越大底衬越厚、光色越淡，越小更通透；阅读对比不足时可提高到 88% 或选择实色。卡片的最低底色可单独调整；实色模式优先。',
+  lightThumbnailOpacity: '鼠标离开卡片时缩略图的可见程度。悬停、键盘聚焦和触屏浏览时显示原图。',
+  lightCardFloor: '控制卡片和图库搜索栏的底色。0% 完全透明，可看到下面的页面底衬。实色模式优先。',
+  lightShadowRadius: '调整文字背后光晕的扩散半径，配合文字柔光强度使用。',
+  idleSeconds: '停止操作后保留粒子和桌面角色的当前画面，输入或滚动时恢复。0 秒表示持续播放。',
+  particleFps: '限制粒子动画的绘制频率，较低值适合省电。',
   lightTextShadow:
     '给内容标题、段落等文字加主题色柔光，提高复杂背景上的辨识度。越大越明显，0% 关闭；不改变字体颜色或横幅标题阴影。',
   textOpacity: '仅调整横幅标题与副标题。100% 最清晰，越小越淡，0% 隐藏标题及其链接操作；顶部导航不受影响。',
@@ -104,7 +109,14 @@ const en: Record<HelpKey, string> = {
   lightDirection:
     'Project on all sides, both sides, above or below. Other regions fade into the theme background. Does not change banner framing.',
   lightSurface:
-    'Shared backing behind sidebar and content on every page. Higher is more opaque, lower more transparent. For stronger reading contrast, choose 88% or solid mode. Cards retain at least 78%; solid mode takes priority.',
+    'Shared backing behind sidebar and content on every page. Higher is more opaque, lower more transparent. For stronger reading contrast, choose 88% or solid mode. Minimum card opacity is adjustable; solid mode takes priority.',
+  lightThumbnailOpacity:
+    'Thumbnail opacity while the pointer is away. Hover, keyboard focus and touch browsing show the full image.',
+  lightCardFloor: 'Tint cards and the gallery search bar. At zero the page veil shows through. Solid reading mode takes priority.',
+  lightShadowRadius: 'Spread of the halo behind text, in pixels. Set its intensity separately.',
+  idleSeconds:
+    'Freeze decoration and idle character frames after this many seconds. Interact to resume. Zero keeps them moving.',
+  particleFps: 'Maximum particle draws per second. Lower values reduce rendering work.',
   lightTextShadow:
     'Adds theme-colored soft halos to content headings and paragraphs. Higher is stronger, 0% off. Does not change text color or the banner title shadow.',
   textOpacity:
@@ -169,7 +181,13 @@ const ja: Record<HelpKey, string> = {
     '環境光の縁のフェード範囲を広げます。大きいほど柔らかく、小さいほど全面的に表示します。方向や周辺光と組み合わさります。',
   lightDirection: '全方向・両側・上・下を選びます。弱めた方向はテーマ背景へ徐々に戻り、バナーの構図は変わりません。',
   lightSurface:
-    '全ページのサイドバーと本文共通の下地です。大きいほど不透明、小さいほど透けます。読みにくい場合は88%か単色を選べます。カードは最低78%を保ち、単色設定が優先です。',
+    '全ページのサイドバーと本文共通の下地です。大きいほど不透明、小さいほど透けます。読みにくい場合は88%か単色を選べます。カード下地は個別に調整でき、単色設定が優先です。',
+  lightThumbnailOpacity:
+    'ポインターを外した時のサムネイルの不透明度です。ホバー、キーボードフォーカス、タッチ操作では元の濃さになります。',
+  lightCardFloor: 'カードと検索欄の下地の不透明度です。0でページの下地が透け、単色設定を優先します。',
+  lightShadowRadius: '文字の後ろの光彩が広がる半径です。強さは別に調整できます。',
+  idleSeconds: '指定秒数操作がないと粒子と待機中のキャラクターを静止します。操作で再開、0で常時再生します。',
+  particleFps: '毎秒の描画回数を制限します。小さいほど負荷が軽くなります。',
   lightTextShadow:
     '本文や見出しにテーマ色の柔らかな光を加えます。大きいほど強く、0% はオフです。文字色やバナーの影は変えません。',
   textOpacity: 'バナーのタイトルと副題の不透明度です。小さいほど薄く、0% は文字とリンク操作を隠します。ナビは変えません。',

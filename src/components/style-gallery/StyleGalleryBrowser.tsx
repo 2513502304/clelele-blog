@@ -3,6 +3,7 @@ import StyleGalleryDateRangeFilter from '@components/style-gallery/StyleGalleryD
 import StyleGalleryVisualFilter, {
   type StyleGalleryVisualFilterLabels,
 } from '@components/style-gallery/StyleGalleryVisualFilter';
+import { GALLERY_INITIAL_CARD_COUNT } from '@constants/pagination';
 import { Icon } from '@iconify/react';
 import { createStyleGalleryDateRangeMatcher, getStyleGalleryDateKey } from '@lib/style-gallery-date-range';
 import type { StyleGalleryDateRangeLabels } from '@lib/style-gallery-date-range-labels';
@@ -31,12 +32,13 @@ import {
 } from '@lib/style-gallery-sort';
 import { galleryTagMatches, normalizeGalleryTag } from '@lib/style-gallery-tags';
 import { useGalleryTags } from '@store/gallery-tags';
-import { openModal } from '@store/modal';
+import { $activeModal, $imageLightboxData, openModal } from '@store/modal';
 import { $backgroundPagePaused } from '@store/page-activity';
 import { useReducedMotion } from 'motion/react';
 import { parseAsString, parseAsStringLiteral, useQueryState, useQueryStates } from 'nuqs';
 import { NuqsAdapter } from 'nuqs/adapters/react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { type GalleryCardPage, useGalleryCardPages } from '@/hooks/useGalleryCardPages';
 import { useGalleryOriginalPosition } from '@/hooks/useGalleryOriginalPosition';
 import { useProgressiveList } from '@/hooks/useProgressiveList';
 import type { StyleGalleryImageDimensions } from '@/types/style-gallery';
@@ -66,7 +68,7 @@ export interface StyleGalleryBrowserItem {
 }
 
 interface StyleGalleryBrowserProps {
-  items: StyleGalleryBrowserItem[];
+  initial: GalleryCardPage;
   galleryBasePath: string;
   locale: string;
   labels: StyleGalleryBrowserLabels;
@@ -111,7 +113,6 @@ interface PromptPickerState {
 // 桌面端四列：前两行主动加载，但只让首行占用高网络优先级。
 const EAGER_CARD_COUNT = 8;
 const HIGH_PRIORITY_CARD_COUNT = 4;
-const INITIAL_CARD_COUNT = 24;
 const CARD_BATCH_SIZE = 24;
 
 function normalize(value: string) {
@@ -134,7 +135,19 @@ function createPromptPickerState(
  * Gallery 主预览页：普通浏览只接收轻量 Catalog，用户开始搜索后再加载完整 prompt 索引。
  * 复制从详情接口读取完整文本；只有多 prompt 候选值得在 hover/focus 时提前请求并缓存。
  */
-function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, lightboxCopyLabels }: StyleGalleryBrowserProps) {
+function StyleGalleryBrowserContent({
+  initial,
+  galleryBasePath,
+  locale,
+  labels,
+  lightboxCopyLabels,
+}: StyleGalleryBrowserProps) {
+  const { items, total: totalCount, complete, load, error } = useGalleryCardPages(initial);
+  const [calendarUsed, setCalendarUsed] = useState(false);
+  const viewerId = useId();
+  const requestNextPage = useCallback(() => {
+    void load('next');
+  }, [load]);
   const shouldReduceMotion = useReducedMotion();
   const [query, setQuery] = useQueryState('q', parseAsString.withDefault(''));
   const { index: tagIndex, status: tagStatus } = useGalleryTags();
@@ -167,8 +180,11 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
     likes: labels.sortLikeCount,
   };
   const availableDateKeys = useMemo(
-    () => [...new Set(items.map((item) => getStyleGalleryDateKey(item.date)).filter((date): date is string => date !== null))],
-    [items],
+    () =>
+      calendarUsed
+        ? [...new Set(items.map((item) => getStyleGalleryDateKey(item.date)).filter((date): date is string => date !== null))]
+        : [],
+    [items, calendarUsed],
   );
   const matchesDateRange = useMemo(
     () => createStyleGalleryDateRangeMatcher({ from: dateFrom, to: dateTo }),
@@ -191,23 +207,26 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
     if (!tagQuery && query.trim() && promptSearchStatus === 'idle') void ensurePromptSearchIndex();
   }, [ensurePromptSearchIndex, promptSearchStatus, query, tagQuery]);
 
+  const globalFilter = Boolean(
+    query.trim() || tag || dateFrom || dateTo || visualMatches !== null || sortKey !== 'default' || sortDirection !== 'asc',
+  );
   const filteredItems = useMemo(() => {
+    if (!globalFilter) return items;
     const q = normalize(query);
     const filtered = items.filter((item) => {
       const itemTags = tagIndex.items[item.slug] ?? [];
       if (tag && !itemTags.includes(normalizeGalleryTag(tag))) return false;
-      const localSearchable = [item.title, item.imageHash, item.slug].filter(Boolean).join(' ');
       const matchesQuery = tagQuery
         ? galleryTagMatches(itemTags, q)
         : !q ||
-          normalize(localSearchable).includes(q) ||
+          normalize(`${item.title} ${item.imageHash} ${item.slug}`).includes(q) ||
           (promptSearchIndex ? promptSearchIndex[item.slug]?.includes(q) : promptSearchStatus !== 'failed');
       const matchesDate = matchesDateRange(item.date);
       const matchesVisual = visualMatches === null || visualMatches.has(item.slug);
       return matchesQuery && matchesDate && matchesVisual;
     });
 
-    const sorted = [...filtered];
+    const sorted = filtered;
     if (sortKey !== 'default') {
       sorted.sort((a, b) => {
         if (sortKey === 'id') return a.imageHash.localeCompare(b.imageHash);
@@ -218,6 +237,7 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
     }
     return sortDirection === 'desc' ? sorted.reverse() : sorted;
   }, [
+    globalFilter,
     tagIndex,
     tag,
     tagQuery,
@@ -231,8 +251,9 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
     visualMatches,
   ]);
   const { hasMore, loadMore, loadMoreRef, revealThrough, visibleItems } = useProgressiveList(filteredItems, {
-    initialCount: INITIAL_CARD_COUNT,
+    initialCount: GALLERY_INITIAL_CARD_COUNT,
     batchSize: CARD_BATCH_SIZE,
+    requestNextPage: !complete && !error && !globalFilter ? requestNextPage : undefined,
     // “全部显示”仍必须按滚动渐进挂载；全量 Catalog 在客户端不等于一次创建全部图片节点。
     resetKey: `${tag}\u0000${query.trim().toLowerCase()}\u0000${dateFrom}\u0000${dateTo}\u0000${sortKey}\u0000${sortDirection}\u0000${visualRevision}`,
   });
@@ -262,15 +283,6 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
     [loadPromptChoices],
   );
 
-  useEffect(() => {
-    const candidates = visibleItems.slice(0, EAGER_CARD_COUNT).filter((item) => item.promptCount > 1);
-    // React island 已在浏览器空闲时 hydration；再让首屏布局稳定一帧后预取最多两行的多 prompt 元数据。
-    const timer = window.setTimeout(() => {
-      for (const item of candidates) prefetchPromptChoices(item);
-    }, 150);
-    return () => window.clearTimeout(timer);
-  }, [prefetchPromptChoices, visibleItems]);
-
   function handleQueryChange(value: string) {
     void setQuery(value).catch(reportUrlStateError);
   }
@@ -283,41 +295,42 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
     void setSortState({ dir: sortDirection === 'asc' ? 'desc' : 'asc' }).catch(reportUrlStateError);
   }
 
-  function openSourceLightbox(item: StyleGalleryBrowserItem) {
-    const data = createStyleGallerySourceLightboxData(
-      filteredItems.map((candidate) => ({
-        id: candidate.slug,
-        gallerySourceSlug: candidate.slug,
-        src: candidate.sourceImage,
-        sourceLoaded: loadedSourceImages.has(candidate.sourceImage),
-        previewSrc:
-          getReusableStyleGalleryImageUrl(
-            getStyleGalleryImagePreviewSource(candidate.sourceImage),
-            loadedSourceImages.has(getStyleGalleryImagePreviewSource(candidate.sourceImage)),
-          ) ?? getStyleGalleryImagePreviewSource(candidate.sourceImage),
-        dimensions: candidate.dimensions,
-        alt: candidate.sourceImageAlt ?? candidate.title,
-        getPrompt: () =>
-          getSelectedStyleGalleryPrompt(candidate.slug) ??
-          loadStyleGalleryDefaultPrompt(candidate.slug, candidate.promptRevision),
-        promptOptions:
-          candidate.promptCount > 1
-            ? {
-                promptCount: candidate.promptCount,
-                getPrompts: () => loadStyleGalleryPromptChoices(candidate.slug, candidate.promptRevision),
-              }
-            : undefined,
-        locate: () => {
-          const targetIndex = filteredItems.findIndex((entry) => entry.slug === candidate.slug);
-          revealThrough(targetIndex);
-          locateStyleGalleryElement(getStyleGalleryLightboxElementId('preview-source', candidate.slug));
-        },
-      })),
-      item.slug,
-      lightboxCopyLabels,
-    );
-    openModal('imageLightbox', data);
-  }
+  const sourceViewerData = useCallback(
+    (slug: string) =>
+      createStyleGallerySourceLightboxData(
+        filteredItems.map((candidate) => ({
+          id: candidate.slug,
+          gallerySourceSlug: candidate.slug,
+          src: candidate.sourceImage,
+          sourceLoaded: loadedSourceImages.has(candidate.sourceImage),
+          previewSrc:
+            getReusableStyleGalleryImageUrl(
+              getStyleGalleryImagePreviewSource(candidate.sourceImage),
+              loadedSourceImages.has(getStyleGalleryImagePreviewSource(candidate.sourceImage)),
+            ) ?? getStyleGalleryImagePreviewSource(candidate.sourceImage),
+          dimensions: candidate.dimensions,
+          alt: candidate.sourceImageAlt ?? candidate.title,
+          getPrompt: () =>
+            getSelectedStyleGalleryPrompt(candidate.slug) ??
+            loadStyleGalleryDefaultPrompt(candidate.slug, candidate.promptRevision),
+          promptOptions:
+            candidate.promptCount > 1
+              ? {
+                  promptCount: candidate.promptCount,
+                  getPrompts: () => loadStyleGalleryPromptChoices(candidate.slug, candidate.promptRevision),
+                }
+              : undefined,
+          locate: () => {
+            const targetIndex = filteredItems.findIndex((entry) => entry.slug === candidate.slug);
+            revealThrough(targetIndex);
+            locateStyleGalleryElement(getStyleGalleryLightboxElementId('preview-source', candidate.slug));
+          },
+        })),
+        slug,
+        lightboxCopyLabels,
+      ),
+    [filteredItems, lightboxCopyLabels, loadedSourceImages, revealThrough],
+  );
 
   async function copyPromptText(item: StyleGalleryBrowserItem, prompt: string): Promise<boolean> {
     setCopyErrorSlug(null);
@@ -369,18 +382,70 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
     return copyPromptText(promptPicker.item, prompt.prompt);
   }
 
+  const slugs = useMemo(() => filteredItems.map((item) => item.slug), [filteredItems]);
   const tagSelection = useGalleryTagSelection(
-    filteredItems.map((item) => item.slug),
+    slugs,
     locale,
-    (Boolean(query.trim()) &&
-      ((!tagQuery && (promptSearchStatus === 'idle' || promptSearchStatus === 'loading')) ||
-        (tagQuery && tagStatus !== 'ready'))) ||
+    !complete ||
+      (Boolean(query.trim()) &&
+        ((!tagQuery && (promptSearchStatus === 'idle' || promptSearchStatus === 'loading')) ||
+          (tagQuery && tagStatus !== 'ready'))) ||
       (Boolean(tag) && tagStatus !== 'ready'),
     items,
   );
 
+  const browserRef = tagSelection.rootRef;
+  useEffect(() => {
+    // Astro can report hydration before React commits its concurrent update on WebKit.
+    // Only replay early controls once React has installed this gallery's handlers.
+    browserRef.current?.dispatchEvent(new Event('gallery:interactive', { bubbles: true }));
+  }, [browserRef]);
+
+  const needsFullList = globalFilter || calendarUsed || tagSelection.enabled;
+  useEffect(() => {
+    if (needsFullList && !complete && error !== 'all') void load('all');
+  }, [needsFullList, complete, error, load]);
+
+  // Open from the cards already on screen. Extend navigation in the background, preserving
+  // the current image and zoom even if the visitor navigates or closes during the fetch.
+  function openSourceLightbox(slug: string) {
+    openModal('imageLightbox', { ...sourceViewerData(slug), ownerId: viewerId });
+    if (!complete) void load('all');
+  }
+  useEffect(() => {
+    const viewer = $imageLightboxData.get();
+    if (!complete || viewer?.ownerId !== viewerId || !filteredItems.length) return;
+    const current = viewer.images[viewer.currentIndex];
+    if (!current.id || !filteredItems.some((item) => item.slug === current.id)) return;
+    const data = sourceViewerData(current.id);
+    data.images[data.currentIndex].resolvedSrc = current.resolvedSrc;
+    $activeModal.set({ type: 'imageLightbox', data: { ...data, ownerId: viewerId } });
+  }, [complete, filteredItems, sourceViewerData, viewerId]);
+  const waiting = needsFullList && !complete && !error;
+  const language = locale.startsWith('zh') ? 'zh' : locale.startsWith('ja') ? 'ja' : 'en';
+
+  // Keep a failed filter beside its controls, and a failed scroll page beside its retry button.
+  const pageStatus = error ? (
+    <p role="alert" className="flex items-center justify-center gap-2 text-sm">
+      {{ zh: '图库目录加载失败', ja: 'ギャラリーを読み込めませんでした', en: 'Could not load the gallery' }[language]}
+      <button type="button" className="underline" onClick={() => void load(needsFullList ? 'all' : error)}>
+        {{ zh: '重试', ja: '再試行', en: 'Retry' }[language]}
+      </button>
+    </p>
+  ) : waiting ? (
+    <output className="block text-center text-muted-foreground text-sm">
+      {{ zh: '正在加载图库目录…', ja: 'ギャラリーを読み込み中…', en: 'Loading gallery…' }[language]}
+    </output>
+  ) : null;
+
   return (
-    <section ref={tagSelection.rootRef} className="space-y-6" aria-label="Image style prompt gallery browser">
+    <section
+      data-gallery-browser
+      ref={browserRef}
+      className="space-y-6"
+      aria-label="Image style prompt gallery browser"
+      aria-busy={waiting}
+    >
       {tagSelection.overlays}
       <GalleryTagEditor locale={locale} />
       <div className="glass-surface glass-toolbar p-4">
@@ -416,6 +481,7 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
             locale={locale}
             labels={labels.dateRange}
             availableDateKeys={availableDateKeys}
+            onOpen={() => setCalendarUsed(true)}
             triggerClassName="h-10"
             onApply={(range) => {
               void setDateRange(range).catch(reportUrlStateError);
@@ -434,7 +500,7 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
             locale={locale}
           />
           <span className="shrink-0 text-muted-foreground text-sm tabular-nums">
-            {filteredItems.length} / {items.length}
+            {globalFilter ? (complete ? filteredItems.length : '…') : totalCount} / {totalCount}
           </span>
           <div className="ml-auto flex items-center gap-2 md:ml-0">
             <label htmlFor="style-gallery-sort" className="sr-only">
@@ -482,6 +548,7 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
           {tagSelection.mergeButton}
         </div>
       </div>
+      {needsFullList && pageStatus}
       <StyleGalleryGrid masonry={masonry}>
         {visibleItems.map((item, index) => (
           <article
@@ -536,7 +603,7 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
               />
               <button
                 type="button"
-                onClick={() => openSourceLightbox(item)}
+                onClick={() => openSourceLightbox(item.slug)}
                 data-gallery-original={item.sourceImage}
                 className="glass-image-action absolute top-2 left-2 z-10 flex size-9 cursor-zoom-in items-center justify-center rounded-lg text-white transition hover:bg-black/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
                 aria-label={`${labels.openImage}: ${item.title}`}
@@ -604,7 +671,8 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
         ))}
       </StyleGalleryGrid>
 
-      {visibleItems.length === 0 && (
+      {!needsFullList && pageStatus}
+      {visibleItems.length === 0 && !waiting && !error && (
         <div className="rounded-lg border border-rose-200 border-dashed bg-card/70 p-10 text-center text-gray-500 dark:border-gray-800">
           {labels.noMatches}
         </div>

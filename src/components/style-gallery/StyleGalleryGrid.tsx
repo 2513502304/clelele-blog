@@ -50,11 +50,14 @@ export default function StyleGalleryGrid({ children, masonry = false }: { childr
     let cards: HTMLElement[] = [];
     const heights = new Map<HTMLElement, number>();
     let previousWidth = -1;
+    let previousColumns = -1;
+    let previousGap = -1;
     let previousCardWidth = -1;
+    const tops: number[] = [];
     const write = (element: HTMLElement, property: string, value: string) => {
       if (element.style.getPropertyValue(property) !== value) element.style.setProperty(property, value);
     };
-    const arrange = (remeasure = false) => {
+    const arrange = (firstChanged = 0, remeasure = false) => {
       if (!masonry) return;
       const style = getComputedStyle(grid);
       const columns = style.gridTemplateColumns.split(' ').length;
@@ -66,29 +69,44 @@ export default function StyleGalleryGrid({ children, masonry = false }: { childr
       previousWidth = width;
       const cardWidth = (width - gap * (columns - 1)) / columns;
       const widthChanged = cardWidth !== previousCardWidth;
+      // Earlier rows retain their coordinates on append and on late image resizes.
+      // Restart at a whole row so each column can resume from its predecessor.
+      const start =
+        widthChanged || remeasure || columns !== previousColumns || gap !== previousGap
+          ? 0
+          : Math.floor(firstChanged / columns) * columns;
       previousCardWidth = cardWidth;
-      for (const card of cards) {
+      previousColumns = columns;
+      previousGap = gap;
+      const changed = cards.slice(start);
+      for (const card of changed) {
         write(card, 'position', 'absolute');
         write(card, 'width', `${cardWidth}px`);
       }
-      // Appends measure only new cards. Existing heights arrive through the same
-      // ResizeObserver, including late cover ratios and text/font changes.
-      for (const card of cards) {
+      for (const card of changed) {
         if (widthChanged || remeasure || !heights.has(card)) heights.set(card, card.offsetHeight);
       }
+      const columnStarts = start
+        ? cards
+            .slice(start - columns, start)
+            .map((card, column) => tops[start - columns + column] + (heights.get(card) ?? 0) + gap)
+        : undefined;
       const { positions, height } = getMasonryPositions(
-        cards.map((card) => heights.get(card) ?? 0),
+        changed.map((card) => heights.get(card) ?? 0),
         columns,
         gap,
+        columnStarts,
       );
-      cards.forEach((card, index) => {
+      tops.length = cards.length;
+      changed.forEach((card, index) => {
+        tops[start + index] = positions[index].top;
         write(card, 'left', `${positions[index].column * (cardWidth + gap)}px`);
         write(card, 'top', `${positions[index].top}px`);
       });
       write(grid, 'height', `${height}px`);
     };
     const observer = new ResizeObserver((entries) => {
-      let changed = grid.clientWidth !== previousWidth;
+      let firstChanged = grid.clientWidth !== previousWidth ? 0 : Infinity;
       for (const entry of entries) {
         if (entry.target === grid) continue;
         const card = entry.target as HTMLElement;
@@ -96,10 +114,10 @@ export default function StyleGalleryGrid({ children, masonry = false }: { childr
         const height = Math.round(entry.borderBoxSize[0]?.blockSize ?? card.offsetHeight);
         if (heights.get(card) !== height) {
           heights.set(card, height);
-          changed = true;
+          firstChanged = Math.min(firstChanged, cards.indexOf(card));
         }
       }
-      if (changed) arrange();
+      if (Number.isFinite(firstChanged)) arrange(firstChanged);
     });
     // Keep artwork/text mounted and painted on reverse scrolling. Only distant
     // glass controls stop requesting backdrop surfaces; overscan restores their
@@ -117,7 +135,9 @@ export default function StyleGalleryGrid({ children, masonry = false }: { childr
           );
     const sync = () => {
       const next = Array.from(grid.children) as HTMLElement[];
-      if (next.length === cards.length && next.every((card, index) => card === cards[index])) return;
+      let prefix = 0;
+      while (prefix < next.length && next[prefix] === cards[prefix]) prefix++;
+      if (prefix === next.length && prefix === cards.length) return;
       const retained = new Set(next);
       for (const card of cards) {
         if (retained.has(card)) continue;
@@ -133,12 +153,12 @@ export default function StyleGalleryGrid({ children, masonry = false }: { childr
         proximity?.observe(card);
       }
       cards = next;
-      arrange();
+      arrange(prefix);
     };
     syncRef.current = sync;
     sync();
     // Density changes the gutter without changing container width or card text height.
-    const readingChanged = () => arrange(true);
+    const readingChanged = () => arrange(0, true);
     window.addEventListener('reading-change', readingChanged);
     if (masonry) observer.observe(grid);
     return () => {

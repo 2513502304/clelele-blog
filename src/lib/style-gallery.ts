@@ -57,8 +57,8 @@ export async function getStyleGalleryItemBySlug(slug: string): Promise<StyleGall
 }
 
 /** 合并列表排序需要的点赞总数；目标平台继续只保留在 catalog 顶层。 */
-export function toStyleGalleryCardDataList(catalog: StyleGalleryData): StyleGalleryCardData[] {
-  return catalog.items.map((item) => ({
+export function toStyleGalleryCardDataList(catalog: StyleGalleryData, start = 0, end?: number): StyleGalleryCardData[] {
+  return catalog.items.slice(start, end).map((item) => ({
     ...item,
     likeCount: catalog.parentLikeCounts[item.slug] ?? 0,
   }));

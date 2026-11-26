@@ -43,7 +43,7 @@ export function AmbientLightControls({
       help={{ setting: key, lang }}
       value={value[key]}
       {...SCENERY_RULES[key]}
-      suffix="%"
+      suffix={key === 'lightShadowRadius' ? 'px' : '%'}
       onChange={(v) => change({ [key]: v })}
     />
   );
@@ -151,7 +151,10 @@ export function AmbientLightControls({
             <div className="scenery-group-body">
               <p className="appearance-caption">{copy.ambientSurfaceHint}</p>
               {numeric('lightSurface')}
+              {numeric('lightCardFloor')}
+              {numeric('lightThumbnailOpacity')}
               {numeric('lightTextShadow')}
+              {numeric('lightShadowRadius')}
             </div>
           </details>
         </>

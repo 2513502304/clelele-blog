@@ -1,3 +1,4 @@
+import { $decorationIdle } from '@store/decoration-idle';
 import { $backgroundPagePaused } from '@store/page-activity';
 import { getSceneryPreferences } from './scenery-preferences';
 
@@ -72,15 +73,20 @@ export function startAtmosphere(canvas: HTMLCanvasElement): () => void {
     );
   }
   function schedule() {
-    const running = canAnimate();
+    const enabled = canAnimate();
+    const running = enabled && !$decorationIdle.get();
     canvas.dataset.running = String(running);
     // Reading settings fire for font and spacing changes too. Preserve the
     // existing clock unless visibility or a motion preference actually changes.
-    if (Boolean(frame) === running) return;
+    if (Boolean(frame) === running) {
+      if (!enabled) ctx.clearRect(0, 0, width, height);
+      return;
+    }
     cancelAnimationFrame(frame);
     frame = 0;
     last = 0;
-    ctx.clearRect(0, 0, width, height);
+    // Preserve the last visible frame during reading. Hidden/disabled surfaces can be cleared.
+    if (!enabled) ctx.clearRect(0, 0, width, height);
     if (running) frame = requestAnimationFrame(draw);
   }
   function glow(x: number, y: number, radius: number, color: string) {
@@ -92,9 +98,11 @@ export function startAtmosphere(canvas: HTMLCanvasElement): () => void {
   }
   function draw(now: number) {
     frame = requestAnimationFrame(draw);
-    // Cap at 30fps, and never jump particles across the screen after a stalled frame.
-    if (last && now - last < 1000 / 30) return;
-    const dt = last ? Math.min(0.07, (now - last) / 1000) : 0.033;
+    // Honor the selected frame cap, and never jump particles across the screen after a stalled frame.
+    const interval = 1000 / prefs.particleFps;
+    if (last && now - last < interval) return;
+    // A normal 10 FPS frame spans 100 ms plus up to one display refresh.
+    const dt = last ? Math.min(Math.max(70, interval + 20), now - last) / 1000 : 0.033;
     last = now;
     time += dt * (0.3 + prefs.speed / 35);
     ctx.clearRect(0, 0, width, height);
@@ -113,10 +121,10 @@ export function startAtmosphere(canvas: HTMLCanvasElement): () => void {
       ctx.globalAlpha = 1;
       return;
     }
+    const falling = ['sakura', 'snow', 'rain', 'leaves'].includes(prefs.effect);
     for (const p of particles) {
       const drift = Math.sin(time * 0.4 + p.phase);
       const rate = dt * (0.3 + prefs.speed / 35) * p.depth;
-      const falling = ['sakura', 'snow', 'rain', 'leaves'].includes(prefs.effect);
       p.x += falling ? rate * (prefs.effect === 'rain' ? -35 : 10 + drift * 18) : rate * drift * 8;
       p.y += rate * (prefs.effect === 'rain' ? 270 : falling ? 22 : Math.cos(time * 0.3 + p.phase) * 7);
       if (p.y > height + 30) {
@@ -190,6 +198,7 @@ export function startAtmosphere(canvas: HTMLCanvasElement): () => void {
   }
   resize();
   // The large opaque studio covers the decoration; preserve its particles but stop invisible work.
+  const unsubscribeIdle = $decorationIdle.subscribe(schedule);
   const unsubscribeModal = $backgroundPagePaused.subscribe(schedule);
   window.addEventListener('resize', resize);
   window.addEventListener('scenery-change', configure);
@@ -198,6 +207,7 @@ export function startAtmosphere(canvas: HTMLCanvasElement): () => void {
   motion.addEventListener('change', schedule);
   return () => {
     unsubscribeModal();
+    unsubscribeIdle();
     cancelAnimationFrame(frame);
     ctx.clearRect(0, 0, width, height);
     window.removeEventListener('resize', resize);
