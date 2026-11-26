@@ -37,7 +37,7 @@ const CACHE_TTL_MS = 30_000;
 const VISUAL_INDEX_TRANSFER_TIMEOUT_MS = 60_000;
 let catalogRead: Promise<StyleGalleryCatalog> | null = null;
 let catalogReadRevision = 0;
-let catalogCache: { value: StyleGalleryCatalog; expiresAt: number } | null = null;
+let catalogCache: { value: StyleGalleryCatalog; expiresAt: number; etag: string | null } | null = null;
 let promptSearchIndexCache: { value: StyleGalleryPromptSearchIndex; etag: string | null; expiresAt: number } | null = null;
 let exampleIndexCache: { value: StyleGalleryExampleIndex; etag: string | null; expiresAt: number } | null = null;
 let exampleIndexWriteQueue: Promise<unknown> = Promise.resolve();
@@ -45,6 +45,17 @@ let visualIndexCache: { value: StyleGalleryVisualIndex; etag: string | null; exp
 let visualIndexWriteQueue: Promise<unknown> = Promise.resolve();
 let visualIndexRefreshPromise: Promise<void> | null = null;
 const itemCache = new Map<string, { value: StoredStyleGalleryItem; expiresAt: number }>();
+
+/** An in-process write or invalidation makes an older derived search snapshot ineligible immediately. */
+export function getStyleGallerySearchCacheState() {
+  if (!catalogCache || !exampleIndexCache || !promptSearchIndexCache) return null;
+  return {
+    revision: [catalogCache.value.updatedAt, exampleIndexCache.value.updatedAt, promptSearchIndexCache.value.updatedAt].join(
+      '/',
+    ),
+    expiresAt: Math.min(catalogCache.expiresAt, exampleIndexCache.expiresAt, promptSearchIndexCache.expiresAt),
+  };
+}
 
 /** 将经过校验的 slug 转换为 HF 中的详情对象键。 */
 export function getStyleGalleryItemKey(slug: string): string {
@@ -55,7 +66,9 @@ export function getStyleGalleryItemKey(slug: string): string {
  * 读取并校验 Gallery catalog。短期内存缓存减少 HF 往返；非强制刷新失败时允许返回已有旧值，
  * 但进程首次读取失败仍会向上抛错，避免把“无数据”误报为有效空列表。
  */
-export async function getStyleGalleryCatalog(options: { fresh?: boolean } = {}): Promise<StyleGalleryCatalog> {
+export async function getStyleGalleryCatalog(
+  options: { fresh?: boolean; revalidate?: boolean } = {},
+): Promise<StyleGalleryCatalog> {
   const now = Date.now();
   if (!options.fresh && catalogCache && catalogCache.expiresAt > now) return catalogCache.value;
   if (!options.fresh && catalogRead) return catalogRead;
@@ -65,10 +78,21 @@ export async function getStyleGalleryCatalog(options: { fresh?: boolean } = {}):
   const revision = catalogReadRevision;
   const read = (async () => {
     try {
-      const raw = await getStyleGalleryObjectText(STYLE_GALLERY_CATALOG_KEY);
+      const previous = catalogCache;
+      if (
+        options.revalidate &&
+        !options.fresh &&
+        previous?.etag &&
+        (await getStyleGalleryObjectEtag(STYLE_GALLERY_CATALOG_KEY)) === previous.etag &&
+        previous === catalogCache
+      ) {
+        previous.expiresAt = Date.now() + CACHE_TTL_MS;
+        return previous.value;
+      }
+      const { text: raw, etag } = await getStyleGalleryObjectTextSnapshot(STYLE_GALLERY_CATALOG_KEY);
       if (!raw) throw new Error('Style gallery catalog does not exist in HF storage.');
       const value = styleGalleryCatalogSchema.parse(JSON.parse(raw));
-      if (revision === catalogReadRevision) catalogCache = { value, expiresAt: Date.now() + CACHE_TTL_MS };
+      if (revision === catalogReadRevision) catalogCache = { value, etag, expiresAt: Date.now() + CACHE_TTL_MS };
       return value;
     } catch (error) {
       if (!options.fresh && catalogCache) {
@@ -99,7 +123,7 @@ export async function getStyleGalleryCatalogSnapshot(): Promise<{ value: StyleGa
   if (!snapshot.etag) throw new Error('HF did not return an ETag for the style gallery catalog.');
   const value = styleGalleryCatalogSchema.parse(JSON.parse(snapshot.text));
   invalidateCatalogRead();
-  catalogCache = { value, expiresAt: Date.now() + CACHE_TTL_MS };
+  catalogCache = { value, etag: snapshot.etag, expiresAt: Date.now() + CACHE_TTL_MS };
   return { value, etag: snapshot.etag };
 }
 
@@ -127,7 +151,8 @@ export async function getStyleGalleryPromptSearchIndex(
     const snapshot = await getStyleGalleryObjectTextSnapshot(STYLE_GALLERY_PROMPT_SEARCH_INDEX_KEY);
     if (!snapshot.text) throw new Error('Style gallery prompt search index does not exist in HF storage.');
     const value = styleGalleryPromptSearchIndexSchema.parse(JSON.parse(snapshot.text));
-    promptSearchIndexCache = { value, etag: snapshot.etag, expiresAt: now + CACHE_TTL_MS };
+    if (previous !== promptSearchIndexCache && !options.fresh) return promptSearchIndexCache?.value ?? value;
+    promptSearchIndexCache = { value, etag: snapshot.etag, expiresAt: Date.now() + CACHE_TTL_MS };
     return value;
   } catch (error) {
     if (!options.fresh && promptSearchIndexCache) {
@@ -191,16 +216,30 @@ async function readStoredItem(
 }
 
 /** 读取 Sub-gallery 总览索引；索引尚未创建时返回带固定版本的空结构。 */
-export async function getStyleGalleryExampleIndex(options: { fresh?: boolean } = {}): Promise<StyleGalleryExampleIndex> {
+export async function getStyleGalleryExampleIndex(
+  options: { fresh?: boolean; revalidate?: boolean } = {},
+): Promise<StyleGalleryExampleIndex> {
   const now = Date.now();
   if (!options.fresh && exampleIndexCache && exampleIndexCache.expiresAt > now) return exampleIndexCache.value;
 
   try {
+    const previous = exampleIndexCache;
+    if (
+      options.revalidate &&
+      !options.fresh &&
+      previous?.etag &&
+      (await getStyleGalleryObjectEtag(STYLE_GALLERY_EXAMPLE_INDEX_KEY)) === previous.etag &&
+      previous === exampleIndexCache
+    ) {
+      previous.expiresAt = Date.now() + CACHE_TTL_MS;
+      return previous.value;
+    }
     const snapshot = await getStyleGalleryObjectTextSnapshot(STYLE_GALLERY_EXAMPLE_INDEX_KEY);
     const value = snapshot.text
       ? styleGalleryExampleIndexSchema.parse(JSON.parse(snapshot.text))
       : { version: 2 as const, updatedAt: new Date(0).toISOString(), groups: [] };
-    exampleIndexCache = { value, etag: snapshot.etag, expiresAt: now + CACHE_TTL_MS };
+    if (previous !== exampleIndexCache && !options.fresh) return exampleIndexCache?.value ?? value;
+    exampleIndexCache = { value, etag: snapshot.etag, expiresAt: Date.now() + CACHE_TTL_MS };
     return value;
   } catch (error) {
     if (!options.fresh && exampleIndexCache) {
@@ -229,7 +268,7 @@ export async function putStyleGalleryCatalog(
   const value = styleGalleryCatalogSchema.parse(catalog);
   const etag = await putJson(STYLE_GALLERY_CATALOG_KEY, value, conditions);
   invalidateCatalogRead();
-  catalogCache = { value, expiresAt: Date.now() + CACHE_TTL_MS };
+  catalogCache = { value, etag, expiresAt: Date.now() + CACHE_TTL_MS };
   return etag;
 }
 
