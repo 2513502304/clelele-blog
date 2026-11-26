@@ -96,6 +96,10 @@ setStyleGalleryPublicCacheHeaders(Astro.response.headers, [STYLE_GALLERY_LIST_CA
                 <Icon name="ri:gallery-view-2" class="size-4" />
                 {t(locale, 'gallery.subGallery')}
               </a>
+              <a href={galleryBasePath + '/review'} data-astro-prefetch="false" class="flex items-center gap-1 text-xs font-bold transition hover:text-rose-300 dark:hover:text-rose-600">
+                <Icon name="ri:history-line" class="size-4" />
+                {locale.startsWith('zh') ? '待审作品' : locale.startsWith('ja') ? '作品の確認' : 'Review inbox'}
+              </a>
             </nav>
           </div>
         </div>

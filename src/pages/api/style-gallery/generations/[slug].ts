@@ -22,6 +22,7 @@ import {
 } from '@lib/style-gallery-generation-settings';
 import { getStyleGalleryPlatform } from '@lib/style-gallery-platforms';
 import { getStoredStyleGalleryItem, mutateStyleGalleryVisualIndex } from '@lib/style-gallery-store';
+import { rememberStudioSource, studioOwner } from '@lib/style-gallery-studio-owner';
 import { upsertStyleGalleryVisualRecords } from '@lib/style-gallery-visual-index';
 import { updateStyleGalleryItemExamples } from '@lib/style-gallery-write';
 import { waitUntil } from '@vercel/functions';
@@ -92,6 +93,7 @@ async function publish(slug: string, scope: string, job: GenerationJob, index: n
 }
 
 interface StudioAccess {
+  owner: string;
   slug: string;
   scope: string;
   platform: 'gpt-image' | 'pixai';
@@ -99,15 +101,12 @@ interface StudioAccess {
 }
 function privateRoute(handle: (access: StudioAccess, request: Request) => Promise<Response>) {
   return async ({ params, request }: Pick<APIContext, 'params' | 'request'>) => {
-    const platform = request.headers.get('x-gallery-provider');
-    const apiKey = request.headers.get('x-api-key')?.trim();
-    if ((platform !== 'pixai' && platform !== 'gpt-image') || !apiKey || apiKey.length > 2048)
-      return json({ error: 'A provider API key is required.' }, 401);
+    const auth = studioOwner(request);
+    if (!auth) return json({ error: 'A provider API key is required.' }, 401);
     if (!params.slug || !/^[a-z0-9-]{1,160}$/i.test(params.slug)) return json({ error: 'Invalid item.' }, 400);
     try {
       // Possession of the same provider credential grants access across devices. Persist only the derived namespace.
-      const owner = createHash('sha256').update(`gallery-studio-v1:${platform}:${apiKey}`).digest('hex');
-      return await handle({ slug: params.slug, scope: `${params.slug}/${owner}`, platform, apiKey }, request);
+      return await handle({ ...auth, slug: params.slug, scope: `${params.slug}/${auth.owner}` }, request);
     } catch (error) {
       if (error instanceof StyleGalleryClientError) return json({ error: error.message }, error.status);
       if (error instanceof z.ZodError || error instanceof SyntaxError)
@@ -150,7 +149,7 @@ export const GET = privateRoute(async ({ scope }, request) => {
   });
 });
 
-export const POST = privateRoute(async ({ slug, scope, platform, apiKey }, request) => {
+export const POST = privateRoute(async ({ slug, scope, owner, platform, apiKey }, request) => {
   const body = await request.json();
   if (body?.action === 'create') {
     const input = generationRequest.parse(body);
@@ -169,6 +168,7 @@ export const POST = privateRoute(async ({ slug, scope, platform, apiKey }, reque
       const { format } = await sharp(bytes).metadata();
       reference = new File([Uint8Array.from(bytes)], `reference.${format}`, { type: `image/${format}` });
     }
+    await rememberStudioSource(owner, slug);
     if (await reserveGeneration(scope, input)) {
       // Node keeps the operation alive independently of the HTTP client. On Vercel extend the invocation as well.
       waitUntil(

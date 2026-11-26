@@ -15,6 +15,7 @@ import {
 import { readPixAIResult, submitGeneration } from './style-gallery-generation-provider';
 import { defaultSettings, generationRequest } from './style-gallery-generation-settings';
 import { isAllowedStyleGalleryImageKey } from './style-gallery-image-key';
+import { readStudioSources, rememberStudioSource } from './style-gallery-studio-owner';
 
 it('reserves a paid request once across tabs and recovers the original after interrupted state writes', async (t) => {
   const env = {
@@ -75,6 +76,13 @@ it('reserves a paid request once across tabs and recovers the original after int
     if (!obj) return new Response(null, { status: 404 });
     return new Response(init?.method === 'HEAD' ? null : obj.bytes, { headers: { etag: obj.etag } });
   });
+  await Promise.all([
+    rememberStudioSource(owner, 'first'),
+    rememberStudioSource(owner, 'second'),
+    rememberStudioSource(owner, 'first'),
+  ]);
+  assert.deepEqual((await readStudioSources(owner)).slugs.toSorted(), ['first', 'second']);
+  assert.deepEqual((await readStudioSources('other-owner')).slugs, []);
   const reservations = await Promise.all([reserveGeneration(slug, request), reserveGeneration(slug, request)]);
   assert.equal(reservations.filter(Boolean).length, 1);
   await assert.rejects(reserveGeneration(slug, { ...request, prompt: 'new prompt' }), /different settings/);

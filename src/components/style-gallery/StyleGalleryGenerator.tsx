@@ -15,6 +15,13 @@ import {
   STYLE_GALLERY_PROMPT_SELECTED_EVENT,
   type StyleGalleryPromptSelectedDetail,
 } from '@lib/style-gallery-prompt-selection';
+import {
+  confirmStudioOutput,
+  notifyStudioChange,
+  readProviderKey,
+  rememberProviderKey,
+  studioRequest,
+} from '@lib/style-gallery-studio-client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   RiAddLine,
@@ -100,28 +107,18 @@ export default function StyleGalleryGenerator(props: Props) {
         <span>{title}</span>
         <ToggleIcon aria-hidden="true" className="ml-auto size-5 text-muted-foreground" />
       </button>
+      {open && (
+        <a
+          className="mx-4 my-2 inline-flex min-h-10 items-center gap-2 text-primary text-sm"
+          href={`${location.pathname.replace(/\/[^/]+\/?$/, '')}/review`}
+        >
+          <RiHistoryLine />
+          {studioLanguage(props.locale)('跨条目待审作品', '作品の確認一覧', 'Review inbox')}
+        </a>
+      )}
       {open && <StudioSession key={props.slug} {...props} />}
     </section>
   );
-}
-
-const sessionKeys = new Map<GenerationPlatform, string>();
-function readProviderKey(platform: GenerationPlatform) {
-  try {
-    return localStorage.getItem(`gallery-generation:key:${platform}`) ?? '';
-  } catch {
-    return sessionKeys.get(platform) ?? '';
-  }
-}
-function rememberProviderKey(platform: GenerationPlatform, value: string) {
-  sessionKeys.set(platform, value);
-  try {
-    const name = `gallery-generation:key:${platform}`;
-    if (value) localStorage.setItem(name, value);
-    else localStorage.removeItem(name);
-  } catch {
-    /* Storage-restricted browsers can still generate in this tab. */
-  }
 }
 
 /** Remount the private review surface when switching credentials so jobs and object URLs cannot cross accounts. */
@@ -148,37 +145,6 @@ function StudioSession(props: Props) {
       }}
     />
   );
-}
-
-async function studioRequest(
-  url: string,
-  platform: GenerationPlatform,
-  apiKey: string,
-  body?: object,
-  signal?: AbortSignal,
-  uploadToken?: string,
-  invalidUploadMessage?: string,
-) {
-  const response = await fetch(url, {
-    method: body ? 'POST' : 'GET',
-    cache: 'no-store',
-    redirect: 'error',
-    signal,
-    headers: {
-      'x-gallery-provider': platform,
-      'x-api-key': apiKey,
-      ...(uploadToken && { authorization: `Bearer ${uploadToken}` }),
-      ...(body && { 'content-type': 'application/json' }),
-    },
-    ...(body && { body: JSON.stringify(body) }),
-  });
-  if (!response.ok) {
-    const data = await response.json().catch(() => null);
-    if (response.status === 403 && data?.code === 'invalid_upload_token' && invalidUploadMessage)
-      throw new Error(invalidUploadMessage);
-    throw new Error(data?.error ?? `HTTP ${response.status}`);
-  }
-  return response;
 }
 
 function Editor({
@@ -392,6 +358,7 @@ function Editor({
     }
     const { job } = await (await request('', { action: 'create', id: operation.id, prompt: text, settings })).json();
     upsert(job);
+    notifyStudioChange();
     setSelected(job.id);
     selectOutput(0);
     setView('review');
@@ -404,23 +371,20 @@ function Editor({
   }
   async function confirm() {
     if (!preview || preview.id !== id || import.meta.env.SSR) return;
-    const digest = await crypto.subtle.digest('SHA-256', await preview.file.arrayBuffer());
-    const imageHash = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
-    const data = await (
-      await studioRequest(
-        base,
-        platform,
-        token,
-        { action: 'confirm', id, index, imageHash },
-        undefined,
-        uploadToken.trim(),
-        l(
-          '上传令牌与当前图库不匹配。请检查是否使用了当前环境的令牌，然后重新保存。生成结果已保留。',
-          'このギャラリーのアップロードトークンを確認して再度保存してください。生成結果は保持されています。',
-          'Check the upload token for this gallery environment and save again. Your generated result is retained.',
-        ),
-      )
-    ).json();
+    const data = await confirmStudioOutput(
+      slug,
+      platform,
+      token,
+      preview.id,
+      index,
+      preview.file,
+      uploadToken,
+      l(
+        '上传令牌与当前图库不匹配。请检查是否使用了当前环境的令牌，然后重新保存。生成结果已保留。',
+        'このギャラリーのアップロードトークンを確認して再度保存してください。生成結果は保持されています。',
+        'Check the upload token for this gallery environment and save again. Your generated result is retained.',
+      ),
+    );
     rememberStyleGalleryManagementToken(uploadToken);
     onSaved(data.examples);
     await loadHistory(token);
