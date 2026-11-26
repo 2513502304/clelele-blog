@@ -22,7 +22,6 @@ import {
   type StyleGalleryPromptChoice,
 } from '@lib/style-gallery-prompt-client';
 import { getStyleGalleryPromptCacheKey, getStyleGalleryPromptChooserKey } from '@lib/style-gallery-prompt-groups';
-import { loadStyleGalleryPromptSearchIndex } from '@lib/style-gallery-prompt-search-client';
 import { getSelectedStyleGalleryPrompt } from '@lib/style-gallery-prompt-selection';
 import {
   getStyleGalleryDefaultSortDirection,
@@ -40,6 +39,7 @@ import { NuqsAdapter } from 'nuqs/adapters/react';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { type GalleryCardPage, useGalleryCardPages } from '@/hooks/useGalleryCardPages';
 import { useGalleryOriginalPosition } from '@/hooks/useGalleryOriginalPosition';
+import { useGallerySearchPages } from '@/hooks/useGallerySearchPages';
 import { useProgressiveList } from '@/hooks/useProgressiveList';
 import type { StyleGalleryImageDimensions } from '@/types/style-gallery';
 import { Dialog, DialogContent } from '../ui/dialog';
@@ -132,7 +132,7 @@ function createPromptPickerState(
 }
 
 /**
- * Gallery 主预览页：普通浏览只接收轻量 Catalog，用户开始搜索后再加载完整 prompt 索引。
+ * Gallery 主预览页：普通浏览和全文搜索按页读取卡片。
  * 复制从详情接口读取完整文本；只有多 prompt 候选值得在 hover/focus 时提前请求并缓存。
  */
 function StyleGalleryBrowserContent({
@@ -142,12 +142,10 @@ function StyleGalleryBrowserContent({
   labels,
   lightboxCopyLabels,
 }: StyleGalleryBrowserProps) {
-  const { items, total: totalCount, complete, load, error } = useGalleryCardPages(initial);
+  const directory = useGalleryCardPages(initial);
+  const totalCount = directory.total;
   const [calendarUsed, setCalendarUsed] = useState(false);
   const viewerId = useId();
-  const requestNextPage = useCallback(() => {
-    void load('next');
-  }, [load]);
   const shouldReduceMotion = useReducedMotion();
   const [query, setQuery] = useQueryState('q', parseAsString.withDefault(''));
   const { index: tagIndex, status: tagStatus } = useGalleryTags();
@@ -166,8 +164,20 @@ function StyleGalleryBrowserContent({
   const [promptPicker, setPromptPicker] = useState<PromptPickerState | null>(null);
   const [visualMatches, setVisualMatches] = useState<Set<string> | null>(null);
   const [visualRevision, setVisualRevision] = useState(0);
-  const [promptSearchIndex, setPromptSearchIndex] = useState<Record<string, string> | null>(null);
-  const [promptSearchStatus, setPromptSearchStatus] = useState<'idle' | 'loading' | 'ready' | 'failed'>('idle');
+  const [composing, setComposing] = useState(false);
+  const textSearch = Boolean(query.trim()) && !tagQuery;
+  const searchKey =
+    textSearch && !composing
+      ? new URLSearchParams({ q: normalize(query), sort: sortKey, dir: sortDirection, from: dateFrom, to: dateTo }).toString()
+      : '';
+  const search = useGallerySearchPages(searchKey);
+  const items = textSearch && search.result ? search.result.items : directory.items;
+  const complete = textSearch ? search.complete : directory.complete;
+  const error = textSearch ? search.error : directory.error;
+  const load = textSearch ? search.load : directory.load;
+  const requestNextPage = useCallback(() => {
+    void load('next');
+  }, [load]);
   const [layout, setLayout] = useStyleGalleryLayout();
   const masonry = layout === 'masonry';
   const loadedSourceImages = useRef(new Set<string>()).current;
@@ -182,30 +192,18 @@ function StyleGalleryBrowserContent({
   const availableDateKeys = useMemo(
     () =>
       calendarUsed
-        ? [...new Set(items.map((item) => getStyleGalleryDateKey(item.date)).filter((date): date is string => date !== null))]
+        ? [
+            ...new Set(
+              directory.items.map((item) => getStyleGalleryDateKey(item.date)).filter((date): date is string => date !== null),
+            ),
+          ]
         : [],
-    [items, calendarUsed],
+    [directory.items, calendarUsed],
   );
   const matchesDateRange = useMemo(
     () => createStyleGalleryDateRangeMatcher({ from: dateFrom, to: dateTo }),
     [dateFrom, dateTo],
   );
-
-  const ensurePromptSearchIndex = useCallback(async () => {
-    if (promptSearchIndex || promptSearchStatus === 'loading') return;
-    setPromptSearchStatus('loading');
-    try {
-      setPromptSearchIndex(await loadStyleGalleryPromptSearchIndex());
-      setPromptSearchStatus('ready');
-    } catch (error) {
-      console.error('[style-gallery] Failed to load the prompt search index.', error);
-      setPromptSearchStatus('failed');
-    }
-  }, [promptSearchIndex, promptSearchStatus]);
-
-  useEffect(() => {
-    if (!tagQuery && query.trim() && promptSearchStatus === 'idle') void ensurePromptSearchIndex();
-  }, [ensurePromptSearchIndex, promptSearchStatus, query, tagQuery]);
 
   const globalFilter = Boolean(
     query.trim() || tag || dateFrom || dateTo || visualMatches !== null || sortKey !== 'default' || sortDirection !== 'asc',
@@ -218,15 +216,14 @@ function StyleGalleryBrowserContent({
       if (tag && !itemTags.includes(normalizeGalleryTag(tag))) return false;
       const matchesQuery = tagQuery
         ? galleryTagMatches(itemTags, q)
-        : !q ||
-          normalize(`${item.title} ${item.imageHash} ${item.slug}`).includes(q) ||
-          (promptSearchIndex ? promptSearchIndex[item.slug]?.includes(q) : promptSearchStatus !== 'failed');
+        : !q || normalize(`${item.title} ${item.imageHash} ${item.slug}`).includes(q) || Boolean(textSearch && search.result);
       const matchesDate = matchesDateRange(item.date);
       const matchesVisual = visualMatches === null || visualMatches.has(item.slug);
       return matchesQuery && matchesDate && matchesVisual;
     });
 
     const sorted = filtered;
+    if (textSearch && search.result) return filtered;
     if (sortKey !== 'default') {
       sorted.sort((a, b) => {
         if (sortKey === 'id') return a.imageHash.localeCompare(b.imageHash);
@@ -243,8 +240,8 @@ function StyleGalleryBrowserContent({
     tagQuery,
     items,
     matchesDateRange,
-    promptSearchIndex,
-    promptSearchStatus,
+    textSearch,
+    search.result,
     query,
     sortDirection,
     sortKey,
@@ -253,7 +250,10 @@ function StyleGalleryBrowserContent({
   const { hasMore, loadMore, loadMoreRef, revealThrough, visibleItems } = useProgressiveList(filteredItems, {
     initialCount: GALLERY_INITIAL_CARD_COUNT,
     batchSize: CARD_BATCH_SIZE,
-    requestNextPage: !complete && !error && !globalFilter ? requestNextPage : undefined,
+    requestNextPage:
+      !complete && !error && (!globalFilter || (textSearch && search.result && !tag && !visualMatches))
+        ? requestNextPage
+        : undefined,
     // “全部显示”仍必须按滚动渐进挂载；全量 Catalog 在客户端不等于一次创建全部图片节点。
     resetKey: `${tag}\u0000${query.trim().toLowerCase()}\u0000${dateFrom}\u0000${dateTo}\u0000${sortKey}\u0000${sortDirection}\u0000${visualRevision}`,
   });
@@ -265,6 +265,7 @@ function StyleGalleryBrowserContent({
     elementId: (item) => getStyleGalleryLightboxElementId('preview-source', item.slug),
     hasVisualFilter: visualMatches !== null,
     clearVisualFilter: () => setVisualMatches(null),
+    loadMissingTarget: !directory.complete && !directory.error ? directory.load : undefined,
   });
 
   /** 复用 hover 预取与点击请求，避免同一 item 在请求尚未完成时重复访问 Vercel/HF。 */
@@ -386,11 +387,8 @@ function StyleGalleryBrowserContent({
   const tagSelection = useGalleryTagSelection(
     slugs,
     locale,
-    !complete ||
-      (Boolean(query.trim()) &&
-        ((!tagQuery && (promptSearchStatus === 'idle' || promptSearchStatus === 'loading')) ||
-          (tagQuery && tagStatus !== 'ready'))) ||
-      (Boolean(tag) && tagStatus !== 'ready'),
+    (textSearch && search.error && !search.result ? !directory.complete : !complete) ||
+      ((tagQuery || Boolean(tag)) && tagStatus !== 'ready'),
     items,
   );
 
@@ -401,10 +399,17 @@ function StyleGalleryBrowserContent({
     browserRef.current?.dispatchEvent(new Event('gallery:interactive', { bubbles: true }));
   }, [browserRef]);
 
-  const needsFullList = globalFilter || calendarUsed || tagSelection.enabled;
+  const needsFullList = textSearch
+    ? Boolean(tag || visualMatches || tagSelection.enabled)
+    : globalFilter || tagSelection.enabled;
+  const { load: loadDirectory, complete: fullDirectory, error: directoryError } = directory;
   useEffect(() => {
-    if (needsFullList && !complete && error !== 'all') void load('all');
-  }, [needsFullList, complete, error, load]);
+    if ((calendarUsed || (textSearch && error && tagSelection.enabled)) && !fullDirectory && !directoryError)
+      void loadDirectory('all');
+  }, [calendarUsed, textSearch, error, tagSelection.enabled, fullDirectory, directoryError, loadDirectory]);
+  useEffect(() => {
+    if (needsFullList && !complete && !error && (!textSearch || search.result)) void load('all');
+  }, [needsFullList, complete, error, load, textSearch, search.result]);
 
   // Open from the cards already on screen. Extend navigation in the background, preserving
   // the current image and zoom even if the visitor navigates or closes during the fetch.
@@ -421,7 +426,7 @@ function StyleGalleryBrowserContent({
     data.images[data.currentIndex].resolvedSrc = current.resolvedSrc;
     $activeModal.set({ type: 'imageLightbox', data: { ...data, ownerId: viewerId } });
   }, [complete, filteredItems, sourceViewerData, viewerId]);
-  const waiting = needsFullList && !complete && !error;
+  const waiting = search.waiting || composing || (needsFullList && !complete && !error);
   const language = locale.startsWith('zh') ? 'zh' : locale.startsWith('ja') ? 'ja' : 'en';
 
   // Keep a failed filter beside its controls, and a failed scroll page beside its retry button.
@@ -455,9 +460,9 @@ function StyleGalleryBrowserContent({
             <input
               value={query}
               onChange={(event) => handleQueryChange(event.currentTarget.value)}
-              onFocus={() => {
-                if (query.trim() && !tagQuery) void ensurePromptSearchIndex();
-              }}
+              onCompositionStart={() => setComposing(true)}
+              onCompositionEnd={() => setComposing(false)}
+              aria-busy={search.waiting}
               placeholder={labels.searchPlaceholder}
               className="h-11 w-full rounded-lg border border-rose-100 bg-card pr-3 pl-10 text-sm outline-none transition focus:border-rose-300 focus:ring-4 focus:ring-rose-100 dark:border-gray-800 dark:focus:border-rose-700 dark:focus:ring-rose-950"
             />
@@ -500,7 +505,14 @@ function StyleGalleryBrowserContent({
             locale={locale}
           />
           <span className="shrink-0 text-muted-foreground text-sm tabular-nums">
-            {globalFilter ? (complete ? filteredItems.length : '…') : totalCount} / {totalCount}
+            {textSearch && !tag && !visualMatches
+              ? (search.result?.total ?? '…')
+              : globalFilter
+                ? complete
+                  ? filteredItems.length
+                  : '…'
+                : totalCount}{' '}
+            / {totalCount}
           </span>
           <div className="ml-auto flex items-center gap-2 md:ml-0">
             <label htmlFor="style-gallery-sort" className="sr-only">
@@ -548,7 +560,7 @@ function StyleGalleryBrowserContent({
           {tagSelection.mergeButton}
         </div>
       </div>
-      {needsFullList && pageStatus}
+      {(needsFullList || textSearch) && pageStatus}
       <StyleGalleryGrid masonry={masonry}>
         {visibleItems.map((item, index) => (
           <article
@@ -671,7 +683,7 @@ function StyleGalleryBrowserContent({
         ))}
       </StyleGalleryGrid>
 
-      {!needsFullList && pageStatus}
+      {!needsFullList && !textSearch && pageStatus}
       {visibleItems.length === 0 && !waiting && !error && (
         <div className="rounded-lg border border-rose-200 border-dashed bg-card/70 p-10 text-center text-gray-500 dark:border-gray-800">
           {labels.noMatches}

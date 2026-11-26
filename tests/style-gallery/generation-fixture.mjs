@@ -95,6 +95,13 @@ if (process.env.GALLERY_SCROLL_FIXTURE === '1') {
     }),
   }));
 }
+objects['metadata/prompt-search-index.json'] = {
+  version: 1,
+  updatedAt: date,
+  entries: Object.fromEntries(
+    objects['metadata/catalog-v5.json'].items.map((entry, i) => [entry.slug, [i === 95 ? '水彩 唯一命中' : '水彩']]),
+  ),
+};
 const profileKey = `images/${'c'.repeat(64)}.png`;
 const historyKey = `images/${'d'.repeat(64)}.png`;
 objects['profile.v1.json'] = {
