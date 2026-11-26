@@ -5,6 +5,7 @@ interface ProgressiveListOptions {
   batchSize: number;
   resetKey: string;
   rootMargin?: string;
+  requestNextPage?: () => void;
 }
 
 interface ProgressiveListState {
@@ -17,18 +18,19 @@ interface ProgressiveListState {
  * 筛选或排序改变 `resetKey` 后立即回到首批，既稳定网格顺序，也避免一次创建全部图片节点。
  */
 export function useProgressiveList<T>(items: T[], options: ProgressiveListOptions) {
-  const { initialCount, batchSize, resetKey, rootMargin = '800px 0px' } = options;
+  const { initialCount, batchSize, resetKey, rootMargin = '800px 0px', requestNextPage } = options;
   const [state, setState] = useState<ProgressiveListState>(() => ({ resetKey, count: initialCount }));
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const visibleCount = state.resetKey === resetKey ? state.count : initialCount;
-  const hasMore = visibleCount < items.length;
+  const hasMore = visibleCount < items.length || Boolean(requestNextPage);
 
   const loadMore = useCallback(() => {
+    if (visibleCount >= items.length) requestNextPage?.();
     setState((current) => {
       const currentCount = current.resetKey === resetKey ? current.count : initialCount;
-      return { resetKey, count: Math.min(items.length, currentCount + batchSize) };
+      return { resetKey, count: Math.min(items.length + (requestNextPage ? batchSize : 0), currentCount + batchSize) };
     });
-  }, [batchSize, initialCount, items.length, resetKey]);
+  }, [batchSize, initialCount, items.length, resetKey, visibleCount, requestNextPage]);
 
   const revealThrough = useCallback(
     (index: number) => {

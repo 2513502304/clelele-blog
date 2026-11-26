@@ -199,7 +199,21 @@
   font-size: 12px;
   font-weight: 650;
 }
+/* Native summary owns the whole visible row, including its vertical breathing room. */
+details.scenery-group {
+  display: block;
+  padding: 0;
+}
+details.scenery-group + details.scenery-group {
+  margin-top: -16px;
+}
+.scenery-light-group > details.scenery-group + details.scenery-group {
+  margin-top: -18px;
+}
 .scenery-group summary {
+  min-height: 44px;
+  padding-block: 8px;
+  align-items: center;
   display: flex;
   justify-content: space-between;
   cursor: pointer;
@@ -218,8 +232,11 @@
 }
 .scenery-group-body {
   display: grid;
-  gap: 18px;
-  padding-top: 20px;
+  gap: 12px;
+  padding-block: 0 14px;
+}
+.scenery-group-body > .appearance-caption {
+  margin: 0;
 }
 .scenery-group .appearance-choice select {
   max-width: 165px;

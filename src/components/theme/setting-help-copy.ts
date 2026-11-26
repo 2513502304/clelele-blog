@@ -36,7 +36,7 @@ const zh = {
   lightSurface:
     '调整所有页面侧栏和正文共用的底色。越大底衬越厚、光色越淡，越小更通透；阅读对比不足时可提高到 88% 或选择实色。卡片的最低底色可单独调整；实色模式优先。',
   lightThumbnailOpacity: '鼠标离开卡片时缩略图的可见程度。悬停、键盘聚焦和触屏浏览时显示原图。',
-  lightCardFloor: '控制卡片自身的最低底色。设为 0 可跟随页面底衬，实色阅读模式优先。',
+  lightCardFloor: '控制卡片和图库搜索栏的底色。0% 完全透明，可看到下面的页面底衬。实色模式优先。',
   lightShadowRadius: '调整文字背后光晕的扩散半径，配合文字柔光强度使用。',
   idleSeconds: '停止操作后保留粒子和桌面角色的当前画面，输入或滚动时恢复。0 秒表示持续播放。',
   particleFps: '限制粒子动画的绘制频率，较低值适合省电。',
@@ -112,7 +112,7 @@ const en: Record<HelpKey, string> = {
     'Shared backing behind sidebar and content on every page. Higher is more opaque, lower more transparent. For stronger reading contrast, choose 88% or solid mode. Minimum card opacity is adjustable; solid mode takes priority.',
   lightThumbnailOpacity:
     'Thumbnail opacity while the pointer is away. Hover, keyboard focus and touch browsing show the full image.',
-  lightCardFloor: 'Minimum card material opacity. At zero it follows page backing. Solid reading mode takes priority.',
+  lightCardFloor: 'Tint cards and the gallery search bar. At zero the page veil shows through. Solid reading mode takes priority.',
   lightShadowRadius: 'Spread of the halo behind text, in pixels. Set its intensity separately.',
   idleSeconds:
     'Freeze decoration and idle character frames after this many seconds. Interact to resume. Zero keeps them moving.',
@@ -184,7 +184,7 @@ const ja: Record<HelpKey, string> = {
     '全ページのサイドバーと本文共通の下地です。大きいほど不透明、小さいほど透けます。読みにくい場合は88%か単色を選べます。カード下地は個別に調整でき、単色設定が優先です。',
   lightThumbnailOpacity:
     'ポインターを外した時のサムネイルの不透明度です。ホバー、キーボードフォーカス、タッチ操作では元の濃さになります。',
-  lightCardFloor: 'カードの下地の最低値です。0でページの下地に従います。単色設定を優先します。',
+  lightCardFloor: 'カードと検索欄の下地の不透明度です。0でページの下地が透け、単色設定を優先します。',
   lightShadowRadius: '文字の後ろの光彩が広がる半径です。強さは別に調整できます。',
   idleSeconds: '指定秒数操作がないと粒子と待機中のキャラクターを静止します。操作で再開、0で常時再生します。',
   particleFps: '毎秒の描画回数を制限します。小さいほど負荷が軽くなります。',

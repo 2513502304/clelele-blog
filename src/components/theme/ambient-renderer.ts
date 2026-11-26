@@ -99,8 +99,10 @@ export function startAtmosphere(canvas: HTMLCanvasElement): () => void {
   function draw(now: number) {
     frame = requestAnimationFrame(draw);
     // Honor the selected frame cap, and never jump particles across the screen after a stalled frame.
-    if (last && now - last < 1000 / prefs.particleFps) return;
-    const dt = last ? Math.min(0.07, (now - last) / 1000) : 0.033;
+    const interval = 1000 / prefs.particleFps;
+    if (last && now - last < interval) return;
+    // A normal 10 FPS frame spans 100 ms plus up to one display refresh.
+    const dt = last ? Math.min(Math.max(70, interval + 20), now - last) / 1000 : 0.033;
     last = now;
     time += dt * (0.3 + prefs.speed / 35);
     ctx.clearRect(0, 0, width, height);
@@ -119,10 +121,10 @@ export function startAtmosphere(canvas: HTMLCanvasElement): () => void {
       ctx.globalAlpha = 1;
       return;
     }
+    const falling = ['sakura', 'snow', 'rain', 'leaves'].includes(prefs.effect);
     for (const p of particles) {
       const drift = Math.sin(time * 0.4 + p.phase);
       const rate = dt * (0.3 + prefs.speed / 35) * p.depth;
-      const falling = ['sakura', 'snow', 'rain', 'leaves'].includes(prefs.effect);
       p.x += falling ? rate * (prefs.effect === 'rain' ? -35 : 10 + drift * 18) : rate * drift * 8;
       p.y += rate * (prefs.effect === 'rain' ? 270 : falling ? 22 : Math.cos(time * 0.3 + p.phase) * 7);
       if (p.y > height + 30) {

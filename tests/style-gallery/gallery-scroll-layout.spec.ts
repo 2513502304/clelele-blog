@@ -154,3 +154,81 @@ test('previews have separate cache identities and missing previews fall back to 
   await expect(image).toHaveAttribute('src', source);
   await expect.poll(() => image.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(1664);
 });
+
+test('catalog pages stay off the first screen and a failed append can retry without losing its first cards', async ({
+  page,
+}) => {
+  test.skip(process.env.GALLERY_SCROLL_FIXTURE !== '1', 'needs a multi-page fixture');
+  const pages: string[] = [];
+  await page.route('**/api/style-gallery/cards?**', async (route) => {
+    pages.push(route.request().url());
+    if (pages.length === 1) return route.fulfill({ status: 503 });
+    return route.continue();
+  });
+  await page.goto('/image-style-prompt-gallery', { waitUntil: 'domcontentloaded' });
+  const cards = page.locator('[data-gallery-layout] article');
+  await expect(cards).toHaveCount(24);
+  await expect(page.locator('astro-island[component-url*="StyleGalleryBrowser"]')).not.toHaveAttribute('ssr');
+  expect(pages).toHaveLength(0);
+  const firstSlug = await cards.first().getAttribute('data-gallery-selection-id');
+  if (!firstSlug) throw new Error('First card has no slug');
+  await page.getByRole('button', { name: '加载更多结果' }).evaluate((button: HTMLButtonElement) => button.click());
+  await expect(page.getByRole('alert')).toContainText('图库目录加载失败');
+  await expect(cards).toHaveCount(24);
+  await page.getByRole('button', { name: '重试', exact: true }).evaluate((button: HTMLButtonElement) => button.click());
+  await expect(cards).toHaveCount(48);
+  expect(new URL(pages[1]).searchParams.get('offset')).toBe('24');
+  await expect(cards.first()).toHaveAttribute('data-gallery-selection-id', firstSlug);
+});
+
+test('original opens before the full catalog arrives and keeps the image chosen during the download', async ({ page }) => {
+  test.skip(process.env.GALLERY_SCROLL_FIXTURE !== '1', 'needs a multi-page fixture');
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route('**/api/style-gallery/cards?all=1', async (route) => {
+    await gate;
+    await route.continue();
+  });
+  try {
+    await page.goto('/image-style-prompt-gallery');
+    await page
+      .getByRole('button', { name: /^放大查看:/ })
+      .first()
+      .click();
+    const viewer = page.getByRole('dialog');
+    await expect(viewer).toContainText('1 / 24');
+    await page.keyboard.press('ArrowRight');
+    await expect(viewer).toContainText('2 / 24');
+    release();
+    await expect(viewer).toContainText('2 / 192');
+    await page.keyboard.press('Escape');
+    await expect(viewer).toHaveCount(0);
+  } finally {
+    release();
+  }
+});
+
+test('a tap on a visible original before hydration is honored after the gallery code arrives', async ({ page }) => {
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route('**/StyleGalleryBrowser.tsx*', async (route) => {
+    await gate;
+    await route.continue();
+  });
+  try {
+    await page.goto('/image-style-prompt-gallery', { waitUntil: 'commit' });
+    const viewerButton = page.locator('[data-gallery-original]').first();
+    const island = page.locator('astro-island[component-url*="StyleGalleryBrowser"]');
+    await expect(island).toHaveAttribute('ssr');
+    await viewerButton.click();
+    await expect(island).toHaveAttribute('ssr');
+    release();
+    await expect(page.getByRole('dialog')).toContainText(/1 \/ (24|192)/);
+  } finally {
+    release();
+  }
+});

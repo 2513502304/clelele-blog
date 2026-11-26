@@ -69,6 +69,13 @@
   border-inline-start: 2px solid hsl(var(--primary) / 30%);
   background: linear-gradient(90deg, hsl(var(--card) / 40%), transparent);
 }
+/* Small labels keep their tint over artwork. Each live backdrop on a moving
+   thumbnail otherwise needs its own composited surface throughout a scroll. */
+[data-gallery-layout] :is(.gallery-image-badge, .gallery-tags-overlay .gallery-tag) {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
 /* Make the toolbar read as a raised control layer, not another opaque rectangle. */
 [data-gallery-selection-surface] .glass-toolbar {
   border-color: hsl(var(--card) / 80%);

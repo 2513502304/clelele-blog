@@ -425,3 +425,33 @@ test.describe('touch gallery', () => {
     await expect(page.locator('[data-gallery-layout] article img').first()).toHaveCSS('opacity', '1');
   });
 });
+
+test('surface controls own their entire row and tint the gallery search together with cards', async ({ page }) => {
+  await page.goto('/image-style-prompt-gallery', { waitUntil: 'domcontentloaded' });
+  const toolbar = page.locator('.glass-toolbar').first();
+  const search = toolbar.locator('input').first();
+  const card = page.locator('[data-gallery-layout] article').first();
+  await expect(page.locator('#banner-ambient-light')).toHaveAttribute('data-ready', 'true');
+  for (const surface of [card, toolbar, search]) await expect(surface).toHaveCSS('background-color', /, 0\)$/);
+  await page.locator('[data-appearance-toggle]').click();
+  const panel = page.locator('.appearance-panel');
+  await panel.getByRole('button', { name: '横幅', exact: true }).click();
+  const summary = panel.locator('summary').filter({ hasText: '界面融合' });
+  const group = summary.locator('..');
+  await summary.scrollIntoViewIfNeeded();
+  const box = await summary.boundingBox();
+  if (!box) throw new Error('Missing header');
+  expect(box.height).toBeGreaterThanOrEqual(44);
+  await summary.click({ position: { x: 6, y: 2 } });
+  await expect(group).toHaveAttribute('open');
+  const caption = group.locator('.appearance-caption');
+  const captionBox = await caption.boundingBox();
+  const openHeader = await summary.boundingBox();
+  if (!captionBox || !openHeader) throw new Error('Missing expanded content');
+  const gap = captionBox.y - (openHeader.y + openHeader.height);
+  expect(gap).toBeLessThanOrEqual(8);
+  await panel.getByRole('spinbutton', { name: '卡片底色下限', exact: true }).fill('65');
+  for (const surface of [card, toolbar, search]) await expect(surface).toHaveCSS('background-color', /0\.65\)/);
+  await summary.click({ position: { x: box.width - 6, y: box.height - 2 } });
+  await expect(group).not.toHaveAttribute('open');
+});

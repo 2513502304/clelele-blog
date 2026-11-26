@@ -21,6 +21,7 @@ interface StyleGalleryDateRangeFilterProps {
   locale: string;
   labels: StyleGalleryDateRangeLabels;
   availableDateKeys: readonly string[];
+  onOpen?: () => void;
   onApply: (range: StyleGalleryDateRange) => void;
   triggerClassName?: string;
 }
@@ -133,6 +134,7 @@ function StyleGalleryDateRangeFilterContent({
   labels,
   availableDateKeys,
   onApply,
+  onOpen,
   triggerClassName,
 }: StyleGalleryDateRangeFilterProps) {
   const applied = normalizeStyleGalleryDateRange(value);
@@ -177,6 +179,7 @@ function StyleGalleryDateRangeFilterContent({
 
   function handleOpenChange(nextOpen: boolean) {
     if (nextOpen) {
+      onOpen?.();
       setDraft(applied);
       setActiveBoundary(applied.from ? 'to' : 'from');
       setFollowToday(false);
