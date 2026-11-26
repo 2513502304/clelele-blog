@@ -23,7 +23,7 @@ export const SCENERY_RULES = {
   lightDirection: { default: 'all', values: ['all', 'sides', 'top', 'bottom'] },
   lightSurface: { default: 35, min: 0, max: 100, step: 1 },
   lightThumbnailOpacity: { default: 100, min: 0, max: 100, step: 1 },
-  lightCardFloor: { default: 0, min: 0, max: 100, step: 1 },
+  lightCardFloor: { default: 35, min: 0, max: 100, step: 1 },
   lightShadowRadius: { default: 5, min: 0, max: 24, step: 1 },
   lightTextShadow: { default: 20, min: 0, max: 100, step: 1 },
   textOpacity: { default: 70, min: 0, max: 100, step: 1 },

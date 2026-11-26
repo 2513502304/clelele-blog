@@ -432,10 +432,16 @@ test('surface controls own their entire row and tint the gallery search together
   const search = toolbar.locator('input').first();
   const card = page.locator('[data-gallery-layout] article').first();
   await expect(page.locator('#banner-ambient-light')).toHaveAttribute('data-ready', 'true');
-  for (const surface of [card, toolbar, search]) await expect(surface).toHaveCSS('background-color', /, 0\)$/);
+  for (const surface of [card, toolbar, search]) await expect(surface).toHaveCSS('background-color', /0\.35\)$/);
   await page.locator('[data-appearance-toggle]').click();
   const panel = page.locator('.appearance-panel');
   await panel.getByRole('button', { name: '横幅', exact: true }).click();
+  const positions = await panel.locator('details.scenery-group > summary').evaluateAll((nodes) =>
+    nodes.map((node) => node.getBoundingClientRect().top),
+  );
+  expect(positions).toHaveLength(4);
+  const rowStep = positions[1] - positions[0];
+  for (let i = 2; i < positions.length; i++) expect(positions[i] - positions[i - 1]).toBeCloseTo(rowStep, 1);
   const summary = panel.locator('summary').filter({ hasText: '界面融合' });
   const group = summary.locator('..');
   await summary.scrollIntoViewIfNeeded();

@@ -1,6 +1,7 @@
 .scenery-controls {
+  --scenery-gap: 16px;
   display: grid;
-  gap: 16px;
+  gap: var(--scenery-gap);
 }
 .scenery-preview {
   position: relative;
@@ -101,6 +102,10 @@
 .scenery-light-modes [aria-pressed="true"] .scenery-light-art {
   outline: 2px solid hsl(var(--primary));
   outline-offset: 3px;
+}
+.scenery-light-group {
+  --scenery-gap: 18px;
+  row-gap: var(--scenery-gap);
 }
 .scenery-light-group > .appearance-caption {
   margin: 0;
@@ -204,11 +209,10 @@ details.scenery-group {
   display: block;
   padding: 0;
 }
-details.scenery-group + details.scenery-group {
-  margin-top: -16px;
-}
-.scenery-light-group > details.scenery-group + details.scenery-group {
-  margin-top: -18px;
+/* The ambient section ends midway through the four consecutive disclosure rows. */
+details.scenery-group + details.scenery-group,
+.scenery-light-group:has(> details:last-child) + details.scenery-group {
+  margin-block-start: calc(-1 * var(--scenery-gap));
 }
 .scenery-group summary {
   min-height: 44px;
