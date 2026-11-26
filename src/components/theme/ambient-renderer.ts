@@ -1,3 +1,4 @@
+import { $decorationIdle } from '@store/decoration-idle';
 import { $backgroundPagePaused } from '@store/page-activity';
 import { getSceneryPreferences } from './scenery-preferences';
 
@@ -72,15 +73,20 @@ export function startAtmosphere(canvas: HTMLCanvasElement): () => void {
     );
   }
   function schedule() {
-    const running = canAnimate();
+    const enabled = canAnimate();
+    const running = enabled && !$decorationIdle.get();
     canvas.dataset.running = String(running);
     // Reading settings fire for font and spacing changes too. Preserve the
     // existing clock unless visibility or a motion preference actually changes.
-    if (Boolean(frame) === running) return;
+    if (Boolean(frame) === running) {
+      if (!enabled) ctx.clearRect(0, 0, width, height);
+      return;
+    }
     cancelAnimationFrame(frame);
     frame = 0;
     last = 0;
-    ctx.clearRect(0, 0, width, height);
+    // Preserve the last visible frame during reading. Hidden/disabled surfaces can be cleared.
+    if (!enabled) ctx.clearRect(0, 0, width, height);
     if (running) frame = requestAnimationFrame(draw);
   }
   function glow(x: number, y: number, radius: number, color: string) {
@@ -92,8 +98,8 @@ export function startAtmosphere(canvas: HTMLCanvasElement): () => void {
   }
   function draw(now: number) {
     frame = requestAnimationFrame(draw);
-    // Cap at 30fps, and never jump particles across the screen after a stalled frame.
-    if (last && now - last < 1000 / 30) return;
+    // Honor the selected frame cap, and never jump particles across the screen after a stalled frame.
+    if (last && now - last < 1000 / prefs.particleFps) return;
     const dt = last ? Math.min(0.07, (now - last) / 1000) : 0.033;
     last = now;
     time += dt * (0.3 + prefs.speed / 35);
@@ -190,6 +196,7 @@ export function startAtmosphere(canvas: HTMLCanvasElement): () => void {
   }
   resize();
   // The large opaque studio covers the decoration; preserve its particles but stop invisible work.
+  const unsubscribeIdle = $decorationIdle.subscribe(schedule);
   const unsubscribeModal = $backgroundPagePaused.subscribe(schedule);
   window.addEventListener('resize', resize);
   window.addEventListener('scenery-change', configure);
@@ -198,6 +205,7 @@ export function startAtmosphere(canvas: HTMLCanvasElement): () => void {
   motion.addEventListener('change', schedule);
   return () => {
     unsubscribeModal();
+    unsubscribeIdle();
     cancelAnimationFrame(frame);
     ctx.clearRect(0, 0, width, height);
     window.removeEventListener('resize', resize);

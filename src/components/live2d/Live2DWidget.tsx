@@ -15,6 +15,7 @@ import type { Live2DLoadProgress, Live2DRenderer, Live2DRendererPhase } from '@l
 import type { Live2DCatalog, Live2DVoiceIndex } from '@lib/live2d/types';
 import { live2dVoiceAudioPreloader, live2dVoiceIndexCache } from '@lib/live2d/voice-index';
 import { useStore } from '@nanostores/react';
+import { $decorationIdle } from '@store/decoration-idle';
 import { $live2dState, live2dActions } from '@store/live2d';
 import { $activeModal, closeModal, openModal } from '@store/modal';
 import { $backgroundLive2DPaused } from '@store/page-activity';
@@ -61,6 +62,8 @@ function Live2DWidgetContent({
   const { t, locale } = useTranslation();
   const state = useStore($live2dState);
   const modal = useStore($activeModal);
+  const decorationIdle = useStore($decorationIdle);
+  const [characterEngaged, setCharacterEngaged] = useState(false);
   const backgroundPaused = useStore($backgroundLive2DPaused);
   const activePlayerId = useStore($activePlayerId);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -231,7 +234,15 @@ function Live2DWidgetContent({
   }, [characterVoice, state.rendererStatus]);
 
   useEffect(() => {
-    if (!activeVoiceIndex || !characterVoice || !state.preferences.audioEnabled || backgroundPaused) return;
+    if (
+      !characterEngaged ||
+      decorationIdle ||
+      !activeVoiceIndex ||
+      !characterVoice ||
+      !state.preferences.audioEnabled ||
+      backgroundPaused
+    )
+      return;
     const controller = new AbortController();
     let cancelled = false;
     let idleHandle: number | null = null;
@@ -254,7 +265,7 @@ function Live2DWidgetContent({
       }
       controller.abort();
     };
-  }, [activeVoiceIndex, characterVoice, state.preferences.audioEnabled, backgroundPaused]);
+  }, [activeVoiceIndex, characterVoice, state.preferences.audioEnabled, backgroundPaused, characterEngaged, decorationIdle]);
 
   useEffect(() => {
     const update = () => {
@@ -346,12 +357,24 @@ function Live2DWidgetContent({
       const temporarilyFrozen = document.hidden || backgroundPaused || state.preferences.hidden || state.avoidanceHidden;
       // 智能避让和浏览器后台只冻结现有 WebGL 实例。suspend() 会销毁 core，恢复时即使
       // 命中 HTTP 缓存也必须重新解析 moc/纹理，造成用户看到重复 loading。
-      rendererRef.current?.setPlaybackPaused(temporarilyFrozen || userPaused);
+      const resting = decorationIdle && !studioOpen && !state.activePanel && !dialogue && audioStatus === 'none';
+      rendererRef.current?.setPlaybackPaused(temporarilyFrozen || userPaused || resting);
     };
     syncRendererActivity();
     document.addEventListener('visibilitychange', syncRendererActivity);
     return () => document.removeEventListener('visibilitychange', syncRendererActivity);
-  }, [backgroundPaused, state.avoidanceHidden, state.preferences.hidden, state.rendererStatus, userPaused]);
+  }, [
+    backgroundPaused,
+    state.avoidanceHidden,
+    state.preferences.hidden,
+    state.rendererStatus,
+    userPaused,
+    decorationIdle,
+    studioOpen,
+    state.activePanel,
+    dialogue,
+    audioStatus,
+  ]);
 
   useEffect(() => {
     if (!state.preferences.audioEnabled) stopTransientInteraction();
@@ -732,6 +755,8 @@ function Live2DWidgetContent({
       data-studio-open={studioOpen || undefined}
       style={rootStyle}
       data-phase={state.rendererStatus}
+      onPointerEnter={() => setCharacterEngaged(true)}
+      onFocusCapture={() => setCharacterEngaged(true)}
       data-live2d-policy={state.preferences.displayPolicy}
       data-panel-align={placement.x + 140 < viewportWidth / 2 ? 'left' : 'right'}
       data-avoidance-hidden={state.avoidanceHidden || undefined}

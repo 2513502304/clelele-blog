@@ -1,6 +1,8 @@
 <canvas id="ambient-effects" aria-hidden="true"></canvas>
 <style>
   #ambient-effects { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 20; }
+  :global(html[data-decoration-idle="true"] .footer-blossom),
+  :global(html[data-decoration-idle="true"] .wave .parallax > use),
   :global(html[data-background-paused="true"] .wave .parallax > use),
   :global(html[data-background-paused="true"] .audio-player-disc) {
     animation-play-state: paused;
@@ -8,12 +10,16 @@
   @media print { #ambient-effects { display: none; } }
 </style>
 <script>
+  import { $decorationIdle } from '@store/decoration-idle';
   import { $backgroundPagePaused } from '@store/page-activity';
   import { getSceneryPreferences } from './scenery-preferences';
   // The audio itself keeps playing; only the obscured decorative disc/waves stop.
   const syncBackground = () => {
     document.documentElement.dataset.backgroundPaused = String($backgroundPagePaused.get());
   };
+  $decorationIdle.subscribe((idle) => {
+    document.documentElement.dataset.decorationIdle = String(idle);
+  });
   $backgroundPagePaused.subscribe(syncBackground);
   document.addEventListener('astro:page-load', syncBackground);
   // Lazy loading keeps an effects-off page free of rendering work.

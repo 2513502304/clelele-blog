@@ -48,7 +48,8 @@ test('banner controls use actual pointer drags and persist independent layers ac
   await expect
     .poll(async () => Number(await panel.getByRole('spinbutton', { name: '遮罩强度', exact: true }).inputValue()))
     .toBeGreaterThan(55);
-  await expect(page.locator('.site-banner .banner-mask')).toHaveCSS('opacity', /0\.[56]/);
+  const mask = Number(await slider.inputValue());
+  await expect(page.locator('.site-banner .banner-mask')).toHaveCSS('opacity', String(mask / 100));
   await panel.locator('summary').filter({ hasText: '标题排印' }).click();
   await panel.getByRole('spinbutton', { name: '文字不透明度', exact: true }).fill('70');
   await panel.getByRole('combobox', { name: '字重', exact: true }).selectOption('400');
@@ -203,7 +204,7 @@ test('storage normalization and localized nested-page banners survive page reloa
   await page.goto('/image-style-prompt-gallery', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('.site-banner h1')).toContainText('图像风格提示词画廊');
   await expect(page.locator('.site-banner .banner-copy')).toHaveCSS('visibility', 'hidden');
-  await expect(page.locator('.site-banner .banner-mask')).toHaveCSS('opacity', '0.85');
+  await expect(page.locator('.site-banner .banner-mask')).toHaveCSS('opacity', '1');
   await expect(page.locator('html')).toHaveAttribute('data-scene-effect', 'sakura');
   await expect(page.locator('html')).toHaveAttribute('data-scene-text-color', 'theme');
   await page.getByRole('button', { name: '主题与阅读', exact: true }).click();
@@ -489,4 +490,22 @@ test('a reader-selected protective surface keeps text readable even with black a
       ).toBeGreaterThanOrEqual(4.5);
     }
   }
+});
+
+test('idle reading retains the last particle frame and keyboard input resumes drawing', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('appearance-scenery', JSON.stringify({ idleSeconds: 2 })));
+  await page.goto('/image-style-prompt-gallery', { waitUntil: 'domcontentloaded' });
+  const canvas = page.locator('#ambient-effects');
+  await expect(canvas).toHaveAttribute('data-running', 'false', { timeout: 15000 });
+  await page.keyboard.press('Shift');
+  await expect(canvas).toHaveAttribute('data-running', 'true');
+  await expect(canvas).toHaveAttribute('data-running', 'false');
+  const pixels = () => canvas.evaluate((node: HTMLCanvasElement) => node.toDataURL());
+  await expect(page.locator('.footer-blossom')).toHaveCSS('animation-play-state', 'paused');
+  const frozen = await pixels();
+  expect(await drawnPixels(page)).toBeGreaterThan(0);
+  await page.waitForTimeout(220);
+  expect(await pixels()).toEqual(frozen);
+  await page.mouse.move(130, 220);
+  await expect.poll(pixels).not.toEqual(frozen);
 });

@@ -3,6 +3,7 @@ import HomeSider from '@components/layout/HomeSider.astro';
 import StyleGalleryBrowser from '@components/style-gallery/StyleGalleryBrowser';
 import StyleGalleryStorageHints from '@components/style-gallery/StyleGalleryStorageHints.astro';
 import Cover from '@components/ui/cover/Cover.astro';
+import { GALLERY_INITIAL_CARD_COUNT } from '@constants/pagination';
 import { CONTENT_PADDING } from '@constants/layout';
 import { siteConfig } from '@constants/site-config';
 import Layout from '@layouts/Layout.astro';
@@ -19,6 +20,10 @@ export const prerender = false;
 const locale = getLocaleFromUrl(Astro.url.pathname);
 const gallery = await getStyleGalleryData();
 const cardItems = toStyleGalleryCardDataList(gallery);
+// One look-ahead row keeps the SSR load-more control accurate. Stream the rest as inert
+// JSON after the visible cards, without Astro's per-property hydration encoding.
+const initialItems = cardItems.slice(0, GALLERY_INITIAL_CARD_COUNT + 1);
+const remainingItems = JSON.stringify(cardItems.slice(initialItems.length)).replace(/</g, '\\u003c');
 const title = `${t(locale, 'gallery.title')} | ${siteConfig.title}`;
 const description = t(locale, 'gallery.description');
 const galleryBasePath = localizedPath('/image-style-prompt-gallery', locale);
@@ -101,12 +106,14 @@ setStyleGalleryPublicCacheHeaders(Astro.response.headers, [STYLE_GALLERY_LIST_CA
 
       <StyleGalleryBrowser
         client:idle
-        items={cardItems}
+        items={initialItems}
+        totalCount={cardItems.length}
         galleryBasePath={galleryBasePath}
         locale={locale}
         labels={browserLabels}
         lightboxCopyLabels={lightboxCopyLabels}
       />
+      <script is:inline type="application/json" data-gallery-remaining-items set:html={remainingItems} />
     </div>
   </TwoColumnLayout>
 </Layout>

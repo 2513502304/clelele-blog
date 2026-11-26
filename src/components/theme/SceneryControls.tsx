@@ -32,7 +32,7 @@ const looks: (typeof neutral | Partial<SceneryPreferences>)[] = [
   { ...neutral, mask: 24, maskStyle: 'gradient', contrast: 115, saturation: 0 },
   { ...neutral, mask: 65, maskStyle: 'vignette', contrast: 112, saturation: 80 },
 ];
-const effectKeys = ['effect', 'density', 'speed', 'effectOpacity'] as const;
+const effectKeys = ['effect', 'density', 'speed', 'effectOpacity', 'idleSeconds', 'particleFps'] as const;
 type NumericKey = {
   [K in keyof SceneryPreferences]: SceneryPreferences[K] extends number ? K : never;
 }[keyof SceneryPreferences];
@@ -255,8 +255,10 @@ export function SceneryControls({ tab, lang }: { tab: 'banner' | 'effects'; lang
               </button>
             ))}
           </fieldset>
+          {numeric('idleSeconds', ' s')}
           {value.effect !== 'none' && (
             <div className="scenery-group">
+              {numeric('particleFps', ' fps')}
               {numeric('density')}
               {numeric('speed')}
               {numeric('effectOpacity')}

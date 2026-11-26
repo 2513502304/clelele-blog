@@ -97,11 +97,16 @@ html:is([data-scene-ambient-light="halo"], [data-scene-ambient-light="wash"]):ha
     }
   }
   .page-reading-layout :is(.bg-card, .bg-white, .bg-background):not(button, input, select, textarea, [role="dialog"]) {
-    background-color: hsl(var(--card) / max(0.78, var(--ambient-surface)));
+    background-color: hsl(var(--card) / max(calc(var(--scene-light-card-floor, 78) / 100), var(--ambient-surface)));
     background-image: linear-gradient(145deg, hsl(var(--card) / 25%), transparent 65%);
   }
+  @media (hover: hover) and (pointer: fine) {
+    .page-reading-layout [data-gallery-layout] [data-gallery-selection-id]:not(:hover):not(:focus-within) img {
+      opacity: calc(var(--scene-light-thumbnail-opacity, 100) / 100);
+    }
+  }
   .page-reading-layout :is(h1, h2, h3, p, label, figcaption) {
-    text-shadow: 0 1px 5px hsl(var(--card) / var(--ambient-halo));
+    text-shadow: 0 1px calc(var(--scene-light-shadow-radius, 5) * 1px) hsl(var(--card) / var(--ambient-halo));
   }
   &[data-reading-transparency="solid"] {
     --ambient-surface: 1;

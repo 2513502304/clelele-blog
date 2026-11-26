@@ -1,3 +1,5 @@
+export const GALLERY_INITIAL_CARD_COUNT = 24;
+
 export const DEFAULT_COLLECTION_PAGE_SIZE = 20;
 export const MIN_COLLECTION_PAGE_SIZE = 1;
 export const MAX_COLLECTION_PAGE_SIZE = 200;

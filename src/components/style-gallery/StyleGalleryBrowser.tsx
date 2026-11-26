@@ -3,6 +3,7 @@ import StyleGalleryDateRangeFilter from '@components/style-gallery/StyleGalleryD
 import StyleGalleryVisualFilter, {
   type StyleGalleryVisualFilterLabels,
 } from '@components/style-gallery/StyleGalleryVisualFilter';
+import { GALLERY_INITIAL_CARD_COUNT } from '@constants/pagination';
 import { Icon } from '@iconify/react';
 import { createStyleGalleryDateRangeMatcher, getStyleGalleryDateKey } from '@lib/style-gallery-date-range';
 import type { StyleGalleryDateRangeLabels } from '@lib/style-gallery-date-range-labels';
@@ -67,6 +68,7 @@ export interface StyleGalleryBrowserItem {
 
 interface StyleGalleryBrowserProps {
   items: StyleGalleryBrowserItem[];
+  totalCount: number;
   galleryBasePath: string;
   locale: string;
   labels: StyleGalleryBrowserLabels;
@@ -111,7 +113,6 @@ interface PromptPickerState {
 // 桌面端四列：前两行主动加载，但只让首行占用高网络优先级。
 const EAGER_CARD_COUNT = 8;
 const HIGH_PRIORITY_CARD_COUNT = 4;
-const INITIAL_CARD_COUNT = 24;
 const CARD_BATCH_SIZE = 24;
 
 function normalize(value: string) {
@@ -134,7 +135,27 @@ function createPromptPickerState(
  * Gallery 主预览页：普通浏览只接收轻量 Catalog，用户开始搜索后再加载完整 prompt 索引。
  * 复制从详情接口读取完整文本；只有多 prompt 候选值得在 hover/focus 时提前请求并缓存。
  */
-function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, lightboxCopyLabels }: StyleGalleryBrowserProps) {
+function StyleGalleryBrowserContent({
+  items: initialItems,
+  totalCount,
+  galleryBasePath,
+  locale,
+  labels,
+  lightboxCopyLabels,
+}: StyleGalleryBrowserProps) {
+  const [items, setItems] = useState(initialItems);
+  useEffect(() => {
+    if (initialItems.length === totalCount) return;
+    // A streamed document can hydrate the first island before its JSON tail arrives.
+    // After DOMContentLoaded every row is available locally, including on offline return navigation.
+    const restore = () => {
+      const tail = document.querySelector('[data-gallery-remaining-items]')?.textContent;
+      if (tail) setItems(initialItems.concat(JSON.parse(tail)));
+    };
+    if (document.readyState !== 'loading') restore();
+    else document.addEventListener('DOMContentLoaded', restore, { once: true });
+    return () => document.removeEventListener('DOMContentLoaded', restore);
+  }, [initialItems, totalCount]);
   const shouldReduceMotion = useReducedMotion();
   const [query, setQuery] = useQueryState('q', parseAsString.withDefault(''));
   const { index: tagIndex, status: tagStatus } = useGalleryTags();
@@ -231,7 +252,7 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
     visualMatches,
   ]);
   const { hasMore, loadMore, loadMoreRef, revealThrough, visibleItems } = useProgressiveList(filteredItems, {
-    initialCount: INITIAL_CARD_COUNT,
+    initialCount: GALLERY_INITIAL_CARD_COUNT,
     batchSize: CARD_BATCH_SIZE,
     // “全部显示”仍必须按滚动渐进挂载；全量 Catalog 在客户端不等于一次创建全部图片节点。
     resetKey: `${tag}\u0000${query.trim().toLowerCase()}\u0000${dateFrom}\u0000${dateTo}\u0000${sortKey}\u0000${sortDirection}\u0000${visualRevision}`,
@@ -261,15 +282,6 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
     },
     [loadPromptChoices],
   );
-
-  useEffect(() => {
-    const candidates = visibleItems.slice(0, EAGER_CARD_COUNT).filter((item) => item.promptCount > 1);
-    // React island 已在浏览器空闲时 hydration；再让首屏布局稳定一帧后预取最多两行的多 prompt 元数据。
-    const timer = window.setTimeout(() => {
-      for (const item of candidates) prefetchPromptChoices(item);
-    }, 150);
-    return () => window.clearTimeout(timer);
-  }, [prefetchPromptChoices, visibleItems]);
 
   function handleQueryChange(value: string) {
     void setQuery(value).catch(reportUrlStateError);
@@ -434,7 +446,8 @@ function StyleGalleryBrowserContent({ items, galleryBasePath, locale, labels, li
             locale={locale}
           />
           <span className="shrink-0 text-muted-foreground text-sm tabular-nums">
-            {filteredItems.length} / {items.length}
+            {items.length < totalCount && filteredItems.length === items.length ? totalCount : filteredItems.length} /{' '}
+            {totalCount}
           </span>
           <div className="ml-auto flex items-center gap-2 md:ml-0">
             <label htmlFor="style-gallery-sort" className="sr-only">
