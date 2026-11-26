@@ -1,6 +1,7 @@
 import { useTranslation } from '@hooks/useTranslation';
 import { Icon } from '@iconify/react';
 import { createHpoiImageProxyUrl } from '@lib/hpoi/image';
+import { stateColor } from '@lib/hpoi/releases';
 import { useState } from 'react';
 import { InlineSpinner } from '@/components/ui/InlineSpinner';
 import type { TranslationKey } from '@/i18n/types';
@@ -37,6 +38,8 @@ export function HpoiCard({ item, state, masonry = false, ratingLoading = false }
 
   return (
     <a
+      data-hpoi-category={state}
+      style={state === 'all' ? undefined : { borderInlineStart: `3px solid ${stateColor[state]}` }}
       href={item.detailUrl}
       target="_blank"
       rel="noopener noreferrer"

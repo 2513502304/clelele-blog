@@ -294,3 +294,36 @@ test('old thumbnail snapshots cannot survive the original-image cache version up
   await expect.poll(() => img.evaluate((el) => (el as HTMLImageElement).naturalWidth)).toBe(750);
   expect(requests.some((url) => decodeURIComponent(url).includes('/pic/s/'))).toBe(false);
 });
+
+test('preorder calendar distinguishes exact dates from month-only and undated releases using existing category reads', async ({
+  page,
+}) => {
+  await setup(page);
+  const fixed = figure('1'),
+    monthly = { ...figure('2'), releaseDate: null, releaseText: '出荷：2027年9月' },
+    unknown = { ...figure('3'), releaseDate: null, releaseText: '出荷：未定' };
+  const seen: string[] = [];
+  await page.route(/\/api\/hpoi\?/, (route) => {
+    const state = new URL(route.request().url()).searchParams.get('state') ?? '';
+    seen.push(state);
+    return route.fulfill({
+      headers: imagePolicyHeaders,
+      json: { meta, next: null, items: ['all', 'preorder'].includes(state) ? [fixed, monthly, unknown] : [] },
+    });
+  });
+  await page.goto('/hpoi/');
+  await expect(page.locator('[data-hpoi-category=preorder]')).toHaveCount(3);
+  await page.getByRole('button', { name: '出荷日历', exact: true }).click();
+  const calendar = page.getByRole('region', { name: '出荷日历' });
+  await expect(page.getByRole('tab', { name: /预定/ })).toHaveAttribute('aria-selected', 'true');
+  await expect(calendar.locator('li')).toHaveCount(2);
+  await calendar.getByRole('button', { name: '2027-09-28 · 1' }).click();
+  await expect(calendar.locator('li')).toHaveText(/手办 1/);
+  await calendar.getByRole('button', { name: '日期待定 · 1' }).click();
+  await expect(calendar.locator('li')).toHaveText(/手办 3/);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByRole('button', { name: '返回卡片' }).click();
+  await expect(page.getByRole('tab', { name: /全部/ })).toHaveAttribute('aria-selected', 'true');
+  await expect.poll(() => seen.length).toBe(6);
+});
