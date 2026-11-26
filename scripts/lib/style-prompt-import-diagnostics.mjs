@@ -23,14 +23,26 @@ export function summarizePublishedImport(records, published, beforeByHash) {
 }
 
 /** Explain image sources and counts before diagnostics use those terms. */
-export function describeImportContext({ overwriteImages, dryRun, metadataOnly, overwriteTag, tags = [], apiBaseUrl } = {}) {
+export function describeImportContext({
+  antigravity,
+  overwriteImages,
+  dryRun,
+  metadataOnly,
+  overwriteTag,
+  tags = [],
+  apiBaseUrl,
+} = {}) {
   return [
-    '\n[导入说明] 本脚本从 Codex 会话 JSONL 中提取图片和对应的 Prompt。',
-    '  会话内嵌图：图片数据保存在 JSONL 中，即使电脑上的原文件丢失，仍可读取。',
-    '  UI images：会话保存的用户界面图片。模型输入可能另有一份缩小图；脚本优先读取可用的 UI 图片，但 UI 图片本身也可能已被压缩。',
-    '  同一输入的 UI 图与模型图只对应一条导入记录；脚本会关联已核对的版本哈希，避免重导时把缩小图与原图分别建卡。',
-    '  遇到 403、模型繁忙等任务错误时，只有后续重试确实输出了 Prompt 才会导入。新的图片或文字请求会结束上一条失败记录的配对；不会把报错本身作为 Prompt。',
-    '  本地附件：会话记录指向的电脑文件。路径和内容校验通过后，脚本才会使用该文件；文件丢失或不匹配时保留会话内嵌图。界面的附件图标不能证明图片是否压缩。',
+    ...(antigravity
+      ? ['\n[导入说明] 从选定的 Antigravity 会话读取用户上传的原图，按轮次匹配可见的模板回复和实际模型。']
+      : [
+          '\n[导入说明] 本脚本从 Codex 会话 JSONL 中提取图片和对应的 Prompt。',
+          '  会话内嵌图：图片数据保存在 JSONL 中，即使电脑上的原文件丢失，仍可读取。',
+          '  UI images：会话保存的用户界面图片。模型输入可能另有一份缩小图；脚本优先读取可用的 UI 图片，但 UI 图片本身也可能已被压缩。',
+          '  同一输入的 UI 图与模型图只对应一条导入记录；脚本会关联已核对的版本哈希，避免重导时把缩小图与原图分别建卡。',
+          '  遇到 403、模型繁忙等任务错误时，只有后续重试确实输出了 Prompt 才会导入。新的图片或文字请求会结束上一条失败记录的配对；不会把报错本身作为 Prompt。',
+          '  本地附件：会话记录指向的电脑文件。路径和内容校验通过后，脚本才会使用该文件；文件丢失或不匹配时保留会话内嵌图。界面的附件图标不能证明图片是否压缩。',
+        ]),
     '',
     '[图片、卡片与 Prompt]',
     '  一条记录是一组图片与对应回复。一张卡片可以包含多张图片、多个模型的 Prompt；同一图片也可能在会话中出现多次。',
@@ -60,6 +72,7 @@ export function describeImportContext({ overwriteImages, dryRun, metadataOnly, o
 export function describeImportHelp() {
   return [
     '用法：npm run import:style-prompts -- <codex-session.jsonl 或 .jsonl.zst> [选项]',
+    '      npm run import:antigravity-prompts -- "<完整会话标题或 brain 会话目录>" [选项]',
     describeImportContext(),
     '',
     '[开始之前]',
@@ -68,6 +81,8 @@ export function describeImportHelp() {
     '  JSONL 必须包含图片和对应反推回复；提取器按现有的中文主体占位符模板识别回复，不是任意聊天记录的批量上传器。',
     '  会话文件会逐行读取；图片数据仍会占用内存。脚本只读取会话中经核对的附件路径，不会扫描电脑寻找同名文件。',
     '  支持 Codex 的 .jsonl.zst 压缩会话，流式解压且不写临时副本；旧 .jsonl 路径缺失时自动查找同路径的 .jsonl.zst。--search-all 同时搜索两种格式。',
+    '',
+    '  Antigravity 按标题精确查找会话，只配对该会话的原始上传图片与可见模板回复。标题重名时可传 brain 下对应的会话目录。',
     '',
     '[常用选项]',
     '  --dry-run                只检查并显示计划，不上传或修改线上数据。',
