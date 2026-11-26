@@ -9,6 +9,7 @@ import { readStyleGalleryImageDimensions } from '../src/lib/style-gallery-image-
 import { sanitizeImportedOriginalPrompt, sanitizeImportedPrompt } from '../src/lib/style-gallery-prompt-sanitize.ts';
 import { isValidGalleryTag, MAX_GALLERY_TAGS_PER_ITEM, normalizeGalleryTag } from '../src/lib/style-gallery-tags.ts';
 import { computeStyleGalleryVisualFeaturesFromBytes } from '../src/lib/style-gallery-visual-feature-node.ts';
+import { readAntigravityItems, resolveAntigravityTranscript } from './lib/antigravity-session.mjs';
 import { archiveImportedSession, snapshotSessionFiles } from './lib/codex-session-archive.mjs';
 import { createSessionReadStream, findSessionFiles, resolveSessionPath, sessionHeader } from './lib/codex-session-files.mjs';
 import { configureEnvironmentProxy } from './lib/environment-proxy.mjs';
@@ -53,6 +54,7 @@ function parseArgs(argv) {
   let dryRun = false;
   let searchAll = false;
   let archive = false;
+  let antigravity = false;
   let help = false;
   const tags = [];
   for (let index = 0; index < argv.length; index++) {
@@ -60,6 +62,7 @@ function parseArgs(argv) {
     if (arg === '--help' || arg === '-h') help = true;
     else if (arg === '--dry-run') dryRun = true;
     else if (arg === '--search-all') searchAll = true;
+    else if (arg === '--antigravity') antigravity = true;
     else if (arg === '--archive') archive = true;
     else if (arg === '--metadata-only' || arg === '--update-metadata-only') metadataOnly = true;
     else if (arg === '--overwrite-tag') overwriteTag = true;
@@ -78,9 +81,11 @@ function parseArgs(argv) {
     else if (!sessionPath) sessionPath = arg;
     else throw new Error(`Unexpected positional argument: ${arg}`);
   }
+  if (antigravity && (archive || searchAll)) throw new Error('--archive and --search-all apply only to Codex sessions.');
   if (overwriteTag && !tags.length && !help) throw new Error('--overwrite-tag requires at least one --tag.');
   if (metadataOnly && overwriteImages) throw new Error('--overwrite-images cannot be combined with --metadata-only.');
   return {
+    antigravity,
     overwriteImages,
     archive,
     apiBaseUrl: apiBaseUrl.replace(/\/$/, ''),
@@ -980,6 +985,7 @@ function sleep(ms) {
 
 async function main() {
   const {
+    antigravity,
     apiBaseUrl,
     dryRun,
     help,
@@ -999,8 +1005,10 @@ async function main() {
   configureEnvironmentProxy();
   const token = process.env.STYLE_GALLERY_UPLOAD_TOKEN;
   if (!token) throw new Error('STYLE_GALLERY_UPLOAD_TOKEN is required, including read-only identity planning.');
-  const absoluteSessionPath = await resolveSessionPath(path.resolve(sessionPath));
-  console.log(describeImportContext({ overwriteImages, dryRun, metadataOnly, overwriteTag, tags, apiBaseUrl }));
+  const absoluteSessionPath = antigravity
+    ? await resolveAntigravityTranscript(sessionPath)
+    : await resolveSessionPath(path.resolve(sessionPath));
+  console.log(describeImportContext({ antigravity, overwriteImages, dryRun, metadataOnly, overwriteTag, tags, apiBaseUrl }));
   // Archiving a thread affects all its continuations, so never archive after a partial file selection.
   const selection = searchAll || archive ? await findSessionFiles(absoluteSessionPath) : { files: [absoluteSessionPath] };
   const archiveSnapshot = archive && !dryRun ? await snapshotSessionFiles(selection) : null;
@@ -1011,7 +1019,8 @@ async function main() {
     );
   for (const [index, file] of selection.files.entries()) console.log(`  [${index + 1}/${selection.files.length}] ${file}`);
   console.log('\nReading session files (streaming JSONL)...');
-  const rawItems = (await readSessionItems(selection.files)).map((item) => ({
+  const extracted = antigravity ? await readAntigravityItems(absoluteSessionPath) : await readSessionItems(selection.files);
+  const rawItems = extracted.map((item) => ({
     ...item,
     embeddedHash: getExtractedItemHash(item),
     embeddedPixelHash: '',
@@ -1054,28 +1063,33 @@ async function main() {
   console.log(
     `\n[Identity] ${extractedItems.length} image/prompt records; ${matches.filter(Boolean).length} already associated with published cards.`,
   );
-  const confirmedAttachments = rawItems.reduce((count, item) => count + (item.localImagePaths?.length ?? 0), 0);
-  const unconfirmedRecords = rawItems.filter((item) => item.attachmentPaths?.some(Boolean) && !item.localImagePaths?.length);
-  console.log(
-    `附件路径：${confirmedAttachments} 张图片的路径已与同一条输入核对；${unconfirmedRecords.length} 条记录的路径无法确认归属，不读取对应文件。路径确认后仍需校验实际文件内容。`,
-  );
-  for (const item of unconfirmedRecords)
+  if (antigravity) {
+    const files = rawItems.reduce((count, item) => count + item.images.length, 0);
+    console.log(`Antigravity: verified ${files} original upload(s) in this conversation.`);
+  } else {
+    const confirmedAttachments = rawItems.reduce((count, item) => count + (item.localImagePaths?.length ?? 0), 0);
+    const unconfirmedRecords = rawItems.filter((item) => item.attachmentPaths?.some(Boolean) && !item.localImagePaths?.length);
     console.log(
-      `  Unconfirmed attachment: image line ${item.sourceLine}, prompt line ${item.promptLine}; source bytes retained.`,
+      `附件路径：${confirmedAttachments} 张图片的路径已与同一条输入核对；${unconfirmedRecords.length} 条记录的路径无法确认归属，不读取对应文件。路径确认后仍需校验实际文件内容。`,
     );
-  console.log(
-    describeOriginalRecovery({
-      items: extractedItems.map((item, index) => ({
-        restoredImages: item.restoredImageCount,
-        reason: imageMigrationDecision(item, matches[index], overwriteImages),
-        slug: matches[index]?.item.slug,
-      })),
-      fallback: originals.fallback,
-      migrations: migrations.length,
-      overwriteImages,
-      dryRun,
-    }),
-  );
+    for (const item of unconfirmedRecords)
+      console.log(
+        `  Unconfirmed attachment: image line ${item.sourceLine}, prompt line ${item.promptLine}; source bytes retained.`,
+      );
+    console.log(
+      describeOriginalRecovery({
+        items: extractedItems.map((item, index) => ({
+          restoredImages: item.restoredImageCount,
+          reason: imageMigrationDecision(item, matches[index], overwriteImages),
+          slug: matches[index]?.item.slug,
+        })),
+        fallback: originals.fallback,
+        migrations: migrations.length,
+        overwriteImages,
+        dryRun,
+      }),
+    );
+  }
   const migratedHashes = new Set();
   const replacementUploadedKeys = [];
   const promptUpdatedHashes = new Set();
