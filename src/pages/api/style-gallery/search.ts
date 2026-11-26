@@ -8,6 +8,7 @@ import {
   getStyleGalleryPromptSearchIndex,
   getStyleGallerySearchCacheState,
 } from '@lib/style-gallery-store';
+import { waitUntil } from '@vercel/functions';
 import type { APIRoute } from 'astro';
 
 export const prerender = false;
@@ -64,7 +65,8 @@ export const GET: APIRoute = async ({ url }) => {
     const observed = getStyleGallerySearchCacheState();
     if (!usable && observed && observed.revision !== data.revision) data = await refresh();
     if (usable && cached && cached.expiresAt <= now && now >= retryAfter) {
-      void refresh().catch(() => {}); // Retry on a later request; this response uses the last validated snapshot.
+      // Extend a serverless invocation until the shared storage check settles; Node containers keep it running directly.
+      waitUntil(refresh().catch(() => {}));
     }
     const matches = data.search(q, params.get('from') ?? '', params.get('to') ?? '', sort, params.get('dir') === 'desc');
     const all = params.get('all') === '1';
