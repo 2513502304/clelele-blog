@@ -43,6 +43,10 @@ async function fixture(page: Page, authorized = true) {
       reads++;
       return route.fulfill({ json: index });
     }
+    if (url.pathname.endsWith('/search') && url.searchParams.get('q') === '专辑') {
+      prompts++;
+      return route.fulfill({ json: { start: 0, revision: 'test', total: 0, items: [] } });
+    }
     if (url.pathname.includes('prompt-search-index')) {
       prompts++;
       return route.fulfill({ json: {} });

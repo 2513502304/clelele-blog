@@ -114,6 +114,16 @@ export async function getStyleGalleryPromptSearchIndex(
     return promptSearchIndexCache.value;
   }
   try {
+    const previous = promptSearchIndexCache;
+    if (
+      !options.fresh &&
+      previous?.etag &&
+      (await getStyleGalleryObjectEtag(STYLE_GALLERY_PROMPT_SEARCH_INDEX_KEY)) === previous.etag &&
+      previous === promptSearchIndexCache
+    ) {
+      previous.expiresAt = now + CACHE_TTL_MS;
+      return previous.value;
+    }
     const snapshot = await getStyleGalleryObjectTextSnapshot(STYLE_GALLERY_PROMPT_SEARCH_INDEX_KEY);
     if (!snapshot.text) throw new Error('Style gallery prompt search index does not exist in HF storage.');
     const value = styleGalleryPromptSearchIndexSchema.parse(JSON.parse(snapshot.text));

@@ -10,6 +10,7 @@ interface OriginalPositionOptions<T> {
   elementId: (item: T) => string;
   hasVisualFilter: boolean;
   clearVisualFilter: () => void;
+  loadMissingTarget?: (mode: 'all') => Promise<void>;
 }
 
 /**
@@ -25,6 +26,7 @@ export function useGalleryOriginalPosition<T>({
   elementId,
   hasVisualFilter,
   clearVisualFilter,
+  loadMissingTarget,
 }: OriginalPositionOptions<T>) {
   const [filters, setFilters] = useQueryStates({
     q: parseAsString.withDefault(''),
@@ -57,7 +59,8 @@ export function useGalleryOriginalPosition<T>({
     if (target === null || hasFilters) return;
     const index = items.findIndex((item) => matchesTarget(item, target));
     if (index < 0) {
-      setTarget(null);
+      if (loadMissingTarget) void loadMissingTarget('all');
+      else setTarget(null);
       return;
     }
     if (index >= visibleCount) {
@@ -69,7 +72,7 @@ export function useGalleryOriginalPosition<T>({
     // can change when previously hidden members rejoin it.
     locateStyleGalleryElement(elementId(items[index]));
     setTarget(null);
-  }, [elementId, hasFilters, items, matchesTarget, revealThrough, target, visibleCount]);
+  }, [elementId, hasFilters, items, loadMissingTarget, matchesTarget, revealThrough, target, visibleCount]);
 
   return { hasFilters, locateOriginal, visualResetKey };
 }

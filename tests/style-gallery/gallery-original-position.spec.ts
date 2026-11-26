@@ -127,3 +127,26 @@ test('a late visual search cannot replace the restored list or move focus away f
   await expect(target).toBeFocused();
   expect(await page.locator('[data-gallery-layout] > article').count()).toBeGreaterThan(24);
 });
+
+test('rapid text input requests only the final search and pages without downloading the directory or prompt corpus', async ({
+  page,
+}) => {
+  const urls: URL[] = [];
+  page.on('request', (request) => {
+    if (request.url().includes('/api/style-gallery/')) urls.push(new URL(request.url()));
+  });
+  await page.goto('/image-style-prompt-gallery');
+  const input = page.locator('[data-gallery-browser] input').first();
+  await expect.poll(() => input.evaluate((node) => node.closest('astro-island')?.hasAttribute('ssr'))).toBe(false);
+  await input.fill('水');
+  await input.fill('水彩');
+  const cards = page.locator('[data-gallery-selection-id]');
+  await expect(page.locator('[data-gallery-browser]')).toContainText('192 / 192');
+  await expect.poll(() => urls.filter((url) => url.pathname.endsWith('/search')).length).toBe(1);
+  await cards.last().scrollIntoViewIfNeeded();
+  await expect.poll(() => cards.count()).toBeGreaterThan(24);
+  expect(urls.filter((url) => url.pathname.endsWith('/search')).every((url) => url.searchParams.get('q') === '水彩')).toBe(
+    true,
+  );
+  expect(urls.some((url) => url.pathname.endsWith('prompt-search-index') || url.searchParams.has('all'))).toBe(false);
+});

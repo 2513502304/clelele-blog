@@ -10,8 +10,10 @@ import {
 import type {
   StyleGalleryCardData,
   StyleGalleryCatalog,
+  StyleGalleryExampleIndex,
   StyleGalleryExampleOverviewItem,
   StyleGalleryItem,
+  StyleGalleryPromptSearchIndex,
 } from '@/types/style-gallery';
 import { getStyleGallerySourceThumbnail } from './style-gallery-image-key';
 
@@ -19,7 +21,10 @@ const overviewCache = new WeakMap<
   StyleGalleryCatalog,
   WeakMap<Awaited<ReturnType<typeof getStyleGalleryExampleIndex>>, StyleGalleryExampleOverviewItem[]>
 >();
-const promptSearchTextIndexCache = new WeakMap<StyleGalleryCatalog, Record<string, string>>();
+const promptSearchTextIndexCache = new WeakMap<
+  StyleGalleryCatalog,
+  { index: StyleGalleryPromptSearchIndex; text: Record<string, string> }
+>();
 
 export interface StyleGalleryData extends StyleGalleryCatalog {
   /** 仅在服务端读取时派生，不属于持久化 catalog schema。 */
@@ -28,6 +33,11 @@ export interface StyleGalleryData extends StyleGalleryCatalog {
 
 export async function getStyleGalleryData(): Promise<StyleGalleryData> {
   const [catalog, index] = await Promise.all([getStyleGalleryCatalog(), getStyleGalleryExampleIndex()]);
+  return createStyleGalleryData(catalog, index);
+}
+
+/** Build public card metadata from the same source revisions as sorted search pages. */
+export function createStyleGalleryData(catalog: StyleGalleryCatalog, index: StyleGalleryExampleIndex): StyleGalleryData {
   return { ...catalog, parentLikeCounts: Object.fromEntries(getStyleGalleryParentLikeCounts(index)) };
 }
 
@@ -102,14 +112,21 @@ export async function getStyleGalleryExampleOverview(): Promise<StyleGalleryExam
  */
 export async function getStyleGalleryPromptSearchTextIndex(): Promise<Record<string, string>> {
   const [catalog, promptIndex] = await Promise.all([getStyleGalleryCatalog(), getStyleGalleryPromptSearchIndex()]);
+  return createStyleGalleryPromptSearchTextIndex(catalog, promptIndex);
+}
+
+export function createStyleGalleryPromptSearchTextIndex(
+  catalog: StyleGalleryCatalog,
+  promptIndex: StyleGalleryPromptSearchIndex,
+): Record<string, string> {
   const cached = promptSearchTextIndexCache.get(catalog);
-  if (cached) return cached;
+  if (cached?.index === promptIndex) return cached.text;
   const searchIndex = Object.fromEntries(
     catalog.items.map((item) => [
       item.slug,
       createStyleGalleryExampleSourceSearchText({ title: item.title, prompts: promptIndex.entries[item.slug] ?? [] }),
     ]),
   );
-  promptSearchTextIndexCache.set(catalog, searchIndex);
+  promptSearchTextIndexCache.set(catalog, { index: promptIndex, text: searchIndex });
   return searchIndex;
 }
