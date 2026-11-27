@@ -21,7 +21,7 @@ import { RiArrowRightLine, RiCheckLine, RiRefreshLine } from 'react-icons/ri';
 import type { StyleGalleryImageRef } from '@/types/style-gallery';
 import { CopyButton } from '../markdown/shared/CopyButton';
 import { DiscardOutputAction } from './DiscardOutputAction';
-import { studioLanguage } from './StyleGalleryGenerationFields';
+import { GenerationDetails, studioLanguage } from './StyleGalleryGenerationFields';
 import { GenerationViewer } from './StyleGalleryGenerationViewer';
 import StyleGalleryGrid from './StyleGalleryGrid';
 import './gallery-generator.css';
@@ -216,10 +216,19 @@ function ReviewOutput({
           <div className="rounded-lg border border-border p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="font-semibold">{l('生成提示词与参数', 'プロンプトと設定', 'Prompt and settings')}</h2>
-              <CopyButton key={row.id} text={job.prompt} showLabel />
+              <CopyButton key={row.id} text={job.prompt} className="min-h-11" showLabel />
             </div>
             <p className="my-1 text-muted-foreground text-xs">{generationCaption(job.settings)}</p>
-            <div className="h-[4.5em] overflow-y-auto whitespace-pre-wrap break-words text-sm leading-[1.5]">{job.prompt}</div>
+            <section
+              key={row.id}
+              // biome-ignore lint/a11y/noNoninteractiveTabindex: Keyboard readers can scroll the named fixed-height region.
+              tabIndex={0}
+              aria-label={l('提示词和完整参数', 'プロンプトと全設定', 'Prompt and complete settings')}
+              className="h-[4.5em] overflow-y-auto overscroll-contain break-words rounded-sm text-sm leading-[1.5] focus-visible:outline-2 focus-visible:outline-primary"
+            >
+              <p className="whitespace-pre-wrap">{job.prompt}</p>
+              <GenerationDetails settings={job.settings} locale={locale} inline />
+            </section>
           </div>
           {row.group === 'pending' && (
             <form
