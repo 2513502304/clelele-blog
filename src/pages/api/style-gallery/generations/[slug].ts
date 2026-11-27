@@ -1,16 +1,23 @@
 import { createHash } from 'node:crypto';
 import { fetchHfS3Read } from '@lib/hf-s3';
-import { createStyleGallerySignedImageUrl, getStyleGalleryObjectBytes, putStyleGalleryObject } from '@lib/hf-s3-presign';
+import {
+  createStyleGallerySignedImageUrl,
+  deleteStyleGalleryObject,
+  getStyleGalleryObjectBytes,
+  putStyleGalleryObject,
+} from '@lib/hf-s3-presign';
 import { isAuthorizedStyleGalleryRequest } from '@lib/style-gallery-auth';
 import { StyleGalleryClientError } from '@lib/style-gallery-errors';
 import { ensureStyleGalleryExampleThumbnail } from '@lib/style-gallery-example-thumbnail';
 import { createStyleGalleryExample, getStyleGalleryExampleObjectKey } from '@lib/style-gallery-example-upload';
 import { getStyleGalleryExampleIdentity } from '@lib/style-gallery-examples';
 import {
+  decideOutput,
   draftImageKey,
   listGenerationJobs,
   noteOutput,
   recoverGeneration,
+  removeDraftFiles,
   reserveGeneration,
   runReservedGeneration,
 } from '@lib/style-gallery-generation-jobs';
@@ -74,6 +81,7 @@ async function publish(slug: string, scope: string, job: GenerationJob, index: n
     dimensions: autoOrient ?? { width, height },
     uploadedAt: job.created,
   });
+  await decideOutput(scope, job.id, index, 'publish');
   // Content-addressed assets are independent. Commit metadata only after all three are ready.
   const [feature] = await Promise.all([
     computeStyleGalleryVisualFeatureFromBytes(bytes, hash),
@@ -162,6 +170,11 @@ export const GET = privateRoute(async ({ scope }, request) => {
           : image.resize(144, 108, { fit: 'cover' });
       thumb = await resized.webp({ quality: 76 }).toBuffer();
       await putStyleGalleryObject(key, thumb, 'image/webp');
+      // A discard may have removed the original and existing thumbnails while Sharp was still encoding.
+      if ((await findJob(scope, job.id)).discarded?.includes(index)) {
+        await deleteStyleGalleryObject(key);
+        return json({ error: 'Output was discarded.' }, 409);
+      }
     }
     return new Response(Uint8Array.from(thumb), { headers: { ...headers, 'content-type': 'image/webp' } });
   }
@@ -208,6 +221,19 @@ export const POST = privateRoute(async ({ slug, scope, owner, platform, apiKey }
   if (body?.action === 'confirm' && !isAuthorizedStyleGalleryRequest(request))
     return json({ error: 'Invalid gallery upload token.', code: 'invalid_upload_token' }, 403);
   const job = await findJob(scope, z.string().uuid().parse(body?.id));
+  if (body.action === 'discard') {
+    const index = z.number().int().min(0).max(3).parse(body.index);
+    if (!job.discarded?.includes(index)) {
+      // Older confirmations may have committed the public example before writing their private receipt.
+      const exampleId = index ? `${job.id}-${index + 1}` : job.id;
+      const item = await getStoredStyleGalleryItem(slug, { fresh: true });
+      if (item?.examples.some((example) => example.id === exampleId))
+        throw new StyleGalleryClientError('This output is already in the sub-gallery.', 409);
+    }
+    await decideOutput(scope, job.id, index, 'discard');
+    await removeDraftFiles(scope, job.id, index);
+    return json({ discarded: index });
+  }
   if (body.action === 'sync') {
     await recoverGeneration(scope, job, apiKey);
     return json({ job: await findJob(scope, job.id) });

@@ -107,6 +107,9 @@ export interface GenerationJob extends GenerationRequest {
   state: 'running' | 'ready' | 'saved' | 'failed' | 'uncertain';
   available?: number[];
   published?: number[];
+  /** Per-output decisions survive retries and concurrent actions in other tabs. */
+  publishing?: number[];
+  discarded?: number[];
   taskId?: string;
   error?: string;
 }
@@ -122,8 +125,11 @@ export function generationCaption(s: GenerationSettings): string {
 }
 
 /** Earlier single-image receipts predate explicit output indices. */
-export function availableOutputs(job: GenerationJob) {
+export function receivedOutputs(job: GenerationJob) {
   return job.available ?? (job.state === 'ready' || job.state === 'saved' ? [0] : []);
+}
+export function availableOutputs(job: GenerationJob) {
+  return receivedOutputs(job).filter((i) => !job.discarded?.includes(i));
 }
 export function publishedOutputs(job: GenerationJob) {
   return job.published ?? (job.state === 'saved' ? [0] : []);

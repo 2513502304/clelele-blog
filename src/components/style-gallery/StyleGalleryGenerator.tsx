@@ -17,6 +17,7 @@ import {
 } from '@lib/style-gallery-prompt-selection';
 import {
   confirmStudioOutput,
+  discardStudioOutput,
   notifyStudioChange,
   readProviderKey,
   rememberProviderKey,
@@ -37,6 +38,7 @@ import {
   RiSubtractLine,
 } from 'react-icons/ri';
 import type { StyleGalleryExample, StyleGalleryImageRef } from '@/types/style-gallery';
+import { DiscardOutputAction } from './DiscardOutputAction';
 import { GenerationFields, studioLanguage } from './StyleGalleryGenerationFields';
 import { GenerationViewer } from './StyleGalleryGenerationViewer';
 import { OutputStrip } from './StyleGalleryOutputStrip';
@@ -198,8 +200,9 @@ function Editor({
       const attempt = ++historyRevision.current;
       const result: { jobs: GenerationJob[] } = await (await studioRequest(base, platform, auth, undefined, signal)).json();
       if (signal?.aborted || attempt !== historyRevision.current) return false;
-      setJobs(result.jobs);
-      if (!restoreView.current && result.jobs.length) {
+      const visible = result.jobs.filter((job) => (job.discarded?.length ?? 0) < (job.settings.count ?? 1));
+      setJobs(visible);
+      if (!restoreView.current && visible.length) {
         setView('review');
         restoreView.current = true;
       }
@@ -613,6 +616,19 @@ function Editor({
               {token && <small>{copy.hint}</small>}
               {current?.error && <p>{current.error}</p>}
             </div>
+            {current && hasImage && !isSaved && (
+              <DiscardOutputAction
+                key={`${current.id}-${index}`}
+                locale={locale}
+                disabled={!activePreview || Boolean(busy) || Boolean(current.publishing?.includes(index))}
+                discard={() =>
+                  void act('discard', async () => {
+                    await discardStudioOutput(slug, platform, token, current.id, index);
+                    await loadHistory(token);
+                  })
+                }
+              />
+            )}
             {hasImage &&
               !isSaved &&
               (accessEnabled ? (

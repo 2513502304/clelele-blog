@@ -108,3 +108,19 @@ export async function confirmStudioOutput(
   notifyStudioChange();
   return result;
 }
+
+/** Discard only this private output. Other tabs refresh their own authorized list. */
+export async function discardStudioOutput(
+  slug: string,
+  platform: GenerationPlatform,
+  apiKey: string,
+  id: string,
+  index: number,
+) {
+  await studioRequest(`/api/style-gallery/generations/${encodeURIComponent(slug)}`, platform, apiKey, {
+    action: 'discard',
+    id,
+    index,
+  });
+  notifyStudioChange();
+}
