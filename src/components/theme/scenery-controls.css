@@ -1,5 +1,5 @@
 .scenery-controls {
-  --scenery-gap: 16px;
+  --scenery-gap: 12px;
   display: grid;
   gap: var(--scenery-gap);
 }
@@ -103,10 +103,6 @@
   outline: 2px solid hsl(var(--primary));
   outline-offset: 3px;
 }
-.scenery-light-group {
-  --scenery-gap: 18px;
-  row-gap: var(--scenery-gap);
-}
 .scenery-light-group > .appearance-caption {
   margin: 0;
 }
@@ -192,8 +188,8 @@
 }
 .scenery-group {
   display: grid;
-  gap: 12px;
-  padding: 16px 0 0;
+  gap: 6px;
+  padding: 12px 0 0;
   border-top: 1px solid color-mix(in srgb, currentColor 12%, transparent);
 }
 .scenery-group h3 {
@@ -209,10 +205,21 @@ details.scenery-group {
   display: block;
   padding: 0;
 }
-/* The ambient section ends midway through the four consecutive disclosure rows. */
-details.scenery-group + details.scenery-group,
-.scenery-light-group:has(> details:last-child) + details.scenery-group {
-  margin-block-start: calc(-1 * var(--scenery-gap));
+/* Use spacing before ordinary controls. Adjacent disclosures meet at one border,
+ * including where the ambient section ends, with no overlapping click targets. */
+.scenery-controls,
+.scenery-light-group {
+  row-gap: 0;
+}
+.scenery-controls > * + * {
+  margin-block-start: var(--scenery-gap);
+}
+.scenery-controls > .scenery-light-group > * + * {
+  margin-block-start: 7px;
+}
+.scenery-controls details.scenery-group + details.scenery-group,
+.scenery-controls > .scenery-light-group:has(> details:last-child) + details.scenery-group {
+  margin-block-start: 0;
 }
 .scenery-group summary {
   min-height: 44px;
@@ -221,8 +228,9 @@ details.scenery-group + details.scenery-group,
   display: flex;
   justify-content: space-between;
   cursor: pointer;
-  font-weight: 650;
-  font-size: 15px;
+  font-weight: 750;
+  font-size: 17px;
+  line-height: 1.3;
   list-style: none;
 }
 .scenery-group summary::-webkit-details-marker {
@@ -236,11 +244,22 @@ details.scenery-group + details.scenery-group,
 }
 .scenery-group-body {
   display: grid;
-  gap: 9px;
-  padding-block: 3px 12px;
+  gap: 5px;
+  padding-block: 2px 9px;
 }
 .scenery-group-body > .appearance-caption {
   margin: 0;
+}
+.scenery-controls :is(.appearance-numeric-heading, .appearance-choice) {
+  font-size: 13px;
+  line-height: 1.4;
+}
+.scenery-controls .appearance-numeric input[type="range"] {
+  display: block;
+  height: 24px;
+}
+.scenery-controls .appearance-numeric input[type="number"] {
+  padding-block: 3px;
 }
 .scenery-group .appearance-choice select {
   max-width: 165px;

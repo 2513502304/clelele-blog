@@ -436,9 +436,9 @@ test('surface controls own their entire row and tint the gallery search together
   await page.locator('[data-appearance-toggle]').click();
   const panel = page.locator('.appearance-panel');
   await panel.getByRole('button', { name: '横幅', exact: true }).click();
-  const positions = await panel.locator('details.scenery-group > summary').evaluateAll((nodes) =>
-    nodes.map((node) => node.getBoundingClientRect().top),
-  );
+  const positions = await panel
+    .locator('details.scenery-group > summary')
+    .evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().top));
   expect(positions).toHaveLength(4);
   const rowStep = positions[1] - positions[0];
   for (let i = 2; i < positions.length; i++) expect(positions[i] - positions[i - 1]).toBeCloseTo(rowStep, 1);
@@ -454,6 +454,13 @@ test('surface controls own their entire row and tint the gallery search together
   const captionBox = await caption.boundingBox();
   const openHeader = await summary.boundingBox();
   if (!captionBox || !openHeader) throw new Error('Missing expanded content');
+  const label = group.locator('.appearance-numeric-heading').first();
+  const size = (el: Element) => parseFloat(getComputedStyle(el).fontSize);
+  expect((await summary.evaluate(size)) - (await label.evaluate(size))).toBeGreaterThanOrEqual(3);
+  const sliders = await group
+    .locator('.appearance-numeric')
+    .evaluateAll((nodes) => nodes.map((n) => n.getBoundingClientRect().top));
+  expect(sliders[1] - sliders[0]).toBeLessThanOrEqual(60);
   const gap = captionBox.y - (openHeader.y + openHeader.height);
   expect(gap).toBeLessThanOrEqual(8);
   await panel.getByRole('spinbutton', { name: '卡片底色下限', exact: true }).fill('65');
