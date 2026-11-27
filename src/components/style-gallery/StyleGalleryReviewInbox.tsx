@@ -28,7 +28,7 @@ import './gallery-generator.css';
 
 const platforms = ['gpt-image', 'pixai'] as const;
 type Group = 'pending' | 'saved' | 'tasks';
-type Source = { account?: boolean; slug: string; platform: GenerationPlatform; jobs: GenerationJob[] };
+type Source = { stale?: boolean; account?: boolean; slug: string; platform: GenerationPlatform; jobs: GenerationJob[] };
 type Row = { account?: boolean; slug: string; job: GenerationJob; index: number; group: Group; id: string };
 const base = (slug: string) => `/api/style-gallery/generations/${encodeURIComponent(slug)}`;
 const inputClass = 'min-h-11 min-w-0 rounded-lg border border-border bg-background px-3';
@@ -310,6 +310,8 @@ function Inbox({ keys, locale, gallery }: { keys: Record<GenerationPlatform, str
     const ctrl = new AbortController();
     setBusy(true);
     setFailed(false);
+    // Keep cards visible during refresh, but a refreshed account copy outranks a retained provider copy.
+    setSources((previous) => previous.map((source) => ({ ...source, stale: true })));
     let errors = false;
     async function loadPlatform(platform: GenerationPlatform) {
       if (!keys[platform]) return;
@@ -325,11 +327,14 @@ function Inbox({ keys, locale, gallery }: { keys: Record<GenerationPlatform, str
           undefined,
           ctrl.signal,
         );
-        const data: { slugs: string[]; sources: Source[]; failed: string[] } = await response.json();
-        batch = data.sources;
-        failedSlugs = data.failed;
+        const data: { slugs: string[]; sources?: Source[]; failed?: string[] } = await response.json();
+        batch = data.sources ?? [];
+        failedSlugs = data.failed ?? [];
         if (failedSlugs.length) errors = true;
-        for (const slug of data.slugs) missing.delete(slug);
+        for (const slug of data.slugs) {
+          if (data.sources) missing.delete(slug);
+          else missing.add(slug);
+        }
       } catch {
         discoveryFailed = errors = true;
       }
@@ -381,15 +386,21 @@ function Inbox({ keys, locale, gallery }: { keys: Record<GenerationPlatform, str
     return () => ctrl.abort();
   }, [keys, revision]);
   const rows = useMemo(() => {
-    const local = sources.filter((s) => !s.account);
-    const ids = new Set(local.flatMap((s) => s.jobs.map((j) => `${s.platform}/${s.slug}/${j.id}`)));
-    const linked = sources
-      .filter((s) => s.account)
-      .map((s) => ({
-        ...s,
-        jobs: s.jobs.filter((j) => !ids.has(`${s.platform}/${s.slug}/${j.id}`)),
-      }));
-    return outputRows([...local, ...linked]);
+    const seen = new Set<string>();
+    const priority = (source: Source) => Number(Boolean(source.stale)) * 2 + Number(Boolean(source.account));
+    return outputRows(
+      [...sources]
+        .sort((a, b) => priority(a) - priority(b))
+        .map((source) => ({
+          ...source,
+          jobs: source.jobs.filter((job) => {
+            const id = `${source.platform}/${source.slug}/${job.id}`;
+            if (seen.has(id)) return false;
+            seen.add(id);
+            return true;
+          }),
+        })),
+    );
   }, [sources]);
   useEffect(() => {
     const onReturn = () => {
