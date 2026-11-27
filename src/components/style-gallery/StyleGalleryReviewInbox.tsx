@@ -7,13 +7,7 @@ import {
   publishedOutputs,
 } from '@lib/style-gallery-generation-settings';
 import { getStyleGalleryManagementToken, rememberStyleGalleryManagementToken } from '@lib/style-gallery-management-token';
-import {
-  confirmStudioOutput,
-  legacyStudioSources,
-  readProviderKey,
-  rememberProviderKey,
-  studioRequest,
-} from '@lib/style-gallery-studio-client';
+import { confirmStudioOutput, legacyStudioSources, readProviderKey, studioRequest } from '@lib/style-gallery-studio-client';
 import { cn } from '@lib/utils';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { RiArrowRightLine, RiCheckLine, RiRefreshLine } from 'react-icons/ri';
@@ -27,7 +21,6 @@ type Group = 'pending' | 'saved' | 'tasks';
 type Source = { slug: string; platform: GenerationPlatform; jobs: GenerationJob[] };
 type Row = { slug: string; job: GenerationJob; index: number; group: Group; id: string };
 const base = (slug: string) => `/api/style-gallery/generations/${encodeURIComponent(slug)}`;
-const platformName = (p: GenerationPlatform) => (p === 'pixai' ? 'PixAI' : 'OpenAI');
 const inputClass = 'min-h-11 min-w-0 rounded-lg border border-border bg-background px-3';
 const buttonClass =
   'inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-border bg-card px-3 text-sm font-semibold hover:border-primary disabled:opacity-50';
@@ -458,66 +451,43 @@ function Inbox({ keys, locale, gallery }: { keys: Record<GenerationPlatform, str
 
 export default function StyleGalleryReviewInbox({ locale, gallery }: { locale: string; gallery: string }) {
   const l = useMemo(() => studioLanguage(locale), [locale]);
-  const [version, newSession] = useState(0);
-  const [keys, setKeys] = useState<Record<GenerationPlatform, string>>(),
-    [edit, setEdit] = useState(false);
-  const [draft, setDraft] = useState({ 'gpt-image': '', pixai: '' });
+  const [session, setSession] = useState<{ keys: Record<GenerationPlatform, string>; version: number }>();
   useEffect(() => {
-    const sync = () => {
-      const value = { 'gpt-image': readProviderKey('gpt-image'), pixai: readProviderKey('pixai') };
-      setKeys(value);
-      setDraft(value);
-      newSession((n) => n + 1);
-    };
-    sync();
+    function restore() {
+      const keys = { 'gpt-image': readProviderKey('gpt-image'), pixai: readProviderKey('pixai') };
+      // Remount the private list when its owner changes, clearing the old owner's thumbnails immediately.
+      setSession((previous) =>
+        previous && platforms.every((p) => previous.keys[p] === keys[p])
+          ? previous
+          : { keys, version: (previous?.version ?? 0) + 1 },
+      );
+    }
+    restore();
     const changed = (e: StorageEvent) => {
-      if (e.key === null || e.key.startsWith('gallery-generation:key:')) sync();
+      if (e.key === null || e.key.startsWith('gallery-generation:key:')) restore();
     };
+    window.addEventListener('pageshow', restore);
     window.addEventListener('storage', changed);
-    return () => window.removeEventListener('storage', changed);
+    return () => {
+      window.removeEventListener('pageshow', restore);
+      window.removeEventListener('storage', changed);
+    };
   }, []);
-  if (!keys) return <output>…</output>;
-  const connected = Boolean(keys.pixai || keys['gpt-image']);
-  return (
-    <div className="space-y-4">
-      {connected && (
-        <button type="button" className={buttonClass} aria-expanded={edit} onClick={() => setEdit((v) => !v)}>
-          {l('管理 API Key', 'API キー設定', 'Manage API keys')}
-        </button>
-      )}
-      {(!connected || edit) && (
-        <form
-          className="flex flex-wrap items-end gap-3 rounded-xl border border-border bg-card p-4"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const next = { ...draft };
-            for (const p of platforms) {
-              next[p] = next[p].trim();
-              rememberProviderKey(p, next[p]);
-            }
-            setKeys(next);
-            newSession((n) => n + 1);
-            setEdit(false);
-          }}
-        >
-          {platforms.map((p) => (
-            <label key={p} className="grid min-w-0 flex-1 gap-1 text-sm">
-              {platformName(p)} API Key
-              <input
-                className={inputClass}
-                type="password"
-                value={draft[p]}
-                autoComplete="off"
-                onChange={(e) => setDraft((old) => ({ ...old, [p]: e.target.value }))}
-              />
-            </label>
-          ))}
-          <button type="submit" className={buttonClass}>
-            {l('应用', '適用', 'Apply')}
-          </button>
-        </form>
-      )}
-      {connected && <Inbox key={version} keys={keys} gallery={gallery} locale={locale} />}
-    </div>
-  );
+  if (!session) return <output>{l('正在读取工作台…', '読み込み中…', 'Loading workspace…')}</output>;
+  if (platforms.every((p) => !session.keys[p]))
+    return (
+      <section className="space-y-3 rounded-xl border border-border bg-card p-5">
+        <p>
+          {l(
+            '这个浏览器还没有关联的生图记录。',
+            'このブラウザーには生成履歴がありません。',
+            'No generation workspace is connected to this browser.',
+          )}
+        </p>
+        <a className={buttonClass} href={gallery}>
+          {l('浏览图库', 'ギャラリーを見る', 'Browse gallery')}
+        </a>
+      </section>
+    );
+  return <Inbox key={session.version} keys={session.keys} gallery={gallery} locale={locale} />;
 }
