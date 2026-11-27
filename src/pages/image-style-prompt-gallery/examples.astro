@@ -8,6 +8,7 @@ import { siteConfig } from '@constants/site-config';
 import Layout from '@layouts/Layout.astro';
 import TwoColumnLayout from '@layouts/TwoColumnLayout.astro';
 import { getStyleGalleryExampleOverview } from '@lib/style-gallery';
+import { packOverview } from '@lib/style-gallery-overview-payload';
 import { Icon } from 'astro-icon/components';
 import { getLocaleFromUrl, localizedPath, t } from '@/i18n';
 import { createStyleGalleryDateRangeLabels } from '@/lib/style-gallery-date-range-labels';
@@ -67,7 +68,7 @@ setStyleGalleryPublicCacheHeaders(Astro.response.headers, [STYLE_GALLERY_LIST_CA
       </header>
       <StyleGalleryExamplesOverview
         client:load
-        examples={examples}
+        payload={packOverview(examples)}
         galleryBasePath={galleryBasePath}
         locale={locale}
         labels={overviewLabels}

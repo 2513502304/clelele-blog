@@ -944,6 +944,7 @@ export default function ImageLightbox() {
                     key={currentImageKey}
                     prompt={currentImage.generationPrompt}
                     platform={currentImage.generationPlatform}
+                    loadRecipe={currentImage.loadGenerationRecipe}
                     initiallyExpanded={currentImage.generationPromptInitiallyExpanded}
                   />
                 )}

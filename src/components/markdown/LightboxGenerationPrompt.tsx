@@ -6,18 +6,40 @@ import './lightbox-generation-prompt.css';
 
 /** Per-image metadata: a compact glass dock becomes a bounded reader, with the exact full prompt used for copy. */
 export function LightboxGenerationPrompt({
-  prompt,
-  platform,
+  prompt: initialPrompt,
+  platform: initialPlatform,
+  loadRecipe,
   initiallyExpanded = false,
 }: {
   prompt?: string;
   platform?: string;
   initiallyExpanded?: boolean;
+  loadRecipe?: (signal: AbortSignal) => Promise<{ prompt?: string; platform?: string }>;
 }) {
   const { t, locale } = useTranslation();
+  const [recipe, setRecipe] = useState<{ prompt?: string; platform?: string }>();
+  const [unavailable, setUnavailable] = useState(false);
+  const [retry, setRetry] = useState(0);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the retry counter explicitly repeats a failed request.
+  useEffect(() => {
+    if (!loadRecipe) return;
+    const ctrl = new AbortController();
+    setUnavailable(false);
+    void loadRecipe(ctrl.signal).then(
+      (data) => {
+        if (!ctrl.signal.aborted) setRecipe(data);
+      },
+      () => {
+        if (!ctrl.signal.aborted) setUnavailable(true);
+      },
+    );
+    return () => ctrl.abort();
+  }, [loadRecipe, retry]);
+  const prompt = recipe?.prompt ?? initialPrompt,
+    platform = recipe?.platform ?? initialPlatform;
   const [copied, setCopied] = useState(false);
   const [failed, setFailed] = useState(false);
-  const [expanded, setExpanded] = useState(initiallyExpanded && Boolean(prompt));
+  const [expanded, setExpanded] = useState(initiallyExpanded);
   const drag = useDraggablePanel();
   const bodyId = useId();
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -62,6 +84,11 @@ export function LightboxGenerationPrompt({
           <span className="generation-glass-kicker" data-generation-platform>
             {platform || t('gallery.generationPrompt')}
           </span>
+          {unavailable && (
+            <button type="button" className="underline" onClick={() => setRetry((n) => n + 1)}>
+              {locale === 'zh' ? '重新加载生成信息' : locale === 'ja' ? '生成情報を再読み込み' : 'Retry generation details'}
+            </button>
+          )}
           {prompt && (
             <button
               type="button"

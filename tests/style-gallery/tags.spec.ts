@@ -194,7 +194,7 @@ test('a concurrent edit reports a conflict and preserves the local draft', async
 for (const path of ['', '/index', '/examples']) {
   test(`failed prompt search allows bulk tagging the remaining local matches on ${path || 'preview'}`, async ({ page }) => {
     await fixture(page);
-    await page.route('**/api/style-gallery/prompt-search-index', (route) => route.fulfill({ status: 503 }));
+    await page.route('**/api/style-gallery/{prompt-search-index,example-search}', (route) => route.fulfill({ status: 503 }));
     // A source hash remains a valid local match when full-text prompt search is unavailable.
     await page.goto(`/image-style-prompt-gallery${path}?q=4eaf44ebd787`);
     await expect(page.locator('[data-gallery-selection]').locator('xpath=ancestor::astro-island')).not.toHaveAttribute('ssr');
