@@ -192,7 +192,7 @@
 }
 .scenery-group {
   display: grid;
-  gap: 18px;
+  gap: 12px;
   padding: 16px 0 0;
   border-top: 1px solid color-mix(in srgb, currentColor 12%, transparent);
 }
@@ -201,7 +201,7 @@
   align-items: center;
   gap: 7px;
   margin: 0;
-  font-size: 12px;
+  font-size: 15px;
   font-weight: 650;
 }
 /* Native summary owns the whole visible row, including its vertical breathing room. */
@@ -221,8 +221,8 @@ details.scenery-group + details.scenery-group,
   display: flex;
   justify-content: space-between;
   cursor: pointer;
-  font-weight: 600;
-  font-size: 12px;
+  font-weight: 650;
+  font-size: 15px;
   list-style: none;
 }
 .scenery-group summary::-webkit-details-marker {
@@ -236,8 +236,8 @@ details.scenery-group + details.scenery-group,
 }
 .scenery-group-body {
   display: grid;
-  gap: 12px;
-  padding-block: 0 14px;
+  gap: 9px;
+  padding-block: 3px 12px;
 }
 .scenery-group-body > .appearance-caption {
   margin: 0;
