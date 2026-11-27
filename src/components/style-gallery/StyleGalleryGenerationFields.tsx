@@ -232,8 +232,16 @@ export function GenerationFields({
   );
 }
 
-/** Show the stored recipe on a published example, including optional settings specific to its provider. */
-export function GenerationDetails({ settings: s, locale }: { settings: GenerationSettings; locale: string }) {
+/** The inbox and published example show the same stored recipe, including provider-specific options. */
+export function GenerationDetails({
+  settings: s,
+  locale,
+  inline = false,
+}: {
+  settings: GenerationSettings;
+  locale: string;
+  inline?: boolean;
+}) {
   const l = studioLanguage(locale);
   const rows: ReadonlyArray<readonly [string, string | number | undefined]> = [
     [l('批次数量', '生成枚数', 'Batch size'), s.count ?? 1],
@@ -252,19 +260,23 @@ export function GenerationDetails({ settings: s, locale }: { settings: Generatio
           [l('参考图 Media ID', '参照 Media ID', 'Reference media IDs'), s.contextImages?.join(', ')],
         ] as const)),
   ];
+  const parameters = (
+    <dl className="my-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1">
+      {rows
+        .filter(([, v]) => v !== undefined && v !== '')
+        .map(([key, value]) => (
+          <Fragment key={key}>
+            <dt>{key}</dt>
+            <dd className="whitespace-pre-wrap break-all text-foreground">{value}</dd>
+          </Fragment>
+        ))}
+    </dl>
+  );
+  if (inline) return parameters;
   return (
     <details className="mb-2 text-muted-foreground text-xs">
       <summary className="cursor-pointer">{generationCaption(s)}</summary>
-      <dl className="my-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1">
-        {rows
-          .filter(([, v]) => v !== undefined && v !== '')
-          .map(([key, value]) => (
-            <Fragment key={key}>
-              <dt>{key}</dt>
-              <dd className="whitespace-pre-wrap break-all text-foreground">{value}</dd>
-            </Fragment>
-          ))}
-      </dl>
+      {parameters}
     </details>
   );
 }
