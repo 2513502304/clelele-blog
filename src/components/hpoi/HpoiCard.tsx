@@ -39,11 +39,11 @@ export function HpoiCard({ item, state, masonry = false, ratingLoading = false }
   return (
     <a
       data-hpoi-category={state}
-      style={state === 'all' ? undefined : { borderInlineStart: `3px solid ${stateColor[state]}` }}
+      style={state === 'all' ? undefined : { borderColor: stateColor[state] }}
       href={item.detailUrl}
       target="_blank"
       rel="noopener noreferrer"
-      className="group relative flex min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-card transition-[border-color,transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
+      className="group relative flex min-w-0 flex-col overflow-hidden rounded-lg border-[3px] border-border bg-card transition-[border-color,transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
     >
       <div className="relative w-full overflow-hidden bg-muted/60" style={{ aspectRatio }}>
         {visibleImage ? (
