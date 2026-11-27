@@ -2,6 +2,7 @@ import { deleteStyleGalleryObject, getStyleGalleryObjectBytes, headStyleGalleryO
 import { mapWithConcurrency } from '@lib/map-with-concurrency';
 import { isAuthorizedStyleGalleryRequest } from '@lib/style-gallery-auth';
 import { getStyleGalleryClientErrorResponse, StyleGalleryClientError } from '@lib/style-gallery-errors';
+import { materializeExamples, readExampleRootSnapshot } from '@lib/style-gallery-example-shards';
 import { ensureStyleGalleryExampleThumbnail } from '@lib/style-gallery-example-thumbnail';
 import {
   createStyleGalleryExample,
@@ -105,10 +106,19 @@ async function validateExampleObjectsExist(examples: StyleGalleryExample[]): Pro
   });
 }
 
-export const GET: APIRoute = async ({ params }) => {
+export const GET: APIRoute = async ({ params, request }) => {
   const slug = params.slug;
   if (!slug || !isValidSlug(slug)) return new Response('Invalid style gallery slug.', { status: 400 });
   try {
+    // Publishing tools verify the committed index separately from the item record. Keep voter IDs private.
+    if (request && new URL(request.url).searchParams.get('view') === 'index') {
+      const headers = { 'Cache-Control': 'private, no-store', Vary: 'Authorization', 'X-Gallery-Index-Reader': '3' };
+      if (!isAuthorizedStyleGalleryRequest(request)) return new Response(null, { status: 401, headers });
+      const { root } = await readExampleRootSnapshot();
+      const group = (await materializeExamples(root, slug)).groups[0];
+      if (!group) return new Response(null, { status: 404, headers });
+      return Response.json(group, { headers });
+    }
     const item = await getItem(slug);
     if (!item) return new Response('Style gallery item not found.', { status: 404 });
     return Response.json({
@@ -256,7 +266,8 @@ export const DELETE: APIRoute = async ({ params, request }) => {
       // DELETE 必须可安全重试：首次响应丢失后，同一请求再次到达时缺失 ID 视为已删除。
       return removeStyleGalleryExamples(examples, selectedIds);
     });
-    const referenced = new Set(result.index.groups.flatMap((group) => group.examples.map((example) => example.src)));
+    const index = await getStyleGalleryExampleIndex({ fresh: true });
+    const referenced = new Set(index.groups.flatMap((group) => group.examples.map((example) => example.src)));
     // 先提交删除后的元数据，再清理成为孤儿的图片；对象清理失败不会复活已删除的示例记录。
     const orphaned = removed.filter((example) => !referenced.has(example.src));
     let visualIndexUpdated = true;

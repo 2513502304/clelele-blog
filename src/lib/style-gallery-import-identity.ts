@@ -11,6 +11,7 @@ import {
 import { mapWithConcurrency } from './map-with-concurrency';
 import { assertStyleGalleryItemConsistency, getStyleGalleryItemAssetKeys } from './style-gallery-assets';
 import { StyleGalleryClientError } from './style-gallery-errors';
+import { readGalleryMetadataSnapshot, writeGalleryMetadata } from './style-gallery-example-shards';
 import { invalidateStyleGalleryPublicCache } from './style-gallery-public-cache';
 import {
   styleGalleryCatalogSchema,
@@ -244,7 +245,7 @@ export async function replaceImportImageBatch(jobs: ImportImageReplacement[]) {
       getStyleGalleryObjectTextSnapshot(STYLE_GALLERY_VISUAL_INDEX_KEY, 60_000),
       readAliases(),
       getStyleGalleryObjectTextSnapshot(STYLE_GALLERY_TAG_KEY),
-      getStyleGalleryObjectTextSnapshot(STYLE_GALLERY_EXAMPLE_INDEX_KEY),
+      readGalleryMetadataSnapshot(STYLE_GALLERY_EXAMPLE_INDEX_KEY),
     ]);
     const catalog = styleGalleryCatalogSchema.parse(JSON.parse(catalogSnapshot.text ?? 'null'));
     const search = styleGalleryPromptSearchIndexSchema.parse(JSON.parse(searchSnapshot.text ?? 'null'));
@@ -347,7 +348,7 @@ export async function replaceImportImageBatch(jobs: ImportImageReplacement[]) {
         const body = JSON.stringify(write.value);
         let etag: string | null;
         try {
-          etag = await putStyleGalleryObject(
+          etag = await writeGalleryMetadata(
             write.key,
             new TextEncoder().encode(body),
             'application/json',
@@ -365,7 +366,7 @@ export async function replaceImportImageBatch(jobs: ImportImageReplacement[]) {
       const failures = [];
       for (const { write, etag } of committed.reverse()) {
         try {
-          await putStyleGalleryObject(
+          await writeGalleryMetadata(
             write.key,
             new TextEncoder().encode(write.before.text ?? JSON.stringify(write.empty)),
             'application/json',

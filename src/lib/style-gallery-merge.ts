@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { invalidateCdnTags as invalidateByTag } from './cdn-cache';
 import { getStyleGalleryObjectTextSnapshot, putStyleGalleryObject, StyleGalleryObjectConflictError } from './hf-s3-presign';
 import { StyleGalleryClientError } from './style-gallery-errors';
+import { readGalleryMetadataSnapshot, writeGalleryMetadata } from './style-gallery-example-shards';
 import { IMPORT_IDENTITY_KEY, parseImportAliases } from './style-gallery-import-identity';
 import { buildGalleryMerge, galleryMergeRevision } from './style-gallery-merge-plan';
 import type { GalleryMergePreview, GalleryMergeSelection } from './style-gallery-merge-types';
@@ -47,7 +48,7 @@ async function readMergeCards(hashes: [string, string]) {
     getStyleGalleryObjectTextSnapshot(getStyleGalleryItemKey(entries[0].slug)),
     getStyleGalleryObjectTextSnapshot(getStyleGalleryItemKey(entries[1].slug)),
     getStyleGalleryObjectTextSnapshot(STYLE_GALLERY_TAG_KEY),
-    getStyleGalleryObjectTextSnapshot(STYLE_GALLERY_EXAMPLE_INDEX_KEY),
+    readGalleryMetadataSnapshot(STYLE_GALLERY_EXAMPLE_INDEX_KEY),
   ]);
   if (!left.text || !right.text || !left.etag || !right.etag) throw conflict();
   const items = [
@@ -176,7 +177,7 @@ export async function mergeGalleryCards(hashes: [string, string], revisions: [st
         const body = JSON.stringify(write.value);
         let etag: string | null;
         try {
-          etag = await putStyleGalleryObject(
+          etag = await writeGalleryMetadata(
             write.key,
             new TextEncoder().encode(body),
             'application/json',
@@ -196,7 +197,7 @@ export async function mergeGalleryCards(hashes: [string, string], revisions: [st
       const failed: unknown[] = [];
       for (const { write, etag } of committed.reverse()) {
         try {
-          await putStyleGalleryObject(
+          await writeGalleryMetadata(
             write.key,
             write.before.text ? new TextEncoder().encode(write.before.text) : encode(write.empty),
             'application/json',

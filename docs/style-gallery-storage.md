@@ -11,6 +11,7 @@ items/<slug>.json
 source/<hash-prefix>.<ext>
 thumb/<hash-prefix>.webp
 examples/index-v2.json
+examples/shards-v3/<sha256>.json.gz
 examples/images/<sha256>.<ext>
 examples/thumbs/<sha256>.webp
 ```
@@ -19,7 +20,9 @@ examples/thumbs/<sha256>.webp
 
 `items/<slug>.json` is the source of truth for one detail page. It contains the complete prompt record, all reference images, import provenance, and that item's generated examples. A detail request therefore reads one item document instead of joining separate item and example manifests.
 
-`examples/index-v2.json` is the single global generated-example index. Each entry contains the source slug, minimum overview fields, and a deduplicated array of GitHub numeric user IDs that liked the example. The Sub-gallery overview renders directly from this index; the main Gallery and image matrix read it in parallel with the catalog only to aggregate parent like totals. Detail pages join the requested item's examples with its one index group.
+`examples/index-v2.json` is the atomic publication key. Readers accept the complete v2 document or a v3 manifest of ordered source slugs and immutable compressed packs. A normal save uploads its changed group, then conditionally replaces the small manifest. ETag conflicts replay the edit against the winner. Full readers share digest-verified packs and preserve the original group and example order. Background packing can combine small cold groups without changing their contents. Old readers holding a manifest can finish reading its immutable packs. The GitHub IDs in `likedBy` remain private and authoritative.
+
+With storage credentials loaded, run `node --import tsx scripts/style-gallery-example-index.ts check` for a read-only validation. `stage` writes immutable packs and a backup, then checks a complete round trip. After deploying compatible readers to all writers, `activate` repeats validation and uses the observed ETag to publish. `restore` reconstructs the **latest** logical v2 index before rolling application code back. Both directions reject a concurrent root change. Use `read --slug SLUG` for a single group or authenticate to `GET /api/style-gallery/examples/SLUG?view=index` with the gallery upload token for fresh receipt verification.
 
 Like counts are not copied into the catalog or item documents. A missing user ID array is therefore never interpreted by runtime v2 code, and every visible count is derived from the one canonical index.
 
