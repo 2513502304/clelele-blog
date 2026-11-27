@@ -186,8 +186,22 @@
 [aria-current="page"] > .sidebar-active-dot {
   opacity: 1;
 }
+.sidebar-nav-children {
+  margin-inline-start: 1.1rem;
+  padding-inline-start: 0.85rem;
+  border-inline-start: 1px solid hsl(var(--primary) / 35%);
+}
+.sidebar-nav-children .sidebar-nav-link::before {
+  content: "";
+  position: absolute;
+  inset-inline-end: 100%;
+  top: 50%;
+  width: 0.85rem;
+  border-top: 1px solid hsl(var(--primary) / 35%);
+  pointer-events: none;
+}
 .sidebar-nav-children .sidebar-nav-link {
-  padding-left: 24px;
+  position: relative;
   font-size: 0.8rem;
 }
 .sidebar-cabinet :is(a, button):focus-visible {
