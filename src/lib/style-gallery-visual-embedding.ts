@@ -31,6 +31,11 @@ async function getExtractor(): ReturnType<typeof createExtractor> {
   throw new Error('Failed to initialize the visual search model.');
 }
 
+/** Start loading weights while the reviewer is viewing an original. Pixel inference still requires confirmation. */
+export async function warmStyleGalleryVisualModel(): Promise<void> {
+  await getExtractor();
+}
+
 /**
  * DINOv2 的首个 token 是整图 CLS 表征；patch token 不写入索引，否则每图体积会扩大约 257 倍。
  * 批处理只用于离线迁移等受控路径，避免逐图重复执行 ONNX 调度；浏览器单图查询仍走同一实现。

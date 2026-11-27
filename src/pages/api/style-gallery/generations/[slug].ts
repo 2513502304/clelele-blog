@@ -32,7 +32,7 @@ import {
 } from '@lib/style-gallery-generation-settings';
 import { getStyleGalleryViewer } from '@lib/style-gallery-github-auth';
 import { getStyleGalleryPlatform } from '@lib/style-gallery-platforms';
-import { getStoredStyleGalleryItem, mutateStyleGalleryVisualIndex } from '@lib/style-gallery-store';
+import { getStoredStyleGalleryItem, getStyleGalleryVisualIndex, mutateStyleGalleryVisualIndex } from '@lib/style-gallery-store';
 import { findAccountWork, rememberAccountWork } from '@lib/style-gallery-studio-account';
 import { rememberStudioSource, studioOwner } from '@lib/style-gallery-studio-owner';
 import { upsertStyleGalleryVisualRecords } from '@lib/style-gallery-visual-index';
@@ -49,6 +49,21 @@ async function findJob(slug: string, id: string) {
   const job = (await listGenerationJobs(slug)).find((entry) => entry.id === id);
   if (!job) throw new StyleGalleryClientError('Unknown generation.', 404);
   return job;
+}
+
+let publicationWarmup: Promise<void> | undefined;
+/** Share read-only preparation across previews. An interrupted warmup falls back to the normal confirmation path. */
+function warmPublication() {
+  if (publicationWarmup) return publicationWarmup;
+  publicationWarmup = Promise.allSettled([
+    getStyleGalleryVisualIndex(),
+    import('@lib/style-gallery-visual-embedding').then((module) => module.warmStyleGalleryVisualModel()),
+  ])
+    .then(() => undefined)
+    .finally(() => {
+      publicationWarmup = undefined;
+    });
+  return publicationWarmup;
 }
 
 /** Only the persisted server-side prompt, model and original bytes may be published. */
@@ -86,6 +101,7 @@ async function publish(slug: string, scope: string, job: GenerationJob, index: n
     dimensions: autoOrient ?? { width, height },
     uploadedAt: job.created,
   });
+  const preparation = warmPublication();
   const attempt = await decideOutput(scope, job.id, index, 'publish');
   // Content-addressed assets are independent. Commit metadata only after all three are ready.
   const [feature] = await Promise.all([
@@ -125,6 +141,7 @@ async function publish(slug: string, scope: string, job: GenerationJob, index: n
   });
   finishStage('metadata');
   // The same stable example ID repairs an interrupted visual-index write on confirmation retry.
+  await preparation;
   await mutateStyleGalleryVisualIndex((index) =>
     upsertStyleGalleryVisualRecords(index, [{ feature, kind: 'example', sourceSlug: slug, imageId: example.id }]),
   );
@@ -223,6 +240,7 @@ export const GET = privateRoute(async ({ scope }, request) => {
     signal: AbortSignal.timeout(60_000),
   });
   if (!response.ok) throw new Error('Missing image.');
+  if (!publishedOutputs(job).includes(index)) waitUntil(warmPublication());
   return new Response(response.body, {
     headers: { ...headers, 'content-type': response.headers.get('content-type') ?? 'application/octet-stream' },
   });

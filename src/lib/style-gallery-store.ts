@@ -127,6 +127,15 @@ function invalidateCatalogRead(): void {
 
 /** 写路径使用带 ETag 的强制快照，以便跨 Vercel 实例进行条件提交。 */
 export async function getStyleGalleryCatalogSnapshot(): Promise<{ value: StyleGalleryCatalog; etag: string }> {
+  const previous = catalogCache;
+  // A matching HEAD is a fresh versioned snapshot. The eventual PUT still has to match the same ETag.
+  if (
+    previous?.etag &&
+    (await getStyleGalleryObjectEtag(STYLE_GALLERY_CATALOG_KEY)) === previous.etag &&
+    previous === catalogCache
+  ) {
+    return { value: previous.value, etag: previous.etag };
+  }
   const snapshot = await getStyleGalleryObjectTextSnapshot(STYLE_GALLERY_CATALOG_KEY);
   if (!snapshot.text) throw new Error('Style gallery catalog does not exist in HF storage.');
   if (!snapshot.etag) throw new Error('HF did not return an ETag for the style gallery catalog.');
@@ -273,7 +282,12 @@ export async function putStyleGalleryCatalog(
   conditions: StyleGalleryObjectWriteConditions = {},
 ): Promise<string | null> {
   const value = styleGalleryCatalogSchema.parse(catalog);
-  const etag = await putJson(STYLE_GALLERY_CATALOG_KEY, value, conditions);
+  const etag = await putStyleGalleryObject(
+    STYLE_GALLERY_CATALOG_KEY,
+    new TextEncoder().encode(JSON.stringify(value)),
+    'application/json; charset=utf-8',
+    conditions,
+  );
   invalidateCatalogRead();
   catalogCache = { value, etag, expiresAt: Date.now() + CACHE_TTL_MS };
   return etag;
@@ -385,12 +399,13 @@ export async function getStyleGalleryVisualIndex(options: { fresh?: boolean } = 
     }
     return visualIndexCache.value;
   }
+  const expectedCache = visualIndexCache;
   try {
     const snapshot = await getStyleGalleryObjectTextSnapshot(STYLE_GALLERY_VISUAL_INDEX_KEY, VISUAL_INDEX_TRANSFER_TIMEOUT_MS);
     const value = snapshot.text
       ? styleGalleryVisualIndexSchema.parse(JSON.parse(snapshot.text))
       : createEmptyStyleGalleryVisualIndex();
-    visualIndexCache = { value, etag: snapshot.etag, expiresAt: now + CACHE_TTL_MS };
+    if (visualIndexCache === expectedCache) visualIndexCache = { value, etag: snapshot.etag, expiresAt: now + CACHE_TTL_MS };
     return value;
   } catch (error) {
     if (!options.fresh && visualIndexCache) {
@@ -410,8 +425,8 @@ export function mutateStyleGalleryVisualIndex(
 ): Promise<StyleGalleryVisualIndex> {
   const operation = async () => {
     for (let attempt = 1; attempt <= 6; attempt += 1) {
-      const cached =
-        attempt === 1 && visualIndexCache?.etag && visualIndexCache.expiresAt > Date.now() ? visualIndexCache : null;
+      // Even an expired snapshot is safe for an optimistic write: disagreement forces a fresh read and replay.
+      const cached = attempt === 1 && visualIndexCache?.etag ? visualIndexCache : null;
       const snapshot = cached
         ? { text: null, etag: cached.etag }
         : await getStyleGalleryObjectTextSnapshot(STYLE_GALLERY_VISUAL_INDEX_KEY, VISUAL_INDEX_TRANSFER_TIMEOUT_MS);
