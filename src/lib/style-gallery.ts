@@ -77,6 +77,14 @@ export function toStyleGalleryCardDataList(catalog: StyleGalleryData, start = 0,
 /** 通过轻量示例索引与 catalog 做关联，构造 Sub-gallery 总览，不读取全部详情 item。 */
 export async function getStyleGalleryExampleOverview(): Promise<StyleGalleryExampleOverviewItem[]> {
   const [catalog, index] = await Promise.all([getStyleGalleryCatalog(), getStyleGalleryExampleIndex()]);
+  return createStyleGalleryExampleOverview(catalog, index);
+}
+
+/** Build the sorted join for a known pair of source snapshots. */
+export function createStyleGalleryExampleOverview(
+  catalog: StyleGalleryCatalog,
+  index: StyleGalleryExampleIndex,
+): StyleGalleryExampleOverviewItem[] {
   const cached = overviewCache.get(catalog)?.get(index);
   if (cached) return cached;
   const sourceBySlug = new Map(catalog.items.map((item) => [item.slug, item]));

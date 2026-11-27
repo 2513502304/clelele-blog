@@ -7,8 +7,7 @@ import { CONTENT_PADDING } from '@constants/layout';
 import { siteConfig } from '@constants/site-config';
 import Layout from '@layouts/Layout.astro';
 import TwoColumnLayout from '@layouts/TwoColumnLayout.astro';
-import { getStyleGalleryExampleOverview } from '@lib/style-gallery';
-import { packOverview } from '@lib/style-gallery-overview-payload';
+import { getOverviewSnapshot } from '@lib/style-gallery-overview-snapshot';
 import { Icon } from 'astro-icon/components';
 import { getLocaleFromUrl, localizedPath, t } from '@/i18n';
 import { createStyleGalleryDateRangeLabels } from '@/lib/style-gallery-date-range-labels';
@@ -18,7 +17,9 @@ import { createStyleGalleryVisualFilterLabels } from '@/lib/style-gallery-visual
 export const prerender = false;
 
 const locale = getLocaleFromUrl(Astro.url.pathname);
-const examples = await getStyleGalleryExampleOverview();
+const started = performance.now();
+const { payload, source } = await getOverviewSnapshot();
+Astro.response.headers.append('Server-Timing', `gallery;dur=${(performance.now() - started).toFixed(1)};desc="${source}"`);
 const galleryBasePath = localizedPath('/image-style-prompt-gallery', locale);
 const title = `${t(locale, 'gallery.subGallery')} | ${t(locale, 'gallery.title')} | ${siteConfig.title}`;
 const overviewLabels = {
@@ -64,11 +65,11 @@ setStyleGalleryPublicCacheHeaders(Astro.response.headers, [STYLE_GALLERY_LIST_CA
           <h1 class="font-black text-4xl text-foreground md:text-3xl">{t(locale, 'gallery.examplesOverviewTitle')}</h1>
           <p class="max-w-2xl text-muted-foreground leading-7">{t(locale, 'gallery.subGalleryDescription')}</p>
         </div>
-        <span class="font-black text-3xl text-primary tabular-nums">{examples.length}</span>
+        <span class="font-black text-3xl text-primary tabular-nums">{payload.cards.length}</span>
       </header>
       <StyleGalleryExamplesOverview
         client:load
-        payload={packOverview(examples)}
+        payload={payload}
         galleryBasePath={galleryBasePath}
         locale={locale}
         labels={overviewLabels}
