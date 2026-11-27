@@ -635,3 +635,48 @@
   align-items: center;
   gap: 0.35rem;
 }
+
+/* Size the image against both axes. At desktop reading widths the review actions
+   stay beside the proof while the selected ratio and the images' framing stay exact. */
+.studio-review-reader {
+  width: 100%;
+  max-width: 74rem;
+  margin-inline: auto;
+  padding: clamp(0.65rem, 1.4vw, 1.25rem);
+}
+.studio-review-layout,
+.studio-review-notes {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 1rem;
+}
+.studio-review-layout {
+  align-items: start;
+}
+.studio-review-reader .studio-inspect-surface {
+  inline-size: min(100%, calc(min(54svh, 36rem) * var(--review-ratio)));
+  block-size: auto;
+  aspect-ratio: var(--review-ratio);
+  margin-inline: auto;
+}
+.studio-review-notes {
+  overflow-wrap: anywhere;
+}
+.studio-review-recipe {
+  border-block: 1px solid var(--rule);
+  padding-block: 0.65rem;
+}
+.studio-review-actions label {
+  flex: 1 1 100%;
+}
+@container (min-width: 54rem) {
+  .studio-review-layout {
+    grid-template-columns: minmax(0, 1fr) clamp(15rem, 26%, 20rem);
+    gap: clamp(1rem, 2cqw, 1.75rem);
+  }
+  .studio-review-notes {
+    padding-inline-start: clamp(1rem, 2cqw, 1.5rem);
+    border-inline-start: 1px solid var(--rule);
+  }
+}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react';
 import { RiAddLine, RiArrowLeftRightLine, RiCloseLine, RiFocus3Line, RiSubtractLine } from 'react-icons/ri';
 import type { StyleGalleryImageRef } from '@/types/style-gallery';
 import { studioLanguage } from './StyleGalleryGenerationFields';
@@ -176,6 +176,7 @@ export function GenerationViewer({
     <section
       aria-label={title}
       className="studio-viewer"
+      style={reviewCanvas ? ({ '--review-ratio': ratio.replace(':', ' / ') } as CSSProperties) : undefined}
       onKeyDown={(e) => {
         if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
         if (['+', '=', '-', '0', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
@@ -270,7 +271,6 @@ export function GenerationViewer({
         role="application"
         aria-label={l('图像缩放与平移', '画像の拡大と移動', 'Image zoom and pan')}
         className="studio-inspect-surface"
-        style={reviewCanvas ? { height: 'auto', aspectRatio: ratio.replace(':', '/') } : undefined}
         ref={surface}
         // biome-ignore lint/a11y/noNoninteractiveTabindex: This gesture surface accepts keyboard zoom and pan.
         tabIndex={0}
