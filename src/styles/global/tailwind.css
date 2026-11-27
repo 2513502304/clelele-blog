@@ -64,6 +64,11 @@
     background: hsl(var(--background)); /* background color */
   }
 
+  /* The viewport gutter must stay fixed while a reader scales the page's rem units. */
+  html.vertical-scrollbar::-webkit-scrollbar {
+    width: 4px;
+  }
+
   .vertical-scrollbar::-webkit-scrollbar-thumb {
     background: hsl(var(--primary) / 0.5); /* thumb color */
     border-radius: 0.5rem;
