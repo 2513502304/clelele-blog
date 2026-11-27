@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { it } from 'node:test';
+import type { AstroCookies } from 'astro';
 import sharp from 'sharp';
 import { GET, POST } from '../pages/api/style-gallery/generations/[slug]';
 import {
@@ -16,11 +17,14 @@ import {
 } from './style-gallery-generation-jobs';
 import { readPixAIResult, submitGeneration } from './style-gallery-generation-provider';
 import { defaultSettings, generationRequest } from './style-gallery-generation-settings';
+import { setStyleGallerySession } from './style-gallery-github-auth';
 import { isAllowedStyleGalleryImageKey } from './style-gallery-image-key';
+import { listAccountSources, rememberAccountWork } from './style-gallery-studio-account';
 import { readStudioSources, rememberStudioSource } from './style-gallery-studio-owner';
 
 it('reserves a paid request once across tabs and recovers the original after interrupted state writes', async (t) => {
   const env = {
+    STYLE_GALLERY_SESSION_SECRET: 'test-session-secret-longer-than-32-bytes',
     HF_S3_ACCESS_KEY_ID: 'fixture',
     HF_S3_SECRET_ACCESS_KEY: 'fixture',
     HF_S3_ENDPOINT: 'https://generation.invalid',
@@ -165,6 +169,66 @@ it('reserves a paid request once across tabs and recovers the original after int
   for (let n = 0; n < 20 && (await listGenerationJobs(slug)).find((j) => j.id === batch.id)?.cleanupPending?.length; n++)
     await new Promise((resolve) => setTimeout(resolve, 5));
   assert.equal(objects.has(draftImageKey(slug, batch.id, 2)), false);
+  // The session can review its linked job, but it cannot browse a sibling, switch accounts, or submit a paid task.
+  await rememberAccountWork(11, { owner, slug: itemSlug, platform: 'gpt-image', id: batch.id });
+  assert.deepEqual(
+    (await listAccountSources(11)).flatMap((s) => s.jobs.map((j) => j.id)),
+    [batch.id],
+  );
+  assert.deepEqual(await listAccountSources(12), []);
+  function signedCookies(viewerId: number) {
+    const jar = new Map<string, string>();
+    const cookies = {
+      get: (key: string) => ({ value: jar.get(key) }),
+      set: (key: string, v: string) => jar.set(key, v),
+    } as unknown as AstroCookies;
+    setStyleGallerySession(cookies, new URL(endpoint), {
+      id: viewerId,
+      login: 'test',
+      avatarUrl: 'https://example.test/avatar',
+      profileUrl: 'https://example.test/profile',
+    });
+    return cookies;
+  }
+  const sessionHeaders = { 'x-gallery-provider': 'gpt-image', 'x-gallery-review-session': '1' };
+  async function accountPreview(viewerId: number, id: string) {
+    return GET({
+      params: { slug: itemSlug },
+      cookies: signedCookies(viewerId),
+      request: new Request(`${endpoint}?preview=${id}&index=1`, { headers: sessionHeaders }),
+    });
+  }
+  assert.equal((await accountPreview(11, batch.id)).status, 200);
+  assert.equal((await accountPreview(12, batch.id)).status, 404);
+  assert.equal((await accountPreview(11, request.id)).status, 404);
+  assert.equal(
+    (
+      await POST({
+        params: { slug: itemSlug },
+        cookies: signedCookies(11),
+        request: new Request(endpoint, {
+          method: 'POST',
+          headers: sessionHeaders,
+          body: JSON.stringify({ action: 'sync', id: batch.id }),
+        }),
+      })
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await POST({
+        params: { slug: itemSlug },
+        cookies: signedCookies(11),
+        request: new Request(endpoint, {
+          method: 'POST',
+          headers: { ...sessionHeaders, origin: 'https://other.invalid' },
+          body: JSON.stringify({ action: 'discard', id: batch.id, index: 1 }),
+        }),
+      })
+    ).status,
+    403,
+  );
   const attempt1 = await decideOutput(slug, batch.id, 1, 'publish');
   const attempt2 = await decideOutput(slug, batch.id, 1, 'publish');
   await releasePublication(slug, batch.id, 1, attempt1);

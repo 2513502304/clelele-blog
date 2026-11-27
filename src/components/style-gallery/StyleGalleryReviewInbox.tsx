@@ -28,8 +28,8 @@ import './gallery-generator.css';
 
 const platforms = ['gpt-image', 'pixai'] as const;
 type Group = 'pending' | 'saved' | 'tasks';
-type Source = { slug: string; platform: GenerationPlatform; jobs: GenerationJob[] };
-type Row = { slug: string; job: GenerationJob; index: number; group: Group; id: string };
+type Source = { account?: boolean; slug: string; platform: GenerationPlatform; jobs: GenerationJob[] };
+type Row = { account?: boolean; slug: string; job: GenerationJob; index: number; group: Group; id: string };
 const base = (slug: string) => `/api/style-gallery/generations/${encodeURIComponent(slug)}`;
 const inputClass = 'min-h-11 min-w-0 rounded-lg border border-border bg-background px-3';
 const buttonClass =
@@ -37,20 +37,21 @@ const buttonClass =
 
 function outputRows(sources: Source[]) {
   const rows: Row[] = [];
-  for (const { jobs, slug, platform } of sources)
+  for (const { jobs, slug, platform, account } of sources)
     for (const job of jobs) {
       const available = availableOutputs(job),
         saved = publishedOutputs(job);
       for (const index of available)
         rows.push({
           slug,
+          account,
           job,
           index,
           group: saved.includes(index) ? 'saved' : 'pending',
           id: [platform, slug, job.id, index].join('/'),
         });
       if (available.length + (job.discarded?.length ?? 0) < (job.settings.count ?? 1))
-        rows.push({ slug, job, index: -1, group: 'tasks', id: [platform, slug, job.id, 'task'].join('/') });
+        rows.push({ slug, account, job, index: -1, group: 'tasks', id: [platform, slug, job.id, 'task'].join('/') });
     }
   return rows.sort((a, b) => b.job.created.localeCompare(a.job.created) || a.id.localeCompare(b.id));
 }
@@ -273,6 +274,7 @@ function ReviewOutput({
 function Inbox({ keys, locale, gallery }: { keys: Record<GenerationPlatform, string>; locale: string; gallery: string }) {
   const l = useMemo(() => studioLanguage(locale), [locale]);
   const mobile = useIsMobile();
+  const [canSignIn, setCanSignIn] = useState(false);
   const [sources, setSources] = useState<Source[]>([]),
     [revision, refresh] = useState(0),
     [busy, setBusy] = useState(true),
@@ -316,9 +318,29 @@ function Inbox({ keys, locale, gallery }: { keys: Record<GenerationPlatform, str
           }
         });
       }
+      try {
+        const response = await fetch('/api/style-gallery/generation-sources?account=1', {
+          signal: ctrl.signal,
+          cache: 'no-store',
+          redirect: 'error',
+        });
+        if (!response.ok) throw Error();
+        const account: { sources: Source[]; signedIn: boolean; loginEnabled: boolean } = await response.json();
+        if (ctrl.signal.aborted) return;
+        setCanSignIn(!account.signedIn && account.loginEnabled);
+        const localIds = new Set(batch.flatMap((s) => s.jobs.map((j) => `${s.platform}/${s.slug}/${j.id}`)));
+        for (const source of account.sources) {
+          const jobs = source.jobs.filter((j) => !localIds.has(`${source.platform}/${source.slug}/${j.id}`));
+          if (jobs.length) batch.push({ ...source, jobs, account: true });
+        }
+      } catch {
+        errors = true;
+      }
       if (ctrl.signal.aborted) return;
       setSources((old) =>
-        errors ? [...batch, ...old.filter((s) => !batch.some((b) => b.slug === s.slug && b.platform === s.platform))] : batch,
+        errors
+          ? [...batch, ...old.filter((s) => !s.account && !batch.some((b) => b.slug === s.slug && b.platform === s.platform))]
+          : batch,
       );
       setFailed(errors);
       setBusy(false);
@@ -365,6 +387,20 @@ function Inbox({ keys, locale, gallery }: { keys: Record<GenerationPlatform, str
   };
   const active = rows.filter((r) => r.group === group),
     chosen = active.find((r) => r.id === selected);
+  if (!busy && !failed && !rows.length && platforms.every((p) => !keys[p]))
+    return (
+      <section className="space-y-3 rounded-xl border border-border bg-card p-5">
+        <p>{l('暂无关联到你的待审作品。', '確認できる作品はありません。', 'No review works are linked to you yet.')}</p>
+        {canSignIn && (
+          <a
+            className={buttonClass}
+            href={`/api/style-gallery/auth/github/login?returnTo=${encodeURIComponent(`${gallery}/review`)}`}
+          >
+            {l('用 GitHub 登录查看', 'GitHub でログイン', 'View with GitHub')}
+          </a>
+        )}
+      </section>
+    );
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -407,7 +443,7 @@ function Inbox({ keys, locale, gallery }: { keys: Record<GenerationPlatform, str
           row={chosen}
           locale={locale}
           gallery={gallery}
-          credential={chosen ? keys[chosen.job.settings.platform] : ''}
+          credential={chosen && !chosen.account ? keys[chosen.job.settings.platform] : ''}
           onReviewed={(action) => {
             if (!chosen) return;
             setSources((old) =>
@@ -460,7 +496,7 @@ function Inbox({ keys, locale, gallery }: { keys: Record<GenerationPlatform, str
                 <PrivateImage
                   url={`${base(row.slug)}?preview=${row.job.id}&index=${row.index}&thumb=fit`}
                   platform={row.job.settings.platform}
-                  credential={keys[row.job.settings.platform]}
+                  credential={row.account ? '' : keys[row.job.settings.platform]}
                 />
               </button>
             )}
@@ -479,7 +515,7 @@ function Inbox({ keys, locale, gallery }: { keys: Record<GenerationPlatform, str
                       }[row.job.state]}
                 </span>
               </p>
-              {row.group === 'tasks' && row.job.state !== 'failed' && (
+              {row.group === 'tasks' && !row.account && row.job.state !== 'failed' && (
                 <button type="button" className={buttonClass} disabled={busy} onClick={() => void syncTask(row)}>
                   {l('重新读取任务', 'タスクを再確認', 'Check task')}
                 </button>
@@ -527,20 +563,5 @@ export default function StyleGalleryReviewInbox({ locale, gallery }: { locale: s
     };
   }, []);
   if (!session) return <output>{l('正在读取工作台…', '読み込み中…', 'Loading workspace…')}</output>;
-  if (platforms.every((p) => !session.keys[p]))
-    return (
-      <section className="space-y-3 rounded-xl border border-border bg-card p-5">
-        <p>
-          {l(
-            '这个浏览器还没有关联的生图记录。',
-            'このブラウザーには生成履歴がありません。',
-            'No generation workspace is connected to this browser.',
-          )}
-        </p>
-        <a className={buttonClass} href={gallery}>
-          {l('浏览图库', 'ギャラリーを見る', 'Browse gallery')}
-        </a>
-      </section>
-    );
   return <Inbox key={session.version} keys={session.keys} gallery={gallery} locale={locale} />;
 }
