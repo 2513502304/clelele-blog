@@ -267,59 +267,61 @@ export function GenerationViewer({
           </div>
         </div>
       )}
-      <div
-        role="application"
-        aria-label={l('图像缩放与平移', '画像の拡大と移動', 'Image zoom and pan')}
-        className="studio-inspect-surface"
-        ref={surface}
-        // biome-ignore lint/a11y/noNoninteractiveTabindex: This gesture surface accepts keyboard zoom and pan.
-        tabIndex={0}
-        data-zoomed={Boolean(src) && scale > 1}
-        onDoubleClick={() => {
-          if (scale === 1) move(2);
-          else reset();
-        }}
-        onPointerDown={(e) => {
-          e.currentTarget.focus({ preventScroll: true });
-          pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-          e.currentTarget.setPointerCapture(e.pointerId);
-        }}
-        onPointerMove={(e) => {
-          const from = pointers.current.get(e.pointerId);
-          if (!from) return;
-          const next = { x: e.clientX, y: e.clientY };
-          pointers.current.set(e.pointerId, next);
-          const mate = [...pointers.current.entries()].find(([id]) => id !== e.pointerId)?.[1];
-          if (!mate) {
-            move(1, next.x - from.x, next.y - from.y);
-            return;
-          }
-          const previous = Math.hypot(from.x - mate.x, from.y - mate.y);
-          const distance = Math.hypot(next.x - mate.x, next.y - mate.y);
-          // Nearly coincident fingertips give unstable ratios when they cross.
-          if (Math.min(previous, distance) >= 8)
-            move((distance / previous) ** pinchResponse, (next.x - from.x) / 2, (next.y - from.y) / 2, {
-              x: (from.x + mate.x) / 2,
-              y: (from.y + mate.y) / 2,
-            });
-        }}
-        onLostPointerCapture={(e) => pointers.current.delete(e.pointerId)}
-      >
-        {!src ? (
-          <output className="p-4 text-center text-muted-foreground text-sm">{placeholder}</output>
-        ) : reference && mode !== 'result' ? (
-          <ComparisonImages
-            result={src}
-            reference={reference.sourceImage}
-            locale={locale}
-            transform={transform}
-            split={split}
-            setSplit={setSplit}
-            side={side}
-          />
-        ) : (
-          <img src={src} draggable={false} alt={alt} style={{ transform }} />
-        )}
+      <div className={reviewCanvas ? 'studio-review-stage' : undefined}>
+        <div
+          role="application"
+          aria-label={l('图像缩放与平移', '画像の拡大と移動', 'Image zoom and pan')}
+          className="studio-inspect-surface"
+          ref={surface}
+          // biome-ignore lint/a11y/noNoninteractiveTabindex: This gesture surface accepts keyboard zoom and pan.
+          tabIndex={0}
+          data-zoomed={Boolean(src) && scale > 1}
+          onDoubleClick={() => {
+            if (scale === 1) move(2);
+            else reset();
+          }}
+          onPointerDown={(e) => {
+            e.currentTarget.focus({ preventScroll: true });
+            pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+            e.currentTarget.setPointerCapture(e.pointerId);
+          }}
+          onPointerMove={(e) => {
+            const from = pointers.current.get(e.pointerId);
+            if (!from) return;
+            const next = { x: e.clientX, y: e.clientY };
+            pointers.current.set(e.pointerId, next);
+            const mate = [...pointers.current.entries()].find(([id]) => id !== e.pointerId)?.[1];
+            if (!mate) {
+              move(1, next.x - from.x, next.y - from.y);
+              return;
+            }
+            const previous = Math.hypot(from.x - mate.x, from.y - mate.y);
+            const distance = Math.hypot(next.x - mate.x, next.y - mate.y);
+            // Nearly coincident fingertips give unstable ratios when they cross.
+            if (Math.min(previous, distance) >= 8)
+              move((distance / previous) ** pinchResponse, (next.x - from.x) / 2, (next.y - from.y) / 2, {
+                x: (from.x + mate.x) / 2,
+                y: (from.y + mate.y) / 2,
+              });
+          }}
+          onLostPointerCapture={(e) => pointers.current.delete(e.pointerId)}
+        >
+          {!src ? (
+            <output className="p-4 text-center text-muted-foreground text-sm">{placeholder}</output>
+          ) : reference && mode !== 'result' ? (
+            <ComparisonImages
+              result={src}
+              reference={reference.sourceImage}
+              locale={locale}
+              transform={transform}
+              split={split}
+              setSplit={setSplit}
+              side={side}
+            />
+          ) : (
+            <img src={src} draggable={false} alt={alt} style={{ transform }} />
+          )}
+        </div>
       </div>
       {src && reference && mode === 'split' && (
         <label className="studio-split-scale">

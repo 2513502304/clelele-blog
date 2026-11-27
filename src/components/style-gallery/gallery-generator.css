@@ -636,47 +636,73 @@
   gap: 0.35rem;
 }
 
-/* Size the image against both axes. At desktop reading widths the review actions
-   stay beside the proof while the selected ratio and the images' framing stay exact. */
+/* The reader and its filmstrip share their outer edges. Its 4:3 proof area
+   reserves the same space for every frame ratio, even before the image arrives. */
 .studio-review-reader {
   width: 100%;
-  max-width: 74rem;
-  margin-inline: auto;
-  padding: clamp(0.65rem, 1.4vw, 1.25rem);
-}
-.studio-review-layout,
-.studio-review-notes {
-  display: grid;
-  min-width: 0;
-  align-content: start;
-  gap: 1rem;
+  padding: clamp(0.65rem, 1.25vw, 1.25rem);
 }
 .studio-review-layout {
-  align-items: start;
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
 }
-.studio-review-reader .studio-inspect-surface {
-  inline-size: min(100%, calc(min(54svh, 36rem) * var(--review-ratio)));
+.studio-review-reader .studio-viewer {
+  container-type: inline-size;
+}
+.studio-review-stage {
+  container-type: size;
+  display: grid;
+  place-items: center;
+  block-size: min(75cqw, 56svh, 48rem);
+  background: var(--soft);
+}
+.studio-review-stage .studio-inspect-surface {
+  inline-size: min(100cqw, calc(100cqh * var(--review-ratio)));
   block-size: auto;
   aspect-ratio: var(--review-ratio);
-  margin-inline: auto;
+}
+.studio-review-notes,
+.studio-review-recipe {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
 }
 .studio-review-notes {
+  gap: 0.8rem;
   overflow-wrap: anywhere;
 }
 .studio-review-recipe {
   border-block: 1px solid var(--rule);
-  padding-block: 0.65rem;
+  padding-block: 0.6rem;
+}
+.studio-review-scroll {
+  min-height: 0;
+  max-height: 35svh;
 }
 .studio-review-actions label {
   flex: 1 1 100%;
 }
 @container (min-width: 54rem) {
   .studio-review-layout {
-    grid-template-columns: minmax(0, 1fr) clamp(15rem, 26%, 20rem);
-    gap: clamp(1rem, 2cqw, 1.75rem);
+    grid-template-columns: minmax(0, 2fr) minmax(16rem, 1fr);
+    gap: clamp(1rem, 2cqw, 2rem);
   }
   .studio-review-notes {
-    padding-inline-start: clamp(1rem, 2cqw, 1.5rem);
+    /* Only the proof sets the row height. Long prompts take the remaining space. */
+    contain: size;
+    padding-inline-start: clamp(1rem, 2cqw, 1.75rem);
     border-inline-start: 1px solid var(--rule);
+  }
+  .studio-review-recipe,
+  .studio-review-scroll {
+    flex: 1 1 0;
+  }
+  .studio-review-scroll {
+    max-height: none;
+  }
+  .studio-review-actions {
+    flex: none;
   }
 }
