@@ -1,4 +1,6 @@
+import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
+import { waitUntil } from '@vercel/functions';
 import sharp from 'sharp';
 import {
   deleteStyleGalleryObject,
@@ -7,6 +9,7 @@ import {
   putStyleGalleryObject,
   StyleGalleryObjectConflictError,
 } from './hf-s3-presign';
+import { mapWithConcurrency } from './map-with-concurrency';
 import { StyleGalleryClientError } from './style-gallery-errors';
 import { ProviderRejection, readPixAIResult, submitGeneration, TerminalPixAIError } from './style-gallery-generation-provider';
 import {
@@ -115,12 +118,15 @@ export async function noteOutput(slug: string, id: string, index: number, publis
       : requested.every((i) => nextAvailable.includes(i))
         ? 'ready'
         : job.state;
+    const publishAttempts = { ...job.publishAttempts };
+    if (published) delete publishAttempts[index];
     return jobs.map((j) =>
       j === job
         ? {
             ...j,
             available: nextAvailable,
             published: nextSaved,
+            publishAttempts,
             publishing: j.publishing?.filter((i) => !nextSaved.includes(i)),
             state,
           }
@@ -132,6 +138,7 @@ export async function noteOutput(slug: string, id: string, index: number, publis
 
 /** A conditional manifest write chooses between publication and deletion before either can touch public metadata. */
 export async function decideOutput(scope: string, id: string, index: number, action: 'publish' | 'discard') {
+  const attempt = randomUUID();
   await editJobs(scope, (jobs) => {
     const job = jobs.find((j) => j.id === id);
     if (!job || !receivedOutputs(job).includes(index)) throw new StyleGalleryClientError('Image is not ready.', 409);
@@ -139,14 +146,35 @@ export async function decideOutput(scope: string, id: string, index: number, act
     const saving = publishedOutputs(job).includes(index) || job.publishing?.includes(index);
     if ((discarded && action === 'publish') || (saving && action === 'discard'))
       throw new StyleGalleryClientError('This output already has another review decision.', 409);
-    if (discarded || saving) return null;
+    if (discarded || publishedOutputs(job).includes(index)) return null;
     const field = action === 'discard' ? 'discarded' : 'publishing';
     // Materialize legacy implicit index 0 before adding the first per-output decision.
-    const next = { ...job, available: receivedOutputs(job), [field]: [...(job[field] ?? []), index] };
+    const next = { ...job, available: receivedOutputs(job), [field]: [...new Set([...(job[field] ?? []), index])] };
+    if (action === 'discard') next.cleanupPending = [...(job.cleanupPending ?? []), index];
+    else next.publishAttempts = { ...job.publishAttempts, [index]: [...(job.publishAttempts?.[index] ?? []), attempt] };
     const saved = publishedOutputs(job);
     if (action === 'discard' && saved.length && saved.length + (next.discarded?.length ?? 0) === (job.settings.count ?? 1))
       next.state = 'saved';
     return jobs.map((j) => (j === job ? next : j));
+  });
+  return attempt;
+}
+
+/** Release only this rejected attempt. A concurrent or ambiguous publication keeps its reservation. */
+export async function releasePublication(scope: string, id: string, index: number, attempt: string) {
+  await editJobs(scope, (jobs) => {
+    const job = jobs.find((j) => j.id === id);
+    if (!job?.publishAttempts?.[index]?.includes(attempt)) return null;
+    const attempts = job.publishAttempts[index].filter((v) => v !== attempt);
+    return jobs.map((j) =>
+      j !== job
+        ? j
+        : {
+            ...j,
+            publishAttempts: { ...j.publishAttempts, [index]: attempts },
+            publishing: attempts.length ? j.publishing : j.publishing?.filter((i) => i !== index),
+          },
+    );
   });
 }
 
@@ -154,6 +182,22 @@ export async function decideOutput(scope: string, id: string, index: number, act
 export async function removeDraftFiles(scope: string, id: string, index: number) {
   const key = draftImageKey(scope, id, index);
   await Promise.all([key, `${key}.thumb.webp`, `${key}.fit.webp`].map(deleteStyleGalleryObject));
+  await editJobs(scope, (jobs) => {
+    const job = jobs.find((j) => j.id === id);
+    if (!job?.cleanupPending?.includes(index)) return null;
+    return jobs.map((j) => (j === job ? { ...j, cleanupPending: j.cleanupPending?.filter((i) => i !== index) } : j));
+  });
+}
+
+/** Finish interrupted deletes on normal history visits, without making the discarded pixels reviewable. */
+export function resumeDraftCleanup(scope: string, jobs: GenerationJob[]) {
+  const pending = jobs.flatMap((j) => (j.cleanupPending ?? []).map((index) => ({ id: j.id, index })));
+  if (pending.length)
+    waitUntil(
+      mapWithConcurrency(pending, 2, async ({ id, index }) => {
+        await removeDraftFiles(scope, id, index).catch(() => console.warn('[style-gallery] Private cleanup pending.'));
+      }),
+    );
 }
 async function keepImage(slug: string, id: string, index: number, bytes: Buffer) {
   const { format } = await sharp(bytes).metadata();

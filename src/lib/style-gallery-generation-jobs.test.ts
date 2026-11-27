@@ -10,6 +10,7 @@ import {
   markGeneration,
   noteOutput,
   recoverGeneration,
+  releasePublication,
   reserveGeneration,
   runReservedGeneration,
 } from './style-gallery-generation-jobs';
@@ -156,6 +157,20 @@ it('reserves a paid request once across tabs and recovers the original after int
   assert.equal(objects.has(draftImageKey(slug, batch.id, 1)), true);
   assert.equal((await call(visitor, undefined, `?preview=${batch.id}&index=0`)).status, 409);
   await assert.rejects(decideOutput(slug, batch.id, 0, 'publish'), /another review decision/);
+  // Simulate a disconnect between committing the tombstone and starting object cleanup.
+  objects.set(draftImageKey(slug, batch.id, 2), { bytes: Uint8Array.from(bytes), etag: '"lost-delete"' });
+  await noteOutput(slug, batch.id, 2);
+  await decideOutput(slug, batch.id, 2, 'discard');
+  await call(visitor);
+  for (let n = 0; n < 20 && (await listGenerationJobs(slug)).find((j) => j.id === batch.id)?.cleanupPending?.length; n++)
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(objects.has(draftImageKey(slug, batch.id, 2)), false);
+  const attempt1 = await decideOutput(slug, batch.id, 1, 'publish');
+  const attempt2 = await decideOutput(slug, batch.id, 1, 'publish');
+  await releasePublication(slug, batch.id, 1, attempt1);
+  await assert.rejects(decideOutput(slug, batch.id, 1, 'discard'), /another review decision/);
+  await releasePublication(slug, batch.id, 1, attempt2);
+  assert.deepEqual((await listGenerationJobs(slug)).find((j) => j.id === batch.id)?.cleanupPending, []);
   const race = await Promise.allSettled([
     decideOutput(slug, batch.id, 1, 'publish'),
     decideOutput(slug, batch.id, 1, 'discard'),

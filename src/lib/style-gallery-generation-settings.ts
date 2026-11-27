@@ -110,6 +110,8 @@ export interface GenerationJob extends GenerationRequest {
   /** Per-output decisions survive retries and concurrent actions in other tabs. */
   publishing?: number[];
   discarded?: number[];
+  cleanupPending?: number[];
+  publishAttempts?: Record<number, string[]>;
   taskId?: string;
   error?: string;
 }
