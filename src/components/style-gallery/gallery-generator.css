@@ -620,3 +620,18 @@
   color: hsl(var(--muted-foreground));
   font-size: 0.78rem;
 }
+
+.studio-canvas-ratio {
+  min-height: 2.5rem;
+  padding-inline: 0.5rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.5rem;
+  background: var(--paper);
+  font-variant-numeric: tabular-nums;
+}
+
+.studio-zoom-tools {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}

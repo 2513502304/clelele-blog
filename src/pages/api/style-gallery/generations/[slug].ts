@@ -127,14 +127,20 @@ export const GET = privateRoute(async ({ scope }, request) => {
     .max(3)
     .parse(new URL(request.url).searchParams.get('index') ?? 0);
   if (!availableOutputs(job).includes(index)) return json({ error: 'Preview is not ready.' }, 409);
-  if (new URL(request.url).searchParams.get('thumb') === '1') {
+  const thumbStyle = new URL(request.url).searchParams.get('thumb');
+  if (thumbStyle === '1' || thumbStyle === 'fit') {
     const originalKey = draftImageKey(scope, job.id, index),
-      key = `${originalKey}.thumb.webp`;
+      key = thumbStyle === 'fit' ? `${originalKey}.fit.webp` : `${originalKey}.thumb.webp`;
     let thumb = await getStyleGalleryObjectBytes(key);
     if (!thumb) {
       const bytes = await getStyleGalleryObjectBytes(originalKey);
       if (!bytes) throw new Error('Missing draft.');
-      thumb = await sharp(bytes).rotate().resize(144, 108, { fit: 'cover' }).webp({ quality: 72 }).toBuffer();
+      const image = sharp(bytes).rotate();
+      const resized =
+        thumbStyle === 'fit'
+          ? image.resize(360, 540, { fit: 'inside', withoutEnlargement: true })
+          : image.resize(144, 108, { fit: 'cover' });
+      thumb = await resized.webp({ quality: 76 }).toBuffer();
       await putStyleGalleryObject(key, thumb, 'image/webp');
     }
     return new Response(Uint8Array.from(thumb), { headers: { ...headers, 'content-type': 'image/webp' } });
