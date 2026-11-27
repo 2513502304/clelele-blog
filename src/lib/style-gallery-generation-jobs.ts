@@ -56,7 +56,7 @@ async function editJobs(slug: string, edit: (jobs: GenerationJob[]) => Generatio
 }
 
 /** The client request ID survives a lost response. Exactly one reservation owns the paid call. */
-export async function reserveGeneration(slug: string, request: GenerationRequest) {
+export async function reserveGeneration(slug: string, request: GenerationRequest, reviewAccount?: number) {
   return editJobs(slug, (jobs) => {
     const existing = jobs.find((job) => job.id === request.id);
     if (existing) {
@@ -64,7 +64,7 @@ export async function reserveGeneration(slug: string, request: GenerationRequest
         throw new StyleGalleryClientError('Generation ID already has different settings.', 409);
       return null;
     }
-    return [{ ...request, created: new Date().toISOString(), state: 'running' }, ...jobs];
+    return [{ ...request, reviewAccount, created: new Date().toISOString(), state: 'running' }, ...jobs];
   });
 }
 

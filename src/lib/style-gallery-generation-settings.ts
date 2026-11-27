@@ -104,6 +104,7 @@ export const generationRequest = z.object({
 export type GenerationRequest = z.infer<typeof generationRequest>;
 export interface GenerationJob extends GenerationRequest {
   created: string;
+  reviewAccount?: number;
   state: 'running' | 'ready' | 'saved' | 'failed' | 'uncertain';
   available?: number[];
   published?: number[];

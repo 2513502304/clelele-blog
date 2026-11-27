@@ -35,7 +35,7 @@ export async function studioRequest(
     signal,
     headers: {
       'x-gallery-provider': platform,
-      'x-api-key': apiKey,
+      ...(apiKey ? { 'x-api-key': apiKey } : { 'x-gallery-review-session': '1' }),
       ...(uploadToken && { authorization: `Bearer ${uploadToken}` }),
       ...(body && { 'content-type': 'application/json' }),
     },

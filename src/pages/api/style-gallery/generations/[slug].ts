@@ -6,6 +6,7 @@ import {
   getStyleGalleryObjectBytes,
   putStyleGalleryObject,
 } from '@lib/hf-s3-presign';
+import { rejectCrossOriginMutation } from '@lib/site-admin-auth';
 import { isAuthorizedStyleGalleryRequest } from '@lib/style-gallery-auth';
 import { StyleGalleryClientError } from '@lib/style-gallery-errors';
 import { ensureStyleGalleryExampleThumbnail } from '@lib/style-gallery-example-thumbnail';
@@ -29,8 +30,10 @@ import {
   generationRequest,
   publishedOutputs,
 } from '@lib/style-gallery-generation-settings';
+import { getStyleGalleryViewer } from '@lib/style-gallery-github-auth';
 import { getStyleGalleryPlatform } from '@lib/style-gallery-platforms';
 import { getStoredStyleGalleryItem, mutateStyleGalleryVisualIndex } from '@lib/style-gallery-store';
+import { findAccountWork, rememberAccountWork } from '@lib/style-gallery-studio-account';
 import { rememberStudioSource, studioOwner } from '@lib/style-gallery-studio-owner';
 import { upsertStyleGalleryVisualRecords } from '@lib/style-gallery-visual-index';
 import { updateStyleGalleryItemExamples } from '@lib/style-gallery-write';
@@ -40,7 +43,7 @@ import sharp from 'sharp';
 import { z } from 'zod';
 
 export const prerender = false;
-const headers = { 'cache-control': 'private, no-store', vary: 'Authorization, X-API-Key, X-Gallery-Provider' };
+const headers = { 'cache-control': 'private, no-store', vary: 'Cookie, Authorization, X-API-Key, X-Gallery-Provider' };
 const json = (value: unknown, status = 200) => Response.json(value, { status, headers });
 async function findJob(slug: string, id: string) {
   const job = (await listGenerationJobs(slug)).find((entry) => entry.id === id);
@@ -139,15 +142,35 @@ interface StudioAccess {
   scope: string;
   platform: 'gpt-image' | 'pixai';
   apiKey: string;
+  viewerId?: number;
 }
 function privateRoute(handle: (access: StudioAccess, request: Request) => Promise<Response>) {
-  return async ({ params, request }: Pick<APIContext, 'params' | 'request'>) => {
-    const auth = studioOwner(request);
-    if (!auth) return json({ error: 'A provider API key is required.' }, 401);
+  return async ({
+    params,
+    request,
+    cookies,
+  }: Pick<APIContext, 'params' | 'request'> & Partial<Pick<APIContext, 'cookies'>>) => {
     if (!params.slug || !/^[a-z0-9-]{1,160}$/i.test(params.slug)) return json({ error: 'Invalid item.' }, 400);
+    const slug = params.slug;
     try {
-      // Possession of the same provider credential grants access across devices. Persist only the derived namespace.
-      return await handle({ ...auth, slug: params.slug, scope: `${params.slug}/${auth.owner}` }, request);
+      const viewer = cookies && getStyleGalleryViewer(cookies);
+      if (viewer && request.method === 'POST' && rejectCrossOriginMutation(request, new URL(request.url)))
+        return json({ error: 'Invalid request origin.' }, 403);
+      const auth = studioOwner(request);
+      if (auth) return await handle({ ...auth, slug, scope: `${slug}/${auth.owner}`, viewerId: viewer?.id }, request);
+      if (!viewer || request.headers.get('x-gallery-review-session') !== '1')
+        return json({ error: 'A private workspace identity is required.' }, 401);
+      let id = new URL(request.url).searchParams.get('preview');
+      if (request.method === 'POST') {
+        const body = await request.clone().json();
+        if (body.action !== 'confirm' && body.action !== 'discard')
+          return json({ error: 'Provider credentials required.' }, 403);
+        id = body.id;
+      }
+      if (!id || !z.string().uuid().safeParse(id).success) return json({ error: 'Select a review output.' }, 400);
+      const work = await findAccountWork(viewer.id, slug, request.headers.get('x-gallery-provider'), id);
+      if (!work) return json({ error: 'Unknown generation.' }, 404);
+      return await handle({ ...work, slug, scope: `${slug}/${work.owner}`, apiKey: '' }, request);
     } catch (error) {
       if (error instanceof StyleGalleryClientError) return json({ error: error.message }, error.status);
       if (error instanceof z.ZodError || error instanceof SyntaxError)
@@ -205,7 +228,7 @@ export const GET = privateRoute(async ({ scope }, request) => {
   });
 });
 
-export const POST = privateRoute(async ({ slug, scope, owner, platform, apiKey }, request) => {
+export const POST = privateRoute(async ({ slug, scope, owner, platform, apiKey, viewerId }, request) => {
   const body = await request.json();
   if (body?.action === 'create') {
     const input = generationRequest.parse(body);
@@ -225,7 +248,7 @@ export const POST = privateRoute(async ({ slug, scope, owner, platform, apiKey }
       reference = new File([Uint8Array.from(bytes)], `reference.${format}`, { type: `image/${format}` });
     }
     await rememberStudioSource(owner, slug);
-    if (await reserveGeneration(scope, input)) {
+    if (await reserveGeneration(scope, input, viewerId)) {
       // Node keeps the operation alive independently of the HTTP client. On Vercel extend the invocation as well.
       waitUntil(
         runReservedGeneration(scope, input, apiKey, reference).catch(() =>
@@ -233,7 +256,10 @@ export const POST = privateRoute(async ({ slug, scope, owner, platform, apiKey }
         ),
       );
     }
-    return json({ job: await findJob(scope, input.id) }, 202);
+    const job = await findJob(scope, input.id);
+    // Retrying an acknowledged create can repair discovery, but cannot attach somebody else's earlier job.
+    if (viewerId && job.reviewAccount === viewerId) await rememberAccountWork(viewerId, { slug, platform, owner, id: job.id });
+    return json({ job }, 202);
   }
   if (body?.action === 'confirm' && !isAuthorizedStyleGalleryRequest(request))
     return json({ error: 'Invalid gallery upload token.', code: 'invalid_upload_token' }, 403);
