@@ -337,6 +337,25 @@ function ReviewOutput({
   );
 }
 
+const reviewPositionKey = 'gallery-generation:review-position';
+
+/** Store only the cursor. A restored ID can open a row only after this session's private discovery returns it. */
+function readReviewPosition(): { group: Group; selected: string } {
+  try {
+    const position = JSON.parse(localStorage.getItem(reviewPositionKey) ?? 'null');
+    if (
+      position &&
+      ['pending', 'saved', 'tasks'].includes(position.group) &&
+      typeof position.selected === 'string' &&
+      position.selected.length < 400
+    )
+      return { group: position.group, selected: position.selected };
+  } catch {
+    /* Storage is optional in private browsing. */
+  }
+  return { group: 'pending', selected: '' };
+}
+
 function Inbox({ keys, locale, gallery }: { keys: Record<GenerationPlatform, string>; locale: string; gallery: string }) {
   const l = useMemo(() => studioLanguage(locale), [locale]);
   const mobile = useIsMobile();
@@ -346,8 +365,9 @@ function Inbox({ keys, locale, gallery }: { keys: Record<GenerationPlatform, str
     [revision, refresh] = useState(0),
     [busy, setBusy] = useState(true),
     [failed, setFailed] = useState(false);
-  const [group, setGroup] = useState<Group>('pending'),
-    [selected, select] = useState(''),
+  const [initialPosition] = useState(readReviewPosition);
+  const [group, setGroup] = useState<Group>(initialPosition.group),
+    [selected, select] = useState(initialPosition.selected),
     [limit, setLimit] = useState(12),
     [notice, setNotice] = useState('');
   useEffect(() => {
@@ -487,6 +507,18 @@ function Inbox({ keys, locale, gallery }: { keys: Record<GenerationPlatform, str
   };
   const active = rows.filter((r) => r.group === group),
     chosen = active.find((r) => r.id === selected);
+  useEffect(() => {
+    try {
+      localStorage.setItem(reviewPositionKey, JSON.stringify({ group, selected }));
+    } catch {
+      /* Browsing without storage still advances normally. */
+    }
+  }, [group, selected]);
+  useEffect(() => {
+    // Another tab may have finished the saved cursor. Wait for complete discovery
+    // so a slow provider is never mistaken for a removed output.
+    if (!busy && !failed && selected && !chosen) select(active[0]?.id ?? '');
+  }, [busy, failed, selected, chosen, active]);
   if (!busy && !failed && !rows.length && platforms.every((p) => !keys[p]))
     return (
       <section className="space-y-3 rounded-xl border border-border bg-card p-5">
@@ -563,7 +595,9 @@ function Inbox({ keys, locale, gallery }: { keys: Record<GenerationPlatform, str
                   : s,
               ),
             );
-            select((current) => (current === chosen.id ? '' : current));
+            const at = active.findIndex((row) => row.id === chosen.id);
+            const next = active[at + 1] ?? active[at - 1];
+            select((current) => (current === chosen.id ? (next?.id ?? '') : current));
             setNotice(
               action === 'discarded'
                 ? l('已丢弃这张图。', '画像を破棄しました。', 'Output discarded.')
