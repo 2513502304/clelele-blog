@@ -231,10 +231,10 @@ function ReviewOutput({
                 <p className="my-1 text-muted-foreground text-xs">{generationCaption(job.settings)}</p>
                 <section
                   key={row.id}
-                  // biome-ignore lint/a11y/noNoninteractiveTabindex: Keyboard readers can scroll the named fixed-height region.
+                  // biome-ignore lint/a11y/noNoninteractiveTabindex: Keyboard readers can scroll the remaining space between the title and the publish controls.
                   tabIndex={0}
                   aria-label={l('提示词和完整参数', 'プロンプトと全設定', 'Prompt and complete settings')}
-                  className="h-[4.5em] overflow-y-auto overscroll-contain break-words rounded-sm text-sm leading-[1.5] focus-visible:outline-2 focus-visible:outline-primary"
+                  className="studio-review-scroll gallery-note-scroll overflow-y-auto overscroll-contain break-words rounded-sm text-sm leading-[1.5] focus-visible:outline-2 focus-visible:outline-primary"
                 >
                   <p className="whitespace-pre-wrap">{job.prompt}</p>
                   <GenerationDetails settings={job.settings} locale={locale} inline />
