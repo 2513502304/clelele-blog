@@ -1,6 +1,6 @@
 .hpoi-calendar {
   display: grid;
-  grid-template-columns: minmax(16rem, 0.92fr) minmax(0, 1.08fr);
+  grid-template-columns: minmax(16rem, 21rem) minmax(0, 1fr);
   gap: 1.5rem;
   padding: clamp(0.8rem, 2vw, 1.5rem);
   background: hsl(var(--card));
@@ -86,7 +86,7 @@
 .hpoi-agenda ul {
   display: grid;
   gap: 0.5rem;
-  max-height: 26rem;
+  max-height: 18rem;
   overflow: auto;
 }
 .hpoi-agenda li {
@@ -112,6 +112,6 @@
     gap: 1rem;
   }
   .hpoi-agenda ul {
-    max-height: none;
+    max-height: 12rem;
   }
 }
