@@ -56,35 +56,62 @@ function outputRows(sources: Source[]) {
   return rows.sort((a, b) => b.job.created.localeCompare(a.job.created) || a.id.localeCompare(b.id));
 }
 
-/** Thumbnails use private request headers; revoke each blob URL when its row leaves the current group. */
-function PrivateImage({ url, platform, credential }: { url: string; platform: GenerationPlatform; credential: string }) {
-  const [src, setSrc] = useState('');
+type Thumbnails = Map<string, { blob: Promise<Blob>; controller: AbortController; users: number }>;
+type ThumbnailProps = { pool: Thumbnails; url?: string; platform?: GenerationPlatform; credential: string };
+
+/** Share only the authorized thumbnail bytes between a mounted card and reader.
+ * The last subscriber aborts an unfinished fetch and releases the entry. */
+function useThumbnail({ pool, url, platform, credential }: ThumbnailProps) {
+  const [ready, setReady] = useState<{ key: string; src: string }>();
+  const key = platform && url ? `${platform}/${credential ? 'provider' : 'account'}/${url}` : '';
   useEffect(() => {
-    const ctrl = new AbortController();
+    if (!platform || !url || !key) return;
+    let entry = pool.get(key);
+    if (!entry) {
+      const controller = new AbortController();
+      const blob = studioRequest(url, platform, credential, undefined, controller.signal).then((r) => r.blob());
+      entry = { controller, blob, users: 0 };
+      pool.set(key, entry);
+    }
+    entry.users++;
+    let active = true;
     let objectUrl = '';
-    void studioRequest(url, platform, credential, undefined, ctrl.signal)
-      .then((r) => r.blob())
+    void entry.blob
       .then((blob) => {
-        if (ctrl.signal.aborted) return;
-        objectUrl = URL.createObjectURL(blob);
-        setSrc(objectUrl);
+        if (active) {
+          objectUrl = URL.createObjectURL(blob);
+          setReady({ key, src: objectUrl });
+        }
       })
-      .catch(() => {});
+      .catch(() => {
+        /* The original is fetched independently if the thumbnail is unavailable. */
+      });
     return () => {
-      ctrl.abort();
+      active = false;
       URL.revokeObjectURL(objectUrl);
+      if (--entry.users === 0) {
+        entry.controller.abort();
+        pool.delete(key);
+      }
     };
-  }, [url, platform, credential]);
+  }, [key, pool, url, platform, credential]);
+  return ready?.key === key ? ready.src : undefined;
+}
+
+function PrivateImage(props: ThumbnailProps) {
+  const src = useThumbnail(props);
   return src ? <img src={src} alt="" className="block h-auto w-full" /> : <span className="block aspect-[4/3]" />;
 }
 
 function ReviewOutput({
+  pool,
   row,
   credential,
   locale,
   gallery,
   onReviewed,
 }: {
+  pool: Thumbnails;
   row?: Row;
   credential: string;
   locale: string;
@@ -107,6 +134,12 @@ function ReviewOutput({
     platform = row?.job.settings.platform,
     rowId = row?.id;
   const job = row?.job;
+  const thumbnail = useThumbnail({
+    pool,
+    platform,
+    credential,
+    url: row && slug ? `${base(slug)}?preview=${row.job.id}&index=${row.index}&thumb=fit` : undefined,
+  });
   useEffect(() => {
     const ctrl = new AbortController();
     let objectUrl = '';
@@ -121,9 +154,13 @@ function ReviewOutput({
       ctrl.signal,
     )
       .then((r) => r.blob())
-      .then((blob) => {
+      .then(async (blob) => {
         if (ctrl.signal.aborted) return;
         objectUrl = URL.createObjectURL(blob);
+        const image = new Image();
+        image.src = objectUrl;
+        await image.decode();
+        if (ctrl.signal.aborted) return;
         setPreview({ id: rowId, blob, url: objectUrl });
       })
       .catch(() => {
@@ -192,7 +229,8 @@ function ReviewOutput({
       <div className="studio-review-layout">
         <GenerationViewer
           reviewCanvas
-          src={preview?.url}
+          viewId={rowId}
+          src={preview?.url ?? thumbnail}
           alt={l('生成结果', '生成結果', 'Generated result')}
           locale={locale}
           references={reference}
@@ -229,6 +267,11 @@ function ReviewOutput({
                   <CopyButton key={row.id} text={job.prompt} className="min-h-11" showLabel />
                 </div>
                 <p className="my-1 text-muted-foreground text-xs">{generationCaption(job.settings)}</p>
+                {thumbnail && !preview && !error && (
+                  <output className="text-muted-foreground text-xs">
+                    {l('预览图 · 正在加载原图', 'プレビュー · 原画を読み込み中', 'Preview · Loading original')}
+                  </output>
+                )}
                 <section
                   key={row.id}
                   // biome-ignore lint/a11y/noNoninteractiveTabindex: Keyboard readers can scroll the remaining space between the title and the publish controls.
@@ -297,6 +340,7 @@ function ReviewOutput({
 function Inbox({ keys, locale, gallery }: { keys: Record<GenerationPlatform, string>; locale: string; gallery: string }) {
   const l = useMemo(() => studioLanguage(locale), [locale]);
   const mobile = useIsMobile();
+  const thumbs: Thumbnails = useMemo(() => new Map(), []);
   const [canSignIn, setCanSignIn] = useState(false);
   const [sources, setSources] = useState<Source[]>([]),
     [revision, refresh] = useState(0),
@@ -463,6 +507,7 @@ function Inbox({ keys, locale, gallery }: { keys: Record<GenerationPlatform, str
       )}
       {group !== 'tasks' && (
         <ReviewOutput
+          pool={thumbs}
           row={chosen}
           locale={locale}
           gallery={gallery}
@@ -517,6 +562,7 @@ function Inbox({ keys, locale, gallery }: { keys: Record<GenerationPlatform, str
                 }}
               >
                 <PrivateImage
+                  pool={thumbs}
                   url={`${base(row.slug)}?preview=${row.job.id}&index=${row.index}&thumb=fit`}
                   platform={row.job.settings.platform}
                   credential={row.account ? '' : keys[row.job.settings.platform]}
