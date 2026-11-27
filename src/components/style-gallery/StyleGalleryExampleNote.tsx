@@ -3,17 +3,7 @@ import { defaultLocale, isLocaleSupported } from '@/i18n/config';
 import { t } from '@/i18n/utils';
 
 /** Keep a keyboard-scrollable preview beside the separate full-prompt Lightbox launcher. */
-export function StyleGalleryExampleNote({
-  note,
-  locale,
-  rows,
-  onOpen,
-}: {
-  note: string;
-  locale: string;
-  rows: 3 | 5;
-  onOpen: () => void;
-}) {
+export function StyleGalleryExampleNote({ note, locale, onOpen }: { note: string; locale: string; onOpen: () => void }) {
   const language = isLocaleSupported(locale) ? locale : defaultLocale;
   return (
     <div className="min-w-0">
@@ -38,7 +28,7 @@ export function StyleGalleryExampleNote({
         tabIndex={0}
         aria-label={t(language, 'gallery.generationPrompt')}
         // A smaller viewport must not truncate the prompt or remove wheel/keyboard access.
-        className={`gallery-note-scroll whitespace-pre-wrap break-words text-foreground/75 text-xs leading-5 ${rows === 3 ? 'h-[3.75rem]' : 'h-[6.25rem]'}`}
+        className="gallery-note-scroll h-[3lh] whitespace-pre-wrap break-words text-foreground/75 text-xs leading-5"
       >
         {note}
       </section>

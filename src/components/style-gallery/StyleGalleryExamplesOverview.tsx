@@ -40,7 +40,6 @@ import { useProgressiveList } from '@/hooks/useProgressiveList';
 import { getStyleGallerySourceCards, getStyleGallerySourceHash } from '@/lib/style-gallery-source-groups';
 import type { StyleGalleryExampleOverviewItem } from '@/types/style-gallery';
 import GalleryLocateButton from './GalleryLocateButton';
-import GalleryZoomButton from './GalleryZoomButton';
 import StyleGalleryGrid, { StyleGalleryLayoutToggle, useStyleGalleryLayout } from './StyleGalleryGrid';
 import {
   createStyleGalleryLightboxLikeAction,
@@ -552,14 +551,9 @@ function StyleGalleryExamplesOverviewContent({
                       />
                     </>
                   )}
-                  {!tagSelection.enabled && (
-                    <GalleryZoomButton
-                      source={example.src}
-                      title={example.sourceTitle}
-                      locale={locale}
-                      onOpen={() => openLightbox(example, stack)}
-                    />
-                  )}
+                  <span className="gallery-image-badge pointer-events-none absolute top-2 right-2 z-10 max-w-[70%] truncate rounded-full bg-black/65 px-2.5 py-1 font-semibold text-white text-xs backdrop-blur-sm">
+                    {example.model || labels.otherPlatform}
+                  </span>
                   {originalPosition.hasFilters && !tagSelection.enabled && (
                     <GalleryLocateButton
                       locale={locale}
@@ -580,21 +574,11 @@ function StyleGalleryExamplesOverviewContent({
                     }}
                   />
                 </div>
-                <figcaption className="flex flex-1 flex-col gap-3 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="rounded-full bg-sky-50 px-2 py-1 font-semibold text-sky-600 text-xs dark:bg-sky-950/50 dark:text-sky-200">
-                      {example.model || labels.otherPlatform}
-                    </span>
-                    {example.uploadedAt && (
-                      <time dateTime={example.uploadedAt} className="text-muted-foreground text-xs">
-                        {dateFormatter.format(new Date(example.uploadedAt))}
-                      </time>
-                    )}
-                  </div>
+                <figcaption className="mt-auto p-2.5">
                   <a
                     href={`${galleryBasePath}/${example.sourceSlug}`}
                     data-astro-prefetch="false"
-                    className="mt-auto flex items-center gap-2 border-border border-t pt-3 text-sm transition hover:text-primary"
+                    className="flex min-w-0 items-center gap-2 text-sm transition hover:text-primary"
                   >
                     <img
                       src={example.sourceImage}
@@ -607,8 +591,15 @@ function StyleGalleryExamplesOverviewContent({
                       decoding="async"
                       className="size-9 shrink-0 rounded-md object-cover"
                     />
-                    <span className="min-w-0 flex-1 font-medium tabular-nums">{getStyleGallerySourceHash(example)}</span>
-                    <Icon icon="ri:arrow-right-s-line" className="size-4 shrink-0" />
+                    <span className="min-w-0 flex-1 truncate font-medium tabular-nums">
+                      {getStyleGallerySourceHash(example)}
+                    </span>
+                    <time
+                      dateTime={example.uploadedAt}
+                      className="shrink-0 rounded-full bg-muted px-2 py-1 text-muted-foreground text-xs tabular-nums"
+                    >
+                      {dateFormatter.format(new Date(example.uploadedAt))}
+                    </time>
                   </a>
                 </figcaption>
               </figure>

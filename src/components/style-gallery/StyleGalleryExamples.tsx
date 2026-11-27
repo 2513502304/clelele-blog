@@ -43,7 +43,6 @@ import type {
   StyleGalleryImageRef,
 } from '@/types/style-gallery';
 import GallerySelectionDock from './GallerySelectionDock';
-import GalleryZoomButton from './GalleryZoomButton';
 import { GenerationDetails } from './StyleGalleryGenerationFields';
 import { GenerationViewer } from './StyleGalleryGenerationViewer';
 import StyleGalleryGenerator from './StyleGalleryGenerator';
@@ -960,13 +959,20 @@ function StyleGalleryExamplesContent({
                             className="h-full w-full object-cover transition duration-200 group-hover:scale-105"
                           />
                         </button>
-                        {!selectionMode && (
-                          <GalleryZoomButton
-                            source={example.src}
-                            title={example.alt ?? example.model ?? 'Generated example'}
-                            locale={locale}
-                            onOpen={() => openExampleLightbox(example, platformExamples)}
-                          />
+                        {generationReferences.length > 0 && !selectionMode && (
+                          <button
+                            type="button"
+                            className="glass-image-action absolute top-2 right-2 z-10 inline-flex min-h-9 items-center gap-1 rounded-lg px-2 text-white text-xs hover:bg-black/70 focus-visible:ring-2 focus-visible:ring-white"
+                            aria-expanded={comparedId === example.id}
+                            onClick={(event) => {
+                              comparisonTrigger.current = event.currentTarget;
+                              if (comparedId === example.id) closeComparison();
+                              else setComparedId(example.id);
+                            }}
+                          >
+                            <Icon icon="ri:layout-column-line" />
+                            {zh ? '对比参考图' : ja ? '参照画像と比較' : 'Compare reference'}
+                          </button>
                         )}
                         <label className="absolute top-2 left-2 flex size-8 cursor-pointer items-center justify-center rounded-md bg-card/90 shadow">
                           <input
@@ -988,30 +994,12 @@ function StyleGalleryExamplesContent({
                           className="absolute right-2 bottom-1.5 z-10"
                         />
                       </div>
-                      {generationReferences.length > 0 && !selectionMode && (
-                        <div className="studio-example-compare">
-                          <button
-                            type="button"
-                            className="studio-secondary studio-comparison-launch"
-                            aria-expanded={comparedId === example.id}
-                            onClick={(e) => {
-                              comparisonTrigger.current = e.currentTarget;
-                              if (comparedId === example.id) closeComparison();
-                              else setComparedId(example.id);
-                            }}
-                          >
-                            <Icon icon="ri:layout-column-line" />
-                            {zh ? '对比参考图' : ja ? '参照画像と比較' : 'Compare reference'}
-                          </button>
-                        </div>
-                      )}
                       {example.note && (
                         <figcaption className="border-border/60 border-t bg-background/80 p-3">
                           {example.generation && <GenerationDetails settings={example.generation} locale={locale} />}
                           <StyleGalleryExampleNote
                             note={example.note}
                             locale={locale}
-                            rows={3}
                             onOpen={() => openExampleLightbox(example, platformExamples, true)}
                           />
                         </figcaption>

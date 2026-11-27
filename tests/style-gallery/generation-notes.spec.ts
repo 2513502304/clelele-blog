@@ -210,7 +210,7 @@ test('reference viewer follows wheel travel across fine and coarse input', async
 test('published outputs compare without credentials and both panes follow the same zoom', async ({ page }) => {
   await imagesOnlyFixture(page);
   await page.goto('/image-style-prompt-gallery/2026-09-23-35dc5191ccad', { waitUntil: 'domcontentloaded' });
-  const launch = page.locator('.studio-example-compare button').first();
+  const launch = page.getByRole('button', { name: '对比参考图', exact: true }).first();
   await expect(launch.locator('xpath=ancestor::astro-island')).not.toHaveAttribute('ssr');
   await launch.click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
