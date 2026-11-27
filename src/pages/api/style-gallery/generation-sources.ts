@@ -1,3 +1,5 @@
+import { mapWithConcurrency } from '@lib/map-with-concurrency';
+import { listGenerationJobs, resumeDraftCleanup } from '@lib/style-gallery-generation-jobs';
 import { getStyleGalleryViewer, isStyleGalleryGitHubAuthEnabled } from '@lib/style-gallery-github-auth';
 import { listAccountSources } from '@lib/style-gallery-studio-account';
 import { readStudioSources, studioOwner } from '@lib/style-gallery-studio-owner';
@@ -21,7 +23,23 @@ export const GET: APIRoute = async ({ request, cookies }) => {
       );
     }
     if (!auth) return new Response(null, { status: 401, headers });
-    return Response.json({ slugs: (await readStudioSources(auth.owner)).slugs }, { headers });
+    const { slugs } = await readStudioSources(auth.owner);
+    if (!new URL(request.url).searchParams.has('jobs')) return Response.json({ slugs }, { headers });
+    // Resolve only this credential's registered sources, close to object storage.
+    // One unavailable history should not hide the other ready outputs.
+    const failed: string[] = [];
+    const sources = await mapWithConcurrency(slugs, 4, async (slug) => {
+      try {
+        const scope = `${slug}/${auth.owner}`;
+        const jobs = await listGenerationJobs(scope);
+        resumeDraftCleanup(scope, jobs);
+        return { slug, platform: auth.platform, jobs };
+      } catch {
+        failed.push(slug);
+        return null;
+      }
+    });
+    return Response.json({ slugs, sources: sources.filter(Boolean), failed }, { headers });
   } catch {
     return new Response(null, { status: 503, headers });
   }
