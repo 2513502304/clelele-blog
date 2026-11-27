@@ -185,97 +185,111 @@ function ReviewOutput({
     }
   }
   return (
-    <section data-inbox-reader className="gallery-generator scroll-mt-24 space-y-4 rounded-xl border border-border bg-card p-4">
-      <GenerationViewer
-        reviewCanvas
-        src={preview?.url}
-        alt={l('生成结果', '生成結果', 'Generated result')}
-        locale={locale}
-        references={reference}
-        initialHash={job?.settings.platform === 'gpt-image' ? job.settings.referenceHash : undefined}
-        placeholder={
-          row
-            ? error || l('正在读取原图…', '読み込み中…', 'Loading original…')
-            : l('选择下方作品开始对比', '下から作品を選んで比較', 'Select a work below to compare')
-        }
-      />
-      {refError && (
-        <p>
-          {l('参考图读取失败', '参照画像を読み込めません', 'Reference unavailable')}{' '}
-          <button type="button" className="underline" onClick={() => setRetry((n) => n + 1)}>
-            {l('重试', '再試行', 'Retry')}
-          </button>
-        </p>
-      )}
-      {job && row && (
-        <>
-          <a className="inline-flex items-center gap-1 text-primary text-sm" href={`${gallery}/${slug}`}>
-            {slug}
-            <RiArrowRightLine />
-          </a>
-          <div className="rounded-lg border border-border p-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="font-semibold">{l('生成提示词与参数', 'プロンプトと設定', 'Prompt and settings')}</h2>
-              <CopyButton key={row.id} text={job.prompt} className="min-h-11" showLabel />
-            </div>
-            <p className="my-1 text-muted-foreground text-xs">{generationCaption(job.settings)}</p>
-            <section
-              key={row.id}
-              // biome-ignore lint/a11y/noNoninteractiveTabindex: Keyboard readers can scroll the named fixed-height region.
-              tabIndex={0}
-              aria-label={l('提示词和完整参数', 'プロンプトと全設定', 'Prompt and complete settings')}
-              className="h-[4.5em] overflow-y-auto overscroll-contain break-words rounded-sm text-sm leading-[1.5] focus-visible:outline-2 focus-visible:outline-primary"
-            >
-              <p className="whitespace-pre-wrap">{job.prompt}</p>
-              <GenerationDetails settings={job.settings} locale={locale} inline />
-            </section>
-          </div>
-          {row.group === 'pending' && (
-            <form
-              className="flex flex-wrap items-end gap-2"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void decide('save');
-              }}
-            >
-              <label className="grid min-w-0 gap-1 text-sm">
-                {l('图库上传令牌', 'アップロードトークン', 'Gallery upload token')}
-                <input
-                  type="password"
-                  autoComplete="off"
-                  className={inputClass}
-                  value={token}
-                  onChange={(e) => setToken(e.target.value)}
-                />
-              </label>
-              <button
-                type="submit"
-                className={`${buttonClass} bg-primary text-primary-foreground`}
-                disabled={!preview || !token.trim() || busy}
-              >
-                <RiCheckLine />
-                {busy ? l('正在保存…', '保存中…', 'Saving…') : l('确认加入子图', 'サブギャラリーに保存', 'Add to sub-gallery')}
+    <section
+      data-inbox-reader
+      className="gallery-generator studio-review-reader scroll-mt-24 rounded-xl border border-border bg-card"
+    >
+      <div className="studio-review-layout">
+        <GenerationViewer
+          reviewCanvas
+          src={preview?.url}
+          alt={l('生成结果', '生成結果', 'Generated result')}
+          locale={locale}
+          references={reference}
+          initialHash={job?.settings.platform === 'gpt-image' ? job.settings.referenceHash : undefined}
+          placeholder={
+            row
+              ? error || l('正在读取原图…', '読み込み中…', 'Loading original…')
+              : l('选择下方作品开始对比', '下から作品を選んで比較', 'Select a work below to compare')
+          }
+        />
+        <div className="studio-review-notes">
+          {refError && (
+            <p>
+              {l('参考图读取失败', '参照画像を読み込めません', 'Reference unavailable')}{' '}
+              <button type="button" className="underline" onClick={() => setRetry((n) => n + 1)}>
+                {l('重试', '再試行', 'Retry')}
               </button>
-              <DiscardOutputAction
-                key={row.id}
-                locale={locale}
-                disabled={!preview || busy || Boolean(job.publishing?.includes(row.index))}
-                discard={() => void decide('discard')}
-              />
-            </form>
+            </p>
           )}
-        </>
-      )}
-      {error && (
-        <p role="alert">
-          {error}{' '}
-          {!preview && (
-            <button type="button" className="underline" onClick={() => setRetry((n) => n + 1)}>
-              {l('重试', '再試行', 'Retry')}
-            </button>
+          {!(job && row) && (
+            <h2 className="font-semibold text-muted-foreground">
+              {l('生成提示词与参数', 'プロンプトと設定', 'Prompt and settings')}
+            </h2>
           )}
-        </p>
-      )}
+          {job && row && (
+            <>
+              <a className="inline-flex items-center gap-1 text-primary text-sm" href={`${gallery}/${slug}`}>
+                {slug}
+                <RiArrowRightLine />
+              </a>
+              <div className="studio-review-recipe">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h2 className="font-semibold">{l('生成提示词与参数', 'プロンプトと設定', 'Prompt and settings')}</h2>
+                  <CopyButton key={row.id} text={job.prompt} className="min-h-11" showLabel />
+                </div>
+                <p className="my-1 text-muted-foreground text-xs">{generationCaption(job.settings)}</p>
+                <section
+                  key={row.id}
+                  // biome-ignore lint/a11y/noNoninteractiveTabindex: Keyboard readers can scroll the named fixed-height region.
+                  tabIndex={0}
+                  aria-label={l('提示词和完整参数', 'プロンプトと全設定', 'Prompt and complete settings')}
+                  className="h-[4.5em] overflow-y-auto overscroll-contain break-words rounded-sm text-sm leading-[1.5] focus-visible:outline-2 focus-visible:outline-primary"
+                >
+                  <p className="whitespace-pre-wrap">{job.prompt}</p>
+                  <GenerationDetails settings={job.settings} locale={locale} inline />
+                </section>
+              </div>
+              {row.group === 'pending' && (
+                <form
+                  className="studio-review-actions flex flex-wrap items-end gap-2"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void decide('save');
+                  }}
+                >
+                  <label className="grid min-w-0 gap-1 text-sm">
+                    {l('图库上传令牌', 'アップロードトークン', 'Gallery upload token')}
+                    <input
+                      type="password"
+                      autoComplete="off"
+                      className={inputClass}
+                      value={token}
+                      onChange={(e) => setToken(e.target.value)}
+                    />
+                  </label>
+                  <button
+                    type="submit"
+                    className={`${buttonClass} bg-primary text-primary-foreground`}
+                    disabled={!preview || !token.trim() || busy}
+                  >
+                    <RiCheckLine />
+                    {busy
+                      ? l('正在保存…', '保存中…', 'Saving…')
+                      : l('确认加入子图', 'サブギャラリーに保存', 'Add to sub-gallery')}
+                  </button>
+                  <DiscardOutputAction
+                    key={row.id}
+                    locale={locale}
+                    disabled={!preview || busy || Boolean(job.publishing?.includes(row.index))}
+                    discard={() => void decide('discard')}
+                  />
+                </form>
+              )}
+            </>
+          )}
+          {error && (
+            <p role="alert">
+              {error}{' '}
+              {!preview && (
+                <button type="button" className="underline" onClick={() => setRetry((n) => n + 1)}>
+                  {l('重试', '再試行', 'Retry')}
+                </button>
+              )}
+            </p>
+          )}
+        </div>
+      </div>
     </section>
   );
 }
