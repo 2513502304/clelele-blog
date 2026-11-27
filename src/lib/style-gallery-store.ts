@@ -25,11 +25,19 @@ import type {
   StyleGalleryExampleIndex,
   StyleGalleryPromptSearchIndex,
 } from '@/types/style-gallery';
+import {
+  type ExampleRoot,
+  materializeExamples,
+  prepareExampleRoot,
+  putExampleRoot,
+  queueExamplePacking,
+  readExampleRootSnapshot,
+  STYLE_GALLERY_EXAMPLE_INDEX_KEY,
+} from './style-gallery-example-shards';
 
 export const STYLE_GALLERY_CATALOG_KEY = 'metadata/catalog-v5.json';
 export const STYLE_GALLERY_PROMPT_SEARCH_INDEX_KEY = 'metadata/prompt-search-index.json';
-// v2 将点赞事实并入示例索引。使用版本化对象名可让旧生产部署在切换期间继续读取 v1，合并后只使用本对象。
-export const STYLE_GALLERY_EXAMPLE_INDEX_KEY = 'examples/index-v2.json';
+export { STYLE_GALLERY_EXAMPLE_INDEX_KEY };
 export const STYLE_GALLERY_ITEM_PREFIX = 'items';
 export const STYLE_GALLERY_VISUAL_INDEX_KEY = 'metadata/visual-index-v1.json';
 
@@ -39,7 +47,8 @@ let catalogRead: Promise<StyleGalleryCatalog> | null = null;
 let catalogReadRevision = 0;
 let catalogCache: { value: StyleGalleryCatalog; expiresAt: number; etag: string | null } | null = null;
 let promptSearchIndexCache: { value: StyleGalleryPromptSearchIndex; etag: string | null; expiresAt: number } | null = null;
-let exampleIndexCache: { value: StyleGalleryExampleIndex; etag: string | null; expiresAt: number } | null = null;
+let exampleIndexCache: { root: ExampleRoot; value: StyleGalleryExampleIndex; etag: string | null; expiresAt: number } | null =
+  null;
 let exampleIndexWriteQueue: Promise<unknown> = Promise.resolve();
 let visualIndexCache: { value: StyleGalleryVisualIndex; etag: string | null; expiresAt: number } | null = null;
 let visualIndexWriteQueue: Promise<unknown> = Promise.resolve();
@@ -234,12 +243,10 @@ export async function getStyleGalleryExampleIndex(
       previous.expiresAt = Date.now() + CACHE_TTL_MS;
       return previous.value;
     }
-    const snapshot = await getStyleGalleryObjectTextSnapshot(STYLE_GALLERY_EXAMPLE_INDEX_KEY);
-    const value = snapshot.text
-      ? styleGalleryExampleIndexSchema.parse(JSON.parse(snapshot.text))
-      : { version: 2 as const, updatedAt: new Date(0).toISOString(), groups: [] };
+    const snapshot = await readExampleRootSnapshot();
+    const value = await materializeExamples(snapshot.root);
     if (previous !== exampleIndexCache && !options.fresh) return exampleIndexCache?.value ?? value;
-    exampleIndexCache = { value, etag: snapshot.etag, expiresAt: Date.now() + CACHE_TTL_MS };
+    exampleIndexCache = { root: snapshot.root, value, etag: snapshot.etag, expiresAt: Date.now() + CACHE_TTL_MS };
     return value;
   } catch (error) {
     if (!options.fresh && exampleIndexCache) {
@@ -282,53 +289,43 @@ export async function putStyleGalleryPromptSearchIndex(
   return etag;
 }
 
-/**
- * 以 `examples/index-v2.json` 为单一示例索引执行条件更新。所有上传、删除和点赞都必须经过这里，
- * 这样跨 Vercel 实例的并发写会收到 412 并基于最新 ETag 重放，不会静默覆盖别人的点赞。
- */
+/** Full-index management transforms and single-item saves share the publication CAS and replay queue. */
 export function mutateStyleGalleryExampleIndex(
   transform: (current: StyleGalleryExampleIndex) => StyleGalleryExampleIndex,
+  sourceSlug?: string,
 ): Promise<StyleGalleryExampleIndex> {
   const operation = async () => {
-    for (let attempt = 1; attempt <= 6; attempt += 1) {
-      // 页面 SSR/登录态查询通常已经读取过索引。复用带 ETag 的短期快照可省掉一次 1 MB 级下载；
-      // 若其他 Vercel 实例已写入，If-Match 会返回 412，下一轮再强制读取最新对象并重放 transform。
+    for (let attempt = 1; attempt <= 6; attempt++) {
       const cached =
         attempt === 1 && exampleIndexCache?.etag && exampleIndexCache.expiresAt > Date.now() ? exampleIndexCache : null;
-      const snapshot = cached
-        ? { text: null, etag: cached.etag }
-        : await getStyleGalleryObjectTextSnapshot(STYLE_GALLERY_EXAMPLE_INDEX_KEY);
-      const current = cached
-        ? cached.value
-        : snapshot.text
-          ? styleGalleryExampleIndexSchema.parse(JSON.parse(snapshot.text))
-          : { version: 2 as const, updatedAt: new Date(0).toISOString(), groups: [] };
-      if (!cached && snapshot.text && !snapshot.etag) {
-        throw new Error('HF did not return an ETag for the style gallery example index.');
-      }
+      const snapshot = cached ?? (await readExampleRootSnapshot());
+      const { root, etag } = snapshot;
+      if ('exists' in snapshot && snapshot.exists && !etag) throw Error('Missing ETag for the gallery example index.');
+      // V2 transforms still see the entire legacy document until an operator activates sharding.
+      const scope = root.version === 3 ? sourceSlug : undefined;
+      const current = cached && !scope ? cached.value : await materializeExamples(root, scope);
       const transformed = transform(current);
-      // 缓存快照可能在本次请求开始前已被另一实例更新；幂等短路前用轻量 HEAD 验证 ETag。
-      // ETag 已变化时下一轮强制读取正文并重放 transform，避免把陈旧状态误报为已持久化。
       if (transformed === current) {
-        if (cached && (await getStyleGalleryObjectEtag(STYLE_GALLERY_EXAMPLE_INDEX_KEY)) !== snapshot.etag) {
+        if (cached && (await getStyleGalleryObjectEtag(STYLE_GALLERY_EXAMPLE_INDEX_KEY)) !== etag) {
           exampleIndexCache = null;
-          await new Promise((resolve) => setTimeout(resolve, 40 * attempt + Math.floor(Math.random() * 80)));
           continue;
         }
-        exampleIndexCache = { value: current, etag: snapshot.etag, expiresAt: Date.now() + CACHE_TTL_MS };
         return current;
       }
       const next = styleGalleryExampleIndexSchema.parse(transformed);
-      // 示例索引已接近 MB 级；紧凑 JSON 可减少 HF 往返、序列化内存和冷实例解析成本。
-      const body = new TextEncoder().encode(JSON.stringify(next));
       try {
-        const etag = await putStyleGalleryObject(
-          STYLE_GALLERY_EXAMPLE_INDEX_KEY,
-          body,
-          'application/json; charset=utf-8',
-          snapshot.etag ? { ifMatch: snapshot.etag } : { ifNoneMatch: '*' },
-        );
-        exampleIndexCache = { value: next, etag, expiresAt: Date.now() + CACHE_TTL_MS };
+        const updated = await prepareExampleRoot(root, current, next, scope);
+        const published = await putExampleRoot(updated, etag ? { ifMatch: etag } : { ifNoneMatch: '*' });
+        // A scoped edit may share a previous complete snapshot, but must never cache its slice as the whole gallery.
+        const previous = exampleIndexCache;
+        if (!scope || (previous && previous.etag === etag)) {
+          const full =
+            scope && previous
+              ? { ...next, groups: [...previous.value.groups.filter((g) => g.sourceSlug !== scope), ...next.groups] }
+              : next;
+          exampleIndexCache = { root: updated, value: full, etag: published, expiresAt: Date.now() + CACHE_TTL_MS };
+        } else exampleIndexCache = null;
+        queueExamplePacking(updated);
         return next;
       } catch (error) {
         if (!(error instanceof StyleGalleryObjectConflictError) || attempt === 6) throw error;
@@ -336,7 +333,7 @@ export function mutateStyleGalleryExampleIndex(
         await new Promise((resolve) => setTimeout(resolve, 40 * attempt + Math.floor(Math.random() * 80)));
       }
     }
-    throw new Error('Failed to update the style gallery example index after concurrent write retries.');
+    throw Error('Failed to update the style gallery example index after concurrent write retries.');
   };
 
   const result = exampleIndexWriteQueue.then(operation, operation);

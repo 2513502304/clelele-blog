@@ -8,10 +8,10 @@ import {
   createStyleGallerySignedImageUrl,
   getStyleGalleryObjectBytes,
   getStyleGalleryObjectTextSnapshot,
-  putStyleGalleryObject,
   StyleGalleryObjectConflictError,
 } from '../src/lib/hf-s3-presign';
 import { mapWithConcurrency } from '../src/lib/map-with-concurrency';
+import { readGalleryMetadataSnapshot, writeGalleryMetadata } from '../src/lib/style-gallery-example-shards';
 import { readStyleGalleryImageDimensions, readWebpHeaderDimensions } from '../src/lib/style-gallery-image-dimensions';
 import { styleGalleryImageDimensionsSchema } from '../src/lib/style-gallery-schema';
 import type { StyleGalleryImageDimensions } from '../src/types/style-gallery';
@@ -148,7 +148,7 @@ async function enrich(metadata: Metadata) {
 /** Conditional writes retry against current data, so concurrent uploads or likes are never overwritten. */
 async function updateObject(key: string) {
   for (let attempt = 0; attempt < 6; attempt++) {
-    const snapshot = await getStyleGalleryObjectTextSnapshot(key, 60_000);
+    const snapshot = await readGalleryMetadataSnapshot(key, 60_000);
     if (!snapshot.text || !snapshot.etag) throw new Error(`Missing metadata or ETag: ${key}`);
     const metadata: Metadata = JSON.parse(snapshot.text);
     const before = JSON.stringify(metadata);
@@ -164,7 +164,7 @@ async function updateObject(key: string) {
     await rejectUnsafeFile(backupPath);
     await writeFile(backupPath, snapshot.text, { mode: 0o600 });
     try {
-      await putStyleGalleryObject(key, new TextEncoder().encode(JSON.stringify(metadata)), 'application/json', {
+      await writeGalleryMetadata(key, new TextEncoder().encode(JSON.stringify(metadata)), 'application/json', {
         ifMatch: snapshot.etag,
       });
       changed++;

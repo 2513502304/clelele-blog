@@ -56,7 +56,6 @@ interface WriteItemsResult {
 
 interface UpdateExamplesResult {
   item: StoredStyleGalleryItem;
-  index: StyleGalleryExampleIndex;
 }
 
 interface UpdateExamplesOptions {
@@ -473,17 +472,17 @@ export async function updateStyleGalleryItemExamples(
           await putStyleGalleryCatalog(catalog, { ifMatch: catalogSnapshot.etag }),
         );
       }
-      const index = await mutateStyleGalleryExampleIndex((current) => {
+      await mutateStyleGalleryExampleIndex((current) => {
         // mutate 内部已经读取带 ETag 的最新 index；复用首次快照可少一次全量 HF 下载，并为失败回滚保留基线。
-        previousIndex ??= current;
+        previousIndex = current;
         const currentGroup = current.groups.find((group) => group.sourceSlug === slug);
         const groups = current.groups.filter((group) => group.sourceSlug !== slug);
         attemptedGroup = examples.length ? toStyleGalleryExampleIndexGroup(slug, examples, currentGroup) : null;
         if (attemptedGroup) groups.push(attemptedGroup);
         return { version: 2, updatedAt, groups };
-      });
+      }, slug);
       await invalidateStyleGalleryPublicCache([slug]);
-      return { item, index };
+      return { item };
     } catch (error) {
       // 只在 item 仍是本次写入版本时回滚；若另一实例已追加 prompt 或更新 examples，宁可报告
       // 回滚不完整，也不能用旧快照覆盖对方已经成功提交的数据。
@@ -714,6 +713,9 @@ function hasSameEntryStructure(
     left.src === right.src &&
     left.model === right.model &&
     left.note === right.note &&
+    JSON.stringify(left.generation) === JSON.stringify(right.generation) &&
+    left.dimensions?.width === right.dimensions?.width &&
+    left.dimensions?.height === right.dimensions?.height &&
     left.uploadedAt === right.uploadedAt
   );
 }

@@ -1,14 +1,9 @@
 import { parseArgs } from 'node:util';
-import {
-  getStyleGalleryObjectBytes,
-  getStyleGalleryObjectText,
-  headStyleGalleryObject,
-  putStyleGalleryObject,
-} from '../src/lib/hf-s3-presign';
+import { getStyleGalleryObjectBytes, headStyleGalleryObject, putStyleGalleryObject } from '../src/lib/hf-s3-presign';
 import { mapWithConcurrency } from '../src/lib/map-with-concurrency';
+import { materializeExamples, readExampleRootSnapshot } from '../src/lib/style-gallery-example-shards';
 import { encodeStyleGalleryExampleThumbnail } from '../src/lib/style-gallery-example-thumbnail';
 import { getStyleGalleryExampleThumbnailKey, parseStyleGalleryImageApiPath } from '../src/lib/style-gallery-image-key';
-import { styleGalleryExampleIndexSchema } from '../src/lib/style-gallery-schema';
 import { backfillThumbnailsWithS5cmd } from './lib/style-gallery-thumbnail-s5cmd';
 
 /**
@@ -31,9 +26,9 @@ if (values['hf-upload'] && !values.s5cmd) throw new Error('--hf-upload requires 
 const limit = values.limit === undefined ? undefined : Number(values.limit);
 if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 32) throw new Error('Concurrency must be 1–32.');
 if (limit !== undefined && (!Number.isInteger(limit) || limit < 1)) throw new Error('Limit must be a positive integer.');
-const text = await getStyleGalleryObjectText('examples/index-v2.json');
-if (!text) throw new Error('Example index is missing.');
-const index = styleGalleryExampleIndexSchema.parse(JSON.parse(text));
+const snapshot = await readExampleRootSnapshot();
+if (!snapshot.exists) throw new Error('Example index is missing.');
+const index = await materializeExamples(snapshot.root);
 const sources = [
   ...new Map(
     index.groups.flatMap((group) =>

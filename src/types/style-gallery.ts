@@ -136,7 +136,7 @@ export interface StyleGalleryExampleIndexGroup {
   examples: StyleGalleryExampleIndexEntry[];
 }
 
-/** HF `examples/index-v2.json` 的结构，统一服务 Sub-gallery 总览与点赞。 */
+/** Logical example index shared by overview, likes, and legacy or sharded storage. */
 export interface StyleGalleryExampleIndex {
   version: 2;
   updatedAt: string;
