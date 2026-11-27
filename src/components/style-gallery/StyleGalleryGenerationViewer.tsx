@@ -84,7 +84,9 @@ function ComparisonImages({ reference, result, locale, split, setSplit, side, tr
 }
 
 interface ViewerProps {
-  src: string;
+  src?: string;
+  placeholder?: string;
+  reviewCanvas?: boolean;
   alt: string;
   locale: string;
   references?: StyleGalleryImageRef[];
@@ -93,17 +95,34 @@ interface ViewerProps {
 }
 
 /** Both inspection modes use the same bounded wheel, pinch and drag gestures. */
-export function GenerationViewer({ src, alt, locale, references, initialHash, onClose }: ViewerProps) {
+export function GenerationViewer({
+  src,
+  alt,
+  locale,
+  references,
+  initialHash,
+  onClose,
+  placeholder,
+  reviewCanvas,
+}: ViewerProps) {
   const l = studioLanguage(locale);
   const [hash, selectHash] = useState(initialHash);
   const [mode, setMode] = useState<'result' | 'split' | 'side'>('split');
+  const [ratio, setRatio] = useState('4:3');
   const side = mode === 'side';
   const [split, setSplit] = useState(50);
   const reference = references?.find((item) => item.imageHash === hash) ?? references?.[0];
   const surface = useRef<HTMLDivElement>(null);
   const [{ scale, x, y }, setView] = useState({ scale: 1, x: 0, y: 0 });
   const pointers = useRef(new Map<number, { x: number; y: number }>());
-  const reset = () => setView({ scale: 1, x: 0, y: 0 });
+  const reset = useCallback(() => setView({ scale: 1, x: 0, y: 0 }), []);
+  // Preserve the frame and comparison mode while fitting each newly selected original.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: A new source has its own viewing coordinates.
+  useEffect(() => {
+    pointers.current.clear();
+    reset();
+    selectHash(initialHash);
+  }, [src, initialHash, reset]);
   // Clamp against the fitted image, not the letterbox, so portrait originals stay in view while panning.
   const move = useCallback((factor: number, dx = 0, dy = 0, anchor?: { x: number; y: number }) => {
     const area = surface.current;
@@ -139,7 +158,12 @@ export function GenerationViewer({ src, alt, locale, references, initialHash, on
     if (!area) return;
     const wheel = (event: WheelEvent) => {
       // Leave ordinary page scrolling available until the user engages this canvas.
-      if (!event.deltaY || (!event.ctrlKey && !area.closest('section.studio-viewer')?.contains(document.activeElement))) return;
+      if (
+        !area.querySelector('img') ||
+        !event.deltaY ||
+        (!event.ctrlKey && !area.closest('section.studio-viewer')?.contains(document.activeElement))
+      )
+        return;
       event.preventDefault();
       move(wheelZoom(event, area.clientHeight), 0, 0, { x: event.clientX, y: event.clientY });
     };
@@ -147,7 +171,7 @@ export function GenerationViewer({ src, alt, locale, references, initialHash, on
     return () => area.removeEventListener('wheel', wheel);
   }, [move]);
   const transform = `translate(${x}px,${y}px) scale(${scale})`;
-  const title = reference ? l('对比参考', '参照画像と比較', 'Compare reference') : alt;
+  const title = reference || reviewCanvas ? l('对比参考', '参照画像と比較', 'Compare reference') : alt;
   return (
     <section
       aria-label={title}
@@ -170,23 +194,40 @@ export function GenerationViewer({ src, alt, locale, references, initialHash, on
     >
       <div className="studio-viewer-bar">
         <strong>{title}</strong>
-        <button type="button" aria-label={l('缩小', '縮小', 'Zoom out')} onClick={() => move(1 / zoomStep)}>
-          <RiSubtractLine />
-        </button>
-        <output>{Math.round(scale * 100)}%</output>
-        <button type="button" aria-label={l('放大', '拡大', 'Zoom in')} onClick={() => move(zoomStep)}>
-          <RiAddLine />
-        </button>
-        <button type="button" aria-label={l('适应画布', '全体表示', 'Fit image')} onClick={reset}>
-          <RiFocus3Line />
-        </button>
+        {reviewCanvas && (
+          <select
+            className="studio-canvas-ratio"
+            aria-label={l('预览比例', 'プレビュー比率', 'Preview aspect ratio')}
+            value={ratio}
+            onChange={(e) => {
+              setRatio(e.target.value);
+              reset();
+            }}
+          >
+            {['4:3', '5:3', '16:9', '1:1'].map((value) => (
+              <option key={value}>{value}</option>
+            ))}
+          </select>
+        )}
+        <div className="studio-zoom-tools">
+          <button type="button" disabled={!src} aria-label={l('缩小', '縮小', 'Zoom out')} onClick={() => move(1 / zoomStep)}>
+            <RiSubtractLine />
+          </button>
+          <output>{Math.round(scale * 100)}%</output>
+          <button type="button" disabled={!src} aria-label={l('放大', '拡大', 'Zoom in')} onClick={() => move(zoomStep)}>
+            <RiAddLine />
+          </button>
+          <button type="button" disabled={!src} aria-label={l('适应画布', '全体表示', 'Fit image')} onClick={reset}>
+            <RiFocus3Line />
+          </button>
+        </div>
         {onClose && (
           <button type="button" aria-label={l('收起对比', '比較を閉じる', 'Collapse comparison')} onClick={onClose}>
             <RiCloseLine />
           </button>
         )}
       </div>
-      {reference && (
+      {src && reference && (
         <div className="studio-comparison-tools">
           <label>
             {l('选择参考图', '参照画像', 'Reference image')}
@@ -229,10 +270,11 @@ export function GenerationViewer({ src, alt, locale, references, initialHash, on
         role="application"
         aria-label={l('图像缩放与平移', '画像の拡大と移動', 'Image zoom and pan')}
         className="studio-inspect-surface"
+        style={reviewCanvas ? { height: 'auto', aspectRatio: ratio.replace(':', '/') } : undefined}
         ref={surface}
         // biome-ignore lint/a11y/noNoninteractiveTabindex: This gesture surface accepts keyboard zoom and pan.
         tabIndex={0}
-        data-zoomed={scale > 1}
+        data-zoomed={Boolean(src) && scale > 1}
         onDoubleClick={() => {
           if (scale === 1) move(2);
           else reset();
@@ -263,7 +305,9 @@ export function GenerationViewer({ src, alt, locale, references, initialHash, on
         }}
         onLostPointerCapture={(e) => pointers.current.delete(e.pointerId)}
       >
-        {reference && mode !== 'result' ? (
+        {!src ? (
+          <output className="p-4 text-center text-muted-foreground text-sm">{placeholder}</output>
+        ) : reference && mode !== 'result' ? (
           <ComparisonImages
             result={src}
             reference={reference.sourceImage}
@@ -277,7 +321,7 @@ export function GenerationViewer({ src, alt, locale, references, initialHash, on
           <img src={src} draggable={false} alt={alt} style={{ transform }} />
         )}
       </div>
-      {reference && mode === 'split' && (
+      {src && reference && mode === 'split' && (
         <label className="studio-split-scale">
           {l('参考占比', '参照の割合', 'Reference share')}
           <input type="range" min="0" max="100" value={split} onChange={(e) => setSplit(Number(e.target.value))} />

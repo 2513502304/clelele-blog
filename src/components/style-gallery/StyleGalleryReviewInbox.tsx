@@ -1,3 +1,4 @@
+import { useIsMobile } from '@hooks/useMediaQuery';
 import { mapWithConcurrency } from '@lib/map-with-concurrency';
 import {
   availableOutputs,
@@ -12,8 +13,10 @@ import { cn } from '@lib/utils';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { RiArrowRightLine, RiCheckLine, RiRefreshLine } from 'react-icons/ri';
 import type { StyleGalleryImageRef } from '@/types/style-gallery';
+import { CopyButton } from '../markdown/shared/CopyButton';
 import { studioLanguage } from './StyleGalleryGenerationFields';
 import { GenerationViewer } from './StyleGalleryGenerationViewer';
+import StyleGalleryGrid from './StyleGalleryGrid';
 import './gallery-generator.css';
 
 const platforms = ['gpt-image', 'pixai'] as const;
@@ -64,7 +67,7 @@ function PrivateImage({ url, platform, credential }: { url: string; platform: Ge
       URL.revokeObjectURL(objectUrl);
     };
   }, [url, platform, credential]);
-  return src ? <img src={src} alt="" className="h-full w-full object-cover" /> : null;
+  return src ? <img src={src} alt="" className="block h-auto w-full" /> : <span className="block aspect-[4/3]" />;
 }
 
 function ReviewOutput({
@@ -74,7 +77,7 @@ function ReviewOutput({
   gallery,
   onSaved,
 }: {
-  row: Row;
+  row?: Row;
   credential: string;
   locale: string;
   gallery: string;
@@ -82,23 +85,29 @@ function ReviewOutput({
 }) {
   const l = useMemo(() => studioLanguage(locale), [locale]);
   const [reference, setReference] = useState<StyleGalleryImageRef[]>([]);
-  const [preview, setPreview] = useState<{ blob: Blob; url: string }>();
+  const [loaded, setPreview] = useState<{ id: string; blob: Blob; url: string }>();
+  const preview = loaded && loaded.id === row?.id ? loaded : undefined;
   const [token, setToken] = useState(getStyleGalleryManagementToken);
   const [error, setError] = useState(''),
     [busy, setBusy] = useState(false),
     [retry, setRetry] = useState(0);
   const [refError, setRefError] = useState(false);
   const lock = useRef(false);
-  const { job, slug, index } = row;
+  const slug = row?.slug,
+    id = row?.job.id,
+    index = row?.index,
+    platform = row?.job.settings.platform,
+    rowId = row?.id;
+  const job = row?.job;
   useEffect(() => {
     const ctrl = new AbortController();
     let objectUrl = '';
     setError('');
     setPreview(undefined);
-    setRefError(false);
+    if (!id || !slug || index === undefined || !platform || !rowId) return;
     void studioRequest(
-      `${base(slug)}?preview=${job.id}&index=${index}&reload=${retry}`,
-      job.settings.platform,
+      `${base(slug)}?preview=${id}&index=${index}&reload=${retry}`,
+      platform,
       credential,
       undefined,
       ctrl.signal,
@@ -107,12 +116,22 @@ function ReviewOutput({
       .then((blob) => {
         if (ctrl.signal.aborted) return;
         objectUrl = URL.createObjectURL(blob);
-        setPreview({ blob, url: objectUrl });
+        setPreview({ id: rowId, blob, url: objectUrl });
       })
       .catch(() => {
         if (!ctrl.signal.aborted) setError(l('原图暂时无法读取。', '原画を読み込めません。', 'Original unavailable.'));
       });
-    void fetch(`/api/style-gallery/prompts/${slug}`, { signal: ctrl.signal })
+    return () => {
+      ctrl.abort();
+      URL.revokeObjectURL(objectUrl);
+    };
+  }, [slug, id, index, platform, credential, rowId, retry, l]);
+  useEffect(() => {
+    const ctrl = new AbortController();
+    setReference([]);
+    setRefError(false);
+    if (!slug) return;
+    void fetch(`/api/style-gallery/prompts/${slug}`, { signal: ctrl.signal, cache: retry ? 'reload' : 'default' })
       .then(async (r) => {
         if (!r.ok) throw Error();
         return r.json();
@@ -125,11 +144,10 @@ function ReviewOutput({
       });
     return () => {
       ctrl.abort();
-      URL.revokeObjectURL(objectUrl);
     };
-  }, [slug, job.id, index, job.settings.platform, credential, retry, l]);
+  }, [slug, retry]);
   async function save() {
-    if (!preview || lock.current) return;
+    if (!preview || !job || !slug || index === undefined || lock.current) return;
     lock.current = true;
     setBusy(true);
     setError('');
@@ -155,17 +173,19 @@ function ReviewOutput({
   }
   return (
     <section data-inbox-reader className="gallery-generator scroll-mt-24 space-y-4 rounded-xl border border-border bg-card p-4">
-      {preview ? (
-        <GenerationViewer
-          src={preview.url}
-          alt={l('生成结果', '生成結果', 'Generated result')}
-          locale={locale}
-          references={reference}
-          initialHash={job.settings.platform === 'gpt-image' ? job.settings.referenceHash : undefined}
-        />
-      ) : (
-        !error && <output>{l('正在读取原图…', '原画を読み込み中…', 'Loading original…')}</output>
-      )}
+      <GenerationViewer
+        reviewCanvas
+        src={preview?.url}
+        alt={l('生成结果', '生成結果', 'Generated result')}
+        locale={locale}
+        references={reference}
+        initialHash={job?.settings.platform === 'gpt-image' ? job.settings.referenceHash : undefined}
+        placeholder={
+          row
+            ? error || l('正在读取原图…', '読み込み中…', 'Loading original…')
+            : l('选择下方作品开始对比', '下から作品を選んで比較', 'Select a work below to compare')
+        }
+      />
       {refError && (
         <p>
           {l('参考图读取失败', '参照画像を読み込めません', 'Reference unavailable')}{' '}
@@ -174,44 +194,49 @@ function ReviewOutput({
           </button>
         </p>
       )}
-      <a className="inline-flex items-center gap-1 text-primary text-sm" href={`${gallery}/${slug}`}>
-        {slug}
-        <RiArrowRightLine />
-      </a>
-      <details>
-        <summary className="cursor-pointer font-semibold">
-          {l('生成提示词与参数', 'プロンプトと設定', 'Prompt and settings')}
-        </summary>
-        <p className="my-2 text-muted-foreground">{generationCaption(job.settings)}</p>
-        <p className="whitespace-pre-wrap break-words">{job.prompt}</p>
-      </details>
-      {row.group === 'pending' && (
-        <form
-          className="flex flex-wrap items-end gap-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void save();
-          }}
-        >
-          <label className="grid min-w-0 gap-1 text-sm">
-            {l('图库上传令牌', 'アップロードトークン', 'Gallery upload token')}
-            <input
-              type="password"
-              autoComplete="off"
-              className={inputClass}
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-            />
-          </label>
-          <button
-            type="submit"
-            className={`${buttonClass} bg-primary text-primary-foreground`}
-            disabled={!preview || !token.trim() || busy}
-          >
-            <RiCheckLine />
-            {busy ? l('正在保存…', '保存中…', 'Saving…') : l('确认加入子图', 'サブギャラリーに保存', 'Add to sub-gallery')}
-          </button>
-        </form>
+      {job && row && (
+        <>
+          <a className="inline-flex items-center gap-1 text-primary text-sm" href={`${gallery}/${slug}`}>
+            {slug}
+            <RiArrowRightLine />
+          </a>
+          <div className="rounded-lg border border-border p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="font-semibold">{l('生成提示词与参数', 'プロンプトと設定', 'Prompt and settings')}</h2>
+              <CopyButton key={row.id} text={job.prompt} showLabel />
+            </div>
+            <p className="my-1 text-muted-foreground text-xs">{generationCaption(job.settings)}</p>
+            <div className="h-[4.5em] overflow-y-auto whitespace-pre-wrap break-words text-sm leading-[1.5]">{job.prompt}</div>
+          </div>
+          {row.group === 'pending' && (
+            <form
+              className="flex flex-wrap items-end gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void save();
+              }}
+            >
+              <label className="grid min-w-0 gap-1 text-sm">
+                {l('图库上传令牌', 'アップロードトークン', 'Gallery upload token')}
+                <input
+                  type="password"
+                  autoComplete="off"
+                  className={inputClass}
+                  value={token}
+                  onChange={(e) => setToken(e.target.value)}
+                />
+              </label>
+              <button
+                type="submit"
+                className={`${buttonClass} bg-primary text-primary-foreground`}
+                disabled={!preview || !token.trim() || busy}
+              >
+                <RiCheckLine />
+                {busy ? l('正在保存…', '保存中…', 'Saving…') : l('确认加入子图', 'サブギャラリーに保存', 'Add to sub-gallery')}
+              </button>
+            </form>
+          )}
+        </>
       )}
       {error && (
         <p role="alert">
@@ -229,6 +254,7 @@ function ReviewOutput({
 
 function Inbox({ keys, locale, gallery }: { keys: Record<GenerationPlatform, string>; locale: string; gallery: string }) {
   const l = useMemo(() => studioLanguage(locale), [locale]);
+  const mobile = useIsMobile();
   const [sources, setSources] = useState<Source[]>([]),
     [revision, refresh] = useState(0),
     [busy, setBusy] = useState(true),
@@ -358,14 +384,14 @@ function Inbox({ keys, locale, gallery }: { keys: Record<GenerationPlatform, str
           )}
         </p>
       )}
-      {chosen && (
+      {group !== 'tasks' && (
         <ReviewOutput
-          key={chosen.id}
           row={chosen}
           locale={locale}
           gallery={gallery}
-          credential={keys[chosen.job.settings.platform]}
+          credential={chosen ? keys[chosen.job.settings.platform] : ''}
           onSaved={() => {
+            if (!chosen) return;
             setSources((old) =>
               old.map((s) =>
                 s.slug === chosen.slug && s.platform === chosen.job.settings.platform
@@ -378,7 +404,7 @@ function Inbox({ keys, locale, gallery }: { keys: Record<GenerationPlatform, str
                   : s,
               ),
             );
-            select('');
+            select((current) => (current === chosen.id ? '' : current));
             setNotice(l('已加入对应条目的子图。', 'サブギャラリーに保存しました。', 'Saved to the source sub-gallery.'));
             refresh((n) => n + 1);
           }}
@@ -389,13 +415,14 @@ function Inbox({ keys, locale, gallery }: { keys: Record<GenerationPlatform, str
           {l('这个分组暂无作品。', 'このグループに作品はありません。', 'No works in this group.')}
         </p>
       )}
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,15rem),1fr))] gap-3">
+      <StyleGalleryGrid masonry={!mobile}>
         {active.slice(0, limit).map((row) => (
           <article key={row.id} className="overflow-hidden rounded-xl border border-border bg-card">
             {row.index >= 0 && (
               <button
                 type="button"
-                className="block aspect-[4/3] w-full overflow-hidden bg-muted"
+                className="block w-full overflow-hidden bg-muted"
+                aria-pressed={row.id === selected}
                 aria-label={`${l('审图', '画像を確認', 'Review image')} ${row.slug} #${row.index + 1}`}
                 onClick={() => {
                   select(row.id);
@@ -405,7 +432,7 @@ function Inbox({ keys, locale, gallery }: { keys: Record<GenerationPlatform, str
                 }}
               >
                 <PrivateImage
-                  url={`${base(row.slug)}?preview=${row.job.id}&index=${row.index}&thumb=1`}
+                  url={`${base(row.slug)}?preview=${row.job.id}&index=${row.index}&thumb=fit`}
                   platform={row.job.settings.platform}
                   credential={keys[row.job.settings.platform]}
                 />
@@ -439,7 +466,7 @@ function Inbox({ keys, locale, gallery }: { keys: Record<GenerationPlatform, str
             </div>
           </article>
         ))}
-      </div>
+      </StyleGalleryGrid>
       {active.length > limit && (
         <button type="button" className={buttonClass} onClick={() => setLimit((n) => n + 12)}>
           {l('加载更多', 'もっと見る', 'Load more')}
