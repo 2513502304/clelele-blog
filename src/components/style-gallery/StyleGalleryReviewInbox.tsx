@@ -28,7 +28,7 @@ import './gallery-generator.css';
 
 const platforms = ['gpt-image', 'pixai'] as const;
 type Group = 'pending' | 'saved' | 'tasks';
-type Source = { account?: boolean; slug: string; platform: GenerationPlatform; jobs: GenerationJob[] };
+type Source = { stale?: boolean; account?: boolean; slug: string; platform: GenerationPlatform; jobs: GenerationJob[] };
 type Row = { account?: boolean; slug: string; job: GenerationJob; index: number; group: Group; id: string };
 const base = (slug: string) => `/api/style-gallery/generations/${encodeURIComponent(slug)}`;
 const inputClass = 'min-h-11 min-w-0 rounded-lg border border-border bg-background px-3';
@@ -354,37 +354,58 @@ function Inbox({ keys, locale, gallery }: { keys: Record<GenerationPlatform, str
     const ctrl = new AbortController();
     setBusy(true);
     setFailed(false);
-    async function load() {
-      const batch: Source[] = [];
-      let errors = false;
-      for (const platform of platforms) {
-        if (!keys[platform] || ctrl.signal.aborted) continue;
-        const slugs = new Set(legacyStudioSources(platform));
+    // Keep cards visible during refresh, but a refreshed account copy outranks a retained provider copy.
+    setSources((previous) => previous.map((source) => ({ ...source, stale: true })));
+    let errors = false;
+    async function loadPlatform(platform: GenerationPlatform) {
+      if (!keys[platform]) return;
+      const missing = new Set(legacyStudioSources(platform));
+      let failedSlugs: string[] = [];
+      let discoveryFailed = false;
+      let batch: Source[] = [];
+      try {
+        const response = await studioRequest(
+          `/api/style-gallery/generation-sources?jobs=1&reload=${revision}`,
+          platform,
+          keys[platform],
+          undefined,
+          ctrl.signal,
+        );
+        const data: { slugs: string[]; sources?: Source[]; failed?: string[] } = await response.json();
+        batch = data.sources ?? [];
+        failedSlugs = data.failed ?? [];
+        if (failedSlugs.length) errors = true;
+        for (const slug of data.slugs) {
+          if (data.sources) missing.delete(slug);
+          else missing.add(slug);
+        }
+      } catch {
+        discoveryFailed = errors = true;
+      }
+      // Pre-registry drafts remain discoverable through this browser's saved slugs.
+      await mapWithConcurrency([...missing], 3, async (slug) => {
+        if (ctrl.signal.aborted) return;
         try {
-          const data = await (
-            await studioRequest(
-              `/api/style-gallery/generation-sources?reload=${revision}`,
-              platform,
-              keys[platform],
-              undefined,
-              ctrl.signal,
-            )
-          ).json();
-          for (const slug of data.slugs) slugs.add(slug);
+          const data = await (await studioRequest(base(slug), platform, keys[platform], undefined, ctrl.signal)).json();
+          batch.push({ slug, platform, jobs: data.jobs });
         } catch {
+          failedSlugs.push(slug);
           errors = true;
         }
-        // Limit fan-out when an old browser contains drafts for many unrelated gallery items.
-        await mapWithConcurrency([...slugs], 3, async (slug) => {
-          if (ctrl.signal.aborted) return;
-          try {
-            const data = await (await studioRequest(base(slug), platform, keys[platform], undefined, ctrl.signal)).json();
-            batch.push({ slug, platform, jobs: data.jobs });
-          } catch {
-            errors = true;
-          }
-        });
-      }
+      });
+      if (!ctrl.signal.aborted)
+        setSources((old) => [
+          ...old.filter(
+            (entry) =>
+              entry.account ||
+              entry.platform !== platform ||
+              ((discoveryFailed || failedSlugs.includes(entry.slug)) && !batch.some((s) => s.slug === entry.slug)),
+          ),
+          ...batch,
+        ]);
+    }
+    async function loadAccount() {
+      let linked: Source[] = [];
       try {
         const response = await fetch('/api/style-gallery/generation-sources?account=1', {
           signal: ctrl.signal,
@@ -395,33 +416,45 @@ function Inbox({ keys, locale, gallery }: { keys: Record<GenerationPlatform, str
         const account: { sources: Source[]; signedIn: boolean; loginEnabled: boolean } = await response.json();
         if (ctrl.signal.aborted) return;
         setCanSignIn(!account.signedIn && account.loginEnabled);
-        const localIds = new Set(batch.flatMap((s) => s.jobs.map((j) => `${s.platform}/${s.slug}/${j.id}`)));
-        for (const source of account.sources) {
-          const jobs = source.jobs.filter((j) => !localIds.has(`${source.platform}/${source.slug}/${j.id}`));
-          if (jobs.length) batch.push({ ...source, jobs, account: true });
-        }
+        linked = account.sources.map((source) => ({ ...source, account: true }));
       } catch {
         errors = true;
       }
+      if (!ctrl.signal.aborted) setSources((old) => [...old.filter((s) => !s.account), ...linked]);
+    }
+    void Promise.all([loadAccount(), ...platforms.map(loadPlatform)]).then(() => {
       if (ctrl.signal.aborted) return;
-      setSources((old) =>
-        errors
-          ? [...batch, ...old.filter((s) => !s.account && !batch.some((b) => b.slug === s.slug && b.platform === s.platform))]
-          : batch,
-      );
       setFailed(errors);
       setBusy(false);
-    }
-    void load();
+    });
     return () => ctrl.abort();
   }, [keys, revision]);
-  const rows = useMemo(() => outputRows(sources), [sources]);
+  const rows = useMemo(() => {
+    const seen = new Set<string>();
+    const priority = (source: Source) => Number(Boolean(source.stale)) * 2 + Number(Boolean(source.account));
+    return outputRows(
+      [...sources]
+        .sort((a, b) => priority(a) - priority(b))
+        .map((source) => ({
+          ...source,
+          jobs: source.jobs.filter((job) => {
+            const id = `${source.platform}/${source.slug}/${job.id}`;
+            if (seen.has(id)) return false;
+            seen.add(id);
+            return true;
+          }),
+        })),
+    );
+  }, [sources]);
   useEffect(() => {
     const onReturn = () => {
       if (!document.hidden) refresh((n) => n + 1);
     };
     document.addEventListener('visibilitychange', onReturn);
-    window.addEventListener('pageshow', onReturn);
+    const onRestore = (e: PageTransitionEvent) => {
+      if (e.persisted) onReturn();
+    };
+    window.addEventListener('pageshow', onRestore);
     const changed = (event: StorageEvent) => {
       if (event.key === 'gallery-generation:changed') onReturn();
     };
@@ -429,7 +462,7 @@ function Inbox({ keys, locale, gallery }: { keys: Record<GenerationPlatform, str
     const timer = rows.some((r) => r.group === 'tasks' && r.job.state === 'running') ? setInterval(onReturn, 20000) : undefined;
     return () => {
       document.removeEventListener('visibilitychange', onReturn);
-      window.removeEventListener('pageshow', onReturn);
+      window.removeEventListener('pageshow', onRestore);
       window.removeEventListener('storage', changed);
       clearInterval(timer);
     };
