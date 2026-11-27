@@ -8,12 +8,19 @@ import {
   publishedOutputs,
 } from '@lib/style-gallery-generation-settings';
 import { getStyleGalleryManagementToken, rememberStyleGalleryManagementToken } from '@lib/style-gallery-management-token';
-import { confirmStudioOutput, legacyStudioSources, readProviderKey, studioRequest } from '@lib/style-gallery-studio-client';
+import {
+  confirmStudioOutput,
+  discardStudioOutput,
+  legacyStudioSources,
+  readProviderKey,
+  studioRequest,
+} from '@lib/style-gallery-studio-client';
 import { cn } from '@lib/utils';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { RiArrowRightLine, RiCheckLine, RiRefreshLine } from 'react-icons/ri';
 import type { StyleGalleryImageRef } from '@/types/style-gallery';
 import { CopyButton } from '../markdown/shared/CopyButton';
+import { DiscardOutputAction } from './DiscardOutputAction';
 import { studioLanguage } from './StyleGalleryGenerationFields';
 import { GenerationViewer } from './StyleGalleryGenerationViewer';
 import StyleGalleryGrid from './StyleGalleryGrid';
@@ -42,7 +49,7 @@ function outputRows(sources: Source[]) {
           group: saved.includes(index) ? 'saved' : 'pending',
           id: [platform, slug, job.id, index].join('/'),
         });
-      if (available.length < (job.settings.count ?? 1))
+      if (available.length + (job.discarded?.length ?? 0) < (job.settings.count ?? 1))
         rows.push({ slug, job, index: -1, group: 'tasks', id: [platform, slug, job.id, 'task'].join('/') });
     }
   return rows.sort((a, b) => b.job.created.localeCompare(a.job.created) || a.id.localeCompare(b.id));
@@ -75,13 +82,13 @@ function ReviewOutput({
   credential,
   locale,
   gallery,
-  onSaved,
+  onReviewed,
 }: {
   row?: Row;
   credential: string;
   locale: string;
   gallery: string;
-  onSaved: () => void;
+  onReviewed: (action: 'saved' | 'discarded') => void;
 }) {
   const l = useMemo(() => studioLanguage(locale), [locale]);
   const [reference, setReference] = useState<StyleGalleryImageRef[]>([]);
@@ -146,12 +153,17 @@ function ReviewOutput({
       ctrl.abort();
     };
   }, [slug, retry]);
-  async function save() {
+  async function decide(action: 'save' | 'discard') {
     if (!preview || !job || !slug || index === undefined || lock.current) return;
     lock.current = true;
     setBusy(true);
     setError('');
     try {
+      if (action === 'discard') {
+        await discardStudioOutput(slug, job.settings.platform, credential, job.id, index);
+        onReviewed('discarded');
+        return;
+      }
       await confirmStudioOutput(
         slug,
         job.settings.platform,
@@ -163,7 +175,7 @@ function ReviewOutput({
         l('上传令牌与当前图库不匹配。', 'アップロードトークンを確認してください。', 'Check the upload token for this gallery.'),
       );
       rememberStyleGalleryManagementToken(token);
-      onSaved();
+      onReviewed('saved');
     } catch (err) {
       setError(err instanceof Error ? err.message : '');
     } finally {
@@ -213,7 +225,7 @@ function ReviewOutput({
               className="flex flex-wrap items-end gap-2"
               onSubmit={(e) => {
                 e.preventDefault();
-                void save();
+                void decide('save');
               }}
             >
               <label className="grid min-w-0 gap-1 text-sm">
@@ -234,6 +246,12 @@ function ReviewOutput({
                 <RiCheckLine />
                 {busy ? l('正在保存…', '保存中…', 'Saving…') : l('确认加入子图', 'サブギャラリーに保存', 'Add to sub-gallery')}
               </button>
+              <DiscardOutputAction
+                key={row.id}
+                locale={locale}
+                disabled={!preview || busy || Boolean(job.publishing?.includes(row.index))}
+                discard={() => void decide('discard')}
+              />
             </form>
           )}
         </>
@@ -390,7 +408,7 @@ function Inbox({ keys, locale, gallery }: { keys: Record<GenerationPlatform, str
           locale={locale}
           gallery={gallery}
           credential={chosen ? keys[chosen.job.settings.platform] : ''}
-          onSaved={() => {
+          onReviewed={(action) => {
             if (!chosen) return;
             setSources((old) =>
               old.map((s) =>
@@ -398,14 +416,22 @@ function Inbox({ keys, locale, gallery }: { keys: Record<GenerationPlatform, str
                   ? {
                       ...s,
                       jobs: s.jobs.map((j) =>
-                        j.id === chosen.job.id ? { ...j, published: [...new Set([...publishedOutputs(j), chosen.index])] } : j,
+                        j.id !== chosen.job.id
+                          ? j
+                          : action === 'saved'
+                            ? { ...j, published: [...new Set([...publishedOutputs(j), chosen.index])] }
+                            : { ...j, discarded: [...new Set([...(j.discarded ?? []), chosen.index])] },
                       ),
                     }
                   : s,
               ),
             );
             select((current) => (current === chosen.id ? '' : current));
-            setNotice(l('已加入对应条目的子图。', 'サブギャラリーに保存しました。', 'Saved to the source sub-gallery.'));
+            setNotice(
+              action === 'discarded'
+                ? l('已丢弃这张图。', '画像を破棄しました。', 'Output discarded.')
+                : l('已加入对应条目的子图。', 'サブギャラリーに保存しました。', 'Saved to the source sub-gallery.'),
+            );
             refresh((n) => n + 1);
           }}
         />

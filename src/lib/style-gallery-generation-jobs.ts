@@ -1,18 +1,22 @@
+import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
+import { waitUntil } from '@vercel/functions';
 import sharp from 'sharp';
 import {
+  deleteStyleGalleryObject,
   getStyleGalleryObjectTextSnapshot,
   headStyleGalleryObject,
   putStyleGalleryObject,
   StyleGalleryObjectConflictError,
 } from './hf-s3-presign';
+import { mapWithConcurrency } from './map-with-concurrency';
 import { StyleGalleryClientError } from './style-gallery-errors';
 import { ProviderRejection, readPixAIResult, submitGeneration, TerminalPixAIError } from './style-gallery-generation-provider';
 import {
-  availableOutputs,
   type GenerationJob,
   type GenerationRequest,
   publishedOutputs,
+  receivedOutputs,
 } from './style-gallery-generation-settings';
 
 const taskReceipt = (scope: string, id: string) => `generation-drafts/${scope}/${id}.task`;
@@ -90,30 +94,117 @@ async function checkpoint<T>(write: () => Promise<T>) {
 
 /** Merge a single output checkpoint without losing results saved concurrently in another tab. */
 export async function noteOutput(slug: string, id: string, index: number, published = false) {
+  let retained = true;
   await editJobs(slug, (jobs) => {
     const job = jobs.find((j) => j.id === id);
     if (!job) throw new Error('Missing generation record.');
-    const available = availableOutputs(job),
+    const available = receivedOutputs(job),
       saved = publishedOutputs(job),
       count = job.settings.count ?? 1;
     if (index < 0 || index >= count) throw new Error('Output index exceeds the requested batch.');
+    if (job.discarded?.includes(index)) {
+      if (!published) {
+        retained = false;
+        return null;
+      }
+      throw new StyleGalleryClientError('This output was discarded.', 409);
+    }
     if (available.includes(index) && (!published || saved.includes(index))) return null;
     const nextAvailable = [...new Set([...available, index])].sort((a, b) => a - b);
     const nextSaved = published ? [...new Set([...saved, index])] : saved;
     const requested = Array.from({ length: count }, (_, i) => i);
-    const state = requested.every((i) => nextSaved.includes(i))
+    const state = requested.every((i) => nextSaved.includes(i) || job.discarded?.includes(i))
       ? 'saved'
       : requested.every((i) => nextAvailable.includes(i))
         ? 'ready'
         : job.state;
-    return jobs.map((j) => (j === job ? { ...j, available: nextAvailable, published: nextSaved, state } : j));
+    const publishAttempts = { ...job.publishAttempts };
+    if (published) delete publishAttempts[index];
+    return jobs.map((j) =>
+      j === job
+        ? {
+            ...j,
+            available: nextAvailable,
+            published: nextSaved,
+            publishAttempts,
+            publishing: j.publishing?.filter((i) => !nextSaved.includes(i)),
+            state,
+          }
+        : j,
+    );
   });
+  return retained;
+}
+
+/** A conditional manifest write chooses between publication and deletion before either can touch public metadata. */
+export async function decideOutput(scope: string, id: string, index: number, action: 'publish' | 'discard') {
+  const attempt = randomUUID();
+  await editJobs(scope, (jobs) => {
+    const job = jobs.find((j) => j.id === id);
+    if (!job || !receivedOutputs(job).includes(index)) throw new StyleGalleryClientError('Image is not ready.', 409);
+    const discarded = job.discarded?.includes(index);
+    const saving = publishedOutputs(job).includes(index) || job.publishing?.includes(index);
+    if ((discarded && action === 'publish') || (saving && action === 'discard'))
+      throw new StyleGalleryClientError('This output already has another review decision.', 409);
+    if (discarded || publishedOutputs(job).includes(index)) return null;
+    const field = action === 'discard' ? 'discarded' : 'publishing';
+    // Materialize legacy implicit index 0 before adding the first per-output decision.
+    const next = { ...job, available: receivedOutputs(job), [field]: [...new Set([...(job[field] ?? []), index])] };
+    if (action === 'discard') next.cleanupPending = [...(job.cleanupPending ?? []), index];
+    else next.publishAttempts = { ...job.publishAttempts, [index]: [...(job.publishAttempts?.[index] ?? []), attempt] };
+    const saved = publishedOutputs(job);
+    if (action === 'discard' && saved.length && saved.length + (next.discarded?.length ?? 0) === (job.settings.count ?? 1))
+      next.state = 'saved';
+    return jobs.map((j) => (j === job ? next : j));
+  });
+  return attempt;
+}
+
+/** Release only this rejected attempt. A concurrent or ambiguous publication keeps its reservation. */
+export async function releasePublication(scope: string, id: string, index: number, attempt: string) {
+  await editJobs(scope, (jobs) => {
+    const job = jobs.find((j) => j.id === id);
+    if (!job?.publishAttempts?.[index]?.includes(attempt)) return null;
+    const attempts = job.publishAttempts[index].filter((v) => v !== attempt);
+    return jobs.map((j) =>
+      j !== job
+        ? j
+        : {
+            ...j,
+            publishAttempts: { ...j.publishAttempts, [index]: attempts },
+            publishing: attempts.length ? j.publishing : j.publishing?.filter((i) => i !== index),
+          },
+    );
+  });
+}
+
+/** The tombstone remains authoritative even if physical cleanup must be retried. */
+export async function removeDraftFiles(scope: string, id: string, index: number) {
+  const key = draftImageKey(scope, id, index);
+  await Promise.all([key, `${key}.thumb.webp`, `${key}.fit.webp`].map(deleteStyleGalleryObject));
+  await editJobs(scope, (jobs) => {
+    const job = jobs.find((j) => j.id === id);
+    if (!job?.cleanupPending?.includes(index)) return null;
+    return jobs.map((j) => (j === job ? { ...j, cleanupPending: j.cleanupPending?.filter((i) => i !== index) } : j));
+  });
+}
+
+/** Finish interrupted deletes on normal history visits, without making the discarded pixels reviewable. */
+export function resumeDraftCleanup(scope: string, jobs: GenerationJob[]) {
+  const pending = jobs.flatMap((j) => (j.cleanupPending ?? []).map((index) => ({ id: j.id, index })));
+  if (pending.length)
+    waitUntil(
+      mapWithConcurrency(pending, 2, async ({ id, index }) => {
+        await removeDraftFiles(scope, id, index).catch(() => console.warn('[style-gallery] Private cleanup pending.'));
+      }),
+    );
 }
 async function keepImage(slug: string, id: string, index: number, bytes: Buffer) {
   const { format } = await sharp(bytes).metadata();
   if (!['png', 'webp', 'jpeg'].includes(format)) throw new Error('Provider returned an unsupported image.');
   await checkpoint(() => putStyleGalleryObject(draftImageKey(slug, id, index), bytes, `image/${format}`));
-  await checkpoint(() => noteOutput(slug, id, index));
+  // A simultaneous provider recovery can finish writing bytes just after the user discards them.
+  if (!(await checkpoint(() => noteOutput(slug, id, index)))) await removeDraftFiles(slug, id, index);
 }
 
 export async function runReservedGeneration(slug: string, request: GenerationRequest, apiKey: string, reference?: File) {
@@ -180,16 +271,14 @@ async function collectPixAI(
 /** Recovery polls are read-only upstream, including after an ambiguous synchronous OpenAI response. */
 export async function recoverGeneration(slug: string, job: GenerationJob, apiKey: string) {
   if (job.state !== 'running' && job.state !== 'uncertain') return;
-  const missing = Array.from({ length: job.settings.count ?? 1 }, (_, i) => i).filter(
-    (i) => !availableOutputs(job).includes(i),
-  );
+  const missing = Array.from({ length: job.settings.count ?? 1 }, (_, i) => i).filter((i) => !receivedOutputs(job).includes(i));
   const exists = await Promise.all(missing.map((i) => headStyleGalleryObject(draftImageKey(slug, job.id, i))));
   for (const [offset, index] of missing.entries()) if (exists[offset]) await noteOutput(slug, job.id, index);
   if (exists.every(Boolean)) return;
   const taskId =
     job.taskId ??
     (job.settings.platform === 'pixai' ? (await getStyleGalleryObjectTextSnapshot(taskReceipt(slug, job.id))).text : null);
-  if (taskId) await collectPixAI(slug, apiKey, job.id, taskId, job.settings.count ?? 1, availableOutputs(job));
+  if (taskId) await collectPixAI(slug, apiKey, job.id, taskId, job.settings.count ?? 1, receivedOutputs(job));
   else if (job.state === 'running' && Date.now() - Date.parse(job.created) > 5 * 60_000)
     await markGeneration(slug, job.id, { state: 'uncertain' });
 }

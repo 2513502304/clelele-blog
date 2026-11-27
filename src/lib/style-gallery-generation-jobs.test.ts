@@ -4,11 +4,13 @@ import { it } from 'node:test';
 import sharp from 'sharp';
 import { GET, POST } from '../pages/api/style-gallery/generations/[slug]';
 import {
+  decideOutput,
   draftImageKey,
   listGenerationJobs,
   markGeneration,
   noteOutput,
   recoverGeneration,
+  releasePublication,
   reserveGeneration,
   runReservedGeneration,
 } from './style-gallery-generation-jobs';
@@ -63,6 +65,10 @@ it('reserves a paid request once across tabs and recovers the original after int
     assert.equal(url.hostname, 'generation.invalid');
     const key = url.pathname.slice('/fixture/gallery/'.length);
     const obj = objects.get(key);
+    if (init?.method === 'DELETE') {
+      objects.delete(key);
+      return new Response(null, { status: 204 });
+    }
     if (init?.method === 'PUT') {
       const body = new Uint8Array(await new Response(init.body).arrayBuffer());
       const current = objects.get(key),
@@ -136,6 +142,41 @@ it('reserves a paid request once across tabs and recovers the original after int
   assert.equal((await listGenerationJobs(slug))[0].state, 'saved');
   assert.equal(await reserveGeneration(slug, request), false);
   assert.equal(chargedPosts, 1);
+  // A discarded batch member cannot be reopened or published; the other output remains reviewable.
+  const batch = { ...request, id: randomUUID() };
+  await reserveGeneration(slug, batch);
+  for (const i of [0, 1]) {
+    objects.set(draftImageKey(slug, batch.id, i), { bytes: Uint8Array.from(bytes), etag: '"test"' });
+    await noteOutput(slug, batch.id, i);
+  }
+  const discard = { action: 'discard', id: batch.id, index: 0 };
+  assert.equal((await call({ ...visitor, 'x-api-key': 'other-browser' }, discard)).status, 404);
+  assert.equal((await call(visitor, discard)).status, 200);
+  assert.equal((await call(visitor, discard)).status, 200);
+  assert.equal(objects.has(draftImageKey(slug, batch.id, 0)), false);
+  assert.equal(objects.has(draftImageKey(slug, batch.id, 1)), true);
+  assert.equal((await call(visitor, undefined, `?preview=${batch.id}&index=0`)).status, 409);
+  await assert.rejects(decideOutput(slug, batch.id, 0, 'publish'), /another review decision/);
+  // Simulate a disconnect between committing the tombstone and starting object cleanup.
+  objects.set(draftImageKey(slug, batch.id, 2), { bytes: Uint8Array.from(bytes), etag: '"lost-delete"' });
+  await noteOutput(slug, batch.id, 2);
+  await decideOutput(slug, batch.id, 2, 'discard');
+  await call(visitor);
+  for (let n = 0; n < 20 && (await listGenerationJobs(slug)).find((j) => j.id === batch.id)?.cleanupPending?.length; n++)
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(objects.has(draftImageKey(slug, batch.id, 2)), false);
+  const attempt1 = await decideOutput(slug, batch.id, 1, 'publish');
+  const attempt2 = await decideOutput(slug, batch.id, 1, 'publish');
+  await releasePublication(slug, batch.id, 1, attempt1);
+  await assert.rejects(decideOutput(slug, batch.id, 1, 'discard'), /another review decision/);
+  await releasePublication(slug, batch.id, 1, attempt2);
+  assert.deepEqual((await listGenerationJobs(slug)).find((j) => j.id === batch.id)?.cleanupPending, []);
+  const race = await Promise.allSettled([
+    decideOutput(slug, batch.id, 1, 'publish'),
+    decideOutput(slug, batch.id, 1, 'discard'),
+  ]);
+  assert.equal(race.filter((r) => r.status === 'fulfilled').length, 1);
+  assert.equal((await call(visitor, { action: 'discard', id: request.id, index: 2 })).status, 409);
   // The provider accepted this PixAI job, but the manifest update with its task ID was interrupted.
   const pixRequest = { ...request, id: randomUUID(), settings: defaultSettings('pixai') };
   await reserveGeneration(slug, pixRequest);

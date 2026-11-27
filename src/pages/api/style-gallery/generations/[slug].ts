@@ -1,17 +1,26 @@
 import { createHash } from 'node:crypto';
 import { fetchHfS3Read } from '@lib/hf-s3';
-import { createStyleGallerySignedImageUrl, getStyleGalleryObjectBytes, putStyleGalleryObject } from '@lib/hf-s3-presign';
+import {
+  createStyleGallerySignedImageUrl,
+  deleteStyleGalleryObject,
+  getStyleGalleryObjectBytes,
+  putStyleGalleryObject,
+} from '@lib/hf-s3-presign';
 import { isAuthorizedStyleGalleryRequest } from '@lib/style-gallery-auth';
 import { StyleGalleryClientError } from '@lib/style-gallery-errors';
 import { ensureStyleGalleryExampleThumbnail } from '@lib/style-gallery-example-thumbnail';
 import { createStyleGalleryExample, getStyleGalleryExampleObjectKey } from '@lib/style-gallery-example-upload';
 import { getStyleGalleryExampleIdentity } from '@lib/style-gallery-examples';
 import {
+  decideOutput,
   draftImageKey,
   listGenerationJobs,
   noteOutput,
   recoverGeneration,
+  releasePublication,
+  removeDraftFiles,
   reserveGeneration,
+  resumeDraftCleanup,
   runReservedGeneration,
 } from '@lib/style-gallery-generation-jobs';
 import {
@@ -74,14 +83,19 @@ async function publish(slug: string, scope: string, job: GenerationJob, index: n
     dimensions: autoOrient ?? { width, height },
     uploadedAt: job.created,
   });
+  const attempt = await decideOutput(scope, job.id, index, 'publish');
   // Content-addressed assets are independent. Commit metadata only after all three are ready.
   const [feature] = await Promise.all([
     computeStyleGalleryVisualFeatureFromBytes(bytes, hash),
     putStyleGalleryObject(getStyleGalleryExampleObjectKey(example), bytes, `image/${format}`),
     ensureStyleGalleryExampleThumbnail(example.src, bytes),
-  ]);
+  ]).catch(async (error) => {
+    await releasePublication(scope, job.id, index, attempt);
+    throw error;
+  });
   finishStage('assets');
   const identity = getStyleGalleryExampleIdentity(example);
+  let rejectedByTransform = false;
   const { item: updated } = await updateStyleGalleryItemExamples(slug, (examples) => {
     // Request IDs originate in browsers. Only an exact match can repair an interrupted confirmation.
     const previous = examples.find((entry) => entry.id === example.id);
@@ -91,13 +105,20 @@ async function publish(slug: string, scope: string, job: GenerationJob, index: n
         previous.model !== example.model ||
         previous.note !== job.prompt ||
         JSON.stringify(previous.generation) !== JSON.stringify(job.settings)
-      )
+      ) {
+        rejectedByTransform = true;
         throw new StyleGalleryClientError('This example ID already belongs to another generation.', 409);
+      }
       return examples;
     }
     const existing = examples.find((entry) => getStyleGalleryExampleIdentity(entry) === identity);
     if (!existing) return [...examples, example];
+    rejectedByTransform = true;
     throw new StyleGalleryClientError('This image already belongs to another example on this platform.', 409);
+  }).catch(async (error) => {
+    if (rejectedByTransform && error instanceof StyleGalleryClientError)
+      await releasePublication(scope, job.id, index, attempt);
+    throw error;
   });
   finishStage('metadata');
   // The same stable example ID repairs an interrupted visual-index write on confirmation retry.
@@ -138,7 +159,11 @@ function privateRoute(handle: (access: StudioAccess, request: Request) => Promis
 
 export const GET = privateRoute(async ({ scope }, request) => {
   const preview = new URL(request.url).searchParams.get('preview');
-  if (!preview) return json({ jobs: await listGenerationJobs(scope) });
+  if (!preview) {
+    const jobs = await listGenerationJobs(scope);
+    resumeDraftCleanup(scope, jobs);
+    return json({ jobs });
+  }
   const job = await findJob(scope, z.string().uuid().parse(preview));
   const index = z.coerce
     .number()
@@ -162,6 +187,11 @@ export const GET = privateRoute(async ({ scope }, request) => {
           : image.resize(144, 108, { fit: 'cover' });
       thumb = await resized.webp({ quality: 76 }).toBuffer();
       await putStyleGalleryObject(key, thumb, 'image/webp');
+      // A discard may have removed the original and existing thumbnails while Sharp was still encoding.
+      if ((await findJob(scope, job.id)).discarded?.includes(index)) {
+        await deleteStyleGalleryObject(key);
+        return json({ error: 'Output was discarded.' }, 409);
+      }
     }
     return new Response(Uint8Array.from(thumb), { headers: { ...headers, 'content-type': 'image/webp' } });
   }
@@ -208,6 +238,28 @@ export const POST = privateRoute(async ({ slug, scope, owner, platform, apiKey }
   if (body?.action === 'confirm' && !isAuthorizedStyleGalleryRequest(request))
     return json({ error: 'Invalid gallery upload token.', code: 'invalid_upload_token' }, 403);
   const job = await findJob(scope, z.string().uuid().parse(body?.id));
+  if (body.action === 'discard') {
+    const index = z.number().int().min(0).max(3).parse(body.index);
+    if (!job.discarded?.includes(index)) {
+      // Older confirmations may have committed the public example before writing their private receipt.
+      const exampleId = index ? `${job.id}-${index + 1}` : job.id;
+      const item = await getStoredStyleGalleryItem(slug, { fresh: true });
+      const existing = item?.examples.find(
+        (example) =>
+          example.id === exampleId &&
+          example.note === job.prompt &&
+          JSON.stringify(example.generation) === JSON.stringify(job.settings),
+      );
+      if (existing) {
+        const bytes = await getStyleGalleryObjectBytes(draftImageKey(scope, job.id, index));
+        if (!bytes || createHash('sha256').update(bytes).digest('hex') === existing.imageHash)
+          throw new StyleGalleryClientError('This output is already in the sub-gallery.', 409);
+      }
+    }
+    await decideOutput(scope, job.id, index, 'discard');
+    await removeDraftFiles(scope, job.id, index);
+    return json({ discarded: index });
+  }
   if (body.action === 'sync') {
     await recoverGeneration(scope, job, apiKey);
     return json({ job: await findJob(scope, job.id) });
