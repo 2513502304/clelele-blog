@@ -1,6 +1,5 @@
 .gallery-generator,
-.studio-viewer,
-.studio-comparison-launch {
+.studio-viewer {
   --ink: hsl(var(--foreground));
   --paper: hsl(var(--card));
   --rule: hsl(var(--border));
@@ -527,9 +526,6 @@
   left: auto;
   right: 0.65rem;
 }
-.studio-example-compare {
-  padding: 0.45rem 0.65rem;
-}
 .studio-comparison-tools,
 .studio-split-scale {
   display: flex;
@@ -594,8 +590,7 @@
     height: 48dvh;
   }
   .studio-comparison-tools select,
-  .studio-compare-modes button,
-  .studio-comparison-launch {
+  .studio-compare-modes button {
     min-height: 44px;
   }
 }

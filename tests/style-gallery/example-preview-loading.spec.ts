@@ -36,9 +36,9 @@ for (const path of [
       return route.continue();
     });
     await openGallery(page, path);
-    const trigger = page.locator(`[data-gallery-original="${original}"]`);
+    const trigger = page.locator('figure[id$="fixture-1"] button.cursor-zoom-in');
     await trigger.scrollIntoViewIfNeeded();
-    const cardImage = trigger.locator('..').locator('img').first();
+    const cardImage = trigger.locator('img');
     await expect(cardImage).toHaveAttribute('src', thumb);
     await expect.poll(() => cardImage.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBe(640);
     expect(originalRequests).toBe(0);
@@ -68,7 +68,7 @@ test('missing example previews fall back to the original without changing the ca
     return route.continue();
   });
   await openGallery(page, '/image-style-prompt-gallery/examples?grouped=false');
-  const image = page.locator(`[data-gallery-original="${original}"]`).locator('..').locator('img').first();
+  const image = page.locator('figure[id$="fixture-1"] button.cursor-zoom-in').locator('..').locator('img').first();
   await expect(image).toHaveAttribute('src', original);
   await expect.poll(() => image.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBe(1280);
   const ratio = await image.evaluate((el) => el.clientWidth / el.clientHeight);
@@ -76,11 +76,12 @@ test('missing example previews fall back to the original without changing the ca
 });
 
 test('intent preload is cancelled on leave/scroll and a click joins a single in-flight native request', async ({ page }) => {
+  const source = '/api/style-gallery/image/source/35dc5191ccad.png';
   const originalRequests: string[] = [];
   let release: (() => void) | undefined;
   await page.route(/^https?:\/\//, async (route) => {
     const path = new URL(route.request().url()).pathname;
-    if (path === original) {
+    if (path === source) {
       originalRequests.push(route.request().resourceType());
       await new Promise<void>((resolve) => {
         release = resolve;
@@ -91,8 +92,8 @@ test('intent preload is cancelled on leave/scroll and a click joins a single in-
     if (route.request().resourceType() === 'image' || path.includes('/api/live2d')) return route.abort();
     return route.continue();
   });
-  await openGallery(page, '/image-style-prompt-gallery/examples?grouped=false');
-  const trigger = page.locator(`[data-gallery-original="${original}"]`);
+  await openGallery(page, '/image-style-prompt-gallery/index');
+  const trigger = page.locator(`[data-gallery-original="${source}"]`).first();
   await expect(trigger.locator('xpath=ancestor::astro-island')).not.toHaveAttribute('ssr');
   await expect(page.locator('astro-island[component-url*="ImageLightbox"]')).not.toHaveAttribute('ssr');
   await trigger.dispatchEvent('pointerover', { pointerType: 'mouse' });
@@ -128,27 +129,24 @@ test('data saver does not preload full images on hover', async ({ page }) => {
     if (route.request().url().includes('/examples/thumbs/')) {
       return route.fulfill({ contentType: 'image/svg+xml', body: svg(640, 960) });
     }
-    if (route.request().url().includes('/examples/images/')) requests++;
+    if (new URL(route.request().url()).pathname === '/api/style-gallery/image/source/35dc5191ccad.png') requests++;
     if (route.request().resourceType() === 'image' || route.request().url().includes('/api/live2d')) return route.abort();
     return route.continue();
   });
-  await openGallery(page, '/image-style-prompt-gallery/examples?grouped=false');
+  await openGallery(page, '/image-style-prompt-gallery/index');
   await expect(page.locator('astro-island[component-url*="ImageLightbox"]')).not.toHaveAttribute('ssr');
-  await page.locator(`[data-gallery-original="${original}"]`).dispatchEvent('pointerover', { pointerType: 'mouse' });
+  await page
+    .locator('[data-gallery-original="/api/style-gallery/image/source/35dc5191ccad.png"]')
+    .first()
+    .dispatchEvent('pointerover', { pointerType: 'mouse' });
   await page.waitForTimeout(500);
   expect(requests).toBe(0);
 });
 
-for (const path of [
-  '/image-style-prompt-gallery/index',
-  '/image-style-prompt-gallery',
-  '/image-style-prompt-gallery/examples',
-  '/image-style-prompt-gallery/examples?grouped=false',
-  '/image-style-prompt-gallery/2026-09-23-35dc5191ccad',
-]) {
+// Source cards navigate to a detail page and still offer an explicit zoom control.
+for (const path of ['/image-style-prompt-gallery/index', '/image-style-prompt-gallery']) {
   test(`${path}: only deliberate zoom intent preloads an original`, async ({ page }) => {
-    const source =
-      path.includes('examples') || path.includes('2026-09-23') ? original : '/api/style-gallery/image/source/35dc5191ccad.png';
+    const source = '/api/style-gallery/image/source/35dc5191ccad.png';
     let requests = 0;
     await page.route(/^https?:\/\//, (route) => {
       const url = new URL(route.request().url());
