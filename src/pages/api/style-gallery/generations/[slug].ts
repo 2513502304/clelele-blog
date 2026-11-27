@@ -31,7 +31,9 @@ import {
   publishedOutputs,
 } from '@lib/style-gallery-generation-settings';
 import { getStyleGalleryViewer } from '@lib/style-gallery-github-auth';
+import { getOverviewSnapshot } from '@lib/style-gallery-overview-snapshot';
 import { getStyleGalleryPlatform } from '@lib/style-gallery-platforms';
+import { forgetReviewedOriginal, readReviewedOriginal, streamReviewedOriginal } from '@lib/style-gallery-reviewed-original';
 import { getStoredStyleGalleryItem, getStyleGalleryVisualIndex, mutateStyleGalleryVisualIndex } from '@lib/style-gallery-store';
 import { findAccountWork, rememberAccountWork } from '@lib/style-gallery-studio-account';
 import { rememberStudioSource, studioOwner } from '@lib/style-gallery-studio-owner';
@@ -77,13 +79,16 @@ async function publish(slug: string, scope: string, job: GenerationJob, index: n
   }
   if (!availableOutputs(job).includes(index)) throw new StyleGalleryClientError('Image is not ready.', 409);
   const saved = publishedOutputs(job).includes(index);
-  const [item, bytes] = await Promise.all([
+  const key = draftImageKey(scope, job.id, index);
+  const [item, draft] = await Promise.all([
     getStoredStyleGalleryItem(slug, { fresh: true }),
-    saved ? null : getStyleGalleryObjectBytes(draftImageKey(scope, job.id, index)),
+    saved ? null : readReviewedOriginal(key),
   ]);
   if (!item) throw new StyleGalleryClientError('Item no longer exists.', 404);
   if (saved) return json({ examples: item.examples });
   finishStage('draft');
+  timings.push(`reviewed;desc="${draft?.reused ? 'reused' : 'storage'}"`);
+  const bytes = draft?.bytes;
   if (!bytes) throw new Error('Missing draft.');
   const hash = createHash('sha256').update(bytes).digest('hex');
   if (hash !== reviewedHash) throw new StyleGalleryClientError('Preview does not match original.', 409);
@@ -104,8 +109,11 @@ async function publish(slug: string, scope: string, job: GenerationJob, index: n
   const preparation = warmPublication();
   const attempt = await decideOutput(scope, job.id, index, 'publish');
   // Content-addressed assets are independent. Commit metadata only after all three are ready.
+  const featureReady = Promise.resolve(draft?.feature).then(
+    (prepared) => prepared ?? computeStyleGalleryVisualFeatureFromBytes(bytes, hash),
+  );
   const [feature] = await Promise.all([
-    computeStyleGalleryVisualFeatureFromBytes(bytes, hash),
+    featureReady,
     putStyleGalleryObject(getStyleGalleryExampleObjectKey(example), bytes, `image/${format}`),
     ensureStyleGalleryExampleThumbnail(example.src, bytes),
   ]).catch(async (error) => {
@@ -147,7 +155,14 @@ async function publish(slug: string, scope: string, job: GenerationJob, index: n
   );
   finishStage('visual');
   await noteOutput(scope, job.id, index, true);
+  forgetReviewedOriginal(key);
   finishStage('receipt');
+  // The public card projection can be rebuilt from committed data independently of this save.
+  waitUntil(
+    getOverviewSnapshot()
+      .then(() => undefined)
+      .catch(() => console.warn('[style-gallery] Overview refresh deferred.')),
+  );
   const response = json({ examples: updated.examples });
   response.headers.set('Server-Timing', timings.join(', '));
   return response;
@@ -240,8 +255,15 @@ export const GET = privateRoute(async ({ scope }, request) => {
     signal: AbortSignal.timeout(60_000),
   });
   if (!response.ok) throw new Error('Missing image.');
-  if (!publishedOutputs(job).includes(index)) waitUntil(warmPublication());
-  return new Response(response.body, {
+  const pending = !publishedOutputs(job).includes(index);
+  if (pending) waitUntil(warmPublication());
+  const body = pending
+    ? streamReviewedOriginal(draftImageKey(scope, job.id, index), response, async (bytes) => {
+        const { computeStyleGalleryVisualFeatureFromBytes } = await import('@lib/style-gallery-visual-feature-node');
+        return computeStyleGalleryVisualFeatureFromBytes(bytes, createHash('sha256').update(bytes).digest('hex'));
+      })
+    : response.body;
+  return new Response(body, {
     headers: { ...headers, 'content-type': response.headers.get('content-type') ?? 'application/octet-stream' },
   });
 });
@@ -301,6 +323,7 @@ export const POST = privateRoute(async ({ slug, scope, owner, platform, apiKey, 
       }
     }
     await decideOutput(scope, job.id, index, 'discard');
+    forgetReviewedOriginal(draftImageKey(scope, job.id, index));
     await removeDraftFiles(scope, job.id, index);
     return json({ discarded: index });
   }
