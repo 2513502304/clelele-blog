@@ -36,6 +36,27 @@ async function checkPromptViewer(page: Page, prompt: string) {
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(prompt);
 }
 
+test('sub-gallery omits recipe text from HTML and searches both example notes and source prompts on demand', async ({
+  page,
+  request,
+}) => {
+  const response = await page.goto('/image-style-prompt-gallery/examples?grouped=false');
+  expect(await response?.text()).not.toContain('保留角色特征');
+  for (const [query, key] of [
+    ['保留角色特征', 'ids'],
+    ['水彩', 'sourceSlugs'],
+  ] as const) {
+    const result = await request.post('/api/style-gallery/example-search', { data: { query } });
+    expect(result.ok()).toBe(true);
+    expect((await result.json())[key].length).toBeGreaterThan(0);
+  }
+  const input = page.locator('input[placeholder]').filter({ visible: true }).first();
+  await input.fill('保留角色特征');
+  await expect(page.locator('figure[data-source-slug]')).toHaveCount(2);
+  await input.fill('missing-example-note');
+  await expect(page.locator('figure[data-source-slug]')).toHaveCount(0);
+});
+
 test('group overview has no misleading note excerpt; each image opens its own complete prompt and platform', async ({
   page,
   context,

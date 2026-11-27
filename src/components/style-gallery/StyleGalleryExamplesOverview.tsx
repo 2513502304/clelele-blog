@@ -6,7 +6,6 @@ import StyleGalleryVisualFilter, {
 import { Icon } from '@iconify/react';
 import { createStyleGalleryDateRangeMatcher, getStyleGalleryDateKey } from '@lib/style-gallery-date-range';
 import type { StyleGalleryDateRangeLabels } from '@lib/style-gallery-date-range-labels';
-import { createStyleGalleryExampleQueryMatcher } from '@lib/style-gallery-example-search';
 import { generationCaption } from '@lib/style-gallery-generation-settings';
 import { getReusableStyleGalleryImageUrl } from '@lib/style-gallery-image-client';
 import { getStyleGalleryImagePreviewSource } from '@lib/style-gallery-image-key';
@@ -20,9 +19,9 @@ import {
 } from '@lib/style-gallery-lightbox-actions';
 import { STYLE_GALLERY_EXAMPLE_LIGHTBOX_PREFETCH } from '@lib/style-gallery-lightbox-prefetch';
 import { getStyleGalleryManagementToken, STYLE_GALLERY_TOKEN_CHANGED_EVENT } from '@lib/style-gallery-management-token';
+import { type OverviewPayload, unpackOverview } from '@lib/style-gallery-overview-payload';
 import { STYLE_GALLERY_PLATFORMS } from '@lib/style-gallery-platforms';
 import { loadStyleGalleryDefaultPrompt, loadStyleGalleryPromptChoices } from '@lib/style-gallery-prompt-client';
-import { loadStyleGalleryPromptSearchIndex } from '@lib/style-gallery-prompt-search-client';
 import {
   getStyleGalleryDefaultSortDirection,
   STYLE_GALLERY_SORT_DIRECTIONS,
@@ -53,7 +52,7 @@ import { useGalleryTagSelection } from './StyleGalleryTagSelection';
 import { GalleryTagEditor, GalleryTagFilter, GalleryTagPills } from './StyleGalleryTags';
 
 interface Props {
-  examples: StyleGalleryExampleOverviewItem[];
+  payload: OverviewPayload;
   galleryBasePath: string;
   locale: string;
   labels: StyleGalleryExamplesOverviewLabels;
@@ -87,7 +86,6 @@ const EXAMPLE_BATCH_SIZE = 24;
 // 与 Gallery 主预览保持一致：桌面端前两行主动加载，只有首行使用高网络优先级。
 const EAGER_EXAMPLE_COUNT = 8;
 const HIGH_PRIORITY_EXAMPLE_COUNT = 4;
-const EMPTY_SOURCE_SEARCH_INDEX: Readonly<Record<string, string>> = Object.freeze({});
 
 function reportUrlStateError(error: unknown) {
   console.error('Failed to update sub-gallery overview URL state:', error);
@@ -98,7 +96,7 @@ function reportUrlStateError(error: unknown) {
  * 因此慢图片只会在预留区域内补齐，不会把已经显示的卡片重新排位。
  */
 function StyleGalleryExamplesOverviewContent({
-  examples: initialExamples,
+  payload,
   galleryBasePath,
   locale,
   labels,
@@ -114,7 +112,7 @@ function StyleGalleryExamplesOverviewContent({
     : locale.startsWith('ja')
       ? '同じ元画像をまとめる'
       : 'Group by source';
-  const [examples, setExamples] = useState(initialExamples);
+  const [examples, setExamples] = useState(() => unpackOverview(payload));
   // 不放进 state：加载完成只影响下一次打开 Lightbox，不应让数千张卡片重新渲染。
   const loadedExampleSources = useRef(new Set<string>());
   const [uploadToken, setUploadToken] = useState('');
@@ -131,10 +129,13 @@ function StyleGalleryExamplesOverviewContent({
     from: parseAsString.withDefault(''),
     to: parseAsString.withDefault(''),
   });
-  const likes = useStyleGalleryLikes(Object.fromEntries(examples.map((example) => [example.id, example.likeCount])));
+  const counts = useMemo(() => Object.fromEntries(examples.map((example) => [example.id, example.likeCount])), [examples]);
+  const likes = useStyleGalleryLikes(counts);
   const [visualMatches, setVisualMatches] = useState<Set<string> | null>(null);
   const [visualRevision, setVisualRevision] = useState(0);
-  const [sourceSearchIndex, setSourceSearchIndex] = useState<Record<string, string> | null>(null);
+  const term = tagQuery ? '' : query.trim().toLowerCase();
+  const [matches, setMatches] = useState<{ term: string; sources: Set<string>; ids: Set<string> } | null>(null);
+  const [retrySearch, setRetrySearch] = useState(0);
   const [searchIndexStatus, setSearchIndexStatus] = useState<'idle' | 'loading' | 'ready' | 'failed'>('idle');
   useEffect(() => {
     const syncToken = () => setUploadToken(getStyleGalleryManagementToken());
@@ -143,9 +144,7 @@ function StyleGalleryExamplesOverviewContent({
     return () => window.removeEventListener(STYLE_GALLERY_TOKEN_CHANGED_EVENT, syncToken);
   }, []);
   // 点赞计数实时更新，但排序快照由用户主动刷新，避免连续浏览或 popup 点赞时网格在背景中跳位。
-  const [likeSortCounts, setLikeSortCounts] = useState<Record<string, number>>(() =>
-    Object.fromEntries(examples.map((example) => [example.id, example.likeCount])),
-  );
+  const [likeSortCounts, setLikeSortCounts] = useState<Record<string, number>>(counts);
   const sortLabels: Record<StyleGallerySortKey, string> = {
     default: labels.sortDefault,
     date: labels.sortImportedAt,
@@ -175,23 +174,42 @@ function StyleGalleryExamplesOverviewContent({
     () => createStyleGalleryDateRangeMatcher({ from: dateFrom, to: dateTo }),
     [dateFrom, dateTo],
   );
-  const ensureSearchIndex = useCallback(async () => {
-    if (sourceSearchIndex || searchIndexStatus === 'loading') return;
-    setSearchIndexStatus('loading');
-    try {
-      setSourceSearchIndex(await loadStyleGalleryPromptSearchIndex());
-      setSearchIndexStatus('ready');
-    } catch (error) {
-      console.error('Failed to load the Sub-gallery prompt search index:', error);
-      setSearchIndexStatus('failed');
-    }
-  }, [searchIndexStatus, sourceSearchIndex]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the retry counter explicitly repeats a failed request.
   useEffect(() => {
-    if (!tagQuery && query.trim() && searchIndexStatus === 'idle') void ensureSearchIndex();
-  }, [ensureSearchIndex, query, searchIndexStatus, tagQuery]);
-  const matchesTextQuery = useMemo(
-    () => createStyleGalleryExampleQueryMatcher(sourceSearchIndex ?? EMPTY_SOURCE_SEARCH_INDEX, query),
-    [query, sourceSearchIndex],
+    if (!term) {
+      setSearchIndexStatus('idle');
+      return;
+    }
+    const ctrl = new AbortController();
+    setSearchIndexStatus('loading');
+    const timer = setTimeout(async () => {
+      try {
+        const response = await fetch('/api/style-gallery/example-search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: term }),
+          signal: ctrl.signal,
+        });
+        if (!response.ok) throw new Error('Search unavailable');
+        const result: { sourceSlugs: string[]; ids: string[] } = await response.json();
+        if (ctrl.signal.aborted) return;
+        setMatches({ term, sources: new Set(result.sourceSlugs), ids: new Set(result.ids) });
+        setSearchIndexStatus('ready');
+      } catch {
+        if (!ctrl.signal.aborted) setSearchIndexStatus('failed');
+      }
+    }, 180);
+    return () => {
+      clearTimeout(timer);
+      ctrl.abort();
+    };
+  }, [term, retrySearch]);
+  const matchesTextQuery = useCallback(
+    (example: StyleGalleryExampleOverviewItem) =>
+      !term ||
+      example.sourceTitle.toLowerCase().includes(term) ||
+      (matches?.term === term && (matches.sources.has(example.sourceSlug) || matches.ids.has(example.id))),
+    [term, matches],
   );
   const filtered = useMemo(() => {
     const matches = examples.filter((example) => {
@@ -251,8 +269,16 @@ function StyleGalleryExamplesOverviewContent({
     const lightboxImages = navigation.map((candidate) => ({
       id: candidate.id,
       gallerySourceSlug: candidate.sourceSlug,
-      generationPrompt: candidate.note,
-      generationPlatform: candidate.generation ? generationCaption(candidate.generation) : candidate.model,
+      generationPlatform: candidate.model,
+      loadGenerationRecipe: async (signal: AbortSignal) => {
+        const response = await fetch(
+          `/api/style-gallery/examples/${encodeURIComponent(candidate.sourceSlug)}?recipe=${encodeURIComponent(candidate.id)}`,
+          { signal },
+        );
+        if (!response.ok) throw new Error('Recipe unavailable');
+        const entry: Pick<StyleGalleryExampleOverviewItem, 'note' | 'generation' | 'model'> = await response.json();
+        return { prompt: entry.note, platform: entry.generation ? generationCaption(entry.generation) : entry.model };
+      },
       generationPromptInitiallyExpanded: revealPrompt && candidate.id === example.id,
       src: candidate.src,
       dimensions: candidate.dimensions,
@@ -358,9 +384,6 @@ function StyleGalleryExamplesOverviewContent({
           <input
             value={query}
             aria-busy={searchIndexStatus === 'loading'}
-            onFocus={() => {
-              if (query.trim() && !tagQuery) void ensureSearchIndex();
-            }}
             onChange={(event) => setQuery(event.currentTarget.value).catch(reportUrlStateError)}
             placeholder={labels.searchPlaceholder}
             className="h-10 w-full rounded-md border border-border bg-background pr-9 pl-9 text-sm outline-none focus:border-primary"
@@ -372,6 +395,15 @@ function StyleGalleryExamplesOverviewContent({
             />
           )}
         </label>
+        {term && searchIndexStatus === 'failed' && (
+          <button type="button" className="mt-2 text-sm underline" onClick={() => setRetrySearch((n) => n + 1)}>
+            {locale.startsWith('zh')
+              ? '全文搜索未完成 · 重试'
+              : locale.startsWith('ja')
+                ? '全文検索を再試行'
+                : 'Retry full-text search'}
+          </button>
+        )}
         <div className="mt-3 flex flex-wrap items-center gap-2 border-border border-t pt-3">
           <StyleGalleryVisualFilter
             key={originalPosition.visualResetKey}

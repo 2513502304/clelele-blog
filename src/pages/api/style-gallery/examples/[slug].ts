@@ -121,6 +121,13 @@ export const GET: APIRoute = async ({ params, request }) => {
     }
     const item = await getItem(slug);
     if (!item) return new Response('Style gallery item not found.', { status: 404 });
+    const recipe = request && new URL(request.url).searchParams.get('recipe');
+    if (recipe) {
+      const example = item.examples.find(({ id }) => id === recipe);
+      if (!example) return new Response(null, { status: 404 });
+      const { model, generation, note } = example;
+      return Response.json({ model, generation, note });
+    }
     return Response.json({
       examples: item.examples,
       uploadsEnabled: Boolean(process.env.STYLE_GALLERY_UPLOAD_TOKEN),

@@ -100,6 +100,8 @@ export interface ImageLightboxImage {
   generationPrompt?: string;
   /** The platform of this individual output, independent of its optional prompt. */
   generationPlatform?: string;
+  /** Fetch an overview recipe only for the currently visible output. */
+  loadGenerationRecipe?: (signal: AbortSignal) => Promise<{ prompt?: string; platform?: string }>;
   /** Only a deliberate "read prompt" action expands it; opening an image stays collapsed. */
   generationPromptInitiallyExpanded?: boolean;
   id?: string;
