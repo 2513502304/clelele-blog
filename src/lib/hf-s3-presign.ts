@@ -124,6 +124,11 @@ export async function getStyleGalleryObjectTextSnapshot(
   return result ? { text: new TextDecoder().decode(result.bytes), etag: result.etag } : { text: null, etag: null };
 }
 
+/** Read the blob and its revision together for a conditional cache replacement. */
+export function getStyleGalleryObjectBytesSnapshot(key: string, timeoutMs = 60_000) {
+  return client(timeoutMs).get(key, [403, 404]);
+}
+
 export async function getStyleGalleryObjectBytes(key: string, timeoutMs = 60_000): Promise<Uint8Array | null> {
   return (await client(timeoutMs).get(key, [403, 404]))?.bytes ?? null;
 }

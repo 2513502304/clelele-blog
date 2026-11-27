@@ -37,7 +37,7 @@ export function packOverview(examples: Example[]): OverviewPayload {
         sourceSlug: e.sourceSlug,
         sourceTitle: e.sourceTitle,
         sourceImage: e.sourceImage,
-        sourceImageAlt: e.sourceImageAlt,
+        ...(e.sourceImageAlt === undefined ? {} : { sourceImageAlt: e.sourceImageAlt }),
         sourceExampleCount: e.sourceExampleCount,
         sourcePromptCount: e.sourcePromptCount,
         sourcePromptRevision: e.sourcePromptRevision,
