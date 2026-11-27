@@ -52,7 +52,7 @@ export function HpoiCollection() {
   const [masonry, setMasonry] = useState(true);
   const collection = useHpoiCollection(activeState);
   const membership = useHpoiMembership();
-  const [calendar, setCalendar] = useState(false);
+  const [calendar, setCalendar] = useState(true);
   const [release, setRelease] = useState('');
   const filtered = useMemo(() => {
     if (!release) return collection.items;

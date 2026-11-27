@@ -313,7 +313,8 @@ test('preorder calendar distinguishes exact dates from month-only and undated re
   });
   await page.goto('/hpoi/');
   await expect(page.locator('[data-hpoi-category=preorder]')).toHaveCount(3);
-  await page.getByRole('button', { name: '出荷日历', exact: true }).click();
+  const toggle = page.getByRole('button', { name: '出荷日历', exact: true });
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
   const calendar = page.getByRole('region', { name: '出荷日历' });
   await expect(page.getByRole('tab', { name: /全部/ })).toHaveAttribute('aria-selected', 'true');
   const month = calendar.getByRole('combobox');
@@ -331,7 +332,10 @@ test('preorder calendar distinguishes exact dates from month-only and undated re
   await expect(calendar.locator('li')).toHaveText(/手办 3/);
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await page.getByRole('button', { name: '出荷日历', exact: true }).click();
+  await toggle.click();
+  await expect(calendar).toHaveCount(0);
+  await toggle.click();
+  await expect(calendar).toBeVisible();
   await expect(page.getByRole('tab', { name: /全部/ })).toHaveAttribute('aria-selected', 'true');
   await expect.poll(() => seen.length).toBe(6);
 });
