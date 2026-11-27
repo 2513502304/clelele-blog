@@ -41,17 +41,27 @@ async function findJob(slug: string, id: string) {
 
 /** Only the persisted server-side prompt, model and original bytes may be published. */
 async function publish(slug: string, scope: string, job: GenerationJob, index: number, reviewedHash: string) {
-  const item = await getStoredStyleGalleryItem(slug, { fresh: true });
-  if (!item) throw new StyleGalleryClientError('Item no longer exists.', 404);
-  if (publishedOutputs(job).includes(index)) return item.examples;
+  const timings: string[] = [];
+  let started = performance.now();
+  function finishStage(name: string) {
+    const now = performance.now();
+    timings.push(`${name};dur=${(now - started).toFixed(1)}`);
+    started = now;
+  }
   if (!availableOutputs(job).includes(index)) throw new StyleGalleryClientError('Image is not ready.', 409);
-  const bytes = await getStyleGalleryObjectBytes(draftImageKey(scope, job.id, index));
+  const saved = publishedOutputs(job).includes(index);
+  const [item, bytes] = await Promise.all([
+    getStoredStyleGalleryItem(slug, { fresh: true }),
+    saved ? null : getStyleGalleryObjectBytes(draftImageKey(scope, job.id, index)),
+  ]);
+  if (!item) throw new StyleGalleryClientError('Item no longer exists.', 404);
+  if (saved) return json({ examples: item.examples });
+  finishStage('draft');
   if (!bytes) throw new Error('Missing draft.');
   const hash = createHash('sha256').update(bytes).digest('hex');
   if (hash !== reviewedHash) throw new StyleGalleryClientError('Preview does not match original.', 409);
   // The native gallery runtime has the model weights. Phones only digest the reviewed bytes.
   const { computeStyleGalleryVisualFeatureFromBytes } = await import('@lib/style-gallery-visual-feature-node');
-  const feature = await computeStyleGalleryVisualFeatureFromBytes(bytes, hash);
   const { format, width, height, autoOrient } = await sharp(bytes).metadata();
   if (!width || !height || !['png', 'jpeg', 'webp'].includes(format)) throw new Error('Invalid original.');
   const platform = getStyleGalleryPlatform(job.settings.platform);
@@ -64,8 +74,13 @@ async function publish(slug: string, scope: string, job: GenerationJob, index: n
     dimensions: autoOrient ?? { width, height },
     uploadedAt: job.created,
   });
-  await putStyleGalleryObject(getStyleGalleryExampleObjectKey(example), bytes, `image/${format}`);
-  await ensureStyleGalleryExampleThumbnail(example.src, bytes);
+  // Content-addressed assets are independent. Commit metadata only after all three are ready.
+  const [feature] = await Promise.all([
+    computeStyleGalleryVisualFeatureFromBytes(bytes, hash),
+    putStyleGalleryObject(getStyleGalleryExampleObjectKey(example), bytes, `image/${format}`),
+    ensureStyleGalleryExampleThumbnail(example.src, bytes),
+  ]);
+  finishStage('assets');
   const identity = getStyleGalleryExampleIdentity(example);
   const { item: updated } = await updateStyleGalleryItemExamples(slug, (examples) => {
     // Request IDs originate in browsers. Only an exact match can repair an interrupted confirmation.
@@ -84,12 +99,17 @@ async function publish(slug: string, scope: string, job: GenerationJob, index: n
     if (!existing) return [...examples, example];
     throw new StyleGalleryClientError('This image already belongs to another example on this platform.', 409);
   });
+  finishStage('metadata');
   // The same stable example ID repairs an interrupted visual-index write on confirmation retry.
   await mutateStyleGalleryVisualIndex((index) =>
     upsertStyleGalleryVisualRecords(index, [{ feature, kind: 'example', sourceSlug: slug, imageId: example.id }]),
   );
+  finishStage('visual');
   await noteOutput(scope, job.id, index, true);
-  return updated.examples;
+  finishStage('receipt');
+  const response = json({ examples: updated.examples });
+  response.headers.set('Server-Timing', timings.join(', '));
+  return response;
 }
 
 interface StudioAccess {
@@ -187,22 +207,20 @@ export const POST = privateRoute(async ({ slug, scope, owner, platform, apiKey }
     return json({ job: await findJob(scope, job.id) });
   }
   if (body.action === 'confirm')
-    return json({
-      examples: await publish(
-        slug,
-        scope,
-        job,
-        z
-          .number()
-          .int()
-          .min(0)
-          .max(3)
-          .parse(body.index ?? 0),
-        z
-          .string()
-          .regex(/^[a-f0-9]{64}$/)
-          .parse(body.imageHash),
-      ),
-    });
+    return publish(
+      slug,
+      scope,
+      job,
+      z
+        .number()
+        .int()
+        .min(0)
+        .max(3)
+        .parse(body.index ?? 0),
+      z
+        .string()
+        .regex(/^[a-f0-9]{64}$/)
+        .parse(body.imageHash),
+    );
   return json({ error: 'Unknown action.' }, 400);
 });
