@@ -87,6 +87,7 @@ interface ViewerProps {
   src?: string;
   placeholder?: string;
   reviewCanvas?: boolean;
+  viewId?: string;
   alt: string;
   locale: string;
   references?: StyleGalleryImageRef[];
@@ -104,6 +105,7 @@ export function GenerationViewer({
   onClose,
   placeholder,
   reviewCanvas,
+  viewId,
 }: ViewerProps) {
   const l = studioLanguage(locale);
   const [hash, selectHash] = useState(initialHash);
@@ -116,13 +118,14 @@ export function GenerationViewer({
   const [{ scale, x, y }, setView] = useState({ scale: 1, x: 0, y: 0 });
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const reset = useCallback(() => setView({ scale: 1, x: 0, y: 0 }), []);
-  // Preserve the frame and comparison mode while fitting each newly selected original.
+  // Upgrading a preview in place keeps its current comparison, zoom and pan.
+  const identity = viewId ?? src;
   // biome-ignore lint/correctness/useExhaustiveDependencies: A new source has its own viewing coordinates.
   useEffect(() => {
     pointers.current.clear();
     reset();
     selectHash(initialHash);
-  }, [src, initialHash, reset]);
+  }, [identity, initialHash, reset]);
   // Clamp against the fitted image, not the letterbox, so portrait originals stay in view while panning.
   const move = useCallback((factor: number, dx = 0, dy = 0, anchor?: { x: number; y: number }) => {
     const area = surface.current;
