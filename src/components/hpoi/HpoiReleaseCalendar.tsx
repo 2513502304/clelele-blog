@@ -11,6 +11,8 @@ export function HpoiReleaseCalendar({
   complete,
   failed,
   retry,
+  selected,
+  onSelect,
 }: {
   items: HpoiCollectionItem[];
   state: HpoiCollectionState;
@@ -18,16 +20,17 @@ export function HpoiReleaseCalendar({
   complete: boolean;
   failed: boolean;
   retry: () => void;
+  selected: string;
+  onSelect: (date: string) => void;
 }) {
   const { locale, t } = useTranslation();
   const dates = useMemo(() => items.map((item) => ({ item, ...releasePeriod(item) })), [items]);
   const months = useMemo(() => [...new Set(dates.map((d) => d.month).filter(Boolean))].sort(), [dates]);
   const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Shanghai' }).format(new Date());
   const current = today.slice(0, 7);
-  const [chosen, setChosen] = useState(''),
-    [day, chooseDay] = useState(0),
-    [unknown, showUnknown] = useState(false);
-  const month = chosen || months.find((m) => m >= current) || months.at(-1) || current;
+  const [month, setMonth] = useState(current);
+  const unknown = selected === 'undated';
+  const day = selected.startsWith(month + '-') ? Number(selected.slice(8)) : 0;
   const start = new Date(`${month}-01T12:00:00Z`);
   const dateLabel = new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'long', timeZone: 'UTC' }).format(start);
   const weekday = new Intl.DateTimeFormat(locale, { weekday: 'narrow', timeZone: 'UTC' });
@@ -39,9 +42,8 @@ export function HpoiReleaseCalendar({
     ? undated
     : releases.filter((d) => !day || d.day === day).sort((a, b) => (a.day || 32) - (b.day || 32));
   function go(value: string) {
-    setChosen(value);
-    chooseDay(0);
-    showUnknown(false);
+    setMonth(value);
+    onSelect('');
   }
   function step(n: number) {
     const next = new Date(start);
@@ -88,8 +90,7 @@ export function HpoiReleaseCalendar({
               aria-pressed={!unknown && day === d}
               aria-label={`${month}-${String(d).padStart(2, '0')} · ${days.get(d) ?? 0}`}
               onClick={() => {
-                chooseDay(day === d ? 0 : d);
-                showUnknown(false);
+                onSelect(day === d ? '' : `${month}-${String(d).padStart(2, '0')}`);
               }}
             >
               {d}
@@ -105,13 +106,12 @@ export function HpoiReleaseCalendar({
             type="button"
             aria-pressed={!unknown && !day}
             onClick={() => {
-              showUnknown(false);
-              chooseDay(0);
+              onSelect('');
             }}
           >
             {t('hpoi.wholeMonth')} · {releases.length}
           </button>
-          <button type="button" aria-pressed={unknown} onClick={() => showUnknown(true)}>
+          <button type="button" aria-pressed={unknown} onClick={() => onSelect(unknown ? '' : 'undated')}>
             {t('hpoi.undated')} · {undated.length}
           </button>
         </div>
