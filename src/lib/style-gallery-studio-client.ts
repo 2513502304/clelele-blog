@@ -81,6 +81,12 @@ export function notifyStudioChange() {
   }
 }
 
+export const STUDIO_REMOVAL_EVENT = 'gallery-generation:removed';
+export function notifyStudioRemoval(slug: string) {
+  notifyStudioChange();
+  window.dispatchEvent(new CustomEvent(STUDIO_REMOVAL_EVENT, { detail: slug }));
+}
+
 /** Only bytes displayed to the reviewer may be acknowledged by the publication endpoint. */
 export async function confirmStudioOutput(
   slug: string,
