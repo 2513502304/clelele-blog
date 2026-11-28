@@ -29,6 +29,7 @@ it('reserves a paid request once across tabs and recovers the original after int
     HF_S3_SECRET_ACCESS_KEY: 'fixture',
     HF_S3_ENDPOINT: 'https://generation.invalid',
     HF_S3_BUCKET: 'fixture',
+    STYLE_GALLERY_DRAFTS_BUCKET: 'private-fixture',
     STYLE_GALLERY_BUCKET_PREFIX: 'gallery',
   };
   for (const [key, value] of Object.entries(env)) {
@@ -67,7 +68,10 @@ it('reserves a paid request once across tabs and recovers the original after int
       return Response.json({ id: 'recover-me', status: 'failed' });
     }
     assert.equal(url.hostname, 'generation.invalid');
-    const key = url.pathname.slice('/fixture/gallery/'.length);
+    if (url.pathname === '/private-fixture/gallery/operations/gallery-drafts-ready-v1') return new Response(null);
+    const [, bucket, , ...parts] = url.pathname.split('/');
+    const key = parts.join('/');
+    assert.equal(bucket, key.startsWith('generation-drafts/') ? 'private-fixture' : 'fixture');
     const obj = objects.get(key);
     if (init?.method === 'DELETE') {
       objects.delete(key);

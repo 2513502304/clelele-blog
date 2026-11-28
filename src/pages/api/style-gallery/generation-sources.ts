@@ -10,7 +10,11 @@ export const prerender = false;
 /** Discover only the current account's linked works or the current provider credential's source slugs. */
 export const GET: APIRoute = async ({ request, cookies }) => {
   const auth = studioOwner(request);
-  const headers = { 'cache-control': 'private, no-store', vary: 'Cookie, X-API-Key, X-Gallery-Provider' };
+  const headers = {
+    'x-gallery-draft-storage': 'private-v1',
+    'cache-control': 'private, no-store',
+    vary: 'Cookie, X-API-Key, X-Gallery-Provider',
+  };
   try {
     if (new URL(request.url).searchParams.has('account')) {
       const viewer = getStyleGalleryViewer(cookies);

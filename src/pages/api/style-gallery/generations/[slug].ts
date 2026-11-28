@@ -1,8 +1,7 @@
 import { createHash } from 'node:crypto';
-import { fetchHfS3Read } from '@lib/hf-s3';
 import {
-  createStyleGallerySignedImageUrl,
   deleteStyleGalleryObject,
+  fetchStyleGalleryDraftOriginal,
   getStyleGalleryObjectBytes,
   putStyleGalleryObject,
 } from '@lib/hf-s3-presign';
@@ -244,9 +243,7 @@ export const GET = privateRoute(async ({ scope, slug }, request) => {
     return new Response(Uint8Array.from(thumb), { headers: { ...headers, 'content-type': 'image/webp' } });
   }
   // Stream the private original for review, download and a byte-for-byte confirmation.
-  const response = await fetchHfS3Read(createStyleGallerySignedImageUrl(draftImageKey(scope, job.id, index)), {
-    signal: AbortSignal.timeout(60_000),
-  });
+  const response = await fetchStyleGalleryDraftOriginal(draftImageKey(scope, job.id, index));
   if (!response.ok) throw new Error('Missing image.');
   const pending = !publishedOutputs(job).includes(index);
   if (pending) {
