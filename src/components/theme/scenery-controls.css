@@ -250,17 +250,6 @@ details.scenery-group {
 .scenery-group-body > .appearance-caption {
   margin: 0;
 }
-.scenery-controls :is(.appearance-numeric-heading, .appearance-choice) {
-  font-size: 13px;
-  line-height: 1.4;
-}
-.scenery-controls .appearance-numeric input[type="range"] {
-  display: block;
-  height: 24px;
-}
-.scenery-controls .appearance-numeric input[type="number"] {
-  padding-block: 3px;
-}
 .scenery-group .appearance-choice select {
   max-width: 165px;
 }
