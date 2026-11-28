@@ -1,18 +1,20 @@
 import { invalidateHpoiSnapshots } from '@hooks/useHpoiCollection';
 import { useTranslation } from '@hooks/useTranslation';
 import { Icon } from '@iconify/react';
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import type { TranslationKey } from '@/i18n/types';
 import type { HpoiCollectionResponse, HpoiCollectionState } from '@/types/hpoi';
 import { HPOI_COLLECTION_STATES } from '@/types/hpoi';
 
 type RequestState = 'loading' | 'ready' | 'refreshing' | 'success' | 'error';
+const HpoiPurchasesAdmin = lazy(() => import('./HpoiPurchasesAdmin'));
 
 /** Owner 管理工具：展示当前公开快照，并通过受保护的 POST 接口刷新 Hpoi CDN 缓存。 */
 export function HpoiCacheAdmin() {
   const { locale, t } = useTranslation();
   const [data, setData] = useState<HpoiCollectionResponse | null>(null);
   const [requestState, setRequestState] = useState<RequestState>('loading');
+  const [showPurchases, setShowPurchases] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -115,6 +117,21 @@ export function HpoiCacheAdmin() {
             </div>
           ))}
         </dl>
+      </div>
+      <div className="space-y-4 border-border border-t pt-5">
+        <button
+          type="button"
+          onClick={() => setShowPurchases((shown) => !shown)}
+          aria-expanded={showPurchases}
+          className="rounded-md border border-border px-3 py-2 text-sm hover:bg-muted"
+        >
+          {showPurchases ? '收起本人购买信息' : '查看本人购买信息'}
+        </button>
+        {showPurchases && (
+          <Suspense fallback={<p className="text-muted-foreground text-sm">正在载入购买信息…</p>}>
+            <HpoiPurchasesAdmin />
+          </Suspense>
+        )}
       </div>
     </section>
   );

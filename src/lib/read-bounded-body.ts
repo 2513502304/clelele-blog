@@ -1,6 +1,6 @@
 export class RequestTooLargeError extends Error {}
 /** Bound actual streamed bytes, including chunked requests with missing or inaccurate Content-Length. */
-export async function readBoundedBody(request: Request, limit: number): Promise<Uint8Array> {
+export async function readBoundedBody(request: Pick<Request, 'headers' | 'body'>, limit: number): Promise<Uint8Array> {
   if (Number(request.headers.get('content-length')) > limit) throw new RequestTooLargeError('Request too large.');
   const reader = request.body?.getReader();
   if (!reader) return new Uint8Array();
