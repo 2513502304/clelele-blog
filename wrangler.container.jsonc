@@ -24,6 +24,7 @@
     }
   ],
   "vars": {
+    "STYLE_GALLERY_DRAFTS_BUCKET": "gallery-studio-private",
     "HPOI_PURCHASES_BUCKET": "hpoi-purchases-private",
     "BLOG_READ_ONLY": "false",
     "BLOG_CACHE_INVALIDATION_URL": "https://clelele-blog-container.2513502304.workers.dev/_internal/cache",
