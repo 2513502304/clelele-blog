@@ -1,6 +1,7 @@
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react';
 import { RiAddLine, RiArrowLeftRightLine, RiCloseLine, RiFocus3Line, RiSubtractLine } from 'react-icons/ri';
 import type { StyleGalleryImageRef } from '@/types/style-gallery';
+import { useComparisonImage } from './useComparisonImage';
 import { studioLanguage } from './StyleGalleryGenerationFields';
 
 const zoomStep = 1.12;
@@ -114,6 +115,7 @@ export function GenerationViewer({
   const side = mode === 'side';
   const [split, setSplit] = useState(50);
   const reference = references?.find((item) => item.imageHash === hash) ?? references?.[0];
+  const referenceUrl = useComparisonImage(mode === 'result' ? undefined : reference?.sourceImage);
   const surface = useRef<HTMLDivElement>(null);
   const [{ scale, x, y }, setView] = useState({ scale: 1, x: 0, y: 0 });
   const pointers = useRef(new Map<number, { x: number; y: number }>());
@@ -311,10 +313,10 @@ export function GenerationViewer({
         >
           {!src ? (
             <output className="p-4 text-center text-muted-foreground text-sm">{placeholder}</output>
-          ) : reference && mode !== 'result' ? (
+          ) : referenceUrl && mode !== 'result' ? (
             <ComparisonImages
               result={src}
-              reference={reference.sourceImage}
+              reference={referenceUrl}
               locale={locale}
               transform={transform}
               split={split}
