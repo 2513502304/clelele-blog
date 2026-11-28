@@ -29,9 +29,7 @@ import {
   RiAddLine,
   RiDownload2Line,
   RiHistoryLine,
-  RiImage2Line,
   RiImageAddLine,
-  RiLoader4Line,
   RiMagicLine,
   RiPencilLine,
   RiRestartLine,
@@ -42,6 +40,8 @@ import type { StyleGalleryExample, StyleGalleryImageRef } from '@/types/style-ga
 import { DiscardOutputAction } from './DiscardOutputAction';
 import { GenerationFields, studioLanguage } from './StyleGalleryGenerationFields';
 import { GenerationViewer } from './StyleGalleryGenerationViewer';
+import { GenerationRecipe } from './GenerationRecipe';
+import { useStudioOriginal, useThumbnail, type Thumbnails } from './useStudioReviewImage';
 import { OutputStrip } from './StyleGalleryOutputStrip';
 import './gallery-generator.css';
 
@@ -183,7 +183,7 @@ function Editor({
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [revision, refresh] = useState(0);
-  const [preview, setPreview] = useState<{ id: string; index: number; url: string; file: File }>();
+  const thumbs = useRef<Thumbnails>(new Map()).current;
   const lock = useRef(false);
   const pending = useRef<{ id: string; signature: string } | null>(null);
   const current = jobs.find((j) => j.id === selected) ?? jobs[0];
@@ -319,26 +319,10 @@ function Editor({
     };
   }, [id, state, request, token, upsert, revision]);
 
-  useEffect(() => {
-    setPreview(undefined);
-    if (!id || !token || !hasImage || view !== 'review') return;
-    const ctrl = new AbortController();
-    let url = '';
-    void request(`?preview=${id}&index=${index}&reload=${revision}`, undefined, ctrl.signal)
-      .then((r) => r.blob())
-      .then((blob) => {
-        if (ctrl.signal.aborted) return;
-        url = URL.createObjectURL(blob);
-        setPreview({ id, index, url, file: new File([blob], 'generated-image', { type: blob.type }) });
-      })
-      .catch((e) => {
-        if (!ctrl.signal.aborted) setError(e.message);
-      });
-    return () => {
-      ctrl.abort();
-      if (url) URL.revokeObjectURL(url);
-    };
-  }, [id, index, token, request, hasImage, view, revision]);
+  const outputUrl = view === 'review' && id && token && hasImage ? `${base}?preview=${id}&index=${index}` : undefined;
+  const loaded = useStudioOriginal(outputUrl && `${outputUrl}&reload=${revision}`, platform, token);
+  const activePreview = loaded?.image;
+  const thumb = useThumbnail({ pool: thumbs, url: outputUrl && `${outputUrl}&thumb=fit`, platform, credential: token });
 
   async function act(kind: string, run: () => Promise<void>) {
     if (lock.current) return;
@@ -392,14 +376,14 @@ function Editor({
     }
   }
   async function confirm() {
-    if (!preview || preview.id !== id || import.meta.env.SSR) return;
+    if (!activePreview || !id || import.meta.env.SSR) return;
     const data = await confirmStudioOutput(
       slug,
       platform,
       token,
-      preview.id,
+      id,
       index,
-      preview.file,
+      activePreview.blob,
       uploadToken,
       l(
         '上传令牌与当前图库不匹配。请检查是否使用了当前环境的令牌，然后重新保存。生成结果已保留。',
@@ -411,13 +395,12 @@ function Editor({
     onSaved(data.examples);
     await loadHistory(token);
   }
-  const activePreview = preview?.id === id && preview?.index === index ? preview : undefined;
   const selectedReference =
     refs.find((ref) => current?.settings.platform === 'gpt-image' && ref.imageHash === current.settings.referenceHash) ??
     refs[0];
   const refImage = selectedReference?.sourceImage;
   const showReference = !current;
-  const shownImage = showReference ? refImage : activePreview?.url;
+  const shownImage = showReference ? refImage : (activePreview?.url ?? thumb);
   const refLabel = l('条目参考图', '元画像', 'Reference image');
   const editLabel = l('创作设置', '生成設定', 'Create');
   const selectJob = (jobId: string) => {
@@ -546,7 +529,7 @@ function Editor({
         </div>
       )}
       {view === 'review' && (
-        <div className="studio-results">
+        <div className="studio-results studio-review-reader">
           <div className="studio-proof-heading">
             <div>
               <h3>{showReference ? refLabel : copy.preview}</h3>
@@ -567,23 +550,104 @@ function Editor({
               </select>
             )}
           </div>
-          {shownImage ? (
+          <div className="studio-review-layout">
             <GenerationViewer
-              key={shownImage}
+              reviewCanvas
+              viewId={outputUrl ?? refImage}
               src={shownImage}
+              placeholder={current ? copy[current.state] : copy.empty}
               alt={showReference ? refLabel : copy.preview}
               locale={locale}
-              references={activePreview ? refs : undefined}
+              references={current && hasImage ? refs : undefined}
               initialHash={selectedReference?.imageHash}
             />
-          ) : (
-            <div className="studio-canvas" aria-busy={state === 'running'}>
-              <output className="studio-placeholder">
-                {state === 'running' ? <RiLoader4Line className="studio-spin" /> : <RiImage2Line />}
-                <span>{current ? copy[current.state] : copy.empty}</span>
-              </output>
+            <div className="studio-review-notes">
+              <GenerationRecipe key={outputUrl} prompt={current?.prompt} settings={current?.settings} locale={locale}>
+                {thumb && !activePreview && !loaded?.failed && (
+                  <output className="text-muted-foreground text-xs">
+                    {l('预览图 · 正在加载原图', 'プレビュー · 原画を読み込み中', 'Preview · Loading original')}
+                  </output>
+                )}
+              </GenerationRecipe>
+              <div className="studio-proof-tools">
+                {activePreview && !showReference && (
+                  <a
+                    className="studio-secondary"
+                    href={activePreview.url}
+                    download={`${slug}-${id}-${index + 1}.${activePreview.blob.type.split('/')[1] ?? 'png'}`}
+                  >
+                    <RiDownload2Line />
+                    {l('下载原图', '原寸画像を保存', 'Download')}
+                  </a>
+                )}
+              </div>
+              {current && (
+                <div className="studio-receipt">
+                  <button
+                    type="button"
+                    className="studio-secondary"
+                    onClick={() => {
+                      setSettings(current.settings);
+                      setText(current.prompt);
+                      setView('edit');
+                    }}
+                  >
+                    <RiRestartLine />
+                    {l('复用参数', '設定を再利用', 'Reuse settings')}
+                  </button>
+                </div>
+              )}
+              <div className="studio-actionbar">
+                <div>
+                  <strong>
+                    <output>{isSaved ? copy.saved : current ? copy[current.state] : copy.empty}</output>
+                  </strong>
+                  {token && <small>{copy.hint}</small>}
+                  {current?.error && <p>{current.error}</p>}
+                </div>
+                {current && hasImage && !isSaved && (
+                  <DiscardOutputAction
+                    key={`${current.id}-${index}`}
+                    locale={locale}
+                    disabled={!activePreview || Boolean(busy) || Boolean(current.publishing?.includes(index))}
+                    discard={() =>
+                      void act('discard', async () => {
+                        await discardStudioOutput(slug, platform, token, current.id, index);
+                        await loadHistory(token);
+                      })
+                    }
+                  />
+                )}
+                {hasImage &&
+                  !isSaved &&
+                  (accessEnabled ? (
+                    <div className="studio-publish">
+                      <label className="grid min-w-0 gap-1">
+                        {copy.token}
+                        <input
+                          type="password"
+                          autoComplete="off"
+                          className={fieldClass}
+                          value={uploadToken}
+                          onChange={(e) => setUploadToken(e.target.value)}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        disabled={!uploadToken.trim() || !activePreview || Boolean(busy) || showReference}
+                        className="studio-primary"
+                        onClick={() => act('confirm', confirm)}
+                      >
+                        <RiImageAddLine />
+                        {busy === 'confirm' ? copy.saving : copy.confirm}
+                      </button>
+                    </div>
+                  ) : (
+                    <p>{copy.accessDisabled}</p>
+                  ))}
+              </div>
             </div>
-          )}
+          </div>
           {available.length > 1 && current && (
             <OutputStrip
               indices={available}
@@ -592,95 +656,17 @@ function Editor({
               select={selectOutput}
               locale={locale}
               jobId={current.id}
-              request={request}
+              pool={thumbs}
+              base={base}
+              platform={platform}
+              credential={token}
             />
           )}
-          <div className="studio-proof-tools">
-            {activePreview && !showReference && (
-              <a
-                className="studio-secondary"
-                href={activePreview.url}
-                download={`${slug}-${id}-${index + 1}.${activePreview.file.type.split('/')[1] ?? 'png'}`}
-              >
-                <RiDownload2Line />
-                {l('下载原图', '原寸画像を保存', 'Download')}
-              </a>
-            )}
-          </div>
-          {current && (
-            <div className="studio-receipt">
-              <details>
-                <summary>{copy.record}</summary>
-                <p>{current.prompt}</p>
-              </details>
-              <button
-                type="button"
-                className="studio-secondary"
-                onClick={() => {
-                  setSettings(current.settings);
-                  setText(current.prompt);
-                  setView('edit');
-                }}
-              >
-                <RiRestartLine />
-                {l('复用参数', '設定を再利用', 'Reuse settings')}
-              </button>
-            </div>
-          )}
-          <div className="studio-actionbar">
-            <div>
-              <strong>
-                <output>{isSaved ? copy.saved : current ? copy[current.state] : copy.empty}</output>
-              </strong>
-              {token && <small>{copy.hint}</small>}
-              {current?.error && <p>{current.error}</p>}
-            </div>
-            {current && hasImage && !isSaved && (
-              <DiscardOutputAction
-                key={`${current.id}-${index}`}
-                locale={locale}
-                disabled={!activePreview || Boolean(busy) || Boolean(current.publishing?.includes(index))}
-                discard={() =>
-                  void act('discard', async () => {
-                    await discardStudioOutput(slug, platform, token, current.id, index);
-                    await loadHistory(token);
-                  })
-                }
-              />
-            )}
-            {hasImage &&
-              !isSaved &&
-              (accessEnabled ? (
-                <div className="studio-publish">
-                  <label className="grid min-w-0 gap-1">
-                    {copy.token}
-                    <input
-                      type="password"
-                      autoComplete="off"
-                      className={fieldClass}
-                      value={uploadToken}
-                      onChange={(e) => setUploadToken(e.target.value)}
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    disabled={!uploadToken.trim() || !activePreview || Boolean(busy) || showReference}
-                    className="studio-primary"
-                    onClick={() => act('confirm', confirm)}
-                  >
-                    <RiImageAddLine />
-                    {busy === 'confirm' ? copy.saving : copy.confirm}
-                  </button>
-                </div>
-              ) : (
-                <p>{copy.accessDisabled}</p>
-              ))}
-          </div>
         </div>
       )}
-      {(error || state === 'uncertain') && (
+      {(error || loaded?.failed || state === 'uncertain') && (
         <div className="studio-error" aria-live="polite">
-          {error}{' '}
+          {error || (loaded?.failed && l('原图暂时无法读取。', '原画を読み込めません。', 'Original unavailable.'))}{' '}
           <button
             type="button"
             className="underline"

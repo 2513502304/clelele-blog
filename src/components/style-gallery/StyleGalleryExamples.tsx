@@ -43,6 +43,8 @@ import type {
   StyleGalleryImageDimensions,
   StyleGalleryImageRef,
 } from '@/types/style-gallery';
+import { useComparisonImage } from './useComparisonImage';
+import { GenerationRecipe } from './GenerationRecipe';
 import GallerySelectionDock from './GallerySelectionDock';
 import { GenerationDetails } from './StyleGalleryGenerationFields';
 import { GenerationViewer } from './StyleGalleryGenerationViewer';
@@ -186,6 +188,7 @@ function StyleGalleryExamplesContent({
   const activePrompt = useRef(prompt);
   // 记录浏览器已经解码成功的高清示例，Lightbox 可复用同一 URL；ref 更新不会扰动图片网格。
   const loadedExampleSources = useRef(new Set<string>());
+  const comparedImage = useComparisonImage(compared?.src, loadedExampleSources.current);
 
   useEffect(() => {
     const syncToken = () => setToken(getStyleGalleryManagementToken());
@@ -911,16 +914,35 @@ function StyleGalleryExamplesContent({
                 </div>
               </div>
               {compared && platformExamples.includes(compared) && !selectionMode && (
-                <div className="studio-group-comparison" ref={comparisonPanel} tabIndex={-1}>
-                  <GenerationViewer
-                    key={compared.id}
-                    src={compared.src}
-                    alt={compared.alt ?? compared.model ?? ''}
-                    locale={locale}
-                    references={generationReferences}
-                    initialHash={compared.generation?.platform === 'gpt-image' ? compared.generation.referenceHash : undefined}
-                    onClose={closeComparison}
-                  />
+                <div
+                  className="gallery-generator studio-review-reader studio-group-comparison rounded-xl border border-border"
+                  ref={comparisonPanel}
+                  tabIndex={-1}
+                >
+                  <div className="studio-review-layout">
+                    <GenerationViewer
+                      reviewCanvas
+                      viewId={compared.id}
+                      key={compared.id}
+                      src={comparedImage}
+                      alt={compared.alt ?? compared.model ?? ''}
+                      locale={locale}
+                      references={generationReferences}
+                      initialHash={
+                        compared.generation?.platform === 'gpt-image' ? compared.generation.referenceHash : undefined
+                      }
+                      onClose={closeComparison}
+                    />
+                    <div className="studio-review-notes">
+                      <GenerationRecipe
+                        key={compared.id}
+                        prompt={compared.note}
+                        settings={compared.generation}
+                        model={compared.model}
+                        locale={locale}
+                      />
+                    </div>
+                  </div>
                 </div>
               )}
               <StyleGalleryGrid masonry={masonry}>

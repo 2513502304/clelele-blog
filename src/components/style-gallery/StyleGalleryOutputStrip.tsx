@@ -1,6 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { RiCheckLine } from 'react-icons/ri';
 import { studioLanguage } from './StyleGalleryGenerationFields';
+
+import type { GenerationPlatform } from '@lib/style-gallery-generation-settings';
+import { useThumbnail, type Thumbnails, type ThumbnailProps } from './useStudioReviewImage';
+
+function StripImage(props: ThumbnailProps) {
+  const src = useThumbnail(props);
+  return src ? <img src={src} alt="" /> : null;
+}
 
 interface Props {
   indices: number[];
@@ -9,37 +17,16 @@ interface Props {
   select: (index: number) => void;
   locale: string;
   jobId: string;
-  request: (path: string, body?: object, signal?: AbortSignal) => Promise<Response>;
+  pool: Thumbnails;
+  base: string;
+  platform: GenerationPlatform;
+  credential: string;
 }
 
 /** Only fetch small private thumbnails for the current batch. Switch images with buttons, arrows or a focused wheel. */
-export function OutputStrip({ indices, published, selected, select, locale, jobId, request }: Props) {
+export function OutputStrip({ indices, published, selected, select, locale, jobId, pool, base, platform, credential }: Props) {
   const l = studioLanguage(locale);
-  const [thumbs, setThumbs] = useState<Record<number, string>>({});
   const strip = useRef<HTMLFieldSetElement>(null);
-  const key = indices.join(',');
-  useEffect(() => {
-    const controller = new AbortController();
-    const urls: string[] = [];
-    setThumbs({});
-    void Promise.allSettled(
-      key
-        .split(',')
-        .filter(Boolean)
-        .map(async (value) => {
-          const response = await request(`?preview=${jobId}&index=${value}&thumb=1`, undefined, controller.signal);
-          const blob = await response.blob();
-          if (controller.signal.aborted) return;
-          const url = URL.createObjectURL(blob);
-          urls.push(url);
-          setThumbs((old) => ({ ...old, [Number(value)]: url }));
-        }),
-    );
-    return () => {
-      controller.abort();
-      for (const url of urls) URL.revokeObjectURL(url);
-    };
-  }, [key, request, jobId]);
   useEffect(() => {
     const el = strip.current;
     if (!el) return;
@@ -79,7 +66,12 @@ export function OutputStrip({ indices, published, selected, select, locale, jobI
             strip.current?.querySelectorAll('button')[next]?.focus();
           }}
         >
-          {thumbs[index] && <img src={thumbs[index]} alt="" />}
+          <StripImage
+            pool={pool}
+            url={`${base}?preview=${jobId}&index=${index}&thumb=fit`}
+            platform={platform}
+            credential={credential}
+          />
           <span>{String(index + 1).padStart(2, '0')}</span>
           {published.includes(index) && <RiCheckLine />}
         </button>

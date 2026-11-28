@@ -4,7 +4,6 @@ import {
   availableOutputs,
   type GenerationJob,
   type GenerationPlatform,
-  generationCaption,
   publishedOutputs,
 } from '@lib/style-gallery-generation-settings';
 import { getStyleGalleryManagementToken, rememberStyleGalleryManagementToken } from '@lib/style-gallery-management-token';
@@ -19,9 +18,10 @@ import { cn } from '@lib/utils';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { RiArrowRightLine, RiCheckLine, RiRefreshLine } from 'react-icons/ri';
 import type { StyleGalleryImageRef } from '@/types/style-gallery';
-import { CopyButton } from '../markdown/shared/CopyButton';
+import { GenerationRecipe } from './GenerationRecipe';
+import { type ThumbnailProps, type Thumbnails, useStudioOriginal, useThumbnail } from './useStudioReviewImage';
 import { DiscardOutputAction } from './DiscardOutputAction';
-import { GenerationDetails, studioLanguage } from './StyleGalleryGenerationFields';
+import { studioLanguage } from './StyleGalleryGenerationFields';
 import { GenerationViewer } from './StyleGalleryGenerationViewer';
 import { StyleGalleryExampleNote } from './StyleGalleryExampleNote';
 import StyleGalleryGrid from './StyleGalleryGrid';
@@ -57,48 +57,6 @@ function outputRows(sources: Source[]) {
   return rows.sort((a, b) => b.job.created.localeCompare(a.job.created) || a.id.localeCompare(b.id));
 }
 
-type Thumbnails = Map<string, { blob: Promise<Blob>; controller: AbortController; users: number }>;
-type ThumbnailProps = { pool: Thumbnails; url?: string; platform?: GenerationPlatform; credential: string };
-
-/** Share only the authorized thumbnail bytes between a mounted card and reader.
- * The last subscriber aborts an unfinished fetch and releases the entry. */
-function useThumbnail({ pool, url, platform, credential }: ThumbnailProps) {
-  const [ready, setReady] = useState<{ key: string; src: string }>();
-  const key = platform && url ? `${platform}/${credential ? 'provider' : 'account'}/${url}` : '';
-  useEffect(() => {
-    if (!platform || !url || !key) return;
-    let entry = pool.get(key);
-    if (!entry) {
-      const controller = new AbortController();
-      const blob = studioRequest(url, platform, credential, undefined, controller.signal).then((r) => r.blob());
-      entry = { controller, blob, users: 0 };
-      pool.set(key, entry);
-    }
-    entry.users++;
-    let active = true;
-    let objectUrl = '';
-    void entry.blob
-      .then((blob) => {
-        if (active) {
-          objectUrl = URL.createObjectURL(blob);
-          setReady({ key, src: objectUrl });
-        }
-      })
-      .catch(() => {
-        /* The original is fetched independently if the thumbnail is unavailable. */
-      });
-    return () => {
-      active = false;
-      URL.revokeObjectURL(objectUrl);
-      if (--entry.users === 0) {
-        entry.controller.abort();
-        pool.delete(key);
-      }
-    };
-  }, [key, pool, url, platform, credential]);
-  return ready?.key === key ? ready.src : undefined;
-}
-
 function PrivateImage(props: ThumbnailProps) {
   const src = useThumbnail(props);
   return src ? <img src={src} alt="" className="block h-auto w-full" /> : <span className="block aspect-[4/3]" />;
@@ -121,8 +79,6 @@ function ReviewOutput({
 }) {
   const l = useMemo(() => studioLanguage(locale), [locale]);
   const [reference, setReference] = useState<StyleGalleryImageRef[]>([]);
-  const [loaded, setPreview] = useState<{ id: string; blob: Blob; url: string }>();
-  const preview = loaded && loaded.id === row?.id ? loaded : undefined;
   const [token, setToken] = useState(getStyleGalleryManagementToken);
   const [error, setError] = useState(''),
     [busy, setBusy] = useState(false),
@@ -141,37 +97,16 @@ function ReviewOutput({
     credential,
     url: row && slug ? `${base(slug)}?preview=${row.job.id}&index=${row.index}&thumb=fit` : undefined,
   });
+  const original = useStudioOriginal(
+    slug && id && index !== undefined ? `${base(slug)}?preview=${id}&index=${index}&reload=${retry}` : undefined,
+    platform,
+    credential,
+  );
+  const preview = original?.image;
+  const message = error || (original?.failed ? l('原图暂时无法读取。', '原画を読み込めません。', 'Original unavailable.') : '');
   useEffect(() => {
-    const ctrl = new AbortController();
-    let objectUrl = '';
     setError('');
-    setPreview(undefined);
-    if (!id || !slug || index === undefined || !platform || !rowId) return;
-    void studioRequest(
-      `${base(slug)}?preview=${id}&index=${index}&reload=${retry}`,
-      platform,
-      credential,
-      undefined,
-      ctrl.signal,
-    )
-      .then((r) => r.blob())
-      .then(async (blob) => {
-        if (ctrl.signal.aborted) return;
-        objectUrl = URL.createObjectURL(blob);
-        const image = new Image();
-        image.src = objectUrl;
-        await image.decode();
-        if (ctrl.signal.aborted) return;
-        setPreview({ id: rowId, blob, url: objectUrl });
-      })
-      .catch(() => {
-        if (!ctrl.signal.aborted) setError(l('原图暂时无法读取。', '原画を読み込めません。', 'Original unavailable.'));
-      });
-    return () => {
-      ctrl.abort();
-      URL.revokeObjectURL(objectUrl);
-    };
-  }, [slug, id, index, platform, credential, rowId, retry, l]);
+  }, [rowId, retry]);
   useEffect(() => {
     const ctrl = new AbortController();
     setReference([]);
@@ -238,7 +173,7 @@ function ReviewOutput({
           initialHash={job?.settings.platform === 'gpt-image' ? job.settings.referenceHash : undefined}
           placeholder={
             row
-              ? error || l('正在读取原图…', '読み込み中…', 'Loading original…')
+              ? message || l('正在读取原图…', '読み込み中…', 'Loading original…')
               : l('选择下方作品开始对比', '下から作品を選んで比較', 'Select a work below to compare')
           }
         />
@@ -262,28 +197,13 @@ function ReviewOutput({
                 {slug}
                 <RiArrowRightLine />
               </a>
-              <div className="studio-review-recipe">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h2 className="font-semibold">{l('生成提示词与参数', 'プロンプトと設定', 'Prompt and settings')}</h2>
-                  <CopyButton key={row.id} text={job.prompt} className="min-h-11" showLabel />
-                </div>
-                <p className="my-1 text-muted-foreground text-xs">{generationCaption(job.settings)}</p>
-                {thumbnail && !preview && !error && (
+              <GenerationRecipe key={row.id} prompt={job.prompt} settings={job.settings} locale={locale}>
+                {thumbnail && !preview && !message && (
                   <output className="text-muted-foreground text-xs">
                     {l('预览图 · 正在加载原图', 'プレビュー · 原画を読み込み中', 'Preview · Loading original')}
                   </output>
                 )}
-                <section
-                  key={row.id}
-                  // biome-ignore lint/a11y/noNoninteractiveTabindex: Keyboard readers can scroll the remaining space between the title and the publish controls.
-                  tabIndex={0}
-                  aria-label={l('提示词和完整参数', 'プロンプトと全設定', 'Prompt and complete settings')}
-                  className="studio-review-scroll gallery-note-scroll overflow-y-auto overscroll-contain break-words rounded-sm text-sm leading-[1.5] focus-visible:outline-2 focus-visible:outline-primary"
-                >
-                  <p className="whitespace-pre-wrap">{job.prompt}</p>
-                  <GenerationDetails settings={job.settings} locale={locale} inline />
-                </section>
-              </div>
+              </GenerationRecipe>
               {row.group === 'pending' && (
                 <form
                   className="studio-review-actions flex flex-wrap items-end gap-2"
@@ -322,9 +242,9 @@ function ReviewOutput({
               )}
             </>
           )}
-          {error && (
+          {message && (
             <p role="alert">
-              {error}{' '}
+              {message}{' '}
               {!preview && (
                 <button type="button" className="underline" onClick={() => setRetry((n) => n + 1)}>
                   {l('重试', '再試行', 'Retry')}
