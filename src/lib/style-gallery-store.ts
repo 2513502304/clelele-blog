@@ -423,6 +423,16 @@ export async function getStyleGalleryVisualIndex(options: { fresh?: boolean } = 
 export function mutateStyleGalleryVisualIndex(
   transform: (current: StyleGalleryVisualIndex) => StyleGalleryVisualIndex,
 ): Promise<StyleGalleryVisualIndex> {
+  return mutateVisualIndexSnapshot(transform).then((snapshot) => snapshot.value);
+}
+
+/** Return the ETag of the exact visual bytes observed or committed, for the repair checkpoint. */
+export function mutateVisualIndexSnapshot(
+  transform: (
+    current: StyleGalleryVisualIndex,
+    etag: string | null,
+  ) => StyleGalleryVisualIndex | Promise<StyleGalleryVisualIndex>,
+) {
   const operation = async () => {
     for (let attempt = 1; attempt <= 6; attempt += 1) {
       // Even an expired snapshot is safe for an optimistic write: disagreement forces a fresh read and replay.
@@ -436,7 +446,14 @@ export function mutateStyleGalleryVisualIndex(
           ? styleGalleryVisualIndexSchema.parse(JSON.parse(snapshot.text))
           : createEmptyStyleGalleryVisualIndex();
       if (!cached && snapshot.text && !snapshot.etag) throw new Error('HF did not return an ETag for the visual index.');
-      const next = styleGalleryVisualIndexSchema.parse(transform(current));
+      const transformed = await transform(current, snapshot.etag);
+      if (transformed === current && snapshot.etag) {
+        // A stale local no-op must replay just like a failed conditional write.
+        if (!cached || (await getStyleGalleryObjectEtag(STYLE_GALLERY_VISUAL_INDEX_KEY)) === snapshot.etag)
+          return { value: current, etag: snapshot.etag };
+        continue;
+      }
+      const next = styleGalleryVisualIndexSchema.parse(transformed);
       // 视觉索引包含定长向量，缩进只会增加 HF 传输与冷实例解析成本，不提供运行时价值。
       const body = new TextEncoder().encode(JSON.stringify(next));
       try {
@@ -447,7 +464,7 @@ export function mutateStyleGalleryVisualIndex(
           snapshot.etag ? { ifMatch: snapshot.etag } : { ifNoneMatch: '*' },
         );
         visualIndexCache = { value: next, etag, expiresAt: Date.now() + CACHE_TTL_MS };
-        return next;
+        return { value: next, etag };
       } catch (error) {
         if (!(error instanceof StyleGalleryObjectConflictError) || attempt === 6) throw error;
         visualIndexCache = null;
