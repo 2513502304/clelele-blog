@@ -22,9 +22,12 @@ if (!viewer) {
 if (viewer.id !== getSiteAdminGitHubId()) {
   return Astro.redirect('/404');
 }
+Astro.response.headers.set('Cache-Control', 'private, no-store');
+Astro.response.headers.set('X-Robots-Tag', 'noindex, nofollow');
 ---
 
 <Layout title={`Hpoi 缓存管理 | ${siteConfig.title}`} description="刷新博客使用的 Hpoi 收藏数据缓存">
+  <meta slot="head" name="robots" content="noindex,nofollow" />
   <TwoColumnLayout>
     <Cover slot="cover" title="Hpoi 缓存管理" />
     <HomeSider slot="sider" />
