@@ -100,6 +100,22 @@ it('publishes isolated groups atomically, replays concurrent changes, and preser
   assert.deepEqual((await getStyleGalleryExampleIndex()).groups, [b2, a2]);
   assert.equal(paths.filter((key) => key === STYLE_GALLERY_EXAMPLE_INDEX_KEY).length, 2);
   assert.equal(new Set(paths.filter((key) => key !== STYLE_GALLERY_EXAMPLE_INDEX_KEY)).size, 1);
+  // A rejected catalog write may leave an immutable pack, never a visible manifest change.
+  const rootBefore = objects.get(STYLE_GALLERY_EXAMPLE_INDEX_KEY);
+  paths.length = 0;
+  await assert.rejects(
+    mutateStyleGalleryExampleIndex(
+      (current) => ({ ...current, groups: [a] }),
+      'source-a',
+      async () => {
+        assert(paths.some((path) => path.endsWith('.json.gz')));
+        throw new Error('catalog conflict');
+      },
+    ),
+    /catalog conflict/,
+  );
+  assert(!paths.includes(STYLE_GALLERY_EXAMPLE_INDEX_KEY));
+  assert.equal(objects.get(STYLE_GALLERY_EXAMPLE_INDEX_KEY), rootBefore);
   const endpoint = (auth: boolean) =>
     GET({
       params: { slug: 'source-a' },

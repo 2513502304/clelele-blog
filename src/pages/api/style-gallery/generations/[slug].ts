@@ -35,7 +35,7 @@ import { getOverviewSnapshot } from '@lib/style-gallery-overview-snapshot';
 import { getStyleGalleryPlatform } from '@lib/style-gallery-platforms';
 import { generationExampleId, visibleGenerationHistory } from '@lib/style-gallery-published-history';
 import { forgetReviewedOriginal, readReviewedOriginal, streamReviewedOriginal } from '@lib/style-gallery-reviewed-original';
-import { getStoredStyleGalleryItem } from '@lib/style-gallery-store';
+import { getStoredStyleGalleryItem, getStyleGalleryCatalog } from '@lib/style-gallery-store';
 import { findAccountWork, rememberAccountWork } from '@lib/style-gallery-studio-account';
 import { rememberStudioSource, studioOwner } from '@lib/style-gallery-studio-owner';
 import { scheduleExampleVisualRepair } from '@lib/style-gallery-visual-repair';
@@ -249,6 +249,11 @@ export const GET = privateRoute(async ({ scope, slug }, request) => {
   });
   if (!response.ok) throw new Error('Missing image.');
   const pending = !publishedOutputs(job).includes(index);
+  if (pending) {
+    // Download the catalog alongside the private proof. A save on any instance still
+    // validates its own ETag and falls back to a cold read when the hint is unavailable.
+    waitUntil(getStyleGalleryCatalog({ revalidate: true }).catch(() => undefined));
+  }
   const body = pending ? streamReviewedOriginal(draftImageKey(scope, job.id, index), response) : response.body;
   return new Response(body, {
     headers: { ...headers, 'content-type': response.headers.get('content-type') ?? 'application/octet-stream' },
