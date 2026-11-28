@@ -24,6 +24,16 @@ export interface OverviewPayload {
   cards: Card[];
 }
 
+export interface OverviewPage {
+  revision: string;
+  total: number;
+  dates: string[];
+  slugs: string[];
+  full: boolean;
+  next: number | null;
+  payload: OverviewPayload;
+}
+
 /** Preserve the global sort order while transmitting parent metadata once. Recipes are fetched when opened. */
 export function packOverview(examples: Example[]): OverviewPayload {
   const sources: Source[] = [];

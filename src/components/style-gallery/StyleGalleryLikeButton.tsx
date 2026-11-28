@@ -35,7 +35,9 @@ export interface StyleGalleryLikesController {
  * 避免每张图片各发一个请求或重复下载公开计数。
  */
 export function useStyleGalleryLikes(initialCounts: Record<string, number>): StyleGalleryLikesController {
-  const [counts, setCounts] = useState(initialCounts);
+  // Every page supplies its own baseline. Retain overrides only for votes made in this reader.
+  const [overrides, setOverrides] = useState<Record<string, number>>({});
+  const counts = useMemo(() => ({ ...initialCounts, ...overrides }), [initialCounts, overrides]);
   const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
   const [viewer, setViewer] = useState<StyleGalleryViewer | null>(null);
@@ -95,6 +97,10 @@ export function useStyleGalleryLikes(initialCounts: Record<string, number>): Sty
     }
     if (pendingIdsRef.current.has(exampleId)) return null;
 
+    function updateCount(count: number) {
+      countsRef.current = { ...countsRef.current, [exampleId]: count };
+      setOverrides((current) => ({ ...current, [exampleId]: count }));
+    }
     const wasLiked = likedIdsRef.current.has(exampleId);
     const nextLiked = !wasLiked;
     const previousCount = countsRef.current[exampleId] ?? 0;
@@ -102,10 +108,10 @@ export function useStyleGalleryLikes(initialCounts: Record<string, number>): Sty
     pendingIdsRef.current = new Set(pendingIdsRef.current).add(exampleId);
     likedIdsRef.current = new Set(likedIdsRef.current);
     nextLiked ? likedIdsRef.current.add(exampleId) : likedIdsRef.current.delete(exampleId);
-    countsRef.current = { ...countsRef.current, [exampleId]: optimisticCount };
+    updateCount(optimisticCount);
     setPendingIds(pendingIdsRef.current);
     setLikedIds(likedIdsRef.current);
-    setCounts(countsRef.current);
+
     updateImageLightboxLike(exampleId, { liked: nextLiked, likeCount: optimisticCount, pending: true });
 
     try {
@@ -122,19 +128,19 @@ export function useStyleGalleryLikes(initialCounts: Record<string, number>): Sty
       }
       if (!response.ok) throw new Error(await response.text());
       const data = (await response.json()) as ImageLightboxLikeMutationResult;
-      countsRef.current = { ...countsRef.current, [exampleId]: data.likeCount };
+      updateCount(data.likeCount);
       likedIdsRef.current = new Set(likedIdsRef.current);
       data.liked ? likedIdsRef.current.add(exampleId) : likedIdsRef.current.delete(exampleId);
-      setCounts(countsRef.current);
+
       setLikedIds(likedIdsRef.current);
       updateImageLightboxLike(exampleId, { liked: data.liked, likeCount: data.likeCount, pending: false });
       return data;
     } catch (error) {
       console.error('[style-gallery] Failed to update an example like.', error);
-      countsRef.current = { ...countsRef.current, [exampleId]: previousCount };
+      updateCount(previousCount);
       likedIdsRef.current = new Set(likedIdsRef.current);
       wasLiked ? likedIdsRef.current.add(exampleId) : likedIdsRef.current.delete(exampleId);
-      setCounts(countsRef.current);
+
       setLikedIds(likedIdsRef.current);
       updateImageLightboxLike(exampleId, { liked: wasLiked, likeCount: previousCount, pending: false });
       return { liked: wasLiked, likeCount: previousCount };
