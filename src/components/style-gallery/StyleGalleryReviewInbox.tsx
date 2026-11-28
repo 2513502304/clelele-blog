@@ -23,6 +23,7 @@ import { CopyButton } from '../markdown/shared/CopyButton';
 import { DiscardOutputAction } from './DiscardOutputAction';
 import { GenerationDetails, studioLanguage } from './StyleGalleryGenerationFields';
 import { GenerationViewer } from './StyleGalleryGenerationViewer';
+import { StyleGalleryExampleNote } from './StyleGalleryExampleNote';
 import StyleGalleryGrid from './StyleGalleryGrid';
 import './gallery-generator.css';
 
@@ -519,6 +520,10 @@ function Inbox({ keys, locale, gallery }: { keys: Record<GenerationPlatform, str
     // so a slow provider is never mistaken for a removed output.
     if (!busy && !failed && selected && !chosen) select(active[0]?.id ?? '');
   }, [busy, failed, selected, chosen, active]);
+  function openRow(row: Row) {
+    select(row.id);
+    requestAnimationFrame(() => document.querySelector('[data-inbox-reader]')?.scrollIntoView({ block: 'start' }));
+  }
   if (!busy && !failed && !rows.length && platforms.every((p) => !keys[p]))
     return (
       <section className="space-y-3 rounded-xl border border-border bg-card p-5">
@@ -621,12 +626,7 @@ function Inbox({ keys, locale, gallery }: { keys: Record<GenerationPlatform, str
                 className="block w-full overflow-hidden bg-muted"
                 aria-pressed={row.id === selected}
                 aria-label={`${l('审图', '画像を確認', 'Review image')} ${row.slug} #${row.index + 1}`}
-                onClick={() => {
-                  select(row.id);
-                  requestAnimationFrame(() =>
-                    document.querySelector('[data-inbox-reader]')?.scrollIntoView({ block: 'start' }),
-                  );
-                }}
+                onClick={() => openRow(row)}
               >
                 <PrivateImage
                   pool={thumbs}
@@ -656,7 +656,11 @@ function Inbox({ keys, locale, gallery }: { keys: Record<GenerationPlatform, str
                   {l('重新读取任务', 'タスクを再確認', 'Check task')}
                 </button>
               )}
-              <p className="line-clamp-2 break-words text-muted-foreground text-sm">{row.job.prompt}</p>
+              <StyleGalleryExampleNote
+                note={row.job.prompt}
+                locale={locale}
+                onOpen={row.index >= 0 ? () => openRow(row) : undefined}
+              />
               <a className="inline-flex min-h-9 items-center gap-1 text-primary text-xs" href={`${gallery}/${row.slug}`}>
                 {row.slug}
                 <RiArrowRightLine />
