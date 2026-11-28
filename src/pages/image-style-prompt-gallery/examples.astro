@@ -7,6 +7,7 @@ import { CONTENT_PADDING } from '@constants/layout';
 import { siteConfig } from '@constants/site-config';
 import Layout from '@layouts/Layout.astro';
 import TwoColumnLayout from '@layouts/TwoColumnLayout.astro';
+import { overviewPage } from '@lib/style-gallery-overview-pages';
 import { getOverviewSnapshot } from '@lib/style-gallery-overview-snapshot';
 import { Icon } from 'astro-icon/components';
 import { getLocaleFromUrl, localizedPath, t } from '@/i18n';
@@ -20,6 +21,9 @@ const locale = getLocaleFromUrl(Astro.url.pathname);
 const started = performance.now();
 const { payload, source } = await getOverviewSnapshot();
 Astro.response.headers.append('Server-Timing', `gallery;dur=${(performance.now() - started).toFixed(1)};desc="${source}"`);
+// Direct filtered links have the complete matching universe on the first render.
+const scoped = ['q', 'tag', 'from', 'to', 'platform', 'dir', 'sort'].some(key => Astro.url.searchParams.has(key)) || Astro.url.searchParams.get('grouped') === 'false';
+const initial = overviewPage(payload, scoped ? 'all' : 0);
 const galleryBasePath = localizedPath('/image-style-prompt-gallery', locale);
 const title = `${t(locale, 'gallery.subGallery')} | ${t(locale, 'gallery.title')} | ${siteConfig.title}`;
 const overviewLabels = {
@@ -69,7 +73,7 @@ setStyleGalleryPublicCacheHeaders(Astro.response.headers, [STYLE_GALLERY_LIST_CA
       </header>
       <StyleGalleryExamplesOverview
         client:load
-        payload={payload}
+        initial={initial}
         galleryBasePath={galleryBasePath}
         locale={locale}
         labels={overviewLabels}

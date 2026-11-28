@@ -19,7 +19,7 @@ import {
 } from '@lib/style-gallery-lightbox-actions';
 import { STYLE_GALLERY_EXAMPLE_LIGHTBOX_PREFETCH } from '@lib/style-gallery-lightbox-prefetch';
 import { getStyleGalleryManagementToken, STYLE_GALLERY_TOKEN_CHANGED_EVENT } from '@lib/style-gallery-management-token';
-import { type OverviewPayload, unpackOverview } from '@lib/style-gallery-overview-payload';
+import type { OverviewPage } from '@lib/style-gallery-overview-payload';
 import { STYLE_GALLERY_PLATFORMS } from '@lib/style-gallery-platforms';
 import { loadStyleGalleryDefaultPrompt, loadStyleGalleryPromptChoices } from '@lib/style-gallery-prompt-client';
 import {
@@ -50,9 +50,10 @@ import StyleGallerySharedImage from './StyleGallerySharedImage';
 import StyleGallerySourceStack from './StyleGallerySourceStack';
 import { useGalleryTagSelection } from './StyleGalleryTagSelection';
 import { GalleryTagEditor, GalleryTagFilter, GalleryTagPills } from './StyleGalleryTags';
+import { useOverviewPages } from './useOverviewPages';
 
 interface Props {
-  payload: OverviewPayload;
+  initial: OverviewPage;
   galleryBasePath: string;
   locale: string;
   labels: StyleGalleryExamplesOverviewLabels;
@@ -96,7 +97,7 @@ function reportUrlStateError(error: unknown) {
  * 因此慢图片只会在预留区域内补齐，不会把已经显示的卡片重新排位。
  */
 function StyleGalleryExamplesOverviewContent({
-  payload,
+  initial,
   galleryBasePath,
   locale,
   labels,
@@ -112,7 +113,7 @@ function StyleGalleryExamplesOverviewContent({
     : locale.startsWith('ja')
       ? '同じ元画像をまとめる'
       : 'Group by source';
-  const [examples, setExamples] = useState(() => unpackOverview(payload));
+  const { examples, page, failed: pageFailed, load, remove, removed } = useOverviewPages(initial);
   // 不放进 state：加载完成只影响下一次打开 Lightbox，不应让数千张卡片重新渲染。
   const loadedExampleSources = useRef(new Set<string>());
   const [uploadToken, setUploadToken] = useState('');
@@ -132,6 +133,19 @@ function StyleGalleryExamplesOverviewContent({
   const counts = useMemo(() => Object.fromEntries(examples.map((example) => [example.id, example.likeCount])), [examples]);
   const likes = useStyleGalleryLikes(counts);
   const [visualMatches, setVisualMatches] = useState<Set<string> | null>(null);
+  const needsAll =
+    !grouped ||
+    Boolean(query.trim() || tag || dateFrom || dateTo || visualMatches) ||
+    platform !== 'all' ||
+    sortKey !== 'default' ||
+    sortDirection !== 'asc';
+  const waitingForAll = needsAll && !page.full;
+  useEffect(() => {
+    if (waitingForAll) void load('all');
+  }, [waitingForAll, load]);
+  const nextPage = useCallback(() => {
+    if (page.next !== null) void load(page.next);
+  }, [load, page.next]);
   const [visualRevision, setVisualRevision] = useState(0);
   const term = tagQuery ? '' : query.trim().toLowerCase();
   const [matches, setMatches] = useState<{ term: string; sources: Set<string>; ids: Set<string> } | null>(null);
@@ -163,12 +177,17 @@ function StyleGalleryExamplesOverviewContent({
     [locale],
   );
   const availableDateKeys = useMemo(
-    () => [
-      ...new Set(
-        examples.map((example) => getStyleGalleryDateKey(example.uploadedAt)).filter((date): date is string => date !== null),
-      ),
-    ],
-    [examples],
+    () =>
+      !page.full
+        ? page.dates
+        : [
+            ...new Set(
+              examples
+                .map((example) => getStyleGalleryDateKey(example.uploadedAt))
+                .filter((date): date is string => date !== null),
+            ),
+          ],
+    [examples, page.full, page.dates],
   );
   const matchesDateRange = useMemo(
     () => createStyleGalleryDateRangeMatcher({ from: dateFrom, to: dateTo }),
@@ -229,7 +248,8 @@ function StyleGalleryExamplesOverviewContent({
       sorted.sort((a, b) => {
         if (sortKey === 'id') return a.id.localeCompare(b.id);
         if (sortKey === 'examples') return a.sourceExampleCount - b.sourceExampleCount || a.id.localeCompare(b.id);
-        if (sortKey === 'likes') return (likeSortCounts[a.id] ?? 0) - (likeSortCounts[b.id] ?? 0) || a.id.localeCompare(b.id);
+        if (sortKey === 'likes')
+          return (likeSortCounts[a.id] ?? a.likeCount) - (likeSortCounts[b.id] ?? b.likeCount) || a.id.localeCompare(b.id);
         return a.uploadedAt.localeCompare(b.uploadedAt) || a.id.localeCompare(b.id);
       });
     }
@@ -249,16 +269,17 @@ function StyleGalleryExamplesOverviewContent({
     visualMatches,
   ]);
   const hasPendingLikeSort =
-    sortKey === 'likes' && examples.some((example) => (likeSortCounts[example.id] ?? 0) !== likes.getCount(example.id));
+    sortKey === 'likes' &&
+    examples.some((example) => (likeSortCounts[example.id] ?? example.likeCount) !== likes.getCount(example.id));
   const deleteOverviewExample = useCallback(
     async (sourceSlug: string, exampleId: string) => {
       const token = uploadToken.trim();
       if (!uploadsEnabled || !token) return false;
       await deleteStyleGalleryExample(sourceSlug, exampleId, token);
-      setExamples((current) => current.filter((example) => example.id !== exampleId));
+      remove(exampleId);
       return true;
     },
-    [uploadToken, uploadsEnabled],
+    [uploadToken, uploadsEnabled, remove],
   );
   const sourceCards = useMemo(() => getStyleGallerySourceCards(filtered, grouped), [filtered, grouped]);
   function rememberSourceThumbnail(slug: string, image: HTMLImageElement | null) {
@@ -339,6 +360,7 @@ function StyleGalleryExamplesOverviewContent({
   const { hasMore, loadMore, loadMoreRef, revealThrough, visibleItems } = useProgressiveList(sourceCards, {
     initialCount: INITIAL_EXAMPLE_COUNT,
     batchSize: EXAMPLE_BATCH_SIZE,
+    requestNextPage: !page.full && !needsAll && page.next !== null && !pageFailed ? nextPage : undefined,
     resetKey: `${tag}\u0000${platform}\u0000${query.trim().toLowerCase()}\u0000${dateFrom}\u0000${dateTo}\u0000${sortKey}\u0000${sortDirection}\u0000${visualRevision}`,
   });
   const originalPosition = useGalleryOriginalPosition({
@@ -366,11 +388,12 @@ function StyleGalleryExamplesOverviewContent({
   }
 
   const tagSelection = useGalleryTagSelection(
-    filtered.map((item) => item.sourceSlug),
+    !page.full && !needsAll ? page.slugs : filtered.map((item) => item.sourceSlug),
     locale,
-    (Boolean(query.trim()) &&
-      ((!tagQuery && (searchIndexStatus === 'idle' || searchIndexStatus === 'loading')) ||
-        (tagQuery && tagStatus !== 'ready'))) ||
+    waitingForAll ||
+      (Boolean(query.trim()) &&
+        ((!tagQuery && (searchIndexStatus === 'idle' || searchIndexStatus === 'loading')) ||
+          (tagQuery && tagStatus !== 'ready'))) ||
       (Boolean(tag) && tagStatus !== 'ready'),
   );
 
@@ -473,7 +496,8 @@ function StyleGalleryExamplesOverviewContent({
               </span>
             </button>
             <span className="shrink-0 text-muted-foreground text-sm tabular-nums">
-              {filtered.length} / {examples.length}
+              {waitingForAll ? '…' : !page.full ? page.total - removed.size : filtered.length} /{' '}
+              {page.full ? examples.length : page.total - removed.size}
             </span>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -522,7 +546,20 @@ function StyleGalleryExamplesOverviewContent({
       </div>
 
       {tagSelection.toolbar}
-      {filtered.length ? (
+      {pageFailed && (
+        <button
+          type="button"
+          className="rounded-md border border-border px-3 py-2"
+          onClick={() => void load(needsAll ? 'all' : (page.next ?? 'all'))}
+        >
+          {locale.startsWith('zh') ? '加载失败，重试' : locale.startsWith('ja') ? '再読み込み' : 'Retry loading'}
+        </button>
+      )}
+      {waitingForAll ? (
+        <div role="status" aria-busy="true" className="flex min-h-52 items-center justify-center text-muted-foreground">
+          <Icon icon="ri:loader-4-line" className="size-5 motion-safe:animate-spin" aria-label={labels.loadMore} />
+        </div>
+      ) : filtered.length ? (
         <>
           <StyleGalleryGrid masonry={masonry}>
             {visibleItems.map(({ example, stack }, index) => (
