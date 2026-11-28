@@ -3,6 +3,7 @@ import { Icon } from '@iconify/react';
 import { createHpoiImageProxyUrl } from '@lib/hpoi/image';
 import { stateColor } from '@lib/hpoi/releases';
 import { lazy, Suspense, useState } from 'react';
+import { ErrorBoundary } from 'react-error-boundary';
 import { InlineSpinner } from '@/components/ui/InlineSpinner';
 import type { TranslationKey } from '@/i18n/types';
 import type { HpoiCollectionItem, HpoiCollectionState } from '@/types/hpoi';
@@ -134,9 +135,20 @@ export function HpoiCard({ item, state, owner = false, masonry = false, ratingLo
         <Icon icon={expanded ? 'ri:arrow-up-s-line' : 'ri:arrow-down-s-line'} className="ml-auto" aria-hidden="true" />
       </button>
       {expanded && (
-        <Suspense fallback={<InlineSpinner label={t('common.loading')} />}>
-          <PurchaseDetail figureId={item.id} />
-        </Suspense>
+        <ErrorBoundary
+          fallback={
+            <p role="alert" className="rounded-lg bg-muted/40 p-3 text-sm">
+              {t('hpoi.purchaseError')}{' '}
+              <button type="button" onClick={() => window.location.reload()} className="min-h-11 underline underline-offset-4">
+                {t('hpoi.purchaseReload')}
+              </button>
+            </p>
+          }
+        >
+          <Suspense fallback={<InlineSpinner label={t('common.loading')} />}>
+            <PurchaseDetail figureId={item.id} />
+          </Suspense>
+        </ErrorBoundary>
       )}
     </div>
   );

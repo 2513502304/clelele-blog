@@ -632,6 +632,7 @@ export const uiStrings: UIStrings = {
   'hpoi.pendingPayment': 'Pending Payment',
   'hpoi.noImage': 'No image',
   'hpoi.search': 'Search all figures by name or Hpoi ID',
+  'hpoi.purchaseReload': 'Reload page',
   'hpoi.purchaseDetails': 'My purchase record',
   'hpoi.purchaseDate': 'Date acquired',
   'hpoi.purchaseAmount': 'Amount paid',

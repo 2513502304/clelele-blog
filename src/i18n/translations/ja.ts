@@ -632,6 +632,7 @@ export const uiStrings: UIStrings = {
   'hpoi.pendingPayment': '支払い待ち',
   'hpoi.noImage': '画像がありません',
   'hpoi.search': '全コレクションを名前・Hpoi ID で検索',
+  'hpoi.purchaseReload': 'ページを再読み込み',
   'hpoi.purchaseDetails': '自分の購入記録',
   'hpoi.purchaseDate': '購入日',
   'hpoi.purchaseAmount': '購入金額',

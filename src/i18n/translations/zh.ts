@@ -627,6 +627,7 @@ export const uiStrings = {
   'hpoi.pendingPayment': '待补款',
   'hpoi.noImage': '暂无图片',
   'hpoi.search': '搜索所有收藏的名称或 Hpoi ID',
+  'hpoi.purchaseReload': '重新载入页面',
   'hpoi.purchaseDetails': '我的入手记录',
   'hpoi.purchaseDate': '入手日期',
   'hpoi.purchaseAmount': '入手金额',

@@ -181,9 +181,7 @@ test('without a sync session the owner can still read a saved snapshot and use t
   expect(posts).toBe(0);
 });
 
-test('owner opens a figure in place, retries a failed read and can close without losing the original link', async ({
-  page,
-}) => {
+async function collectionSetup(page: Page) {
   await login(page);
   const figure = { id: '7', title: '合成测试藏品', detailUrl: 'https://www.hpoi.net/hobby/7', score: '4.5' };
   await page.route(/\/api\/hpoi\?/, (route) =>
@@ -200,6 +198,25 @@ test('owner opens a figure in place, retries a failed read and can close without
       },
     }),
   );
+  return figure;
+}
+
+test('a failed private module leaves the public collection and owner toggle usable', async ({ page }) => {
+  await collectionSetup(page);
+  await page.route('**/HpoiPurchaseDetail.tsx*', (r) => r.abort());
+  await page.goto('/hpoi');
+  const open = page.getByRole('button', { name: '我的入手记录' });
+  await open.click();
+  await expect(page.getByRole('button', { name: '重新载入页面' })).toBeVisible();
+  await expect(page.getByRole('link', { name: /合成测试藏品/ })).toBeVisible();
+  await open.click();
+  await expect(open).toHaveAttribute('aria-expanded', 'false');
+});
+
+test('owner opens a figure in place, retries a failed read and can close without losing the original link', async ({
+  page,
+}) => {
+  const figure = await collectionSetup(page);
   let reads = 0;
   await page.route('**/api/hpoi/purchases?figureId=7', (route) =>
     ++reads === 1 ? route.fulfill({ status: 503 }) : route.fulfill({ json: { records: oldSnapshot.records } }),
