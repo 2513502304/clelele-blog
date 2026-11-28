@@ -1,4 +1,4 @@
-export type StyleGalleryClientErrorStatus = 400 | 404 | 409;
+export type StyleGalleryClientErrorStatus = 400 | 404 | 409 | 410;
 
 /** 标识可安全暴露给客户端的预期请求错误，避免将参数问题统一伪装成 500。 */
 export class StyleGalleryClientError extends Error {
