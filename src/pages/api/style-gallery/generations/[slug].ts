@@ -35,10 +35,10 @@ import { getOverviewSnapshot } from '@lib/style-gallery-overview-snapshot';
 import { getStyleGalleryPlatform } from '@lib/style-gallery-platforms';
 import { generationExampleId, visibleGenerationHistory } from '@lib/style-gallery-published-history';
 import { forgetReviewedOriginal, readReviewedOriginal, streamReviewedOriginal } from '@lib/style-gallery-reviewed-original';
-import { getStoredStyleGalleryItem, getStyleGalleryVisualIndex, mutateStyleGalleryVisualIndex } from '@lib/style-gallery-store';
+import { getStoredStyleGalleryItem } from '@lib/style-gallery-store';
 import { findAccountWork, rememberAccountWork } from '@lib/style-gallery-studio-account';
 import { rememberStudioSource, studioOwner } from '@lib/style-gallery-studio-owner';
-import { upsertStyleGalleryVisualRecords } from '@lib/style-gallery-visual-index';
+import { scheduleExampleVisualRepair } from '@lib/style-gallery-visual-repair';
 import { updateStyleGalleryItemExamples } from '@lib/style-gallery-write';
 import { waitUntil } from '@vercel/functions';
 import type { APIContext } from 'astro';
@@ -58,21 +58,6 @@ async function visibleJob(slug: string, job: GenerationJob) {
   const [visible] = await visibleGenerationHistory(slug, [job]);
   if (!visible) throw new StyleGalleryClientError('This published output was removed.', 410);
   return visible;
-}
-
-let publicationWarmup: Promise<void> | undefined;
-/** Share read-only preparation across previews. An interrupted warmup falls back to the normal confirmation path. */
-function warmPublication() {
-  if (publicationWarmup) return publicationWarmup;
-  publicationWarmup = Promise.allSettled([
-    getStyleGalleryVisualIndex(),
-    import('@lib/style-gallery-visual-embedding').then((module) => module.warmStyleGalleryVisualModel()),
-  ])
-    .then(() => undefined)
-    .finally(() => {
-      publicationWarmup = undefined;
-    });
-  return publicationWarmup;
 }
 
 /** Only the persisted server-side prompt, model and original bytes may be published. */
@@ -103,8 +88,6 @@ async function publish(slug: string, scope: string, job: GenerationJob, index: n
   if (!bytes) throw new Error('Missing draft.');
   const hash = createHash('sha256').update(bytes).digest('hex');
   if (hash !== reviewedHash) throw new StyleGalleryClientError('Preview does not match original.', 409);
-  // The native gallery runtime has the model weights. Phones only digest the reviewed bytes.
-  const { computeStyleGalleryVisualFeatureFromBytes } = await import('@lib/style-gallery-visual-feature-node');
   const { format, width, height, autoOrient } = await sharp(bytes).metadata();
   if (!width || !height || !['png', 'jpeg', 'webp'].includes(format)) throw new Error('Invalid original.');
   const platform = getStyleGalleryPlatform(job.settings.platform);
@@ -117,14 +100,9 @@ async function publish(slug: string, scope: string, job: GenerationJob, index: n
     dimensions: autoOrient ?? { width, height },
     uploadedAt: job.created,
   });
-  const preparation = warmPublication();
   const attempt = await decideOutput(scope, job.id, index, 'publish');
-  // Content-addressed assets are independent. Commit metadata only after all three are ready.
-  const featureReady = Promise.resolve(draft?.feature).then(
-    (prepared) => prepared ?? computeStyleGalleryVisualFeatureFromBytes(bytes, hash),
-  );
-  const [feature] = await Promise.all([
-    featureReady,
+  // The durable image and thumbnail must both exist before publishing their metadata.
+  await Promise.all([
     putStyleGalleryObject(getStyleGalleryExampleObjectKey(example), bytes, `image/${format}`),
     ensureStyleGalleryExampleThumbnail(example.src, bytes),
   ]).catch(async (error) => {
@@ -159,22 +137,17 @@ async function publish(slug: string, scope: string, job: GenerationJob, index: n
     throw error;
   });
   finishStage('metadata');
-  // The same stable example ID repairs an interrupted visual-index write on confirmation retry.
-  await preparation;
-  await mutateStyleGalleryVisualIndex((index) =>
-    upsertStyleGalleryVisualRecords(index, [{ feature, kind: 'example', sourceSlug: slug, imageId: example.id }]),
-  );
-  finishStage('visual');
   await noteOutput(scope, job.id, index, true);
   forgetReviewedOriginal(key);
   finishStage('receipt');
+  scheduleExampleVisualRepair();
   // The public card projection can be rebuilt from committed data independently of this save.
   waitUntil(
     getOverviewSnapshot()
       .then(() => undefined)
       .catch(() => console.warn('[style-gallery] Overview refresh deferred.')),
   );
-  const response = json({ examples: updated.examples });
+  const response = json({ examples: updated.examples, visualIndexPending: true });
   response.headers.set('Server-Timing', timings.join(', '));
   return response;
 }
@@ -272,13 +245,7 @@ export const GET = privateRoute(async ({ scope, slug }, request) => {
   });
   if (!response.ok) throw new Error('Missing image.');
   const pending = !publishedOutputs(job).includes(index);
-  if (pending) waitUntil(warmPublication());
-  const body = pending
-    ? streamReviewedOriginal(draftImageKey(scope, job.id, index), response, async (bytes) => {
-        const { computeStyleGalleryVisualFeatureFromBytes } = await import('@lib/style-gallery-visual-feature-node');
-        return computeStyleGalleryVisualFeatureFromBytes(bytes, createHash('sha256').update(bytes).digest('hex'));
-      })
-    : response.body;
+  const body = pending ? streamReviewedOriginal(draftImageKey(scope, job.id, index), response) : response.body;
   return new Response(body, {
     headers: { ...headers, 'content-type': response.headers.get('content-type') ?? 'application/octet-stream' },
   });

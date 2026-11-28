@@ -90,6 +90,23 @@ async function authorized(request, expected) {
 }
 
 export default {
+  // A browser, process or whole container may disappear immediately after a successful save.
+  // The public example manifest is the durable outstanding work; the timer only wakes a consumer.
+  async scheduled(_event, env, ctx) {
+    if (env.BLOG_READ_ONLY !== 'false') return;
+    ctx.waitUntil(
+      (async () => {
+        const response = await origin(
+          new Request('https://blog.internal/api/style-gallery/visual-repair', {
+            method: 'POST',
+            headers: { authorization: `Bearer ${env.STYLE_GALLERY_UPLOAD_TOKEN}` },
+          }),
+          env,
+        );
+        if (!response.ok) throw new Error(`Gallery visual repair returned ${response.status}`);
+      })(),
+    );
+  },
   /** The uncached gateway enforces maintenance read-only mode before static or origin work. */
   async fetch(request, env, ctx) {
     const url = new URL(request.url);

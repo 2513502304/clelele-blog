@@ -1,6 +1,4 @@
-import { waitUntil } from '@vercel/functions';
 import { getStyleGalleryObjectBytes, getStyleGalleryObjectEtag } from './hf-s3-presign';
-import type { StyleGalleryVisualFeature } from './style-gallery-visual-types';
 
 const maxBytes = 8 * 1024 * 1024,
   maxEntries = 2,
@@ -10,11 +8,9 @@ type Entry = {
   etag: string;
   timer: ReturnType<typeof setTimeout>;
   expires: number;
-  feature?: Promise<StyleGalleryVisualFeature | undefined>;
 };
 const entries = new Map<string, Entry>();
-let capturing = 0,
-  preparing = false;
+let capturing = 0;
 
 /** Keys include the private owner, source, generation and output index. No public record is produced here. */
 export function forgetReviewedOriginal(key: string) {
@@ -24,11 +20,7 @@ export function forgetReviewedOriginal(key: string) {
 }
 
 /** Tap a fully consumed review response with backpressure. Partial, oversized and unversioned bodies bypass reuse. */
-export function streamReviewedOriginal(
-  key: string,
-  response: Response,
-  prepare?: (bytes: Buffer) => Promise<StyleGalleryVisualFeature>,
-) {
+export function streamReviewedOriginal(key: string, response: Response) {
   const input = response.body,
     etag = response.headers.get('etag'),
     length = Number(response.headers.get('content-length'));
@@ -54,17 +46,6 @@ export function streamReviewedOriginal(
       timer.unref?.();
       const entry: Entry = { bytes: Buffer.concat(chunks, size), etag, timer, expires: Date.now() + maxAge };
       entries.set(key, entry);
-      // At most one speculative inference per container. A failed or skipped attempt is retried on confirmation.
-      if (prepare && !preparing) {
-        preparing = true;
-        entry.feature = Promise.resolve()
-          .then(() => prepare(entry.bytes))
-          .catch(() => undefined)
-          .finally(() => {
-            preparing = false;
-          });
-        waitUntil(entry.feature.then(() => undefined));
-      }
     },
   });
   void input
@@ -83,6 +64,6 @@ export function streamReviewedOriginal(
 export async function readReviewedOriginal(key: string) {
   const entry = entries.get(key);
   if (entry && entry.expires > Date.now() && (await getStyleGalleryObjectEtag(key).catch(() => null)) === entry.etag)
-    return { bytes: entry.bytes, feature: entry.feature, reused: true };
-  return { bytes: await getStyleGalleryObjectBytes(key), feature: undefined, reused: false };
+    return { bytes: entry.bytes, reused: true };
+  return { bytes: await getStyleGalleryObjectBytes(key), reused: false };
 }
