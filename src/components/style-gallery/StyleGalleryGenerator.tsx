@@ -21,6 +21,7 @@ import {
   notifyStudioChange,
   readProviderKey,
   rememberProviderKey,
+  STUDIO_REMOVAL_EVENT,
   studioRequest,
 } from '@lib/style-gallery-studio-client';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -253,6 +254,24 @@ function Editor({
       window.removeEventListener(STYLE_GALLERY_PROMPT_SELECTED_EVENT, select);
     };
   }, [draftKey, requestKey, slug, prompt, platform, loadHistory]);
+  useEffect(() => {
+    if (!token) return;
+    const ctrl = new AbortController();
+    const reload = () => void loadHistory(token, ctrl.signal).catch(() => {});
+    const removed = (event: Event) => {
+      if ((event as CustomEvent<string>).detail === slug) reload();
+    };
+    const storage = (event: StorageEvent) => {
+      if (event.key === 'gallery-generation:changed') reload();
+    };
+    window.addEventListener(STUDIO_REMOVAL_EVENT, removed);
+    window.addEventListener('storage', storage);
+    return () => {
+      ctrl.abort();
+      window.removeEventListener(STUDIO_REMOVAL_EVENT, removed);
+      window.removeEventListener('storage', storage);
+    };
+  }, [loadHistory, slug, token]);
   useEffect(() => {
     if (!hydrated) return;
     try {

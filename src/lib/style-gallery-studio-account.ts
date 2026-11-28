@@ -1,3 +1,4 @@
+import { visibleGenerationHistory } from '@lib/style-gallery-published-history';
 import { getStyleGalleryObjectTextSnapshot, putStyleGalleryObject, StyleGalleryObjectConflictError } from './hf-s3-presign';
 import { mapWithConcurrency } from './map-with-concurrency';
 import { listGenerationJobs, resumeDraftCleanup } from './style-gallery-generation-jobs';
@@ -56,6 +57,6 @@ export async function listAccountSources(viewerId: number) {
   return mapWithConcurrency([...groups], 3, async ([scope, { slug, platform, ids }]) => {
     const jobs = (await listGenerationJobs(scope)).filter((job) => ids.has(job.id));
     resumeDraftCleanup(scope, jobs);
-    return { slug, platform, jobs };
+    return { slug, platform, jobs: await visibleGenerationHistory(slug, jobs) };
   });
 }

@@ -196,14 +196,14 @@ export async function getStyleGalleryPromptSearchIndexSnapshot(): Promise<{
 /** 按需读取单个详情 item，不会为列表页预取所有 item 文件。 */
 export async function getStoredStyleGalleryItem(
   slug: string,
-  options: { fresh?: boolean } = {},
+  options: { fresh?: boolean; followRedirect?: boolean } = {},
 ): Promise<StoredStyleGalleryItem | null> {
   return readStoredItem(slug, options, new Set());
 }
 
 async function readStoredItem(
   slug: string,
-  options: { fresh?: boolean },
+  options: { fresh?: boolean; followRedirect?: boolean },
   visited: Set<string>,
 ): Promise<StoredStyleGalleryItem | null> {
   if (visited.has(slug) || visited.size >= 32) throw new Error('Invalid gallery merge redirect chain.');
@@ -218,7 +218,7 @@ async function readStoredItem(
     const parsed = JSON.parse(raw);
     if (typeof parsed.mergedInto === 'string' && /^[a-z0-9-]{1,160}$/i.test(parsed.mergedInto)) {
       // Management reads must not silently edit a different card through a retired slug.
-      if (options.fresh) return null;
+      if (options.fresh && !options.followRedirect) return null;
       return readStoredItem(parsed.mergedInto, options, visited);
     }
     const value = styleGalleryItemSchema.parse(parsed);

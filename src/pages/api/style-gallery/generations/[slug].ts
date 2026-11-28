@@ -33,6 +33,7 @@ import {
 import { getStyleGalleryViewer } from '@lib/style-gallery-github-auth';
 import { getOverviewSnapshot } from '@lib/style-gallery-overview-snapshot';
 import { getStyleGalleryPlatform } from '@lib/style-gallery-platforms';
+import { generationExampleId, visibleGenerationHistory } from '@lib/style-gallery-published-history';
 import { forgetReviewedOriginal, readReviewedOriginal, streamReviewedOriginal } from '@lib/style-gallery-reviewed-original';
 import { getStoredStyleGalleryItem } from '@lib/style-gallery-store';
 import { findAccountWork, rememberAccountWork } from '@lib/style-gallery-studio-account';
@@ -53,6 +54,12 @@ async function findJob(slug: string, id: string) {
   return job;
 }
 
+async function visibleJob(slug: string, job: GenerationJob) {
+  const [visible] = await visibleGenerationHistory(slug, [job]);
+  if (!visible) throw new StyleGalleryClientError('This published output was removed.', 410);
+  return visible;
+}
+
 /** Only the persisted server-side prompt, model and original bytes may be published. */
 async function publish(slug: string, scope: string, job: GenerationJob, index: number, reviewedHash: string) {
   const timings: string[] = [];
@@ -66,11 +73,15 @@ async function publish(slug: string, scope: string, job: GenerationJob, index: n
   const saved = publishedOutputs(job).includes(index);
   const key = draftImageKey(scope, job.id, index);
   const [item, draft] = await Promise.all([
-    getStoredStyleGalleryItem(slug, { fresh: true }),
+    getStoredStyleGalleryItem(slug, { fresh: true, followRedirect: saved }),
     saved ? null : readReviewedOriginal(key),
   ]);
   if (!item) throw new StyleGalleryClientError('Item no longer exists.', 404);
-  if (saved) return json({ examples: item.examples });
+  if (saved) {
+    if (!item.examples.some((example) => example.id === generationExampleId(job.id, index)))
+      throw new StyleGalleryClientError('This published output was removed.', 410);
+    return json({ examples: item.examples });
+  }
   finishStage('draft');
   timings.push(`reviewed;desc="${draft?.reused ? 'reused' : 'storage'}"`);
   const bytes = draft?.bytes;
@@ -83,7 +94,7 @@ async function publish(slug: string, scope: string, job: GenerationJob, index: n
   if (!platform) throw new Error('Invalid platform.');
   const example = createStyleGalleryExample(item.title, platform, hash, format === 'jpeg' ? 'jpg' : format);
   Object.assign(example, {
-    id: index ? `${job.id}-${index + 1}` : job.id,
+    id: generationExampleId(job.id, index),
     generation: job.settings,
     note: job.prompt,
     dimensions: autoOrient ?? { width, height },
@@ -185,12 +196,12 @@ function privateRoute(handle: (access: StudioAccess, request: Request) => Promis
   };
 }
 
-export const GET = privateRoute(async ({ scope }, request) => {
+export const GET = privateRoute(async ({ scope, slug }, request) => {
   const preview = new URL(request.url).searchParams.get('preview');
   if (!preview) {
     const jobs = await listGenerationJobs(scope);
     resumeDraftCleanup(scope, jobs);
-    return json({ jobs });
+    return json({ jobs: await visibleGenerationHistory(slug, jobs) });
   }
   const job = await findJob(scope, z.string().uuid().parse(preview));
   const index = z.coerce
@@ -200,6 +211,11 @@ export const GET = privateRoute(async ({ scope }, request) => {
     .max(3)
     .parse(new URL(request.url).searchParams.get('index') ?? 0);
   if (!availableOutputs(job).includes(index)) return json({ error: 'Preview is not ready.' }, 409);
+  if (publishedOutputs(job).includes(index)) {
+    const item = await getStoredStyleGalleryItem(slug, { fresh: true, followRedirect: true });
+    if (!item?.examples.some((example) => example.id === generationExampleId(job.id, index)))
+      return json({ error: 'This published output was removed.' }, 410);
+  }
   const thumbStyle = new URL(request.url).searchParams.get('thumb');
   if (thumbStyle === '1' || thumbStyle === 'fit') {
     const originalKey = draftImageKey(scope, job.id, index),
@@ -266,7 +282,7 @@ export const POST = privateRoute(async ({ slug, scope, owner, platform, apiKey, 
     const job = await findJob(scope, input.id);
     // Retrying an acknowledged create can repair discovery, but cannot attach somebody else's earlier job.
     if (viewerId && job.reviewAccount === viewerId) await rememberAccountWork(viewerId, { slug, platform, owner, id: job.id });
-    return json({ job }, 202);
+    return json({ job: await visibleJob(slug, job) }, 202);
   }
   if (body?.action === 'confirm' && !isAuthorizedStyleGalleryRequest(request))
     return json({ error: 'Invalid gallery upload token.', code: 'invalid_upload_token' }, 403);
@@ -275,7 +291,7 @@ export const POST = privateRoute(async ({ slug, scope, owner, platform, apiKey, 
     const index = z.number().int().min(0).max(3).parse(body.index);
     if (!job.discarded?.includes(index)) {
       // Older confirmations may have committed the public example before writing their private receipt.
-      const exampleId = index ? `${job.id}-${index + 1}` : job.id;
+      const exampleId = generationExampleId(job.id, index);
       const item = await getStoredStyleGalleryItem(slug, { fresh: true });
       const existing = item?.examples.find(
         (example) =>
@@ -296,7 +312,7 @@ export const POST = privateRoute(async ({ slug, scope, owner, platform, apiKey, 
   }
   if (body.action === 'sync') {
     await recoverGeneration(scope, job, apiKey);
-    return json({ job: await findJob(scope, job.id) });
+    return json({ job: await visibleJob(slug, await findJob(scope, job.id)) });
   }
   if (body.action === 'confirm')
     return publish(
