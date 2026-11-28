@@ -176,7 +176,7 @@ export function GenerationViewer({
     return () => area.removeEventListener('wheel', wheel);
   }, [move]);
   const transform = `translate(${x}px,${y}px) scale(${scale})`;
-  const title = reference || reviewCanvas ? l('对比参考', '参照画像と比較', 'Compare reference') : alt;
+  const title = reference ? l('对比参考', '参照画像と比較', 'Compare reference') : alt;
   return (
     <section
       aria-label={title}
