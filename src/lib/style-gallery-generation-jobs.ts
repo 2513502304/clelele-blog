@@ -24,28 +24,34 @@ const manifest = (slug: string) => `generation-drafts/${slug}/jobs.json`;
 export const draftImageKey = (slug: string, id: string, index = 0) =>
   `generation-drafts/${slug}/${id}${index ? `-${index}` : ''}.image`;
 
-async function snapshot(slug: string) {
+/** Request-local revision for conditional updates of one private workspace. */
+export async function readGenerationManifest(slug: string) {
   const { text, etag } = await getStyleGalleryObjectTextSnapshot(manifest(slug));
   if (text && !etag) throw new Error('Missing generation manifest revision.');
-  return { jobs: (text ? JSON.parse(text) : []) as GenerationJob[], etag };
+  return { scope: slug, jobs: (text ? JSON.parse(text) : []) as GenerationJob[], etag };
 }
 export async function listGenerationJobs(slug: string) {
-  return (await snapshot(slug)).jobs;
+  return (await readGenerationManifest(slug)).jobs;
 }
 
 /** Retry only bookkeeping. Cross-instance ETag conflicts must never replay a provider submission. */
-async function editJobs(slug: string, edit: (jobs: GenerationJob[]) => GenerationJob[] | null) {
+export type GenerationManifest = Awaited<ReturnType<typeof readGenerationManifest>>;
+
+async function editJobs(slug: string, edit: (jobs: GenerationJob[]) => GenerationJob[] | null, cursor?: GenerationManifest) {
+  // Only a successful conditional write advances the caller's revision. Conflicts always reload and reapply.
+  if (cursor && cursor.scope !== slug) throw new Error('Generation manifest scope mismatch.');
   for (let attempt = 0; attempt < 6; attempt++) {
-    const { jobs, etag } = await snapshot(slug);
+    const { jobs, etag } = attempt === 0 && cursor?.etag ? cursor : await readGenerationManifest(slug);
     const next = edit(jobs);
     if (!next) return false;
     try {
-      await putStyleGalleryObject(
+      const nextEtag = await putStyleGalleryObject(
         manifest(slug),
         Buffer.from(JSON.stringify(next)),
         'application/json',
         etag ? { ifMatch: etag } : { ifNoneMatch: '*' },
       );
+      if (cursor) Object.assign(cursor, { jobs: next, etag: nextEtag });
       return true;
     } catch (error) {
       if (!(error instanceof StyleGalleryObjectConflictError) || attempt === 5) throw error;
@@ -93,70 +99,84 @@ async function checkpoint<T>(write: () => Promise<T>) {
 }
 
 /** Merge a single output checkpoint without losing results saved concurrently in another tab. */
-export async function noteOutput(slug: string, id: string, index: number, published = false) {
+export async function noteOutput(slug: string, id: string, index: number, published = false, cursor?: GenerationManifest) {
   let retained = true;
-  await editJobs(slug, (jobs) => {
-    const job = jobs.find((j) => j.id === id);
-    if (!job) throw new Error('Missing generation record.');
-    const available = receivedOutputs(job),
-      saved = publishedOutputs(job),
-      count = job.settings.count ?? 1;
-    if (index < 0 || index >= count) throw new Error('Output index exceeds the requested batch.');
-    if (job.discarded?.includes(index)) {
-      if (!published) {
-        retained = false;
-        return null;
+  await editJobs(
+    slug,
+    (jobs) => {
+      const job = jobs.find((j) => j.id === id);
+      if (!job) throw new Error('Missing generation record.');
+      const available = receivedOutputs(job),
+        saved = publishedOutputs(job),
+        count = job.settings.count ?? 1;
+      if (index < 0 || index >= count) throw new Error('Output index exceeds the requested batch.');
+      if (job.discarded?.includes(index)) {
+        if (!published) {
+          retained = false;
+          return null;
+        }
+        throw new StyleGalleryClientError('This output was discarded.', 409);
       }
-      throw new StyleGalleryClientError('This output was discarded.', 409);
-    }
-    if (available.includes(index) && (!published || saved.includes(index))) return null;
-    const nextAvailable = [...new Set([...available, index])].sort((a, b) => a - b);
-    const nextSaved = published ? [...new Set([...saved, index])] : saved;
-    const requested = Array.from({ length: count }, (_, i) => i);
-    const state = requested.every((i) => nextSaved.includes(i) || job.discarded?.includes(i))
-      ? 'saved'
-      : requested.every((i) => nextAvailable.includes(i))
-        ? 'ready'
-        : job.state;
-    const publishAttempts = { ...job.publishAttempts };
-    if (published) delete publishAttempts[index];
-    return jobs.map((j) =>
-      j === job
-        ? {
-            ...j,
-            available: nextAvailable,
-            published: nextSaved,
-            publishAttempts,
-            publishing: j.publishing?.filter((i) => !nextSaved.includes(i)),
-            state,
-          }
-        : j,
-    );
-  });
+      if (available.includes(index) && (!published || saved.includes(index))) return null;
+      const nextAvailable = [...new Set([...available, index])].sort((a, b) => a - b);
+      const nextSaved = published ? [...new Set([...saved, index])] : saved;
+      const requested = Array.from({ length: count }, (_, i) => i);
+      const state = requested.every((i) => nextSaved.includes(i) || job.discarded?.includes(i))
+        ? 'saved'
+        : requested.every((i) => nextAvailable.includes(i))
+          ? 'ready'
+          : job.state;
+      const publishAttempts = { ...job.publishAttempts };
+      if (published) delete publishAttempts[index];
+      return jobs.map((j) =>
+        j === job
+          ? {
+              ...j,
+              available: nextAvailable,
+              published: nextSaved,
+              publishAttempts,
+              publishing: j.publishing?.filter((i) => !nextSaved.includes(i)),
+              state,
+            }
+          : j,
+      );
+    },
+    cursor,
+  );
   return retained;
 }
 
 /** A conditional manifest write chooses between publication and deletion before either can touch public metadata. */
-export async function decideOutput(scope: string, id: string, index: number, action: 'publish' | 'discard') {
+export async function decideOutput(
+  scope: string,
+  id: string,
+  index: number,
+  action: 'publish' | 'discard',
+  cursor?: GenerationManifest,
+) {
   const attempt = randomUUID();
-  await editJobs(scope, (jobs) => {
-    const job = jobs.find((j) => j.id === id);
-    if (!job || !receivedOutputs(job).includes(index)) throw new StyleGalleryClientError('Image is not ready.', 409);
-    const discarded = job.discarded?.includes(index);
-    const saving = publishedOutputs(job).includes(index) || job.publishing?.includes(index);
-    if ((discarded && action === 'publish') || (saving && action === 'discard'))
-      throw new StyleGalleryClientError('This output already has another review decision.', 409);
-    if (discarded || publishedOutputs(job).includes(index)) return null;
-    const field = action === 'discard' ? 'discarded' : 'publishing';
-    // Materialize legacy implicit index 0 before adding the first per-output decision.
-    const next = { ...job, available: receivedOutputs(job), [field]: [...new Set([...(job[field] ?? []), index])] };
-    if (action === 'discard') next.cleanupPending = [...(job.cleanupPending ?? []), index];
-    else next.publishAttempts = { ...job.publishAttempts, [index]: [...(job.publishAttempts?.[index] ?? []), attempt] };
-    const saved = publishedOutputs(job);
-    if (action === 'discard' && saved.length && saved.length + (next.discarded?.length ?? 0) === (job.settings.count ?? 1))
-      next.state = 'saved';
-    return jobs.map((j) => (j === job ? next : j));
-  });
+  await editJobs(
+    scope,
+    (jobs) => {
+      const job = jobs.find((j) => j.id === id);
+      if (!job || !receivedOutputs(job).includes(index)) throw new StyleGalleryClientError('Image is not ready.', 409);
+      const discarded = job.discarded?.includes(index);
+      const saving = publishedOutputs(job).includes(index) || job.publishing?.includes(index);
+      if ((discarded && action === 'publish') || (saving && action === 'discard'))
+        throw new StyleGalleryClientError('This output already has another review decision.', 409);
+      if (discarded || publishedOutputs(job).includes(index)) return null;
+      const field = action === 'discard' ? 'discarded' : 'publishing';
+      // Materialize legacy implicit index 0 before adding the first per-output decision.
+      const next = { ...job, available: receivedOutputs(job), [field]: [...new Set([...(job[field] ?? []), index])] };
+      if (action === 'discard') next.cleanupPending = [...(job.cleanupPending ?? []), index];
+      else next.publishAttempts = { ...job.publishAttempts, [index]: [...(job.publishAttempts?.[index] ?? []), attempt] };
+      const saved = publishedOutputs(job);
+      if (action === 'discard' && saved.length && saved.length + (next.discarded?.length ?? 0) === (job.settings.count ?? 1))
+        next.state = 'saved';
+      return jobs.map((j) => (j === job ? next : j));
+    },
+    cursor,
+  );
   return attempt;
 }
 
