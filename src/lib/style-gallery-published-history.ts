@@ -7,7 +7,7 @@ export const generationExampleId = (id: string, index: number) => (index ? `${id
 /** Private receipts acknowledge a past save. The current item determines whether that output is still in the gallery. */
 export async function visibleGenerationHistory(slug: string, jobs: GenerationJob[]): Promise<GenerationJob[]> {
   if (!jobs.some((job) => publishedOutputs(job).length)) return jobs;
-  const item = await getStoredStyleGalleryItem(slug, { fresh: true });
+  const item = await getStoredStyleGalleryItem(slug, { fresh: true, followRedirect: true });
   return projectPublishedHistory(jobs, new Set(item?.examples.map((e) => e.id)));
 }
 

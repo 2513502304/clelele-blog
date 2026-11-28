@@ -88,7 +88,7 @@ async function publish(slug: string, scope: string, job: GenerationJob, index: n
   const saved = publishedOutputs(job).includes(index);
   const key = draftImageKey(scope, job.id, index);
   const [item, draft] = await Promise.all([
-    getStoredStyleGalleryItem(slug, { fresh: true }),
+    getStoredStyleGalleryItem(slug, { fresh: true, followRedirect: saved }),
     saved ? null : readReviewedOriginal(key),
   ]);
   if (!item) throw new StyleGalleryClientError('Item no longer exists.', 404);
@@ -239,7 +239,7 @@ export const GET = privateRoute(async ({ scope, slug }, request) => {
     .parse(new URL(request.url).searchParams.get('index') ?? 0);
   if (!availableOutputs(job).includes(index)) return json({ error: 'Preview is not ready.' }, 409);
   if (publishedOutputs(job).includes(index)) {
-    const item = await getStoredStyleGalleryItem(slug, { fresh: true });
+    const item = await getStoredStyleGalleryItem(slug, { fresh: true, followRedirect: true });
     if (!item?.examples.some((example) => example.id === generationExampleId(job.id, index)))
       return json({ error: 'This published output was removed.' }, 410);
   }
