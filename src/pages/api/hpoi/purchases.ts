@@ -3,7 +3,7 @@ import type { APIRoute } from 'astro';
 import { z } from 'zod';
 import { HfS3ConflictError } from '../../../lib/hf-s3';
 import { advanceHpoiPurchaseJob, startHpoiPurchaseJob } from '../../../lib/hpoi/purchases-job';
-import type { HpoiPurchaseStore } from '../../../lib/hpoi/purchases-schema';
+import { type HpoiPurchaseStore, hpoiRecordId } from '../../../lib/hpoi/purchases-schema';
 import { createHpoiPurchaseSource } from '../../../lib/hpoi/purchases-source';
 import { createHpoiPurchaseStore } from '../../../lib/hpoi/purchases-store';
 import { RequestTooLargeError, readBoundedBody } from '../../../lib/read-bounded-body';
@@ -45,11 +45,19 @@ function view(value: HpoiPurchaseStore | null) {
 }
 
 /** Reading the saved snapshot performs no Hpoi requests and never starts a refresh. */
-export const GET: APIRoute = async ({ cookies }) => {
+export const GET: APIRoute = async ({ cookies, url }) => {
   if (!isSiteAdmin(cookies)) return new Response('Not found.', { status: 404, headers });
-  if (!enabled() || !hpoiConfig) return Response.json(view(null), { headers });
+  const figureId = url.searchParams.get('figureId');
+  if (figureId !== null && !hpoiRecordId.safeParse(figureId).success)
+    return new Response('Invalid figure ID.', { status: 400, headers });
+  if (!enabled() || !hpoiConfig) return Response.json(figureId ? { records: [] } : view(null), { headers });
   try {
     const result = await createHpoiPurchaseStore(hpoiConfig.userId).read();
+    if (figureId)
+      return Response.json(
+        { records: result?.value.snapshot?.records.filter((entry) => entry.figureId === figureId) ?? [] },
+        { headers },
+      );
     return Response.json(view(result?.value ?? null), { headers });
   } catch {
     return new Response('Private purchase cache unavailable.', { status: 503, headers });

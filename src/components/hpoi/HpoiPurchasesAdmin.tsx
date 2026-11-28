@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { purchaseCsv, purchaseCurrency, selectPurchases } from '@/lib/hpoi/purchases-export';
 import type { HpoiPurchase } from '@/lib/hpoi/purchases-schema';
 
 interface PurchaseView {
@@ -68,6 +69,23 @@ export default function HpoiPurchasesAdmin() {
     }
   }
 
+  const [currency, setCurrency] = useState('');
+  const [missingOnly, setMissingOnly] = useState(false);
+  const all = view?.snapshot?.records ?? [];
+  const currencies = new Map(
+    all.map((record) => [purchaseCurrency(record), record.currencyLabel || record.orderMoneyCurrency || '币种未填写']),
+  );
+  const rows = selectPurchases(all, currency, missingOnly);
+
+  function download() {
+    const url = URL.createObjectURL(new Blob([purchaseCsv(rows)], { type: 'text/csv;charset=utf-8' }));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `hpoi-purchases-${new Date().toISOString().slice(0, 10)}.csv`;
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
   return (
     <section className="space-y-4 rounded-lg border border-border p-4" aria-label="本人购买信息">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -134,6 +152,38 @@ export default function HpoiPurchasesAdmin() {
           <p className="text-muted-foreground text-xs">
             上次完整更新：{new Date(view.snapshot.fetchedAt).toLocaleString()} · {view.snapshot.records.length} 条记录
           </p>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-md bg-muted/40 px-3 py-2 text-sm">
+            <label className="flex items-center gap-2">
+              币种
+              <select
+                value={currency}
+                onChange={(event) => setCurrency(event.target.value)}
+                className="min-h-10 rounded border border-border bg-background px-2"
+              >
+                <option value="">全部币种</option>
+                {Array.from(currencies, ([code, label]) => (
+                  <option key={code} value={code}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="inline-flex min-h-10 items-center gap-2">
+              <input type="checkbox" checked={missingOnly} onChange={(event) => setMissingOnly(event.target.checked)} />
+              仅看未填金额
+            </label>
+            <span className="text-muted-foreground text-xs" aria-live="polite">
+              {rows.length} 条符合条件
+            </span>
+            <button
+              type="button"
+              disabled={!rows.length}
+              onClick={download}
+              className="min-h-10 rounded-md border border-border bg-background px-3 disabled:opacity-50"
+            >
+              导出当前结果 CSV
+            </button>
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] text-left text-sm">
               <thead>
@@ -146,7 +196,7 @@ export default function HpoiPurchasesAdmin() {
                 </tr>
               </thead>
               <tbody>
-                {view.snapshot.records.map((record) => (
+                {rows.map((record) => (
                   <tr key={record.collectionId} className="border-border border-b align-top">
                     <td className="max-w-64 break-words px-2 py-3">
                       <a
@@ -175,8 +225,10 @@ export default function HpoiPurchasesAdmin() {
               </tbody>
             </table>
           </div>
-          {view.snapshot.records.length === 0 && (
-            <p className="text-muted-foreground text-sm">该次完整同步没有发现收藏购买记录。</p>
+          {rows.length === 0 && (
+            <p className="text-muted-foreground text-sm">
+              {all.length ? '没有符合筛选条件的记录。' : '该次完整同步没有发现收藏购买记录。'}
+            </p>
           )}
         </>
       ) : (
