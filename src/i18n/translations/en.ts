@@ -631,6 +631,8 @@ export const uiStrings: UIStrings = {
   'hpoi.preordered': 'Pre-ordered',
   'hpoi.pendingPayment': 'Pending Payment',
   'hpoi.noImage': 'No image',
+  'hpoi.search': 'Search all figures by name or Hpoi ID',
+  'hpoi.noMatches': 'No figures match these filters.',
   'hpoi.noItems': 'No figures in this collection',
   'hpoi.error': 'Failed to load Hpoi collection. Please try again.',
   'hpoi.retry': 'Reload',

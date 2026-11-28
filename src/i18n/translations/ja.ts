@@ -631,6 +631,8 @@ export const uiStrings: UIStrings = {
   'hpoi.preordered': '予約済み',
   'hpoi.pendingPayment': '支払い待ち',
   'hpoi.noImage': '画像がありません',
+  'hpoi.search': '全コレクションを名前・Hpoi ID で検索',
+  'hpoi.noMatches': '現在の条件に一致するフィギュアはありません。',
   'hpoi.noItems': 'この分類にはまだコレクションがありません',
   'hpoi.error': 'Hpoiのコレクションを読み込めませんでした。もう一度お試しください。',
   'hpoi.retry': '再読み込み',

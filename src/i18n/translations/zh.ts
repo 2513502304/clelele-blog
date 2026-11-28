@@ -626,6 +626,8 @@ export const uiStrings = {
   'hpoi.preordered': '预定',
   'hpoi.pendingPayment': '待补款',
   'hpoi.noImage': '暂无图片',
+  'hpoi.search': '搜索所有收藏的名称或 Hpoi ID',
+  'hpoi.noMatches': '当前筛选下没有匹配的手办',
   'hpoi.noItems': '这个分类暂时没有收藏',
   'hpoi.error': 'Hpoi 收藏加载失败，请稍后重试',
   'hpoi.retry': '重新加载',

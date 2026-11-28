@@ -54,12 +54,20 @@ export function HpoiCollection() {
   const membership = useHpoiMembership();
   const [calendar, setCalendar] = useState(true);
   const [release, setRelease] = useState('');
+  const [query, setQuery] = useState('');
+  const matches = useMemo(() => {
+    const terms = query.normalize('NFKC').trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (!terms.length) return collection.items;
+    // Filter the category snapshot before sorting, calendar grouping and visible-card pagination.
+    return collection.items.filter((item) => {
+      const title = (item.title + ' ' + item.id).normalize('NFKC').toLowerCase();
+      return terms.every((term) => title.includes(term));
+    });
+  }, [collection.items, query]);
   const filtered = useMemo(() => {
-    if (!release) return collection.items;
-    return collection.items.filter((item) =>
-      release === 'undated' ? !releasePeriod(item).month : item.releaseDate === release,
-    );
-  }, [collection.items, release]);
+    if (!release) return matches;
+    return matches.filter((item) => (release === 'undated' ? !releasePeriod(item).month : item.releaseDate === release));
+  }, [matches, release]);
   const [visibleCount, setVisibleCount] = useState(24);
   const detailItems = useMemo(
     () => [
@@ -188,6 +196,23 @@ export function HpoiCollection() {
         </div>
       )}
 
+      <label className="flex min-h-11 items-center gap-2 rounded-lg border border-border bg-background px-3 focus-within:border-primary">
+        <Icon icon="ri:search-line" className="shrink-0 text-muted-foreground" />
+        <input
+          type="search"
+          value={query}
+          aria-label={t('hpoi.search')}
+          placeholder={t('hpoi.search')}
+          className="min-w-0 flex-1 bg-transparent py-2 text-sm outline-none"
+          onChange={(event) => {
+            const next = event.currentTarget.value;
+            if (!query.trim() && next.trim()) setActiveState('all');
+            setQuery(next);
+            setRelease('');
+            setVisibleCount(24);
+          }}
+        />
+      </label>
       <div className="overflow-x-auto border-border border-b" role="tablist" aria-label={t('hpoi.title')}>
         <div className="flex min-w-max items-center gap-6">
           {HPOI_COLLECTION_STATES.map((state) => (
@@ -284,7 +309,7 @@ export function HpoiCollection() {
           }}
           failed={error}
           retry={collection.loadMore}
-          items={collection.items}
+          items={matches}
           state={activeState}
           membership={membership}
           complete={collection.complete}
@@ -315,7 +340,7 @@ export function HpoiCollection() {
         ))}
       </StyleGalleryGrid>
       {collection.complete && activeItems.length === 0 && (
-        <p className="py-8 text-center text-muted-foreground">{t('hpoi.noItems')}</p>
+        <p className="py-8 text-center text-muted-foreground">{t(query.trim() ? 'hpoi.noMatches' : 'hpoi.noItems')}</p>
       )}
       <CollectionLoadMore
         more={!collection.complete || visibleCount < activeItems.length}
