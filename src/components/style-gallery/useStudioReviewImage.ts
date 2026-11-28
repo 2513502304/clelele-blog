@@ -34,6 +34,7 @@ export function useThumbnail({ pool, url, platform, credential }: ThumbnailProps
       });
     return () => {
       active = false;
+      setReady(undefined);
       URL.revokeObjectURL(objectUrl);
       if (--entry.users === 0) {
         entry.controller.abort();
@@ -72,6 +73,7 @@ export function useStudioOriginal(url: string | undefined, platform: GenerationP
       });
     return () => {
       ctrl.abort();
+      setResult(undefined);
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [url, platform, credential]);
