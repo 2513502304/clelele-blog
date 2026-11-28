@@ -112,26 +112,30 @@ async function publish(slug: string, scope: string, job: GenerationJob, index: n
   finishStage('assets');
   const identity = getStyleGalleryExampleIdentity(example);
   let rejectedByTransform = false;
-  const { item: updated } = await updateStyleGalleryItemExamples(slug, (examples) => {
-    // Request IDs originate in browsers. Only an exact match can repair an interrupted confirmation.
-    const previous = examples.find((entry) => entry.id === example.id);
-    if (previous) {
-      if (
-        previous.imageHash !== hash ||
-        previous.model !== example.model ||
-        previous.note !== job.prompt ||
-        JSON.stringify(previous.generation) !== JSON.stringify(job.settings)
-      ) {
-        rejectedByTransform = true;
-        throw new StyleGalleryClientError('This example ID already belongs to another generation.', 409);
+  const { item: updated } = await updateStyleGalleryItemExamples(
+    slug,
+    (examples) => {
+      // Request IDs originate in browsers. Only an exact match can repair an interrupted confirmation.
+      const previous = examples.find((entry) => entry.id === example.id);
+      if (previous) {
+        if (
+          previous.imageHash !== hash ||
+          previous.model !== example.model ||
+          previous.note !== job.prompt ||
+          JSON.stringify(previous.generation) !== JSON.stringify(job.settings)
+        ) {
+          rejectedByTransform = true;
+          throw new StyleGalleryClientError('This example ID already belongs to another generation.', 409);
+        }
+        return examples;
       }
-      return examples;
-    }
-    const existing = examples.find((entry) => getStyleGalleryExampleIdentity(entry) === identity);
-    if (!existing) return [...examples, example];
-    rejectedByTransform = true;
-    throw new StyleGalleryClientError('This image already belongs to another example on this platform.', 409);
-  }).catch(async (error) => {
+      const existing = examples.find((entry) => getStyleGalleryExampleIdentity(entry) === identity);
+      if (!existing) return [...examples, example];
+      rejectedByTransform = true;
+      throw new StyleGalleryClientError('This image already belongs to another example on this platform.', 409);
+    },
+    { onTiming: (stage, ms) => timings.push(`meta-${stage};dur=${ms.toFixed(1)}`) },
+  ).catch(async (error) => {
     if (rejectedByTransform && error instanceof StyleGalleryClientError)
       await releasePublication(scope, job.id, index, attempt);
     throw error;
