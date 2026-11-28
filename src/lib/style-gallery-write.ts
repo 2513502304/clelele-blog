@@ -477,27 +477,40 @@ export async function updateStyleGalleryItemExamples(
     let attemptedGroup: StyleGalleryExampleIndexGroup | null = null;
     let writtenCatalogEtag: string | null = null;
 
+    let indexPublicationStarted = false;
     try {
-      if (catalog && catalogSnapshot) {
-        writtenCatalogEtag = await measure('catalog-write', async () =>
-          requireWrittenObjectEtag(
-            STYLE_GALLERY_CATALOG_KEY,
-            await putStyleGalleryCatalog(catalog, { ifMatch: catalogSnapshot.etag }),
-          ),
-        );
-      }
-      await measure('shard', () =>
-        mutateStyleGalleryExampleIndex((current) => {
-          // mutate 内部已经读取带 ETag 的最新 index；复用首次快照可少一次全量 HF 下载，并为失败回滚保留基线。
-          previousIndex = current;
-          const currentGroup = current.groups.find((group) => group.sourceSlug === slug);
-          const groups = current.groups.filter((group) => group.sourceSlug !== slug);
-          attemptedGroup = examples.length ? toStyleGalleryExampleIndexGroup(slug, examples, currentGroup) : null;
-          if (attemptedGroup) groups.push(attemptedGroup);
-          return { version: 2, updatedAt, groups };
-        }, slug),
+      const catalogWrite =
+        catalog && catalogSnapshot
+          ? measure('catalog-write', async () => {
+              writtenCatalogEtag = await requireWrittenObjectEtag(
+                STYLE_GALLERY_CATALOG_KEY,
+                await putStyleGalleryCatalog(catalog, { ifMatch: catalogSnapshot.etag }),
+              );
+            })
+          : Promise.resolve();
+      const shardWrite = measure('shard', () =>
+        mutateStyleGalleryExampleIndex(
+          (current) => {
+            previousIndex = current;
+            const currentGroup = current.groups.find((group) => group.sourceSlug === slug);
+            const groups = current.groups.filter((group) => group.sourceSlug !== slug);
+            attemptedGroup = examples.length ? toStyleGalleryExampleIndexGroup(slug, examples, currentGroup) : null;
+            if (attemptedGroup) groups.push(attemptedGroup);
+            return { version: 2, updatedAt, groups };
+          },
+          slug,
+          async () => {
+            await catalogWrite;
+            indexPublicationStarted = true;
+          },
+        ),
       );
+      // If staging fails first, a concurrent catalog write may still succeed.
+      // Wait for both outcomes before deciding which durable versions to restore.
+      const outcomes = await Promise.allSettled([catalogWrite, shardWrite]);
+      for (const outcome of outcomes) if (outcome.status === 'rejected') throw outcome.reason;
       await measure('cache', () => invalidateStyleGalleryPublicCache([slug]));
+      invalidateStyleGalleryStoreCache({ revalidateCatalog: Boolean(writtenCatalogEtag) });
       return { item };
     } catch (error) {
       // 只在 item 仍是本次写入版本时回滚；若另一实例已追加 prompt 或更新 examples，宁可报告
@@ -506,17 +519,16 @@ export async function updateStyleGalleryItemExamples(
       if (previousCatalog && writtenCatalogEtag) {
         rollbackTasks.push(putStyleGalleryCatalog(previousCatalog, { ifMatch: writtenCatalogEtag }));
       }
-      if (previousIndex) {
+      if (indexPublicationStarted && previousIndex) {
         rollbackTasks.push(restoreStyleGalleryExampleIndexStructure(previousIndex, new Map([[slug, attemptedGroup]])));
       }
       const rollback = await Promise.allSettled(rollbackTasks);
+      invalidateStyleGalleryStoreCache();
       const rollbackErrors = rollback.flatMap((result) => (result.status === 'rejected' ? [result.reason] : []));
       if (rollbackErrors.length) {
         throw new AggregateError([error, ...rollbackErrors], 'Example metadata update failed and rollback was incomplete.');
       }
       throw error;
-    } finally {
-      invalidateStyleGalleryStoreCache();
     }
   });
 }

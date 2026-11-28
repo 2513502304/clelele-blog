@@ -127,6 +127,9 @@ function invalidateCatalogRead(): void {
 
 /** 写路径使用带 ETag 的强制快照，以便跨 Vercel 实例进行条件提交。 */
 export async function getStyleGalleryCatalogSnapshot(): Promise<{ value: StyleGalleryCatalog; etag: string }> {
+  // A pending original preview may already be warming this catalog. It is only a hint:
+  // the HEAD check below still validates the version used by the conditional writer.
+  if (catalogRead) await catalogRead.catch(() => undefined);
   const previous = catalogCache;
   // A matching HEAD is a fresh versioned snapshot. The eventual PUT still has to match the same ETag.
   if (
@@ -307,6 +310,7 @@ export async function putStyleGalleryPromptSearchIndex(
 export function mutateStyleGalleryExampleIndex(
   transform: (current: StyleGalleryExampleIndex) => StyleGalleryExampleIndex,
   sourceSlug?: string,
+  beforePublish?: () => Promise<void>,
 ): Promise<StyleGalleryExampleIndex> {
   const operation = async () => {
     for (let attempt = 1; attempt <= 6; attempt++) {
@@ -327,8 +331,11 @@ export function mutateStyleGalleryExampleIndex(
         return current;
       }
       const next = styleGalleryExampleIndexSchema.parse(transformed);
+      const updated = await prepareExampleRoot(root, current, next, scope);
+      // In a multi-object transaction only immutable packs may precede the catalog.
+      // A failed catalog CAS is the caller's conflict and must not replay this root CAS.
+      await beforePublish?.();
       try {
-        const updated = await prepareExampleRoot(root, current, next, scope);
         const published = await putExampleRoot(updated, etag ? { ifMatch: etag } : { ifNoneMatch: '*' });
         // A scoped edit may share a previous complete snapshot, but must never cache its slice as the whole gallery.
         const previous = exampleIndexCache;
@@ -486,9 +493,12 @@ export function mutateVisualIndexSnapshot(
  * 视觉索引是独立派生对象，不在这里连带清除；否则每次图片 metadata 更新后紧接着写索引时，
  * 都会无意义地重新下载整个向量文件。视觉索引自身用 ETag 冲突重放保证跨实例一致性。
  */
-export function invalidateStyleGalleryStoreCache(): void {
+export function invalidateStyleGalleryStoreCache(options: { revalidateCatalog?: boolean } = {}): void {
   invalidateCatalogRead();
-  catalogCache = null;
+  // A confirmed catalog PUT supplies both the parsed body and its ETag. Expire it for
+  // ordinary readers, but let conditional readers reuse it after a matching HEAD.
+  if (options.revalidateCatalog && catalogCache?.etag) catalogCache.expiresAt = 0;
+  else catalogCache = null;
   promptSearchIndexCache = null;
   exampleIndexCache = null;
   itemCache.clear();

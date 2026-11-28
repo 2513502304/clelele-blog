@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import { it } from 'node:test';
 import { STYLE_GALLERY_PLATFORMS } from './style-gallery-platforms';
-import { getStyleGalleryCatalog, invalidateStyleGalleryStoreCache, putStyleGalleryCatalog } from './style-gallery-store';
+import {
+  getStyleGalleryCatalog,
+  getStyleGalleryCatalogSnapshot,
+  invalidateStyleGalleryStoreCache,
+  putStyleGalleryCatalog,
+} from './style-gallery-store';
 
 it('shares cold catalog reads, bypasses for fresh reads and prevents old requests from replacing written data', async () => {
   const fetchBefore = globalThis.fetch;
@@ -42,6 +47,16 @@ it('shares cold catalog reads, bypasses for fresh reads and prevents old request
     release();
     await old;
     assert.equal((await getStyleGalleryCatalog()).updatedAt, next.updatedAt);
+    // A completed save can retain a candidate, but a changed remote ETag must win.
+    invalidateStyleGalleryStoreCache({ revalidateCatalog: true });
+    const guarded = getStyleGalleryCatalogSnapshot();
+    releases.shift()?.(new Response(null, { headers: { etag: '"new"' } }));
+    assert.equal((await guarded).value.updatedAt, next.updatedAt);
+    const changed = getStyleGalleryCatalogSnapshot();
+    releases.shift()?.(new Response(null, { headers: { etag: '"remote"' } }));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    releases.shift()?.(Response.json(catalog, { headers: { etag: '"remote"' } }));
+    assert.equal((await changed).value.updatedAt, catalog.updatedAt);
     // Failed shared reads must detach so an ordinary retry can recover.
     invalidateStyleGalleryStoreCache();
     const failed = getStyleGalleryCatalog();
