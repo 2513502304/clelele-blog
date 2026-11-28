@@ -61,6 +61,10 @@ interface UpdateExamplesResult {
 interface UpdateExamplesOptions {
   /** 平台等纯元数据修改不改变 exampleCount，可跳过体积较大的 catalog 读写。 */
   catalogMode?: 'update-count' | 'preserve-count';
+  /** The first conditional write may reuse this request's earlier read. A conflict discards the hint. */
+  initialItem?: Awaited<ReturnType<typeof readExampleItemSnapshot>>;
+  /** Runs only once all durable public projections have committed. Failure is recoverable by replay. */
+  afterCommit?: () => Promise<unknown>;
   onTiming?: (stage: string, elapsedMs: number) => void;
 }
 
@@ -451,7 +455,7 @@ export async function updateStyleGalleryItemExamples(
       options.onTiming?.(stage, performance.now() - start);
     }
   }
-  return serializeStyleGalleryWrite(async () => {
+  const result = await serializeStyleGalleryWrite(async () => {
     options.onTiming?.('queue', performance.now() - entered);
     const catalogMode = options.catalogMode ?? 'update-count';
     const catalogSnapshot =
@@ -460,7 +464,9 @@ export async function updateStyleGalleryItemExamples(
     if (previousCatalog && !previousCatalog.items.some((item) => item.slug === slug)) {
       throw new StyleGalleryClientError('Style gallery item not found.', 404);
     }
-    const mutation = await measure('item', () => mutateStoredStyleGalleryItemExamples(slug, transform, catalogMode));
+    const mutation = await measure('item', () =>
+      mutateStoredStyleGalleryItemExamples(slug, transform, catalogMode, options.initialItem),
+    );
     const { previousItem, item } = mutation;
     const examples = item.examples;
     const updatedAt = item.updated ?? new Date().toISOString();
@@ -509,7 +515,6 @@ export async function updateStyleGalleryItemExamples(
       // Wait for both outcomes before deciding which durable versions to restore.
       const outcomes = await Promise.allSettled([catalogWrite, shardWrite]);
       for (const outcome of outcomes) if (outcome.status === 'rejected') throw outcome.reason;
-      await measure('cache', () => invalidateStyleGalleryPublicCache([slug]));
       invalidateStyleGalleryStoreCache({ revalidateCatalog: Boolean(writtenCatalogEtag) });
       return { item };
     } catch (error) {
@@ -531,6 +536,22 @@ export async function updateStyleGalleryItemExamples(
       throw error;
     }
   });
+  // Both tasks observe committed data. Neither network call holds the metadata writer's queue.
+  await Promise.all([
+    measure('cache', () => invalidateStyleGalleryPublicCache([slug])),
+    ...(options.afterCommit ? [measure('receipt', options.afterCommit)] : []),
+  ]);
+  return result;
+}
+
+/** Includes the reviewed card's revision so a simultaneous edit can never be overwritten. */
+export async function readExampleItemSnapshot(slug: string) {
+  const { text, etag } = await getStyleGalleryObjectTextSnapshot(getStyleGalleryItemKey(slug));
+  if (!text) throw new StyleGalleryClientError('Style gallery item not found.', 404);
+  if (!etag) throw new Error('Missing item revision.');
+  const parsed = JSON.parse(text);
+  if (parsed.mergedInto) throw new StyleGalleryClientError('Style gallery item not found.', 404);
+  return { item: styleGalleryItemSchema.parse(parsed), etag };
 }
 
 /**
@@ -541,12 +562,11 @@ async function mutateStoredStyleGalleryItemExamples(
   slug: string,
   transform: (examples: StyleGalleryExample[], item: StoredStyleGalleryItem) => StyleGalleryExample[],
   catalogMode: NonNullable<UpdateExamplesOptions['catalogMode']>,
+  initialItem?: UpdateExamplesOptions['initialItem'],
 ): Promise<ItemExamplesMutation> {
   for (let attempt = 1; attempt <= ITEM_WRITE_ATTEMPTS; attempt += 1) {
-    const snapshot = await getStyleGalleryObjectTextSnapshot(getStyleGalleryItemKey(slug));
-    if (!snapshot.text) throw new StyleGalleryClientError('Style gallery item not found.', 404);
-    if (!snapshot.etag) throw new Error(`HF did not return an ETag for item ${slug}.`);
-    const previousItem = styleGalleryItemSchema.parse(JSON.parse(snapshot.text));
+    const snapshot = attempt === 1 && initialItem?.item.slug === slug ? initialItem : await readExampleItemSnapshot(slug);
+    const previousItem = snapshot.item;
     const examples = transform(previousItem.examples, previousItem);
     if (catalogMode === 'preserve-count' && examples.length !== previousItem.examples.length) {
       throw new Error('A preserve-count example update must not add or remove examples.');

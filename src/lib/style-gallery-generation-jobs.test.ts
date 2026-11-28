@@ -10,6 +10,7 @@ import {
   listGenerationJobs,
   markGeneration,
   noteOutput,
+  readGenerationManifest,
   recoverGeneration,
   releasePublication,
   reserveGeneration,
@@ -141,7 +142,9 @@ it('reserves a paid request once across tabs and recovers the original after int
   const [interrupted] = await listGenerationJobs(slug);
   await recoverGeneration(slug, interrupted, 'visitor-test-key');
   assert.equal((await listGenerationJobs(slug))[0].state, 'ready');
-  await Promise.all([noteOutput(slug, request.id, 1, true), noteOutput(slug, request.id, 2, true)]);
+  // Both tabs dispatch from the same revision; the losing conditional write must merge the winner's output.
+  const [left, right] = await Promise.all([readGenerationManifest(slug), readGenerationManifest(slug)]);
+  await Promise.all([noteOutput(slug, request.id, 1, true, left), noteOutput(slug, request.id, 2, true, right)]);
   const [partial] = await listGenerationJobs(slug);
   assert.equal(partial.state, 'ready');
   assert.deepEqual(partial.published?.toSorted(), [1, 2]);
