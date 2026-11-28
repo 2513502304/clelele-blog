@@ -2,10 +2,12 @@ import { useTranslation } from '@hooks/useTranslation';
 import { Icon } from '@iconify/react';
 import { createHpoiImageProxyUrl } from '@lib/hpoi/image';
 import { stateColor } from '@lib/hpoi/releases';
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { InlineSpinner } from '@/components/ui/InlineSpinner';
 import type { TranslationKey } from '@/i18n/types';
 import type { HpoiCollectionItem, HpoiCollectionState } from '@/types/hpoi';
+
+const PurchaseDetail = lazy(() => import('./HpoiPurchaseDetail'));
 
 const STATE_LABELS: Record<HpoiCollectionState, TranslationKey> = {
   all: 'hpoi.all',
@@ -19,14 +21,16 @@ const STATE_LABELS: Record<HpoiCollectionState, TranslationKey> = {
 interface HpoiCardProps {
   item: HpoiCollectionItem;
   state: HpoiCollectionState;
+  owner?: boolean;
   masonry?: boolean;
   ratingLoading?: boolean;
 }
 
 /** Keep the cover usable while optional rating enrichment is pending; settled empty scores display a dash. */
-export function HpoiCard({ item, state, masonry = false, ratingLoading = false }: HpoiCardProps) {
+export function HpoiCard({ item, state, owner = false, masonry = false, ratingLoading = false }: HpoiCardProps) {
   const { t } = useTranslation();
   const [failedImages, setFailedImages] = useState<Set<string>>(() => new Set());
+  const [expanded, setExpanded] = useState(false);
   const source = item.imageUrl;
   const imageUrl = source && !failedImages.has(source) ? source : item.imageFallbackUrl;
   const visibleImage = imageUrl && !failedImages.has(imageUrl);
@@ -36,7 +40,7 @@ export function HpoiCard({ item, state, masonry = false, ratingLoading = false }
   // so neither layout needs a downsampled or recompressed file.
   const panelScale = crop && !masonry ? Math.min(1, crop.width / crop.height) : 1;
 
-  return (
+  const card = (
     <a
       data-hpoi-category={state}
       style={state === 'all' ? undefined : { borderColor: stateColor[state] }}
@@ -114,5 +118,26 @@ export function HpoiCard({ item, state, masonry = false, ratingLoading = false }
         </div>
       </div>
     </a>
+  );
+  if (!owner) return card;
+  return (
+    <div className="min-w-0">
+      {card}
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => setExpanded(!expanded)}
+        className="flex min-h-11 w-full items-center gap-2 px-2 text-left text-muted-foreground text-xs hover:text-foreground focus-visible:outline-primary"
+      >
+        <Icon icon="ri:receipt-line" aria-hidden="true" />
+        {t('hpoi.purchaseDetails')}
+        <Icon icon={expanded ? 'ri:arrow-up-s-line' : 'ri:arrow-down-s-line'} className="ml-auto" aria-hidden="true" />
+      </button>
+      {expanded && (
+        <Suspense fallback={<InlineSpinner label={t('common.loading')} />}>
+          <PurchaseDetail figureId={item.id} />
+        </Suspense>
+      )}
+    </div>
   );
 }

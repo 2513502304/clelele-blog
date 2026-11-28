@@ -64,6 +64,7 @@ test('non-owners receive private no-store 404s and owner mutations enforce same-
   const get = await request.get('/api/hpoi/purchases');
   expect(get.status()).toBe(404);
   expect(get.headers()['cache-control']).toBe('private, no-store');
+  expect((await request.get('/api/hpoi/purchases?figureId=7')).status()).toBe(404);
   expect((await request.post('/api/hpoi/purchases', { data: { action: 'start' } })).status()).toBe(404);
   await login(page, 1002);
   expect((await page.request.get('/api/hpoi/purchases')).status()).toBe(404);
@@ -71,6 +72,9 @@ test('non-owners receive private no-store 404s and owner mutations enforce same-
   const disabled = await page.request.get('/api/hpoi/purchases');
   expect(disabled.status()).toBe(200);
   expect((await disabled.json()).configured).toBe(false);
+  const figure = await page.request.get('/api/hpoi/purchases?figureId=7');
+  expect(await figure.json()).toEqual({ records: [] });
+  expect((await page.request.get('/api/hpoi/purchases?figureId=nope')).status()).toBe(400);
   expect(
     (
       await page.request.post('/api/hpoi/purchases', {
@@ -85,7 +89,8 @@ test('the public collection page adds no purchase requests or private component 
   const privateRequests: string[] = [];
   page.on('request', (request) => {
     const path = new URL(request.url()).pathname;
-    if (path.startsWith('/api/hpoi/purchases') || /\/HpoiPurchasesAdmin\./.test(path)) privateRequests.push(request.url());
+    if (path.startsWith('/api/hpoi/purchases') || /\/HpoiPurchase(?:Detail|sAdmin)\./.test(path))
+      privateRequests.push(request.url());
   });
   await page.route(/\/api\/hpoi\?/, (route) =>
     route.fulfill({
@@ -101,6 +106,7 @@ test('the public collection page adds no purchase requests or private component 
   await page.goto('/hpoi');
   await expect(page.getByRole('tab', { name: /全部/ })).toBeVisible();
   expect(privateRequests).toEqual([]);
+  await expect(page.getByRole('button', { name: '我的入手记录' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: '查看本人购买信息' })).toHaveCount(0);
 });
 
@@ -173,4 +179,95 @@ test('without a sync session the owner can still read a saved snapshot and use t
     page.getByText('博客尚未建立 Hpoi 同步连接，已缓存资料仍可查看。正式委托授权暂未接入。', { exact: true }),
   ).toBeVisible();
   expect(posts).toBe(0);
+});
+
+test('owner opens a figure in place, retries a failed read and can close without losing the original link', async ({
+  page,
+}) => {
+  await login(page);
+  const figure = { id: '7', title: '合成测试藏品', detailUrl: 'https://www.hpoi.net/hobby/7', score: '4.5' };
+  await page.route(/\/api\/hpoi\?/, (route) =>
+    route.fulfill({
+      headers: { 'x-hpoi-image-policy': 'original-v2' },
+      json: {
+        next: null,
+        items: [figure],
+        meta: {
+          profile: { name: 'Synthetic', userId: '1', profileUrl: 'https://www.hpoi.net/user/1', stats: {} },
+          warnings: [],
+          fetchedAt: oldSnapshot.fetchedAt,
+        },
+      },
+    }),
+  );
+  let reads = 0;
+  await page.route('**/api/hpoi/purchases?figureId=7', (route) =>
+    ++reads === 1 ? route.fulfill({ status: 503 }) : route.fulfill({ json: { records: oldSnapshot.records } }),
+  );
+  await page.goto('/hpoi');
+  const action = page.getByRole('button', { name: '我的入手记录' });
+  await expect(action).toBeVisible();
+  expect(reads).toBe(0);
+  await action.click();
+  const retry = page.getByRole('region', { name: '我的入手记录' }).getByRole('button', { name: '重试', exact: true });
+  await retry.evaluate((button) => button.scrollIntoView({ block: 'center', behavior: 'instant' }));
+  await retry.click();
+  await expect(page.getByText('Synthetic shop')).toBeVisible();
+  expect(reads).toBe(2);
+  await expect(page.getByRole('link', { name: /合成测试藏品/ })).toHaveAttribute('href', figure.detailUrl);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  expect(await page.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }))).not.toContain('Synthetic shop');
+  await action.click();
+  await expect(page.getByText('Synthetic shop')).toHaveCount(0);
+});
+
+test('owner exports only matching currency and missing-amount records', async ({ page }) => {
+  await adminSetup(page);
+  const record = oldSnapshot.records[0];
+  await page.route('**/api/hpoi/purchases', (route) =>
+    route.fulfill({
+      json: {
+        ...view,
+        snapshot: {
+          ...oldSnapshot,
+          records: [
+            record,
+            {
+              ...record,
+              collectionId: '102',
+              title: 'JPY zero',
+              orderMoney: '0',
+              orderMoneyCurrency: 'jpy',
+              currencyLabel: '日元',
+            },
+            {
+              ...record,
+              collectionId: '103',
+              title: 'Japanese figure',
+              orderMoneyCurrency: 'jpy',
+              currencyLabel: '日元',
+              comment: '=1+1',
+            },
+          ],
+        },
+      },
+    }),
+  );
+  await page.goto('/hpoi/admin');
+  await page.getByRole('button', { name: '查看本人购买信息' }).click();
+  await page.getByRole('combobox', { name: '币种', exact: true }).selectOption('code:jpy');
+  await expect(page.getByRole('cell', { name: 'JPY zero' })).toBeVisible();
+  await page.getByLabel('仅看未填金额').check();
+  await expect(page.getByRole('cell', { name: 'JPY zero' })).toHaveCount(0);
+  const downloaded = page.waitForEvent('download');
+  await page.getByRole('button', { name: '导出当前结果 CSV' }).click();
+  const stream = await (await downloaded).createReadStream();
+  const chunks: Buffer[] = [];
+  if (!stream) throw new Error('Missing CSV download');
+  for await (const chunk of stream) chunks.push(chunk);
+  const csv = Buffer.concat(chunks).toString('utf8');
+  expect(csv).toContain('Japanese figure');
+  expect(csv).toContain("'=1+1");
+  expect(csv).not.toContain('Synthetic owner figure');
+  expect(csv).not.toContain('JPY zero');
 });

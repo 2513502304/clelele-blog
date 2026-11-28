@@ -1,22 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useSiteAdminAccess } from '@hooks/useSiteAdminAccess';
 import type { SiteAssetSlot } from '@/lib/site-profile/schema';
 
-let checked: Promise<boolean> | undefined;
-/** Authorization is checked separately from cacheable page HTML, so CDN caches never leak admin controls. */
 export function ProfileQuickEdit({ slot }: { slot: SiteAssetSlot }) {
-  const [admin, setAdmin] = useState(false);
-  useEffect(() => {
-    let active = true;
-    checked ??= fetch('/api/site-profile/access', { cache: 'no-store' })
-      .then((r) => r.ok)
-      .catch(() => false);
-    void checked.then((value) => {
-      if (active) setAdmin(value);
-    });
-    return () => {
-      active = false;
-    };
-  }, []);
+  const admin = useSiteAdminAccess();
   return admin ? (
     <a
       href={`/admin?asset=${slot}`}

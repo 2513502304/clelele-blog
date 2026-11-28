@@ -9,7 +9,10 @@ export default defineConfig({
   outputDir: 'test-results/hpoi-purchases',
   reporter: [['list']],
   use: { baseURL: 'http://127.0.0.1:4347', trace: 'retain-on-failure' },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    { name: 'mobile-webkit', use: { ...devices['iPhone 13'] } },
+  ],
   webServer: {
     command: 'node node_modules/astro/astro.js dev --host 127.0.0.1 --port 4347',
     url: 'http://127.0.0.1:4347',

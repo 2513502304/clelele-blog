@@ -1,5 +1,6 @@
 import { useHpoiCollection, useHpoiMembership } from '@hooks/useHpoiCollection';
 import { useHpoiRatings } from '@hooks/useHpoiRatings';
+import { useSiteAdminAccess } from '@hooks/useSiteAdminAccess';
 import { useTranslation } from '@hooks/useTranslation';
 import { Icon } from '@iconify/react';
 import { createHpoiImageProxyUrl } from '@lib/hpoi/image';
@@ -51,6 +52,7 @@ export function HpoiCollection() {
 
   const [masonry, setMasonry] = useState(true);
   const collection = useHpoiCollection(activeState);
+  const owner = useSiteAdminAccess();
   const membership = useHpoiMembership();
   const [calendar, setCalendar] = useState(true);
   const [release, setRelease] = useState('');
@@ -60,7 +62,7 @@ export function HpoiCollection() {
     if (!terms.length) return collection.items;
     // Filter the category snapshot before sorting, calendar grouping and visible-card pagination.
     return collection.items.filter((item) => {
-      const title = (item.title + ' ' + item.id).normalize('NFKC').toLowerCase();
+      const title = `${item.title} ${item.id}`.normalize('NFKC').toLowerCase();
       return terms.every((term) => title.includes(term));
     });
   }, [collection.items, query]);
@@ -334,6 +336,7 @@ export function HpoiCollection() {
             key={item.id}
             item={item}
             state={activeState === 'all' ? (membership.get(item.id) ?? 'all') : activeState}
+            owner={owner}
             masonry={masonry}
             ratingLoading={!item.score && ratings.pendingIds.has(item.id)}
           />
