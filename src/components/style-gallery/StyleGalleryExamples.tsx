@@ -31,6 +31,7 @@ import {
   STYLE_GALLERY_PREPARE_BATCH_SIZE,
 } from '@lib/style-gallery-request-batches';
 import { getStyleGallerySourceHash } from '@lib/style-gallery-source-groups';
+import { notifyStudioRemoval } from '@lib/style-gallery-studio-client';
 import { fetchWithRetry, sha256, uploadFile } from '@lib/style-gallery-upload-client';
 import type { StyleGalleryVisualFeature } from '@lib/style-gallery-visual-types';
 import { openModal } from '@store/modal';
@@ -291,6 +292,7 @@ function StyleGalleryExamplesContent({
     if (!response.ok) throw new Error((await response.text()) || `Request failed with ${response.status}`);
     const data = (await response.json()) as ExamplesResponse;
     setExamples(data.examples ?? []);
+    if (method === 'DELETE') notifyStudioRemoval(slug);
     rememberStyleGalleryManagementToken(token);
     return data.examples ?? [];
   }

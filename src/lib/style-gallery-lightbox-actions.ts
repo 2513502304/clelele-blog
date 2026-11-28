@@ -1,3 +1,4 @@
+import { notifyStudioRemoval } from '@lib/style-gallery-studio-client';
 import type { ImageLightboxCopyAction, ImageLightboxData, ImageLightboxDeleteAction } from '@store/modal';
 import { getReusableStyleGalleryImageUrl } from './style-gallery-image-client';
 import type { StyleGalleryPromptChoice } from './style-gallery-prompt-client';
@@ -66,7 +67,10 @@ export async function deleteStyleGalleryExample(sourceSlug: string, exampleId: s
         body: JSON.stringify({ ids: [exampleId] }),
         signal: AbortSignal.timeout(MUTATION_TIMEOUT_MS),
       });
-      if (response.ok) return;
+      if (response.ok) {
+        notifyStudioRemoval(sourceSlug);
+        return;
+      }
       const message = (await response.text()) || `Delete failed with ${response.status}`;
       if (response.status !== 408 && response.status !== 429 && response.status < 500) throw new Error(message);
       lastError = new Error(message);

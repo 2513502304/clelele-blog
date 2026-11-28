@@ -1,6 +1,7 @@
 import { mapWithConcurrency } from '@lib/map-with-concurrency';
 import { listGenerationJobs, resumeDraftCleanup } from '@lib/style-gallery-generation-jobs';
 import { getStyleGalleryViewer, isStyleGalleryGitHubAuthEnabled } from '@lib/style-gallery-github-auth';
+import { visibleGenerationHistory } from '@lib/style-gallery-published-history';
 import { listAccountSources } from '@lib/style-gallery-studio-account';
 import { readStudioSources, studioOwner } from '@lib/style-gallery-studio-owner';
 import type { APIRoute } from 'astro';
@@ -33,7 +34,7 @@ export const GET: APIRoute = async ({ request, cookies }) => {
         const scope = `${slug}/${auth.owner}`;
         const jobs = await listGenerationJobs(scope);
         resumeDraftCleanup(scope, jobs);
-        return { slug, platform: auth.platform, jobs };
+        return { slug, platform: auth.platform, jobs: await visibleGenerationHistory(slug, jobs) };
       } catch {
         failed.push(slug);
         return null;
