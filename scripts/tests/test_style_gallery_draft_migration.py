@@ -20,11 +20,15 @@ class GalleryMigrationTest(unittest.TestCase):
         first, second = "gallery/generation-drafts/one", "gallery/generation-drafts/two"
         buckets = {src: {first: b"v1", second: b"old", "gallery/public": b"keep"}, dst: {}}
 
+        change_during_copy = True
+        interrupt = True
+
         def split(path):
             owner, bucket, key = path.removeprefix("hf://buckets/").split("/", 2)
             return buckets[f"{owner}/{bucket}"], key
 
         def hf(cmd, *argv, data=None):
+            nonlocal change_during_copy, interrupt
             if cmd == "info":
                 return json.dumps({"private": argv[0] == dst})
             if cmd == "list":
@@ -38,8 +42,14 @@ class GalleryMigrationTest(unittest.TestCase):
                 bucket, key = split(argv[1])
                 if data is None:
                     origin, name = split(argv[0])
+                    if origin is buckets[src] and name == first and change_during_copy:
+                        origin[name] = b"changed during copy"
+                        change_during_copy = False
                     data = origin[name]
                 bucket[key] = data
+                if key == first and interrupt:
+                    interrupt = False
+                    raise RuntimeError("Lost copy acknowledgement")
 
         with tempfile.TemporaryDirectory() as tmp, patch.object(migration, "hf", hf), contextlib.redirect_stdout(io.StringIO()):
             args = SimpleNamespace(source=src, destination=dst, prefix="gallery", checkpoint=Path(tmp) / "ledger")
@@ -48,6 +58,9 @@ class GalleryMigrationTest(unittest.TestCase):
                 args.phase = phase
                 migration.migrate(args)
 
+            with self.assertRaisesRegex(RuntimeError, "Lost copy acknowledgement"):
+                run("stage")
+            buckets[src][first] = b"changed again before restart"
             run("stage")
             with self.assertRaisesRegex(RuntimeError, "verify"):
                 run("activate")

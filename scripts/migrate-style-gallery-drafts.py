@@ -7,11 +7,13 @@ Use the same local, private checkpoint file for every invocation.
 """
 import argparse
 import fcntl
+import hashlib
 import json
 import os
 import re
 import subprocess
 import tempfile
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -104,19 +106,37 @@ def migrate(args):
         # Stop on foreign destination data instead of overwriting it.
         if any(target[k] != source.get(k) and target[k] not in known.get(k, []) for k in target):
             raise RuntimeError("Unrecognized destination revision. Reconcile before staging.")
-        for key, revision in source.items():
-            if revision not in known.setdefault(key, []):
+        for key, revision in target.items():
+            if revision == source.get(key) and revision not in known.setdefault(key, []):
                 known[key].append(revision)
         state.pop("verified", None)
+        # A live source may change after listing. Pin a private, run-owned snapshot
+        # before copying to the real key. On restart we can recognize exactly which
+        # destination revisions we wrote, even when a copy acknowledgement was lost.
+        scratch_id = state.setdefault("scratchId", uuid.uuid4().hex)
+        scratch = operations + "draft-migrations/" + uuid.UUID(scratch_id).hex + "/"
         persist(args.checkpoint, state)
+        changed = {k: scratch + hashlib.sha256(k.encode()).hexdigest() for k in source if source[k] != target.get(k)}
         with ThreadPoolExecutor(max_workers=4) as pool:
-            changed = [k for k in source if source[k] != target.get(k)]
-            list(pool.map(lambda k: hf("cp", uri(src, k), uri(dst, k), "--quiet"), changed))
-            # Mirror an old-origin discard only when the destination revision is ours.
+            list(pool.map(lambda k: hf("cp", uri(src, k), uri(dst, changed[k]), "--quiet"), changed))
+            pinned = inventory(dst, scratch)
+            for key, name in changed.items():
+                revision = pinned[name]
+                if revision not in known.setdefault(key, []):
+                    known[key].append(revision)
+            # A crash after this checkpoint can only leave a previously known revision
+            # or the pinned one in the destination, independent of later source edits.
+            persist(args.checkpoint, state)
+            list(pool.map(lambda k: hf("cp", uri(dst, changed[k]), uri(dst, k), "--quiet"), changed))
             list(pool.map(lambda k: hf("remove", dst + "/" + k, "--yes", "--quiet"), target.keys() - source.keys()))
+            list(pool.map(lambda k: hf("remove", dst + "/" + k, "--yes", "--quiet"), pinned))
         source, target = inventory(src, drafts), inventory(dst, drafts)
     if source != target:
         raise RuntimeError("Listings differ. Stage again before activation.")
+    if args.phase in ("verify", "activate") and state.get("scratchId"):
+        scratch = operations + "draft-migrations/" + uuid.UUID(state["scratchId"]).hex + "/"
+        if inventory(dst, scratch):
+            raise RuntimeError("An interrupted stage has temporary copies. Run stage to reconcile them.")
     if args.phase == "activate":
         if state.get("verified") != source:
             raise RuntimeError("Run verify against the final quiescent source before activation.")
