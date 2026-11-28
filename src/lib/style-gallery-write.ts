@@ -61,6 +61,7 @@ interface UpdateExamplesResult {
 interface UpdateExamplesOptions {
   /** 平台等纯元数据修改不改变 exampleCount，可跳过体积较大的 catalog 读写。 */
   catalogMode?: 'update-count' | 'preserve-count';
+  onTiming?: (stage: string, elapsedMs: number) => void;
 }
 
 interface ItemExamplesMutation {
@@ -441,14 +442,25 @@ export async function updateStyleGalleryItemExamples(
   transform: (examples: StyleGalleryExample[], item: StoredStyleGalleryItem) => StyleGalleryExample[],
   options: UpdateExamplesOptions = {},
 ): Promise<UpdateExamplesResult> {
+  const entered = performance.now();
+  async function measure<T>(stage: string, run: () => Promise<T>): Promise<T> {
+    const start = performance.now();
+    try {
+      return await run();
+    } finally {
+      options.onTiming?.(stage, performance.now() - start);
+    }
+  }
   return serializeStyleGalleryWrite(async () => {
+    options.onTiming?.('queue', performance.now() - entered);
     const catalogMode = options.catalogMode ?? 'update-count';
-    const catalogSnapshot = catalogMode === 'update-count' ? await getStyleGalleryCatalogSnapshot() : null;
+    const catalogSnapshot =
+      catalogMode === 'update-count' ? await measure('catalog-read', getStyleGalleryCatalogSnapshot) : null;
     const previousCatalog = catalogSnapshot?.value ?? null;
     if (previousCatalog && !previousCatalog.items.some((item) => item.slug === slug)) {
       throw new StyleGalleryClientError('Style gallery item not found.', 404);
     }
-    const mutation = await mutateStoredStyleGalleryItemExamples(slug, transform, catalogMode);
+    const mutation = await measure('item', () => mutateStoredStyleGalleryItemExamples(slug, transform, catalogMode));
     const { previousItem, item } = mutation;
     const examples = item.examples;
     const updatedAt = item.updated ?? new Date().toISOString();
@@ -467,21 +479,25 @@ export async function updateStyleGalleryItemExamples(
 
     try {
       if (catalog && catalogSnapshot) {
-        writtenCatalogEtag = await requireWrittenObjectEtag(
-          STYLE_GALLERY_CATALOG_KEY,
-          await putStyleGalleryCatalog(catalog, { ifMatch: catalogSnapshot.etag }),
+        writtenCatalogEtag = await measure('catalog-write', async () =>
+          requireWrittenObjectEtag(
+            STYLE_GALLERY_CATALOG_KEY,
+            await putStyleGalleryCatalog(catalog, { ifMatch: catalogSnapshot.etag }),
+          ),
         );
       }
-      await mutateStyleGalleryExampleIndex((current) => {
-        // mutate 内部已经读取带 ETag 的最新 index；复用首次快照可少一次全量 HF 下载，并为失败回滚保留基线。
-        previousIndex = current;
-        const currentGroup = current.groups.find((group) => group.sourceSlug === slug);
-        const groups = current.groups.filter((group) => group.sourceSlug !== slug);
-        attemptedGroup = examples.length ? toStyleGalleryExampleIndexGroup(slug, examples, currentGroup) : null;
-        if (attemptedGroup) groups.push(attemptedGroup);
-        return { version: 2, updatedAt, groups };
-      }, slug);
-      await invalidateStyleGalleryPublicCache([slug]);
+      await measure('shard', () =>
+        mutateStyleGalleryExampleIndex((current) => {
+          // mutate 内部已经读取带 ETag 的最新 index；复用首次快照可少一次全量 HF 下载，并为失败回滚保留基线。
+          previousIndex = current;
+          const currentGroup = current.groups.find((group) => group.sourceSlug === slug);
+          const groups = current.groups.filter((group) => group.sourceSlug !== slug);
+          attemptedGroup = examples.length ? toStyleGalleryExampleIndexGroup(slug, examples, currentGroup) : null;
+          if (attemptedGroup) groups.push(attemptedGroup);
+          return { version: 2, updatedAt, groups };
+        }, slug),
+      );
+      await measure('cache', () => invalidateStyleGalleryPublicCache([slug]));
       return { item };
     } catch (error) {
       // 只在 item 仍是本次写入版本时回滚；若另一实例已追加 prompt 或更新 examples，宁可报告
